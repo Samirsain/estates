@@ -5,15 +5,26 @@ documents do not describe. Kept so that a reviewer comparing the screens to
 [`DESIGN.md`](./DESIGN.md) and [`main-PRD.md`](./main-PRD.md) finds an answer
 rather than a surprise.
 
+Both items below are now also raised formally in
+[`change-requests/`](./change-requests/) — CR-001 and CR-002 — in the form
+[`PRD.md`](./PRD.md) §28 requires. This file is the plain-language summary; the
+CRs carry the formal fields and the owner signature block.
+
 This is **not** a substitute for the change-control process in
 [`PRD.md`](./PRD.md) §28. That process governs changes affecting commission,
 payment, inventory, identity, permissions or completion, and each one needs a
-Change Request ID, owner and exact approved wording. Nothing listed here touches
-those areas — these are display-only additions.
+Change Request ID, owner and exact approved wording.
+
+Of the two below, **D-01 touches none of those areas** — it is display only.
+**D-02 touches identity**, so its change request is required rather than
+optional, and neither may be treated as approved until its owner signature is in
+place.
 
 ---
 
 ## D-01 · Relationship length shown for Members and Customers
+
+**Formal record:** [CR-001](./change-requests/CR-001-relationship-length.md)
 
 **Date:** 21 August 2026
 **Approved by:** Product Owner (verbally, during the build session)
@@ -63,6 +74,8 @@ The approved documents enumerate these screens and do not include it:
 ---
 
 ## D-02 · Aadhaar and PAN readable in full by MD and Admin
+
+**Formal record:** [CR-002](./change-requests/CR-002-identity-reveal.md)
 
 **Date:** 21 August 2026
 **Approved by:** Product Owner (verbally, during the build session)
