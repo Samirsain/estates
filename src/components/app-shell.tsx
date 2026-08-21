@@ -58,7 +58,7 @@ export function AppShell({
     <div className="min-h-screen md:grid md:grid-cols-[15rem_1fr]">
       <aside className="glass-panel border-b md:border-b-0 md:border-r border-border/50 md:min-h-screen">
         <div className="flex items-center gap-3 px-5 py-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
             <Building2 className="h-5 w-5 text-white" />
           </div>
           <div>

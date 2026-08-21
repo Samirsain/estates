@@ -91,7 +91,7 @@ const RESTRICTION_LABEL: Record<string, string> = {
 };
 
 const inputClass =
-  "h-10 w-full rounded-xl border border-input bg-slate-900/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+  "h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
 function lifecycleVariant(lifecycle: string) {
   if (lifecycle === "AVAILABLE") return "success" as const;
@@ -239,7 +239,7 @@ export default function PlotsClient({
             <p
               role="status"
               className={`flex items-start gap-2 text-sm ${
-                notice.kind === "ok" ? "text-emerald-300" : "text-red-300"
+                notice.kind === "ok" ? "text-emerald-700" : "text-red-700"
               }`}
             >
               {notice.kind === "ok" ? (
@@ -645,7 +645,7 @@ export default function PlotsClient({
           title={dialog.approve ? "Approve Member Hold Request" : "Reject Member Hold Request"}
           onClose={() => setDialog(null)}
         >
-          <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+          <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
             <p className="font-semibold text-foreground">
               {dialog.request.project} · {dialog.request.plot} · for {dialog.request.buyer}
             </p>
@@ -714,7 +714,7 @@ function ConfirmDialog({
 }) {
   return (
     <Modal title={title} onClose={onClose}>
-      <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {plot.project} · {plot.plotType.replaceAll("_", " ")} {plot.plotNumber}
         </p>
@@ -801,7 +801,7 @@ function PrepareInventoryDialog({
           </select>
         </Field>
         <Field label="PLC components in the current rule version">
-          <p className="rounded-xl border border-border/60 bg-slate-900/40 px-3 py-2 text-xs text-muted-foreground">
+          <p className="rounded-xl border border-border/60 bg-secondary px-3 py-2 text-xs text-muted-foreground">
             {project?.plcCodes.length ? project.plcCodes.join(" · ") : "No current PLC rule version"}
           </p>
         </Field>

@@ -25,7 +25,7 @@ export default async function LoginPage({
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-md space-y-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary">
             <Building2 className="h-6 w-6 text-white" />
           </div>
           <div>
@@ -59,7 +59,7 @@ export default async function LoginPage({
           {error && (
             <p
               role="alert"
-              className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300"
+              className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700"
             >
               {MESSAGES[error] ?? GENERIC_LOGIN_ERROR}
             </p>

@@ -211,7 +211,7 @@ export default function MembersClient({
             <p
               role="status"
               className={`flex items-start gap-2 text-sm ${
-                notice.kind === "ok" ? "text-emerald-300" : "text-red-300"
+                notice.kind === "ok" ? "text-emerald-700" : "text-red-700"
               }`}
             >
               {notice.kind === "ok" ? (
@@ -247,7 +247,7 @@ export default function MembersClient({
               )}
               {visible.map((row) => (
                 <React.Fragment key={row.id}>
-                  <tr className="bg-slate-900/40 align-top">
+                  <tr className="bg-secondary align-top">
                     <td className="rounded-l-xl px-3 py-3">
                       <button
                         type="button"
@@ -842,7 +842,7 @@ function MemberDialog({
 }) {
   return (
     <Modal title={title} onClose={onClose}>
-      <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.memberId} · {row.name}
         </p>

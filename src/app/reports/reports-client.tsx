@@ -136,7 +136,7 @@ export default function ReportsClient({
         </Card>
 
         {result && !result.ok && (
-          <Card className="border-red-500/40 p-4 text-sm text-red-300">{result.error}</Card>
+          <Card className="border-red-500/40 p-4 text-sm text-red-700">{result.error}</Card>
         )}
 
         {result?.ok && (

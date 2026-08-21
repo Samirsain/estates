@@ -128,7 +128,7 @@ function PasswordCard({ loginId, name }: { loginId: string; name: string }) {
 
         {result && (
           <p
-            className={`text-xs ${result.ok ? "text-emerald-400" : "text-red-400"}`}
+            className={`text-xs ${result.ok ? "text-emerald-700" : "text-red-700"}`}
             role="status"
           >
             {result.ok ? result.message : result.error}
@@ -210,7 +210,7 @@ function MfaCard({ role, enrolled }: { role: StaffRole | "MEMBER"; enrolled: boo
             Add this secret to your authenticator app, then enter the code it shows. Nothing is saved
             until the code matches.
           </p>
-          <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3">
+          <div className="rounded-xl border border-border/60 bg-secondary p-3">
             <p className="break-all font-mono text-sm">{secret}</p>
             {otpauth && (
               <p className="mt-2 break-all text-[10px] text-muted-foreground">{otpauth}</p>
@@ -238,7 +238,7 @@ function MfaCard({ role, enrolled }: { role: StaffRole | "MEMBER"; enrolled: boo
       )}
 
       {result && (
-        <p className={`text-xs ${result.ok ? "text-emerald-400" : "text-red-400"}`} role="status">
+        <p className={`text-xs ${result.ok ? "text-emerald-700" : "text-red-700"}`} role="status">
           {result.ok ? result.message : result.error}
         </p>
       )}

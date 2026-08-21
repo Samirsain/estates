@@ -100,7 +100,7 @@ export default function ProjectsClient({
         {notice && (
           <Card
             className={`p-4 text-sm ${
-              notice.ok ? "border-emerald-500/40 text-emerald-300" : "border-red-500/40 text-red-300"
+              notice.ok ? "border-emerald-500/40 text-emerald-700" : "border-red-500/40 text-red-700"
             }`}
           >
             {notice.ok ? notice.message : notice.error}

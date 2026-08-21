@@ -120,7 +120,7 @@ export default function AdministrationClient(props: {
         {result && (
           <Card
             className={`p-4 text-sm ${
-              result.ok ? "border-emerald-500/40 text-emerald-300" : "border-red-500/40 text-red-300"
+              result.ok ? "border-emerald-500/40 text-emerald-700" : "border-red-500/40 text-red-700"
             }`}
           >
             {result.ok ? result.message : result.error}
@@ -238,7 +238,7 @@ function StaffTab({
                 </td>
                 <td className="py-2 pr-4">
                   {row.mfaEnrolled ? "Enrolled" : (row.role === "MD" || row.role === "ADMIN") ? (
-                    <span className="text-amber-400">Required</span>
+                    <span className="text-amber-700">Required</span>
                   ) : (
                     "—"
                   )}
@@ -318,7 +318,7 @@ function DisableModal({
     >
       <div className="space-y-3">
         {openWork > 0 && (
-          <p className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
+          <p className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-800">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             This account holds {target.openTasks} open task(s) and {target.openEnquiries}{" "}
             Enquiry(ies). A planned disable is refused until they are reassigned; Emergency Disable
@@ -741,7 +741,7 @@ function AuditTab({ rows }: { rows: AuditView[] }) {
 function OneTimePasswordCard({ password, onDone }: { password: string; onDone: () => void }) {
   return (
     <div className="space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
-      <p className="text-xs text-amber-200">
+      <p className="text-xs text-amber-800">
         Give this to the account holder now. It is shown only once and cannot be recovered — if it is
         lost, issue a reset.
       </p>
@@ -841,7 +841,7 @@ function CreateStaffModal({
             </select>
           </Field>
 
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-red-700">{error}</p>}
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>
@@ -904,7 +904,7 @@ function ResetPasswordModal({
           <Field label="Compulsory reason">
             <Input name="reason" required minLength={3} placeholder="Forgot password, verified by phone" />
           </Field>
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-red-700">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
@@ -979,7 +979,7 @@ function IdentityTab({ canReveal }: { canReveal: boolean }) {
           : "Your role sees masked values only. Full Aadhaar and PAN are limited to MD and Admin."}
       </p>
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-red-700">{error}</p>}
 
       {loading ? (
         <p className="text-xs text-muted-foreground">Loading…</p>

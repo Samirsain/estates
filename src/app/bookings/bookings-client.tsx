@@ -310,7 +310,7 @@ export default function BookingsClient({
             <p
               role="status"
               className={`flex items-start gap-2 text-sm ${
-                notice.kind === "ok" ? "text-emerald-300" : "text-red-300"
+                notice.kind === "ok" ? "text-emerald-700" : "text-red-700"
               }`}
             >
               {notice.kind === "ok" ? (
@@ -346,7 +346,7 @@ export default function BookingsClient({
               )}
               {visible.map((row) => (
                 <React.Fragment key={row.id}>
-                  <tr className="bg-slate-900/40 align-top">
+                  <tr className="bg-secondary align-top">
                     <td className="rounded-l-xl px-3 py-3">
                       <button
                         type="button"
@@ -698,7 +698,7 @@ export default function BookingsClient({
           description="Nothing changes until Admin or MD approves. Booking and Payment history are never touched by this correction."
           onClose={() => setDialog(null)}
         >
-          <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+          <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
             <p className="font-semibold text-foreground">
               Current: {SOLD_BY_LABEL[dialog.row.soldByType] ?? dialog.row.soldByType}
               {dialog.row.soldByName ? ` · ${dialog.row.soldByName}` : ""}
@@ -930,13 +930,13 @@ function BookingDetailPanel({
       {tab === "OVERVIEW" && (
         <div className="space-y-4">
           {row.status === "REQUEST_PENDING" && (
-            <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-200">
+            <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
               Waiting for Booking Approval — submitted values are locked. To change a reviewed field,
               cancel this request version and create a new version.
             </p>
           )}
           {pendingCustomerChange && (
-            <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-200">
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
               <p className="font-semibold">Primary Customer Change Under Review</p>
               <p className="mt-1">
                 {pendingCustomerChange.reason} · raised by {pendingCustomerChange.requestedByRef} on{" "}
@@ -963,7 +963,7 @@ function BookingDetailPanel({
           )}
 
           {pendingSoldBy && (
-            <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-200">
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
               <p className="font-semibold">Sold By Correction Under Review</p>
               <p className="mt-1">
                 {SOLD_BY_LABEL[pendingSoldBy.fromSoldByType]} →{" "}
@@ -1138,7 +1138,7 @@ function BookingDetailPanel({
           </p>
 
           {pendingSchedule && (
-            <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-200">
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
               <p className="font-semibold">
                 Schedule revision version {pendingSchedule.version} waiting for the Accounts decision
               </p>
@@ -1419,7 +1419,7 @@ function ActionDialog({
 }) {
   return (
     <Modal title={title} onClose={onClose}>
-      <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? row.requestNo} · {row.project} {row.plot} · {row.primaryCustomer}
         </p>
@@ -1478,7 +1478,7 @@ function ReviewDialog({
       onClose={onClose}
       wide
     >
-      <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.project} · {row.plot} · {row.primaryCustomer}
         </p>
@@ -1489,14 +1489,14 @@ function ReviewDialog({
       </div>
 
       {isMaker && (
-        <p className="rounded-xl border border-red-500/40 bg-red-500/5 p-3 text-xs text-red-300">
+        <p className="rounded-xl border border-red-500/40 bg-red-500/5 p-3 text-xs text-red-700">
           You submitted this request. A Booking Request must be decided by a different staff account
           (PRD §3.3), so this decision will be refused.
         </p>
       )}
 
       {pending ? (
-        <pre className="max-h-64 overflow-auto rounded-xl border border-border/60 bg-slate-900/60 p-3 text-[11px] leading-relaxed">
+        <pre className="max-h-64 overflow-auto rounded-xl border border-border/60 bg-secondary p-3 text-[11px] leading-relaxed">
           {JSON.stringify(pending.snapshot, null, 2)}
         </pre>
       ) : (
@@ -1653,7 +1653,7 @@ function BookingFormDialog({
         }}
       >
         {fixedPlotLabel ? (
-          <p className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+          <p className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
             {fixedPlotLabel} — the Plot cannot change on a new version. Cross-Plot movement uses
             Change Plot after approval.
           </p>
@@ -1679,7 +1679,7 @@ function BookingFormDialog({
         )}
 
         {plot?.holdPersonName && (
-          <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-[11px] text-amber-200">
+          <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-[11px] text-amber-800">
             This Plot is on Hold for {plot.holdPersonName}. The Primary Customer must be that Person,
             and the remaining Hold time freezes on submission.
           </p>
@@ -1690,7 +1690,7 @@ function BookingFormDialog({
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Customers and ownership shares
             </h3>
-            <span className={`text-[11px] ${parties.length > 1 && shareTotal !== 100 ? "text-red-300" : "text-muted-foreground"}`}>
+            <span className={`text-[11px] ${parties.length > 1 && shareTotal !== 100 ? "text-red-700" : "text-muted-foreground"}`}>
               {parties.length === 1 ? "Sole buyer — leave the share blank for 100%" : `Total ${shareTotal}%`}
             </span>
           </div>
@@ -1848,7 +1848,7 @@ function ScheduleEditor({
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Payment schedule — percentage only
         </h3>
-        <span className={`text-[11px] tabular-nums ${total === 100 ? "text-emerald-300" : "text-red-300"}`}>
+        <span className={`text-[11px] tabular-nums ${total === 100 ? "text-emerald-700" : "text-red-700"}`}>
           Total {total}% — must be exactly 100%
         </span>
       </div>
@@ -1941,7 +1941,7 @@ function ScheduleDialog({
       wide
     >
       {live && (
-        <ul className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-[11px] text-muted-foreground">
+        <ul className="rounded-xl border border-border/60 bg-secondary p-3 text-[11px] text-muted-foreground">
           {live.instalments.map((i) => (
             <li key={i.seq} className="tabular-nums">
               {i.seq}. scheduled {i.scheduled}% · received {i.received}% · remaining {i.remaining}%
@@ -2014,7 +2014,7 @@ function SharesDialog({
       >
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Buyers</h3>
-          <span className={`text-[11px] ${parties.length > 1 && total !== 100 ? "text-red-300" : "text-muted-foreground"}`}>
+          <span className={`text-[11px] ${parties.length > 1 && total !== 100 ? "text-red-700" : "text-muted-foreground"}`}>
             {parties.length === 1 ? "Sole buyer — blank means 100%" : `Total ${total}%`}
           </span>
         </div>
@@ -2251,7 +2251,7 @@ function CompletionSection({
 
           {live && (
             <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-3">
-              <p className="font-medium text-emerald-300">
+              <p className="font-medium text-emerald-700">
                 Delivered · {live.route === "ALLOTMENT" ? "Allotment" : "Registry"} route
               </p>
               {live.route === "ALLOTMENT" ? (
@@ -2353,7 +2353,7 @@ function FinalBuyersDialog({
 
   return (
     <Modal title="Final buyer details" wide onClose={onClose}>
-      <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? row.requestNo} · {row.project} {row.plot}
         </p>
@@ -2477,7 +2477,7 @@ function CompletionDialog({
       description="One route only. There is no Allotment-then-Registry sequence (PRD §4.1)."
       onClose={onClose}
     >
-      <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? row.requestNo} · {row.project} {row.plot}
         </p>
@@ -2606,7 +2606,7 @@ function CancellationDecisionDialog({
       title={approve ? "Approve cancellation" : "Reject cancellation"}
       onClose={onClose}
     >
-      <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? row.requestNo} · {row.project} {row.plot} · {row.primaryCustomer}
         </p>
@@ -2708,7 +2708,7 @@ function ChangePlotDialog({
       description="Within the same Project only. Cross-Project movement needs Cancel Booking and a new Booking Request."
       onClose={onClose}
     >
-      <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? row.requestNo} · {row.project} {row.plot}
         </p>
@@ -2789,7 +2789,7 @@ function ChangePlotDecisionDialog({
       wide={approve}
       onClose={onClose}
     >
-      <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? row.requestNo} · {row.project} {row.plot}
         </p>

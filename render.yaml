@@ -1,0 +1,73 @@
+# Render blueprint — a persistent Node service, which suits this application:
+# a contested command may hold a transaction for ~30 seconds, and a full job
+# catalogue run grows with the book. Neither is constrained here.
+#
+# Set the six secrets in the Render dashboard, never in this file.
+# Pick the region closest to the database (Supabase is in ap-south-1, Mumbai).
+
+services:
+  - type: web
+    name: three-percent-club-crm
+    runtime: node
+    plan: starter
+    region: singapore
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: SENSITIVE_KEY
+        sync: false
+      - key: BLIND_INDEX_KEY
+        sync: false
+      - key: JOBS_SECRET
+        sync: false
+      # Only where a trusted proxy overwrites X-Forwarded-For.
+      - key: TRUST_PROXY
+        value: "true"
+
+  # PRD §18 — the scheduler. Every job is idempotent, so a duplicate or a
+  # catch-up run after downtime is safe. Times are UTC; the business runs on
+  # Asia/Kolkata, so 19:30 UTC is 01:00 IST the next morning.
+  - type: cron
+    name: crm-hold-expiry
+    runtime: node
+    plan: starter
+    region: singapore
+    schedule: "*/15 * * * *"
+    buildCommand: npm ci && npx prisma generate
+    startCommand: npm run jobs:run -- HOLD_EXPIRY
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: SENSITIVE_KEY
+        sync: false
+      - key: BLIND_INDEX_KEY
+        sync: false
+
+  - type: cron
+    name: crm-daily-jobs
+    runtime: node
+    plan: starter
+    region: singapore
+    schedule: "30 19 * * *"
+    buildCommand: npm ci && npx prisma generate
+    startCommand: npm run jobs:run
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: SENSITIVE_KEY
+        sync: false
+      - key: BLIND_INDEX_KEY
+        sync: false

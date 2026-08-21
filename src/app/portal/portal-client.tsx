@@ -103,7 +103,7 @@ export type PortalData = {
 const TABS = ["Available Plots", "Hold Requests", "Enquiries", "Profile"] as const;
 
 const inputClass =
-  "h-10 w-full rounded-xl border border-input bg-slate-900/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+  "h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
 const humanise = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
 
@@ -132,7 +132,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
     <div className="mx-auto max-w-3xl space-y-5 px-4 py-8">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
             <Building2 className="h-5 w-5 text-white" />
           </div>
           <div>
@@ -183,7 +183,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
           <p
             role="status"
             className={`flex items-start gap-2 text-sm ${
-              notice.kind === "ok" ? "text-emerald-300" : "text-red-300"
+              notice.kind === "ok" ? "text-emerald-700" : "text-red-700"
             }`}
           >
             {notice.kind === "ok" ? (
@@ -367,7 +367,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
 
       {requesting && (
         <Modal title="Request Hold" onClose={() => setRequesting(null)}>
-          <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+          <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
             <p className="font-semibold text-foreground">
               {requesting.project} · {requesting.label}
             </p>

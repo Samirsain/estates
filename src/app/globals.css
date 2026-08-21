@@ -2,28 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Apple museum-gallery design system — system/apple.md.
+ *
+ * A light gallery: white and parchment canvases, one interactive colour
+ * (Action Blue #0066cc), hairline dividers instead of borders, and no shadows
+ * on chrome. The interface recedes so the records can be read.
+ *
+ * Every token is HSL triplets because Tailwind composes them with opacity.
+ */
+
 @layer base {
   :root {
-    --background: 224 71% 4%;
-    --foreground: 210 40% 98%;
-    --card: 224 71% 7%;
-    --card-foreground: 210 40% 98%;
-    --popover: 224 71% 6%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 14%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
-    --radius: 0.75rem;
+    /* canvas #ffffff, parchment #f5f5f7, pearl #fafafc */
+    --background: 0 0% 100%;
+    --foreground: 240 6% 12%; /* ink #1d1d1f */
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 6% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 6% 12%;
+
+    /* Action Blue — the single interactive colour */
+    --primary: 210 100% 40%; /* #0066cc */
+    --primary-foreground: 0 0% 100%;
+
+    /* parchment, for surfaces that sit behind the canvas */
+    --secondary: 240 9% 96%; /* #f5f5f7 */
+    --secondary-foreground: 240 6% 12%;
+
+    --muted: 240 20% 98%; /* pearl #fafafc */
+    --muted-foreground: 0 0% 48%; /* ink-muted-48 #7a7a7a */
+
+    --accent: 240 9% 96%;
+    --accent-foreground: 210 100% 40%;
+
+    --destructive: 3 78% 47%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* hairline #e0e0e0, divider-soft #f0f0f0 */
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    --ring: 210 100% 45%; /* primary-focus #0071e3 */
+
+    /* rounded.md 11px is the working default; sm 8px, lg 18px */
+    --radius: 0.6875rem;
   }
 }
 
@@ -31,31 +54,80 @@
   * {
     @apply border-border;
   }
+
+  html {
+    /* SF Pro where it exists, the platform face everywhere else — apple.md
+       names SF Pro Display/Text with a system-ui fallback. No web font is
+       fetched, which also keeps the Content-Security-Policy tight. */
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
+      "Segoe UI", Roboto, sans-serif;
+  }
+
   body {
-    @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
+    @apply bg-background text-foreground antialiased selection:bg-primary/15 selection:text-primary;
     font-feature-settings: "rlig" 1, "calt" 1;
+    /* typography.body — 17px/1.47, -0.374px */
+    font-size: 17px;
+    line-height: 1.47;
+    letter-spacing: -0.374px;
+  }
+
+  /* Headlines take the Display face and its negative tracking. */
+  h1 {
+    font-size: 40px;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.5px;
+  }
+
+  h2 {
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1.14;
+    letter-spacing: -0.3px;
+  }
+
+  h3 {
+    font-size: 21px;
+    font-weight: 600;
+    line-height: 1.19;
+    letter-spacing: -0.2px;
+  }
+
+  /* Dense operational tables read better a step down from the marketing body. */
+  table {
+    font-size: 14px;
+    line-height: 1.43;
+    letter-spacing: -0.224px;
   }
 }
 
-/* Glassmorphism & Premium UI Utilities */
+/*
+ * Chrome surfaces. apple.md is explicit that chrome carries no shadow — the one
+ * signature shadow belongs under product imagery, and a CRM has none. So panels
+ * are separated by hairlines and a change of canvas, never by elevation.
+ */
 .glass-panel {
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: hsl(var(--secondary));
+  border-color: hsl(var(--border));
 }
 
 .glass-card {
-  background: rgba(30, 41, 59, 0.45);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: hsl(var(--muted));
+  border: 1px solid hsl(var(--border));
 }
 
+/* The accent stays one flat colour; no decorative gradients (apple.md). */
 .gradient-text {
-  @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-indigo-300 to-emerald-400;
+  color: hsl(var(--primary));
 }
 
 .glow-border {
-  box-shadow: 0 0 25px -5px rgba(59, 130, 246, 0.25);
+  box-shadow: none;
+  border: 1px solid hsl(var(--border));
+}
+
+/* Pill is the primary action shape (rounded.pill). */
+.pill {
+  border-radius: 9999px;
 }

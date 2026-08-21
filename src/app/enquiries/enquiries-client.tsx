@@ -47,7 +47,7 @@ const OUTCOMES = [
 ] as const;
 
 const inputClass =
-  "h-10 w-full rounded-xl border border-input bg-slate-900/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+  "h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
 const humanise = (v: string) =>
   v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
@@ -150,7 +150,7 @@ export default function EnquiriesClient({
             <p
               role="status"
               className={`flex items-start gap-2 text-sm ${
-                notice.kind === "ok" ? "text-emerald-300" : "text-red-300"
+                notice.kind === "ok" ? "text-emerald-700" : "text-red-700"
               }`}
             >
               {notice.kind === "ok" ? (
@@ -429,7 +429,7 @@ function FollowUpDialog({
 
   return (
     <Modal title={`Follow-up · ${enquiry.enquiryNo}`} onClose={onClose}>
-      <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {enquiry.name} · {enquiry.project} · {enquiry.plot}
         </p>

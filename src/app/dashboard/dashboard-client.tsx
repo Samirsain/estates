@@ -58,7 +58,7 @@ const EMPHASIS_STYLE: Record<Emphasis, { row: string; label: string | null }> = 
 };
 
 const inputClass =
-  "h-10 w-full rounded-xl border border-input bg-slate-900/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+  "h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
 export default function DashboardClient({
   role,
@@ -147,7 +147,7 @@ export default function DashboardClient({
                   type="checkbox"
                   checked={showAllAssignees}
                   onChange={(e) => setShowAllAssignees(e.target.checked)}
-                  className="h-4 w-4 rounded border-input bg-slate-900/60"
+                  className="h-4 w-4 rounded border-input bg-secondary"
                 />
                 Show all assignees
               </label>
@@ -200,7 +200,7 @@ export default function DashboardClient({
 
         {blocked && (
           <Card className="border-red-500/40 bg-red-500/5 p-4">
-            <p className="flex items-start gap-2 text-sm text-red-300">
+            <p className="flex items-start gap-2 text-sm text-red-700">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{blocked}</span>
             </p>
@@ -279,7 +279,7 @@ export default function DashboardClient({
 
                       <div className="flex shrink-0 items-center gap-2">
                         {task.status === "COMPLETED" ? (
-                          <span className="flex items-center gap-1 text-xs text-emerald-400">
+                          <span className="flex items-center gap-1 text-xs text-emerald-700">
                             <CheckCircle2 className="h-4 w-4" /> Completed
                           </span>
                         ) : task.decision ? (

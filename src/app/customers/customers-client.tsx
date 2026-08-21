@@ -107,7 +107,7 @@ export default function CustomersClient({
 
         {notice && (
           <Card className="border-red-500/40 bg-red-500/5 p-4">
-            <p role="status" className="flex items-start gap-2 text-sm text-red-300">
+            <p role="status" className="flex items-start gap-2 text-sm text-red-700">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               {notice}
             </p>
@@ -138,7 +138,7 @@ export default function CustomersClient({
               )}
               {visible.map((row) => (
                 <React.Fragment key={row.id}>
-                  <tr className="bg-slate-900/40 align-top">
+                  <tr className="bg-secondary align-top">
                     <td className="rounded-l-xl px-3 py-3">
                       <button
                         type="button"

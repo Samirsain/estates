@@ -29,7 +29,7 @@ export function Modal({
       onClose={onClose}
       className={`${
         wide ? "w-[min(64rem,95vw)]" : "w-[min(36rem,92vw)]"
-      } rounded-2xl border border-border/60 bg-card p-0 text-foreground backdrop:bg-black/60`}
+      } rounded-[18px] border border-border bg-card p-0 text-foreground backdrop:bg-black/25`}
     >
       <div className="space-y-4 p-6">
         <div>
@@ -53,4 +53,4 @@ export function Field({ label, children }: { label: string; children: React.Reac
 
 /** Shared input styling for the plain selects and number fields in forms. */
 export const inputClass =
-  "h-10 w-full rounded-xl border border-input bg-slate-900/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+  "h-10 w-full rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";

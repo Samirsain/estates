@@ -146,7 +146,7 @@ export default function AcquisitionsClient({
         {notice && (
           <Card
             className={`p-4 text-sm ${
-              notice.ok ? "border-emerald-500/40 text-emerald-300" : "border-red-500/40 text-red-300"
+              notice.ok ? "border-emerald-500/40 text-emerald-700" : "border-red-500/40 text-red-700"
             }`}
           >
             {notice.text}
@@ -161,7 +161,7 @@ export default function AcquisitionsClient({
         ) : (
           <Card className="overflow-hidden">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-900/40 text-muted-foreground">
+              <thead className="bg-secondary text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">Acquisition</th>
                   <th className="px-4 py-3 font-medium">Property</th>
@@ -192,7 +192,7 @@ export default function AcquisitionsClient({
                       <td className="px-4 py-3 tabular-nums">
                         {row.paymentGivenPercent}%
                         {Number(row.paymentGivenPercent) < 100 && row.status === "APPROVED" && (
-                          <div className="text-amber-400">Payment Pending</div>
+                          <div className="text-amber-700">Payment Pending</div>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -219,7 +219,7 @@ export default function AcquisitionsClient({
                       </td>
                     </tr>
                     {open === row.id && (
-                      <tr className="border-t border-border/40 bg-slate-900/20">
+                      <tr className="border-t border-border/40 bg-muted">
                         <td colSpan={6} className="px-4 py-4">
                           <Detail
                             row={row}
@@ -566,7 +566,7 @@ function FormDialog({
 }) {
   return (
     <Modal title={title} onClose={onClose}>
-      <div className="rounded-xl border border-border/60 bg-slate-900/40 p-3 text-xs">
+      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">{subtitle}</p>
         <p className="mt-1 text-muted-foreground">{consequence}</p>
       </div>
@@ -816,7 +816,7 @@ function NewAcquisitionDialog({
               )}
             </div>
           ))}
-          <p className={`text-xs ${total === 100 ? "text-muted-foreground" : "text-amber-400"}`}>
+          <p className={`text-xs ${total === 100 ? "text-muted-foreground" : "text-amber-700"}`}>
             Total: {total.toFixed(2)}%
           </p>
         </div>
