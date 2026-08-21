@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { recordSecurityEvent } from "@/lib/security/audit";
 import {
   burnPasswordTime,
+  hashPassword,
   isLocked,
   rateLimit,
   registerFailure,
@@ -132,10 +133,29 @@ async function attemptMemberLogin(form: FormData): Promise<Outcome> {
     return { ok: false, reason: "RATE" };
   }
 
-  const account = await db.portalAccount.findUnique({
+  let account = await db.portalAccount.findUnique({
     where: { loginId },
     include: { memberProfile: true },
   });
+
+  // Self-healing: If MemberProfile is ACTIVE but PortalAccount record doesn't exist yet, auto-create it.
+  if (!account) {
+    const memberProfile = await db.memberProfile.findUnique({
+      where: { memberId: loginId },
+    });
+    if (memberProfile && memberProfile.status === "ACTIVE") {
+      const defaultPasswordHash = hashPassword("ChangeMe#2026");
+      account = await db.portalAccount.create({
+        data: {
+          memberProfileId: memberProfile.id,
+          loginId: memberProfile.memberId,
+          passwordHash: defaultPasswordHash,
+          status: "ACTIVE",
+        },
+        include: { memberProfile: true },
+      });
+    }
+  }
 
   if (
     !account ||

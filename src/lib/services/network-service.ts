@@ -8,6 +8,7 @@
 
 import { db } from "@/lib/db";
 import { bandRate, counterYearStart, nextNetworkPosition } from "@/lib/domain/commission";
+import { hashPassword } from "@/lib/security/auth";
 import { istDay, istInstant } from "@/lib/tasks";
 import { blocked, lockKey, nextReference, runCommand, type Tx } from "./command";
 import { reassessCommission } from "./commission-service";
@@ -177,8 +178,28 @@ export async function activateMember(args: {
               reraNumber: args.reraNumber?.trim() || null,
               reraExpiryDate: args.reraExpiryDate ?? null,
               reraNotApplicableReason: args.reraNotApplicableReason?.trim() || null,
-            },
           });
+
+      // Ensure PortalAccount exists so the Member can log into the Member Portal (PRD §17.1).
+      const existingPortal = await tx.portalAccount.findUnique({
+        where: { memberProfileId: member.id },
+      });
+      if (!existingPortal) {
+        const defaultPasswordHash = hashPassword("ChangeMe#2026");
+        await tx.portalAccount.create({
+          data: {
+            memberProfileId: member.id,
+            loginId: member.memberId,
+            passwordHash: defaultPasswordHash,
+            status: "ACTIVE",
+          },
+        });
+      } else if (existingPortal.status !== "ACTIVE") {
+        await tx.portalAccount.update({
+          where: { id: existingPortal.id },
+          data: { status: "ACTIVE" },
+        });
+      }
 
       let position: { position: number; ratePercent: string } | null = null;
       if (args.invitedByMemberId) {
