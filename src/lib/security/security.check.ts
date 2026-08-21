@@ -22,16 +22,12 @@ import {
   MAX_FAILED_ATTEMPTS,
   hashPassword,
   isLocked,
-  mfaRequired,
   rateLimit,
   registerFailure,
   registerSuccess,
   resetRateLimit,
-  totpCode,
-  generateTotpSecret,
   validatePassword,
   verifyPassword,
-  verifyTotp,
 } from "./auth.ts";
 import {
   PermissionError,
@@ -108,15 +104,6 @@ assert.ok(verifyPassword("correct-horse-battery", stored));
 assert.ok(!verifyPassword("correct-horse-batteryX", stored));
 assert.notEqual(hashPassword("correct-horse-battery"), stored, "salt must be fresh");
 
-/* -------------------------------------------------------------- MFA */
-
-assert.ok(mfaRequired("MD") && mfaRequired("ADMIN"));
-assert.ok(!mfaRequired("ACCOUNTS") && !mfaRequired("CRM"));
-const secret = generateTotpSecret();
-assert.ok(verifyTotp(secret, totpCode(secret, now), now));
-assert.ok(verifyTotp(secret, totpCode(secret, new Date(now.getTime() - 30_000)), now), "±1 step drift");
-assert.ok(!verifyTotp(secret, totpCode(secret, new Date(now.getTime() - 120_000)), now));
-assert.ok(!verifyTotp(secret, "000", now), "malformed code");
 
 /* ---------------------------------------------------------- lockout */
 

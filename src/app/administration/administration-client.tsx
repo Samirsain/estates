@@ -44,7 +44,6 @@ export type StaffRowView = {
   lastLoginAt: string | null;
   openTasks: number;
   openEnquiries: number;
-  mfaEnrolled: boolean;
 };
 
 export type QueuedTaskView = {
@@ -204,7 +203,6 @@ function StaffTab({
               <th className="py-2 pr-4 font-medium">Role</th>
               <th className="py-2 pr-4 font-medium">Status</th>
               <th className="py-2 pr-4 font-medium">Open work</th>
-              <th className="py-2 pr-4 font-medium">MFA</th>
               <th className="py-2 pr-4 font-medium">Last login</th>
               <th className="py-2 pr-4 font-medium"></th>
             </tr>
@@ -235,13 +233,6 @@ function StaffTab({
                 </td>
                 <td className="py-2 pr-4">
                   {row.openTasks} task(s), {row.openEnquiries} enquiry(ies)
-                </td>
-                <td className="py-2 pr-4">
-                  {row.mfaEnrolled ? "Enrolled" : (row.role === "MD" || row.role === "ADMIN") ? (
-                    <span className="text-amber-700">Required</span>
-                  ) : (
-                    "—"
-                  )}
                 </td>
                 <td className="py-2 pr-4">{row.lastLoginAt ? formatIst(row.lastLoginAt) : "Never"}</td>
                 <td className="py-2 pr-4">
@@ -803,7 +794,7 @@ function CreateStaffModal({
   return (
     <Modal
       title="Create a staff account"
-      description="One Person holds one staff login. MD and Admin must also enrol MFA before their access is complete."
+      description="One Person holds one staff login."
       onClose={onClose}
     >
       {issued ? (

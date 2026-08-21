@@ -38,9 +38,9 @@ npm run reconcile > reconciliation-<date>.txt
 | 3. Status transition and restoration tests | Transition table, rejection/cancellation restoration | `npm run check`, `npm run db:check` |
 | 4. Commission compatibility, cap and concurrency | 4% cap, entitlement contest under load | `npm run commission:check` |
 | 5. Payment Received and Payment Given corrections | Correction supersession on both sides, the 20% approval threshold, and the Buying Commission milestone stepping back | `npm run booking:check`, `npm run phase5:check`, `npm run acquisition:check` |
-| 6. Migration rehearsal and signed reconciliation | Record-count and exception report | `npm run reconcile` on the staging copy, then on production |
+| 6. ~~Migration rehearsal and signed reconciliation~~ | **Not applicable — new business, no legacy data.** There is nothing to migrate, so nothing to rehearse or reconcile against. `npm run reconcile` stays useful as an invariant check on production | `npm run reconcile` on production |
 | 7. Concurrency and idempotency | One allocation under contest; same key returns the original result | `npm run phase7:check` |
-| 8. Security/access testing and MD/Admin MFA | MFA enrolment and code verification, sensitive-field masking, no secret in audit | `npm run db:check` (identity), `npm run phase7:check` (audit payload) |
+| 8. Security/access testing~~ and MD/Admin MFA~~ | Sensitive-field masking, encryption at rest, lockout, no secret in audit. **MFA withdrawn by CR-003** — the password, the lockout and the session version are the whole control | `npm run db:check` (identity), `npm run phase7:check` (audit payload) |
 | 9. Scheduled-job retry and recovery monitoring | Catch-up after downtime, repeat run changes nothing, per-job run rows | `npm run phase7:check`; `ScheduledJobRun` table |
 | 10. Backup restoration and rollback | Restore rehearsal | Outside the CRM — hosting/operations |
 | 11. User training and UAT sign-off | UAT records | Outside the CRM |
@@ -74,10 +74,11 @@ Accounts.
 
 Stated plainly so it is not mistaken for delivered scope:
 
-- **No legacy importer.** Mapping legacy rows into this schema needs the source
-  database in front of it; a speculative importer written blind would be wrong
-  in exactly the places that matter. The reconciliation rules above are the
-  acceptance test any importer must pass.
+- **No legacy importer, and none needed.** This is a new business starting with
+  an empty database; gate 6 is not applicable. The design that was drafted for
+  an importer is withdrawn — see
+  `docs/superpowers/specs/2026-08-21-legacy-importer-design.md`. The
+  reconciliation rules remain valuable as a standing invariant check.
 - **No backup, restore or rollback scripts.** These belong to whoever operates
   the hosting, and gate 10 is their sign-off.
 - **No browser/responsive test harness.** Gate 11 covers this through UAT.

@@ -1,7 +1,11 @@
 # Legacy Data Importer — Design
 
 **Date:** 21 August 2026
-**Status:** Approved design, ready for an implementation plan
+**Status:** **WITHDRAWN — 21 August 2026.** The business is new and has no legacy
+data, so there is nothing to import. Go-live gate 6 is not applicable. The design
+is kept because the reconciliation rules it was written against remain in use as
+a standing invariant check (`npm run reconcile`), and because a future
+acquisition of another book would need exactly this document again.
 **Phase:** 7 — Migration, Hardening, UAT and Go-Live
 **Read with:** [`system/PRD.md`](../../../system/PRD.md) §27, [`system/main-PRD.md`](../../../system/main-PRD.md) §27.3, [`system/ARCHITECTURE.md`](../../../system/ARCHITECTURE.md) §13, [`system/GO-LIVE-EVIDENCE.md`](../../../system/GO-LIVE-EVIDENCE.md)
 

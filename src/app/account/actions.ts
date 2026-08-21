@@ -9,15 +9,7 @@
 import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { recordAudit, recordSecurityEvent } from "@/lib/security/audit";
-import {
-  TOTP_STEP_SECONDS,
-  generateTotpSecret,
-  hashPassword,
-  validatePassword,
-  verifyPassword,
-  verifyTotp,
-} from "@/lib/security/auth";
-import { encryptSensitive } from "@/lib/security/identity";
+import { hashPassword, validatePassword, verifyPassword } from "@/lib/security/auth";
 import { currentMember, currentStaff } from "@/lib/security/current-actor";
 import {
   SESSION_COOKIE_MEMBER,
@@ -162,57 +154,3 @@ async function reissue(
   });
 }
 
-/* --------------------------------------------------------------- MFA */
-
-/**
- * PRD §3.1, §17.1 — MFA is mandatory for MD and Admin. Enrolment is two steps:
- * the server issues a secret, and it is stored only once the holder proves they
- * can generate a current code from it. An unverified secret is never saved.
- */
-export async function beginMfaEnrolmentAction(): Promise<
-  { ok: true; secret: string; otpauth: string } | { ok: false; error: string }
-> {
-  const staff = await currentStaff();
-  if (!staff) return { ok: false, error: "Sign in again to enrol MFA." };
-
-  const secret = generateTotpSecret();
-  const label = encodeURIComponent(`3% Club CRM:${staff.staffAccountId}`);
-  return {
-    ok: true,
-    secret,
-    // Standard otpauth URI so any authenticator app can take it.
-    otpauth: `otpauth://totp/${label}?secret=${secret}&issuer=3%25%20Club%20CRM&period=${TOTP_STEP_SECONDS}`,
-  };
-}
-
-export async function confirmMfaEnrolmentAction(
-  secret: string,
-  code: string
-): Promise<ActionResult> {
-  const staff = await currentStaff();
-  if (!staff) return { ok: false, error: "Sign in again to enrol MFA." };
-
-  if (!verifyTotp(secret, code.trim())) {
-    return { ok: false, error: "That code did not match. Check the time on your device and try again." };
-  }
-
-  await db.staffAccount.update({
-    where: { id: staff.accountId },
-    data: {
-      // The secret is protected at rest exactly like Aadhaar and PAN.
-      mfaSecretCipher: encryptSensitive(secret),
-      mfaEnrolledAt: new Date(),
-    },
-  });
-
-  await recordAudit({
-    actorRef: staff.staffAccountId,
-    actorRole: staff.role,
-    entity: "StaffAccount",
-    entityId: staff.accountId,
-    action: "MFA_ENROLLED",
-    reason: "Enrolled by the account holder.",
-  });
-
-  return { ok: true, message: "MFA enrolled. Your next sign-in will ask for a code." };
-}

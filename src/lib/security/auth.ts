@@ -1,7 +1,10 @@
-// Passwords, MFA and lockout — PRD.md §17.1; ARCHITECTURE.md §9.1.
-// node:crypto only: scrypt for password hashing, HMAC-SHA1 TOTP for MFA.
+// Passwords and lockout — PRD.md §17.1; ARCHITECTURE.md §9.1.
+// node:crypto only: scrypt for password hashing.
+//
+// CR-003 removed multi-factor authentication from the approved model, so the
+// password, the lockout and the session version are the whole control here.
 
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 /* ------------------------------------------------------------- passwords */
 
@@ -49,63 +52,7 @@ export function burnPasswordTime(password: string): void {
   verifyPassword(password, decoyHash);
 }
 
-/* -------------------------------------------------------------- TOTP MFA */
-
-const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-export const TOTP_STEP_SECONDS = 30;
-
-export function generateTotpSecret(bytes = 20): string {
-  const buf = randomBytes(bytes);
-  let bits = "";
-  for (const byte of buf) bits += byte.toString(2).padStart(8, "0");
-  let out = "";
-  for (let i = 0; i + 5 <= bits.length; i += 5) {
-    out += BASE32[parseInt(bits.slice(i, i + 5), 2)];
-  }
-  return out;
-}
-
-function base32Decode(secret: string): Buffer {
-  let bits = "";
-  for (const char of secret.toUpperCase().replace(/=+$/, "")) {
-    const index = BASE32.indexOf(char);
-    if (index < 0) throw new Error("Invalid MFA secret.");
-    bits += index.toString(2).padStart(5, "0");
-  }
-  const bytes: number[] = [];
-  for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
-  return Buffer.from(bytes);
-}
-
-/** RFC 6238, SHA-1, 6 digits, 30-second step. */
-export function totpCode(secret: string, at: Date = new Date()): string {
-  const counter = Math.floor(at.getTime() / 1000 / TOTP_STEP_SECONDS);
-  const buf = Buffer.alloc(8);
-  buf.writeBigUInt64BE(BigInt(counter));
-  const digest = createHmac("sha1", base32Decode(secret)).update(buf).digest();
-  const offset = digest[digest.length - 1] & 0x0f;
-  const binary = digest.readUInt32BE(offset) & 0x7fffffff;
-  return String(binary % 1_000_000).padStart(6, "0");
-}
-
-/** Accepts the neighbouring steps so a slow clock does not lock out an MD. */
-export function verifyTotp(secret: string, code: string, at: Date = new Date(), window = 1): boolean {
-  const candidate = code.trim();
-  if (!/^\d{6}$/.test(candidate)) return false;
-  for (let drift = -window; drift <= window; drift++) {
-    const when = new Date(at.getTime() + drift * TOTP_STEP_SECONDS * 1000);
-    const expected = totpCode(secret, when);
-    if (timingSafeEqual(Buffer.from(expected), Buffer.from(candidate))) return true;
-  }
-  return false;
-}
-
-/** MFA is mandatory for MD and Admin (PRD §3.1, §17.1). */
-export function mfaRequired(role: string): boolean {
-  return role === "MD" || role === "ADMIN";
-}
-
-/* ------------------------------------------------- lockout and rate limit */
+/* --------------------------------------------------------------- lockout */
 
 export const MAX_FAILED_ATTEMPTS = 5;
 export const LOCKOUT_MINUTES = 15;

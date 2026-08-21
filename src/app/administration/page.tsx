@@ -59,7 +59,6 @@ export default async function AdministrationPage() {
         lastLoginAt: account.lastLoginAt?.toISOString() ?? null,
         openTasks: account._count.assignedTasks,
         openEnquiries: account._count.assignedEnquiries,
-        mfaEnrolled: !!account.mfaEnrolledAt,
       }))}
       queuedTasks={queuedTasks.map((task) => ({
         id: task.id,

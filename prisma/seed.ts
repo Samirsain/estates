@@ -2,7 +2,7 @@
 // portal access. Idempotent: re-running updates the same records.
 // Run: npm run db:seed
 import { PrismaClient, type StaffRole } from "@prisma/client";
-import { generateTotpSecret, hashPassword, mfaRequired } from "../src/lib/security/auth.ts";
+import { hashPassword } from "../src/lib/security/auth.ts";
 import {
   aadhaarLastFour,
   blindIndex,
@@ -58,7 +58,6 @@ async function upsertPerson(name: string, mobile: string, sensitive?: { aadhaar?
 
 async function main() {
   const passwordHash = hashPassword(INITIAL_PASSWORD);
-  const mfaSecrets: string[] = [];
 
   for (const staff of STAFF) {
     const person = await upsertPerson(staff.name, staff.mobile);
@@ -79,24 +78,6 @@ async function main() {
       },
     });
 
-    if (!mfaRequired(staff.role)) continue;
-
-    // Keep an existing enrolment — re-running the seed must not print a secret
-    // that is not the one actually stored.
-    let secret: string;
-    if (account.mfaSecretCipher) {
-      secret = decryptSensitive(account.mfaSecretCipher);
-    } else {
-      secret = generateTotpSecret();
-      await db.staffAccount.update({
-        where: { id: account.id },
-        data: { mfaSecretCipher: encryptSensitive(secret), mfaEnrolledAt: new Date() },
-      });
-    }
-
-    mfaSecrets.push(
-      `${staff.staffAccountId} (${staff.role}) MFA secret: ${secret}\n  otpauth://totp/3%25%20Club%20CRM:${staff.staffAccountId}?secret=${secret}&issuer=3%25%20Club%20CRM`
-    );
   }
 
   // One Member with portal access, and one Customer, to exercise the identity model.
@@ -224,9 +205,6 @@ async function main() {
   console.log(`Seeded Project ${project.name} with PLC version ${plc.version} and ${plots.length} Plots.`);
   console.log(`Seeded ${STAFF.length} staff accounts, 1 Member and 1 Customer.`);
   console.log(`Initial password for every seeded account: ${INITIAL_PASSWORD}`);
-  console.log("\nMFA is mandatory for MD and Admin — add these to an authenticator app:");
-  for (const line of mfaSecrets) console.log(`  ${line}`);
-  console.log("\nThese secrets are printed once here. Rotate them before real use.");
 }
 
 main()

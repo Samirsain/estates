@@ -63,8 +63,6 @@ enum SecurityEventType {
   LOGIN_SUCCESS
   LOGIN_FAILURE
   ACCOUNT_LOCKED
-  MFA_FAILURE
-  MFA_REQUIRED
   SESSION_INVALIDATED
   /// PRD §17.2 — planned or emergency staff disable.
   ACCOUNT_DISABLED
@@ -215,10 +213,6 @@ model StaffAccount {
 
   status       AccountStatus @default(ACTIVE)
   passwordHash String
-
-  /// MFA is mandatory for MD and Admin (PRD §3.1, §17.1).
-  mfaSecretCipher String?
-  mfaEnrolledAt   DateTime?
 
   /// Bumped on password reset / emergency disable to invalidate every session.
   sessionVersion Int       @default(1)

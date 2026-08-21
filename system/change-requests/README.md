@@ -9,6 +9,7 @@ Migration impact, Acceptance-test impact, Release target.
 | --- | --- | --- | --- |
 | [CR-001](./CR-001-relationship-length.md) | Relationship length shown for Members and Customers | None — display only | Raised, awaiting signature |
 | [CR-002](./CR-002-identity-reveal.md) | Administration screen for reading a full Aadhaar or PAN | Identity | Raised, awaiting signature |
+| [CR-003](./CR-003-remove-mfa.md) | Multi-factor authentication removed | Identity, permissions | Raised, awaiting signature — **contradicts PRD §3.1, §17.1 and gate 8** |
 
 **Status meanings**
 

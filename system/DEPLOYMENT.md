@@ -58,7 +58,7 @@ Six secrets, none of which live in the repository:
 | `DATABASE_URL` | Supabase **transaction pooler**, port 6543, keep `pgbouncer=true` |
 | `DIRECT_URL` | Direct connection, port 5432. Migrations only |
 | `SESSION_SECRET` | ≥32 characters |
-| `SENSITIVE_KEY` | 32 bytes of hex (64 chars) — encrypts Aadhaar, PAN, bank, MFA |
+| `SENSITIVE_KEY` | 32 bytes of hex (64 chars) — encrypts Aadhaar, PAN and bank details |
 | `BLIND_INDEX_KEY` | 32 bytes of hex — duplicate detection without a searchable plaintext |
 | `JOBS_SECRET` | Authenticates the scheduler |
 
@@ -100,10 +100,13 @@ success per job — that is the monitoring evidence go-live gate 9 asks for.
 ## 5. After deploying
 
 1. Open `/api/health` — expect `200` with `"missingEnv": []` and `database: "up"`.
-2. Sign in as the MD, change the seeded password, enrol MFA under My Account.
+2. Sign in as the MD and change the seeded password under My Account.
 3. Do the same for Admin.
 4. Create the real staff accounts from Administration; each gets a one-time
    password and changes it at first sign in.
+
+   The password is now the whole login control — CR-003 removed multi-factor
+   authentication. Insist on real passwords, and disable leavers the same day.
 5. Create the real Projects and PLC rules, then prepare inventory.
 6. Run `npm run reconcile` against production and keep the output — it is the
    signed record-count and exception report.

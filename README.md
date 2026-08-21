@@ -30,7 +30,7 @@ Browser ──▶ Next.js (server components, server actions, /api routes)
 | `src/app/` | Screens. Each module is `page.tsx` (server) + `*-client.tsx` (browser) + `actions.ts` (server actions) |
 | `src/lib/domain/` | Pure business rules. No database, no framework — this is what the unit checks exercise |
 | `src/lib/services/` | Commands. Every state change runs here, inside one transaction with an idempotency key |
-| `src/lib/security/` | Permissions, sessions, password and MFA, Aadhaar/PAN encryption and blind indexing |
+| `src/lib/security/` | Permissions, sessions, passwords and lockout, Aadhaar/PAN encryption and blind indexing |
 | `src/lib/migration/` | The reconciliation rules a migrated database must satisfy |
 | `prisma/` | Schema, migrations, the constraints Prisma cannot express, seed, and the check suite |
 | `system/` | The approved requirements. `PRD.md` and `main-PRD.md` govern; the code follows them |
@@ -48,8 +48,9 @@ npm run db:seed               # first staff accounts, one project, a few plots
 npm run dev
 ```
 
-Seeded accounts sign in with `STF-0001` … `STF-0008`. MD and Admin need an MFA
-code — `npm run db:otp` prints the current one during development.
+Seeded accounts sign in with `STF-0001` … `STF-0008` and the password the seed
+prints. Change them before anyone real uses the system: the password is the whole
+login control, since CR-003 removed multi-factor authentication.
 
 ---
 
@@ -87,5 +88,6 @@ configured, and it reports the last successful run of each job.
 
 [`system/GO-LIVE-EVIDENCE.md`](./system/GO-LIVE-EVIDENCE.md) maps each of the
 twelve gates in `PRD.md` §27 to the command that produces its evidence, and states
-plainly which gates this repository cannot satisfy on its own — the legacy data
-import, backup rehearsal, UAT, and company ownership of the production accounts.
+plainly which gates this repository cannot satisfy on its own — backup rehearsal,
+UAT, and company ownership of the production accounts. Gate 6, migration, does
+not apply: this is a new business with no legacy data.

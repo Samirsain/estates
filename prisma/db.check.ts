@@ -6,7 +6,7 @@ import { PrismaClient } from "@prisma/client";
 import { assertCheckDatabase } from "./check-guard.ts";
 
 assertCheckDatabase();
-import { hashPassword, totpCode, verifyPassword, verifyTotp } from "../src/lib/security/auth.ts";
+import { hashPassword, verifyPassword } from "../src/lib/security/auth.ts";
 import { blindIndex, decryptSensitive, encryptSensitive } from "../src/lib/security/identity.ts";
 
 const db = new PrismaClient();
@@ -69,6 +69,9 @@ async function cleanup() {
   await db.enquiry.deleteMany({ where: { enquiryNo: { startsWith: TAG } } });
   await db.plotBoundary.deleteMany({ where: { plotId: { in: plotIds } } });
   await db.plot.deleteMany({ where: { id: { in: plotIds } } });
+  // A staff account holds its Person by foreign key, so it goes first. A run
+  // that crashed after creating one would otherwise block every later run.
+  await db.staffAccount.deleteMany({ where: { staffAccountId: { startsWith: TAG } } });
   await db.person.deleteMany({ where: { id: { in: personIds } } });
 }
 
@@ -137,13 +140,10 @@ async function main() {
   });
   assert.notEqual(shared.id, scratch.id, "shared mobile keeps Persons distinct");
 
-  // Seeded credentials round-trip: password verifies, MFA secret decrypts.
+  // Seeded credentials round-trip: the password verifies and is stored hashed.
   const md = await db.staffAccount.findUniqueOrThrow({ where: { staffAccountId: "STF-0001" } });
   assert.ok(verifyPassword("ChangeMe#2026", md.passwordHash), "seeded password verifies");
   assert.ok(!verifyPassword("ChangeMe#2027", md.passwordHash));
-  assert.ok(md.mfaSecretCipher, "MD is MFA-enrolled");
-  const secret = decryptSensitive(md.mfaSecretCipher);
-  assert.ok(verifyTotp(secret, totpCode(secret)), "MFA code verifies");
   assert.ok(!md.passwordHash.includes("ChangeMe"), "password is stored only as a hash");
 
   /* ------------------------------------------------------------- Phase 2 */

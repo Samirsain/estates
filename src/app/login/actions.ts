@@ -10,12 +10,10 @@ import { recordSecurityEvent } from "@/lib/security/audit";
 import {
   burnPasswordTime,
   isLocked,
-  mfaRequired,
   rateLimit,
   registerFailure,
   registerSuccess,
   verifyPassword,
-  verifyTotp,
 } from "@/lib/security/auth";
 import { decryptSensitive } from "@/lib/security/identity";
 import {
@@ -26,7 +24,7 @@ import {
   signSession,
 } from "@/lib/security/session";
 
-type Outcome = { ok: true; to: string } | { ok: false; reason: "GENERIC" | "MFA" | "RATE" };
+type Outcome = { ok: true; to: string } | { ok: false; reason: "GENERIC" | "RATE" };
 
 /**
  * X-Forwarded-For is set by the client unless a trusted proxy overwrites it, so
@@ -57,7 +55,6 @@ async function setSessionCookie(name: string, token: string) {
 async function attemptStaffLogin(form: FormData): Promise<Outcome> {
   const loginId = String(form.get("loginId") ?? "").trim();
   const password = String(form.get("password") ?? "");
-  const mfaCode = String(form.get("mfaCode") ?? "");
   const ip = await clientIp();
   const now = new Date();
 
@@ -95,21 +92,8 @@ async function attemptStaffLogin(form: FormData): Promise<Outcome> {
     return { ok: false, reason: "GENERIC" };
   }
 
-  // MFA is mandatory for MD and Admin (PRD §3.1, §17.1).
-  if (mfaRequired(account.role)) {
-    if (!account.mfaSecretCipher) {
-      await recordSecurityEvent({ type: "MFA_REQUIRED", identifier: loginId, ip, detail: "Not enrolled" });
-      return { ok: false, reason: "MFA" };
-    }
-    if (!mfaCode) {
-      await recordSecurityEvent({ type: "MFA_REQUIRED", identifier: loginId, ip });
-      return { ok: false, reason: "MFA" };
-    }
-    if (!verifyTotp(decryptSensitive(account.mfaSecretCipher), mfaCode, now)) {
-      await recordSecurityEvent({ type: "MFA_FAILURE", identifier: loginId, ip });
-      return { ok: false, reason: "GENERIC" };
-    }
-  }
+  // CR-003 — multi-factor authentication was removed from the approved model.
+  // The password, the lockout and the session version are now the whole control.
 
   await db.staffAccount.update({
     where: { id: account.id },

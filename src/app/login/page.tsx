@@ -9,7 +9,6 @@ import { memberLogin, staffLogin } from "./actions";
 
 const MESSAGES: Record<string, string> = {
   GENERIC: GENERIC_LOGIN_ERROR,
-  MFA: "MD and Admin accounts require a multi-factor code. Enter the 6-digit code from your authenticator app.",
   RATE: "Too many attempts. Wait a minute and try again.",
 };
 
@@ -81,12 +80,6 @@ export default async function LoginPage({
               <Input name="password" type="password" required autoComplete="current-password" minLength={10} />
             </label>
 
-            {!member && (
-              <label className="block space-y-1 text-xs font-medium text-muted-foreground">
-                <span>MFA code — required for MD and Admin</span>
-                <Input name="mfaCode" inputMode="numeric" pattern="\d{6}" placeholder="123456" />
-              </label>
-            )}
 
             <Button type="submit" className="w-full">
               Sign in

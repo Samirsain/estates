@@ -16,7 +16,6 @@
     "check": "node src/lib/tasks.check.ts && node src/lib/security/security.check.ts && node src/lib/domain/domain.check.ts && tsc --noEmit",
     "booking:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/booking.check.ts",
     "db:ping": "node --env-file=.env prisma/ping.ts",
-    "db:otp": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/otp.ts",
     "commission:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/commission.check.ts",
     "phase5:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/phase5.check.ts",
     "phase6:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/phase6.check.ts",
