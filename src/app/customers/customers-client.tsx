@@ -16,6 +16,10 @@ import { inputClass } from "@/components/ui/modal";
 import { formatIst, type StaffRole } from "@/lib/tasks";
 import { loadCustomerDetail, revealAadhaarAction, type CustomerDetail } from "./actions";
 
+/** Filters sit inline and size to their content, unlike a form field. */
+const filterClass =
+  "h-9 w-auto rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+
 export type CustomerRowView = {
   id: string;
   personId: string;
@@ -29,6 +33,7 @@ export type CustomerRowView = {
   panStatus: string;
   introducedBy: string | null;
   loyaltySlotsConsumed: number;
+  experience: string | null;
 };
 
 const ACTIVITY_VARIANT: Record<string, "info" | "warning" | "success"> = {
@@ -88,7 +93,7 @@ export default function CustomersClient({
 
         <div className="flex flex-wrap items-center gap-2">
           <select
-            className={`${inputClass} h-9 w-auto`}
+            className={filterClass}
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
             aria-label="Filter by Customer Type"
@@ -149,6 +154,11 @@ export default function CustomersClient({
                         {row.customerId}
                       </button>
                       <span className="block text-[11px] text-muted-foreground">{row.name}</span>
+                      {row.experience && (
+                        <span className="block text-[11px] text-muted-foreground">
+                          {row.experience} as a Customer
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-xs">
                       {row.mobileMasked}

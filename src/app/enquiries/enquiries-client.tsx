@@ -52,6 +52,10 @@ const inputClass =
 const humanise = (v: string) =>
   v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
 
+/** Filters sit inline and size to their content, unlike a form field. */
+const filterClass =
+  "h-9 w-auto rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+
 export default function EnquiriesClient({
   role,
   actorName,
@@ -122,7 +126,7 @@ export default function EnquiriesClient({
 
         <div className="flex flex-wrap items-center gap-2">
           <select
-            className={`${inputClass} h-9 w-auto`}
+            className={filterClass}
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             aria-label="Filter by status"

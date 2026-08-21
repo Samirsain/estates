@@ -79,11 +79,8 @@ export function anniversaryDay(activationDay: string, year: number): string {
 }
 
 /**
- * The IST calendar day the Member's current counter year began on. Only newly
- * introduced Members or Customers enter the new annual counter (RD-02).
- */
-/**
- * How long a Member has been a Member, from the Activation Date.
+ * How long a relationship has run — a Member from their Activation Date, a
+ * Customer from their first approved Booking.
  *
  * Derived on every read and never stored: a stored "3 years" is wrong the day
  * the fourth anniversary passes, and nothing would be there to correct it.
@@ -95,12 +92,12 @@ export function anniversaryDay(activationDay: string, year: number): string {
  * Null means there is nothing to show yet: an unactivated Member, or an
  * activation dated in the future.
  */
-export type MembershipExperience = { years: number; months: number; label: string };
+export type ExperienceSince = { years: number; months: number; label: string };
 
-export function membershipExperience(
+export function experienceSince(
   activationDate: Date | string | null | undefined,
   at: Date = new Date()
-): MembershipExperience | null {
+): ExperienceSince | null {
   if (!activationDate) return null;
 
   const activationDay = istDay(activationDate);
@@ -132,6 +129,10 @@ export function membershipExperience(
   return { years, months, label };
 }
 
+/**
+ * The IST calendar day the Member's current counter year began on. Only newly
+ * introduced Members or Customers enter the new annual counter (RD-02).
+ */
 export function counterYearStart(activationDate: Date, at: Date = new Date()): string {
   const activationDay = istDay(activationDate);
   const today = istDay(at);

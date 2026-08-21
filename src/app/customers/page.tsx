@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can, canViewField } from "@/lib/security/permissions";
 import { maskAadhaar, maskMobile } from "@/lib/security/identity";
+import { experienceSince } from "@/lib/domain/commission";
 import CustomersClient, { type CustomerRowView } from "./customers-client";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,32 @@ export default async function CustomersPage() {
     orderBy: { customerId: "asc" },
     take: 300,
   });
+
+  /*
+   * How long each Customer has been one, counted from their first approved
+   * Booking — the moment the relationship actually began. A Booking that was
+   * later cancelled still counts: it happened.
+   *
+   * Read as one query over the listed people rather than one per row, and
+   * through BookingParty so an Additional Customer counts as a buyer too, not
+   * only the Primary Customer.
+   */
+  const parties = await db.bookingParty.findMany({
+    where: {
+      personId: { in: customers.map((c) => c.personId) },
+      kind: "COMMERCIAL",
+      booking: { bookingNumber: { not: null } },
+    },
+    select: { personId: true, booking: { select: { bookingDate: true } } },
+  });
+
+  const firstBooking = new Map<string, Date>();
+  for (const party of parties) {
+    const current = firstBooking.get(party.personId);
+    if (!current || party.booking.bookingDate < current) {
+      firstBooking.set(party.personId, party.booking.bookingDate);
+    }
+  }
 
   const rows: CustomerRowView[] = customers.map((c) => ({
     id: c.id,
@@ -39,6 +66,8 @@ export default async function CustomersPage() {
       ? `${c.originalIntroducedByMember.memberId} · ${c.originalIntroducedByMember.person.fullName}`
       : null,
     loyaltySlotsConsumed: c.loyaltySlotsConsumed,
+    // Derived on every read, never stored (see experienceSince).
+    experience: experienceSince(firstBooking.get(c.personId) ?? null)?.label ?? null,
   }));
 
   return (

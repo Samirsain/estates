@@ -5,7 +5,7 @@
 import { db } from "@/lib/db";
 import { requireMember } from "@/lib/security/current-actor";
 import { maskMobile } from "@/lib/security/identity";
-import { membershipExperience } from "@/lib/domain/commission";
+import { experienceSince } from "@/lib/domain/commission";
 import { memberCommissionView } from "@/lib/services/commission-service";
 import PortalClient, { type PortalData } from "./portal-client";
 
@@ -52,7 +52,7 @@ export default async function PortalPage() {
     memberId: profile.memberId,
     name: profile.person.fullName,
     activationDate: profile.activationDate?.toISOString() ?? null,
-    experience: membershipExperience(profile.activationDate)?.label ?? null,
+    experience: experienceSince(profile.activationDate)?.label ?? null,
     invitedBy: profile.invitedByMember
       ? `${profile.invitedByMember.memberId} · ${profile.invitedByMember.person.fullName}`
       : null,
