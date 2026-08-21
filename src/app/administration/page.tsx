@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
-import { can } from "@/lib/security/permissions";
+import { can, canViewField } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
 import AdministrationClient from "./administration-client";
 
@@ -45,6 +45,7 @@ export default async function AdministrationPage() {
       canEmergencyDisable={can(actor.role, "STAFF_EMERGENCY_DISABLE", actor.extraPermissions)}
       canReassign={can(actor.role, "WORK_REASSIGN", actor.extraPermissions)}
       canMerge={can(actor.role, "PERSON_MERGE", actor.extraPermissions)}
+      canRevealIdentity={canViewField(actor.role, "AADHAAR_FULL")}
       staff={staff.map((account) => ({
         id: account.id,
         staffAccountId: account.staffAccountId,

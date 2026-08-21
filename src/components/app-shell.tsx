@@ -27,6 +27,7 @@ const NAV = [
     href: null,
     phase: null,
     children: [
+      { label: "Projects", href: "/projects", phase: null },
       { label: "Plot Inventory", href: "/plots", phase: null },
       { label: "Enquiries", href: "/enquiries", phase: null },
       { label: "Bookings", href: "/bookings", phase: null },

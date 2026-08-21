@@ -4,7 +4,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, History, Merge, ShieldOff, UserCheck } from "lucide-react";
+import { AlertTriangle, Eye, History, Merge, Plus, ShieldOff, UserCheck, UserPlus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,12 +13,20 @@ import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatIst, type StaffRole } from "@/lib/tasks";
+
+type IdentityRow = Awaited<ReturnType<typeof identityDirectoryAction>>[number];
 import {
   decidePersonMergeAction,
   disableStaffAction,
   reassignWorkAction,
   requestPersonMergeAction,
   searchPersonsAction,
+  createStaffAccountAction,
+  resetStaffPasswordAction,
+  staffCandidatesAction,
+  identityDirectoryAction,
+  revealIdentityAction,
+  type IdentityReveal,
   type ActionResult,
   type PersonOption,
 } from "./actions";
@@ -81,6 +89,7 @@ export default function AdministrationClient(props: {
   canEmergencyDisable: boolean;
   canReassign: boolean;
   canMerge: boolean;
+  canRevealIdentity: boolean;
   staff: StaffRowView[];
   queuedTasks: QueuedTaskView[];
   queuedEnquiries: QueuedEnquiryView[];
@@ -127,6 +136,7 @@ export default function AdministrationClient(props: {
             <TabsTrigger value="merge">
               Person Merge ({props.merges.filter((m) => m.status === "PENDING").length})
             </TabsTrigger>
+            <TabsTrigger value="identity">Aadhaar / PAN</TabsTrigger>
             <TabsTrigger value="audit">Activity History</TabsTrigger>
           </TabsList>
         </Tabs>
@@ -155,6 +165,7 @@ export default function AdministrationClient(props: {
             onResult={done}
           />
         )}
+        {tab === "identity" && <IdentityTab canReveal={props.canRevealIdentity} />}
         {tab === "audit" && <AuditTab rows={props.audit} />}
       </div>
     </AppShell>
@@ -172,10 +183,19 @@ function StaffTab({
   canEmergencyDisable: boolean;
   onResult: (result: ActionResult) => void;
 }) {
+  const router = useRouter();
   const [target, setTarget] = React.useState<StaffRowView | null>(null);
+  const [resetting, setResetting] = React.useState<StaffRowView | null>(null);
+  const [creating, setCreating] = React.useState(false);
 
   return (
     <Card className="space-y-3 p-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold">Staff accounts</h2>
+        <Button size="sm" onClick={() => setCreating(true)}>
+          <UserPlus className="mr-2 h-3.5 w-3.5" /> Create account
+        </Button>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
           <thead className="text-muted-foreground">
@@ -226,9 +246,14 @@ function StaffTab({
                 <td className="py-2 pr-4">{row.lastLoginAt ? formatIst(row.lastLoginAt) : "Never"}</td>
                 <td className="py-2 pr-4">
                   {row.status === "ACTIVE" && (
-                    <Button size="sm" variant="outline" onClick={() => setTarget(row)}>
-                      <ShieldOff className="mr-2 h-3.5 w-3.5" /> Disable
-                    </Button>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Button size="sm" variant="outline" onClick={() => setResetting(row)}>
+                        Reset password
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setTarget(row)}>
+                        <ShieldOff className="mr-2 h-3.5 w-3.5" /> Disable
+                      </Button>
+                    </div>
                   )}
                 </td>
               </tr>
@@ -243,6 +268,18 @@ function StaffTab({
           canEmergencyDisable={canEmergencyDisable}
           onClose={() => setTarget(null)}
           onResult={onResult}
+        />
+      )}
+
+      {creating && (
+        <CreateStaffModal onClose={() => setCreating(false)} onRefresh={() => router.refresh()} />
+      )}
+
+      {resetting && (
+        <ResetPasswordModal
+          target={resetting}
+          onClose={() => setResetting(null)}
+          onRefresh={() => router.refresh()}
         />
       )}
     </Card>
@@ -694,6 +731,319 @@ function AuditTab({ rows }: { rows: AuditView[] }) {
           </tbody>
         </table>
       </div>
+    </Card>
+  );
+}
+
+/* ------------------------------------------------ staff create / reset */
+
+/** The one-time password is shown once, here, and never stored in clear. */
+function OneTimePasswordCard({ password, onDone }: { password: string; onDone: () => void }) {
+  return (
+    <div className="space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+      <p className="text-xs text-amber-200">
+        Give this to the account holder now. It is shown only once and cannot be recovered — if it is
+        lost, issue a reset.
+      </p>
+      <p className="break-all font-mono text-lg text-foreground">{password}</p>
+      <p className="text-xs text-muted-foreground">
+        They change it themselves under My Account at first sign in.
+      </p>
+      <Button size="sm" onClick={onDone}>
+        I have passed it on
+      </Button>
+    </div>
+  );
+}
+
+function CreateStaffModal({
+  onClose,
+  onRefresh,
+}: {
+  onClose: () => void;
+  onRefresh: () => void;
+}) {
+  const [candidates, setCandidates] = React.useState<PersonOption[]>([]);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [issued, setIssued] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    staffCandidatesAction().then((found) => {
+      if (!cancelled) setCandidates(found);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const f = new FormData(event.currentTarget);
+    setBusy(true);
+    setError(null);
+    const outcome = await createStaffAccountAction(
+      {
+        personId: String(f.get("personId")),
+        role: String(f.get("role")) as StaffRole,
+        staffAccountId: String(f.get("staffAccountId")),
+      },
+      newKey()
+    );
+    setBusy(false);
+    if (outcome.ok) {
+      setIssued(outcome.oneTimePassword);
+      onRefresh();
+    } else {
+      setError(outcome.error);
+    }
+  }
+
+  return (
+    <Modal
+      title="Create a staff account"
+      description="One Person holds one staff login. MD and Admin must also enrol MFA before their access is complete."
+      onClose={onClose}
+    >
+      {issued ? (
+        <OneTimePasswordCard
+          password={issued}
+          onDone={() => {
+            setIssued(null);
+            onClose();
+          }}
+        />
+      ) : (
+        <form className="space-y-3" onSubmit={submit}>
+          <Field label="Person">
+            <select name="personId" className={inputClass} required defaultValue="">
+              <option value="" disabled>
+                {candidates.length === 0 ? "Everyone already has an account" : "Select a Person"}
+              </option>
+              {candidates.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Staff Account ID">
+            <Input name="staffAccountId" required placeholder="STF-0009" />
+          </Field>
+          <Field label="Role">
+            <select name="role" className={inputClass} required defaultValue="CRM">
+              {["MD", "ADMIN", "ACCOUNTS", "CRM", "MIS", "PC"].map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {error && <p className="text-xs text-red-400">{error}</p>}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? "Creating…" : "Create account"}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+function ResetPasswordModal({
+  target,
+  onClose,
+  onRefresh,
+}: {
+  target: StaffRowView;
+  onClose: () => void;
+  onRefresh: () => void;
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [issued, setIssued] = React.useState<string | null>(null);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const reason = String(new FormData(event.currentTarget).get("reason") ?? "");
+    setBusy(true);
+    setError(null);
+    const outcome = await resetStaffPasswordAction(target.id, reason, newKey());
+    setBusy(false);
+    if (outcome.ok) {
+      setIssued(outcome.oneTimePassword);
+      onRefresh();
+    } else {
+      setError(outcome.error);
+    }
+  }
+
+  return (
+    <Modal
+      title={`Reset password — ${target.name}`}
+      description={`${target.staffAccountId} · ${target.role}. Every session of this account is signed out immediately.`}
+      onClose={onClose}
+    >
+      {issued ? (
+        <OneTimePasswordCard
+          password={issued}
+          onDone={() => {
+            setIssued(null);
+            onClose();
+          }}
+        />
+      ) : (
+        <form className="space-y-3" onSubmit={submit}>
+          <Field label="Compulsory reason">
+            <Input name="reason" required minLength={3} placeholder="Forgot password, verified by phone" />
+          </Field>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? "Resetting…" : "Issue one-time password"}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+/* ------------------------------------------- protected identity (RD-05) */
+
+/**
+ * PRD RD-05 — MD and Admin may read a full Aadhaar or PAN. The list stays
+ * masked and each reveal is its own logged security event, so "who looked at
+ * whose Aadhaar, and when" is always answerable.
+ */
+function IdentityTab({ canReveal }: { canReveal: boolean }) {
+  const [query, setQuery] = React.useState("");
+  const [rows, setRows] = React.useState<IdentityRow[]>([]);
+  const [revealed, setRevealed] = React.useState<Record<string, IdentityReveal>>({});
+  const [error, setError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      const found = await identityDirectoryAction(query);
+      if (!cancelled) {
+        setRows(found);
+        setLoading(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  async function reveal(personId: string) {
+    setError(null);
+    const outcome = await revealIdentityAction(personId);
+    if (outcome.ok) {
+      setRevealed((current) => ({ ...current, [personId]: outcome.reveal }));
+    } else {
+      setError(outcome.error);
+    }
+  }
+
+  return (
+    <Card className="space-y-3 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <Eye className="h-4 w-4" /> Aadhaar and PAN
+        </h2>
+        <Input
+          className="h-9 w-64"
+          placeholder="Search name, mobile, Customer ID, Member ID"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        {canReveal
+          ? "Values are masked until you reveal them. Every reveal is written to the security log with your account and the Person it was read for (PRD RD-05)."
+          : "Your role sees masked values only. Full Aadhaar and PAN are limited to MD and Admin."}
+      </p>
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+
+      {loading ? (
+        <p className="text-xs text-muted-foreground">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Nobody matches that search.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-2 pr-4 font-medium">Person</th>
+                <th className="py-2 pr-4 font-medium">Aadhaar</th>
+                <th className="py-2 pr-4 font-medium">PAN</th>
+                <th className="py-2 pr-4 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const open = revealed[row.id];
+                return (
+                  <tr key={row.id} className="border-t border-border/40">
+                    <td className="py-2 pr-4">
+                      <div className="font-medium text-foreground">{row.fullName}</div>
+                      <div className="text-muted-foreground">
+                        {row.reference} · {row.mobileMasked}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-4 font-mono">
+                      {open ? (open.aadhaar ?? "Not recorded") : row.aadhaarMasked}
+                      <div className="font-sans text-muted-foreground">{row.aadhaarStatus}</div>
+                    </td>
+                    <td className="py-2 pr-4 font-mono">
+                      {open ? (open.pan ?? "Not recorded") : row.panMasked}
+                      <div className="font-sans text-muted-foreground">{row.panStatus}</div>
+                    </td>
+                    <td className="py-2 pr-4">
+                      {canReveal && !open && (
+                        <Button size="sm" variant="outline" onClick={() => reveal(row.id)}>
+                          Reveal
+                        </Button>
+                      )}
+                      {open && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setRevealed((current) => {
+                              const next = { ...current };
+                              delete next[row.id];
+                              return next;
+                            })
+                          }
+                        >
+                          Hide
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
   );
 }
