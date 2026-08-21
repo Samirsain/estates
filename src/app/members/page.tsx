@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
+import { membershipExperience } from "@/lib/domain/commission";
 import MembersClient, { type MemberRowView } from "./members-client";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,8 @@ export default async function MembersPage() {
     city: m.person.city ?? "—",
     status: m.status,
     activationDate: m.activationDate?.toISOString() ?? null,
+    // Derived on every read, never stored — see membershipExperience.
+    experience: membershipExperience(m.activationDate)?.label ?? null,
     invitedBy: m.invitedByMember
       ? `${m.invitedByMember.memberId} · ${m.invitedByMember.person.fullName}`
       : null,

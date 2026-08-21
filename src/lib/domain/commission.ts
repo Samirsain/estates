@@ -82,6 +82,56 @@ export function anniversaryDay(activationDay: string, year: number): string {
  * The IST calendar day the Member's current counter year began on. Only newly
  * introduced Members or Customers enter the new annual counter (RD-02).
  */
+/**
+ * How long a Member has been a Member, from the Activation Date.
+ *
+ * Derived on every read and never stored: a stored "3 years" is wrong the day
+ * the fourth anniversary passes, and nothing would be there to correct it.
+ *
+ * It shares `anniversaryDay` with the annual counters on purpose. A Member
+ * activated on 29 February must gain a year on the same day their counter
+ * rolls — 28 February in a non-leap year — rather than a day later.
+ *
+ * Null means there is nothing to show yet: an unactivated Member, or an
+ * activation dated in the future.
+ */
+export type MembershipExperience = { years: number; months: number; label: string };
+
+export function membershipExperience(
+  activationDate: Date | string | null | undefined,
+  at: Date = new Date()
+): MembershipExperience | null {
+  if (!activationDate) return null;
+
+  const activationDay = istDay(activationDate);
+  const today = istDay(at);
+  if (today < activationDay) return null;
+
+  const currentYear = Number(today.slice(0, 4));
+  const reachedThisYear = today >= anniversaryDay(activationDay, currentYear);
+  const years = currentYear - Number(activationDay.slice(0, 4)) - (reachedThisYear ? 0 : 1);
+
+  // Whole months since the anniversary just passed.
+  const lastAnniversary = anniversaryDay(activationDay, Number(activationDay.slice(0, 4)) + years);
+  const [annYear, annMonth, annDayOfMonth] = lastAnniversary.split("-").map(Number);
+  const [nowYear, nowMonth, nowDayOfMonth] = today.split("-").map(Number);
+
+  let months = (nowYear - annYear) * 12 + (nowMonth - annMonth);
+  if (nowDayOfMonth < annDayOfMonth) months--;
+
+  const label =
+    years === 0 && months === 0
+      ? "Less than a month"
+      : [
+          years > 0 ? `${years} year${years === 1 ? "" : "s"}` : null,
+          months > 0 ? `${months} month${months === 1 ? "" : "s"}` : null,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+  return { years, months, label };
+}
+
 export function counterYearStart(activationDate: Date, at: Date = new Date()): string {
   const activationDay = istDay(activationDate);
   const today = istDay(at);

@@ -72,6 +72,7 @@ import {
   countsAsUnpaid,
   generateCommission,
   isLeapYear,
+  membershipExperience,
   needsPaymentTask,
   nextNetworkPosition,
   opportunityReopens,
@@ -1268,5 +1269,45 @@ assert.equal(
   "the rebuilt count is capped at three lifetime slots"
 );
 assert.equal(rebuildLoyaltyCount([]), 0);
+
+/* ---------------------------- Member experience (derived, never stored) */
+
+// Nothing to show until the Member is activated.
+assert.equal(membershipExperience(null), null);
+assert.equal(membershipExperience(undefined), null);
+// An activation dated in the future is not experience yet.
+assert.equal(membershipExperience(new Date("2026-09-01"), new Date("2026-08-21")), null);
+
+// Activated today.
+assert.deepEqual(membershipExperience(new Date("2026-08-21"), new Date("2026-08-21")), {
+  years: 0,
+  months: 0,
+  label: "Less than a month",
+});
+
+assert.equal(
+  membershipExperience(new Date("2025-07-21"), new Date("2026-08-21"))?.label,
+  "1 year 1 month",
+  "thirteen months reads as one year and one month, singular"
+);
+assert.equal(
+  membershipExperience(new Date("2023-04-10"), new Date("2026-08-21"))?.label,
+  "3 years 4 months"
+);
+assert.equal(
+  membershipExperience(new Date("2023-08-21"), new Date("2026-08-21"))?.label,
+  "3 years",
+  "on the anniversary itself the months are not mentioned"
+);
+assert.equal(
+  membershipExperience(new Date("2026-06-30"), new Date("2026-08-21"))?.label,
+  "1 month",
+  "a day short of the second month still reads as one"
+);
+
+// RD-02 — a 29 February Member gains the year on 28 February in a non-leap
+// year, the same day their annual counter rolls. Not a day later.
+assert.equal(membershipExperience(new Date("2024-02-29"), new Date("2025-02-28"))?.years, 1);
+assert.equal(membershipExperience(new Date("2024-02-29"), new Date("2025-02-27"))?.years, 0);
 
 console.log("domain.check.ts OK");

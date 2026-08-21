@@ -28,6 +28,10 @@ import {
   type MemberDetail,
 } from "./actions";
 
+/** Filters sit inline and size to their content, unlike a form field. */
+const filterClass =
+  "h-9 w-auto rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+
 export type MemberRowView = {
   id: string;
   memberId: string;
@@ -37,6 +41,7 @@ export type MemberRowView = {
   city: string;
   status: string;
   activationDate: string | null;
+  experience: string | null;
   invitedBy: string | null;
   invitePosition: number | null;
   inviteRatePercent: string | null;
@@ -183,7 +188,7 @@ export default function MembersClient({
 
         <div className="flex flex-wrap items-center gap-2">
           <select
-            className={`${inputClass} h-9 w-auto`}
+            className={filterClass}
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             aria-label="Filter by status"
@@ -258,6 +263,11 @@ export default function MembersClient({
                         {row.memberId}
                       </button>
                       <span className="block text-[11px] text-muted-foreground">{row.name}</span>
+                      {row.experience && (
+                        <span className="block text-[11px] text-muted-foreground">
+                          {row.experience} as a Member
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-xs">
                       {row.mobileMasked}
@@ -610,7 +620,8 @@ function MemberDetailPanel({
       {tab === "NETWORK" && (
         <div className="space-y-4 text-xs">
           <p className="text-muted-foreground">
-            Activated {row.activationDate ? formatIst(row.activationDate) : "—"}. Positions are
+            Activated {row.activationDate ? formatIst(row.activationDate) : "—"}
+            {row.experience ? ` · ${row.experience} as a Member` : ""}. Positions are
             assigned once and never renumbered; at each anniversary only newly introduced Members or
             Customers enter the new annual counter.
           </p>

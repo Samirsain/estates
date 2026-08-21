@@ -61,6 +61,7 @@ export type PortalData = {
   memberId: string;
   name: string;
   activationDate: string | null;
+  experience: string | null;
   invitedBy: string | null;
   invitePosition: number | null;
   inviteRatePercent: string | null;
@@ -299,6 +300,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
             label="Activation date"
             value={data.activationDate ? formatIst(data.activationDate) : "Not activated"}
           />
+          <Row label="Experience" value={data.experience ?? "Not activated"} />
           <Row label="Invited By" value={data.invitedBy ?? "—"} />
           <Row
             label="Position and band"
