@@ -1,0 +1,67 @@
+name: Scheduled jobs
+
+# The scheduler for a host without one — PRD §18.
+#
+# Render's cron is a paid service type, so on the free plan this workflow calls
+# the jobs endpoint instead. Every job is idempotent, so a duplicate trigger or
+# a catch-up after downtime is safe.
+#
+# Two limitations, stated plainly:
+#   - GitHub's schedule is best effort. A run can be delayed by several minutes
+#     under load, or skipped. Hold expiry catches up on the next run, which is
+#     exactly what the jobs were built for — but it is not a precise clock.
+#   - GitHub disables scheduled workflows on a repository with no activity for
+#     60 days. Move to Render cron once the service is on a paid plan.
+#
+# Repository secrets required:
+#   APP_URL      https://your-service.onrender.com
+#   JOBS_SECRET  the same value the service has
+
+on:
+  schedule:
+    # Every 15 minutes: a Hold expires at its exact stored time.
+    - cron: "*/15 * * * *"
+    # 19:30 UTC = 01:00 IST the next morning, for the daily catalogue.
+    - cron: "30 19 * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "One job name, or blank for the whole catalogue"
+        required: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the jobs endpoint
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          JOBS_SECRET: ${{ secrets.JOBS_SECRET }}
+          MANUAL_JOB: ${{ github.event.inputs.job }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${MANUAL_JOB:-}" ]; then
+            JOBS="$MANUAL_JOB"
+          elif [ "${{ github.event.schedule }}" = "30 19 * * *" ]; then
+            JOBS="INSTALMENT_OVERDUE PAYMENT_RECEIVED_REMINDER PAYMENT_GIVEN_REMINDER BOOKING_DECISION_ALERT RERA_EXPIRY_REMINDER ANNUAL_COUNTER_RESET"
+          else
+            JOBS="HOLD_EXPIRY MEMBER_HOLD_REQUEST_EXPIRY"
+          fi
+
+          FAILED=0
+          for JOB in $JOBS; do
+            echo "--- $JOB"
+            # A free service may be asleep; the first call can take ~60s to wake it.
+            CODE=$(curl -sS -o /tmp/out.json -w "%{http_code}" --max-time 300 \
+              -H "Authorization: Bearer $JOBS_SECRET" \
+              "$APP_URL/api/jobs?job=$JOB") || CODE=000
+            cat /tmp/out.json || true
+            echo
+            if [ "$CODE" != "200" ]; then
+              echo "::error::$JOB returned HTTP $CODE"
+              FAILED=1
+            fi
+          done
+
+          exit $FAILED

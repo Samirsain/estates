@@ -1,17 +1,28 @@
-# Render blueprint — a persistent Node service, which suits this application:
-# a contested command may hold a transaction for ~30 seconds, and a full job
-# catalogue run grows with the book. Neither is constrained here.
+# Render blueprint — the whole application is one service. There is no separate
+# frontend and backend to split: the pages, the business rules and the two HTTP
+# endpoints are one Next.js deployment.
+#
+# Starting on the free plan. Two things to know about it:
+#
+#   1. A free service sleeps after 15 minutes of inactivity, and the next
+#      request waits roughly a minute while it wakes. Fine for testing and UAT,
+#      not fine once staff use it daily — change `plan` to `starter` then.
+#   2. Render's scheduled jobs are a paid service type, so the free plan runs no
+#      cron. The scheduler lives in .github/workflows/scheduled-jobs.yml
+#      instead. On a paid plan, prefer Render cron: see the commented block at
+#      the bottom of this file.
 #
 # Set the six secrets in the Render dashboard, never in this file.
-# Pick the region closest to the database (Supabase is in ap-south-1, Mumbai).
 
 services:
   - type: web
     name: three-percent-club-crm
     runtime: node
-    plan: starter
+    plan: free
+    # Render has no India region; Singapore is the closest to the Mumbai
+    # database. Keep the two as close as the platform allows.
     region: singapore
-    buildCommand: npm ci && npx prisma generate && npm run build
+    buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -29,45 +40,31 @@ services:
         sync: false
       - key: JOBS_SECRET
         sync: false
-      # Only where a trusted proxy overwrites X-Forwarded-For.
+      # Render terminates TLS in front of the app and sets X-Forwarded-For.
       - key: TRUST_PROXY
         value: "true"
+      # Never set ALLOW_CHECK_WRITES here. The check scripts write and delete
+      # tagged data; they must never point at production.
 
-  # PRD §18 — the scheduler. Every job is idempotent, so a duplicate or a
-  # catch-up run after downtime is safe. Times are UTC; the business runs on
-  # Asia/Kolkata, so 19:30 UTC is 01:00 IST the next morning.
-  - type: cron
-    name: crm-hold-expiry
-    runtime: node
-    plan: starter
-    region: singapore
-    schedule: "*/15 * * * *"
-    buildCommand: npm ci && npx prisma generate
-    startCommand: npm run jobs:run -- HOLD_EXPIRY
-    envVars:
-      - key: DATABASE_URL
-        sync: false
-      - key: DIRECT_URL
-        sync: false
-      - key: SENSITIVE_KEY
-        sync: false
-      - key: BLIND_INDEX_KEY
-        sync: false
-
-  - type: cron
-    name: crm-daily-jobs
-    runtime: node
-    plan: starter
-    region: singapore
-    schedule: "30 19 * * *"
-    buildCommand: npm ci && npx prisma generate
-    startCommand: npm run jobs:run
-    envVars:
-      - key: DATABASE_URL
-        sync: false
-      - key: DIRECT_URL
-        sync: false
-      - key: SENSITIVE_KEY
-        sync: false
-      - key: BLIND_INDEX_KEY
-        sync: false
+# On a paid plan, replace the GitHub Actions scheduler with these — they run
+# inside Render, next to the database, and do not depend on GitHub:
+#
+#  - type: cron
+#    name: crm-expiry
+#    runtime: node
+#    plan: starter
+#    region: singapore
+#    schedule: "*/15 * * * *"
+#    buildCommand: npm ci
+#    startCommand: npm run jobs:run -- HOLD_EXPIRY
+#    envVars: [ ... same six secrets ... ]
+#
+#  - type: cron
+#    name: crm-daily
+#    runtime: node
+#    plan: starter
+#    region: singapore
+#    schedule: "30 19 * * *"        # 01:00 IST the next morning
+#    buildCommand: npm ci
+#    startCommand: npm run jobs:run
+#    envVars: [ ... same six secrets ... ]

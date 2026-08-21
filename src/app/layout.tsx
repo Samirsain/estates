@@ -18,7 +18,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-background text-foreground overflow-x-hidden">
+      {/*
+        Browser extensions add attributes to <body> before React hydrates —
+        ColorZilla adds cz-shortcut-listen, password managers add their own. The
+        server never sent those, so React reports a mismatch that is nobody's
+        bug. This silences it for this element's attributes only; a real
+        mismatch inside the app still reports normally.
+      */}
+      <body
+        suppressHydrationWarning
+        className="min-h-screen bg-background text-foreground overflow-x-hidden"
+      >
         {children}
       </body>
     </html>
