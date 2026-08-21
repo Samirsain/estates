@@ -3,6 +3,9 @@
 // Run: npm run phase6:check   (requires a seeded database)
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
+import { assertCheckDatabase } from "./check-guard.ts";
+
+assertCheckDatabase();
 import { purgeCheckData } from "./check-cleanup.ts";
 import {
   decideBookingRequest,

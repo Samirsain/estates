@@ -13,7 +13,7 @@ sections require.
 ## 1. Commands
 
 | Command | Produces |
-|---|---|
+| --- | --- |
 | `npm run check` | Pure-rule evidence: task rules, security/permission matrix, every domain rule for Phases 2–6, plus a full TypeScript check. No database needed. |
 | `npm run db:check` | The full database run: schema/constraint checks, then the Booking, commission, Phase 5, Phase 6 and Phase 7 service checks end to end. |
 | `npm run phase7:check` | Hardening evidence on its own: idempotency retry, concurrency, permission abuse, scheduler retry and catch-up, and an exception-free reconciliation. |
@@ -23,7 +23,7 @@ sections require.
 
 Redirect the reconciliation to a file for the copy that gets signed:
 
-```
+```bash
 npm run reconcile > reconciliation-<date>.txt
 ```
 
@@ -32,7 +32,7 @@ npm run reconcile > reconciliation-<date>.txt
 ## 2. Gate map (PRD §27)
 
 | Gate | Evidence | How |
-|---|---|---|
+| --- | --- | --- |
 | 1. Signed v3.0 and v3.1 | Owner sign-off | Outside the CRM |
 | 2. Field-level permissions and maker-checker | Permission matrix tests; server-side refusal of crafted requests | `npm run check` (matrix), `npm run phase7:check` (abuse) |
 | 3. Status transition and restoration tests | Transition table, rejection/cancellation restoration | `npm run check`, `npm run db:check` |
@@ -54,7 +54,7 @@ npm run reconcile > reconciliation-<date>.txt
 [`ARCHITECTURE.md`](./ARCHITECTURE.md) §13 and [`main-PRD.md`](./main-PRD.md) §27.3:
 
 | Rule | Clause |
-|---|---|
+| --- | --- |
 | `one_allocation_per_plot` | Every Plot reconciles to one active allocation |
 | `booking_plot_state_pairs` | Booking and Plot statuses agree |
 | `payment_datasets_separate` | Received and Given stay separate, and each side's stored progress equals its own confirmed entries |

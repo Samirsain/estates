@@ -3,6 +3,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
+import { assertCheckDatabase } from "./check-guard.ts";
+
+assertCheckDatabase();
 import { hashPassword, totpCode, verifyPassword, verifyTotp } from "../src/lib/security/auth.ts";
 import { blindIndex, decryptSensitive, encryptSensitive } from "../src/lib/security/identity.ts";
 

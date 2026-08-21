@@ -256,17 +256,36 @@ export async function runPreSalesJobs(now: Date = new Date()): Promise<JobResult
  * PRD §18 — the full daily run. Every job records its own start, finish, counts
  * and error, so one failure is visible per job and never stops the rest.
  */
+/**
+ * The job catalogue, keyed by the name the scheduler calls. Running one job per
+ * request keeps every invocation short, which matters on a host that caps how
+ * long a single request may run: `runPaymentReceivedReminder` opens a
+ * transaction per Booking, so a full catalogue run grows with the book.
+ */
+export const JOBS = {
+  HOLD_EXPIRY: runHoldExpiry,
+  MEMBER_HOLD_REQUEST_EXPIRY: runHoldRequestExpiry,
+  INSTALMENT_OVERDUE: runInstalmentOverdue,
+  PAYMENT_RECEIVED_REMINDER: runPaymentReceivedReminder,
+  PAYMENT_GIVEN_REMINDER: runPaymentGivenReminder,
+  BOOKING_DECISION_ALERT: runBookingDecisionAlert,
+  RERA_EXPIRY_REMINDER: runReraExpiryReminder,
+  ANNUAL_COUNTER_RESET: runAnnualCounterReset,
+} as const;
+
+export type JobName = keyof typeof JOBS;
+
+export function isJobName(value: string): value is JobName {
+  return value in JOBS;
+}
+
+/** One named job. Idempotent, exactly as the catalogue run is. */
+export function runJob(name: JobName, now: Date = new Date()): Promise<JobResult> {
+  return JOBS[name](now);
+}
+
 export async function runAllJobs(now: Date = new Date()): Promise<JobResult[]> {
-  const jobs = [
-    runHoldExpiry,
-    runHoldRequestExpiry,
-    runInstalmentOverdue,
-    runPaymentReceivedReminder,
-    runPaymentGivenReminder,
-    runBookingDecisionAlert,
-    runReraExpiryReminder,
-    runAnnualCounterReset,
-  ];
+  const jobs = Object.values(JOBS);
 
   const results: JobResult[] = [];
   for (const job of jobs) {

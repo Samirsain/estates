@@ -7,6 +7,9 @@
 // clean reconciliation. Everything it creates is tagged and purged again.
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
+import { assertCheckDatabase } from "./check-guard.ts";
+
+assertCheckDatabase();
 import { purgeCheckData } from "./check-cleanup.ts";
 import { CommandError } from "@/lib/services/command";
 import { createHold } from "@/lib/services/hold-service";

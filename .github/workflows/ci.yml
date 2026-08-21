@@ -1,0 +1,41 @@
+name: CI
+
+# The database-free half of the verification suite, on every push and pull
+# request. The end-to-end checks (npm run db:check) need a real PostgreSQL and
+# write tagged data, so they stay a deliberate local or staging run — see
+# prisma/check-guard.ts.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      # Placeholders only. Nothing here connects to a database: Prisma connects
+      # lazily and every page is server-rendered on demand, never at build time.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?pgbouncer=true
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+      SESSION_SECRET: ci-placeholder-session-secret-32-chars
+      SENSITIVE_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+      BLIND_INDEX_KEY: "1111111111111111111111111111111111111111111111111111111111111111"
+      JOBS_SECRET: ci-placeholder
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      # Task rules, the permission matrix, every domain rule, and a full
+      # TypeScript check.
+      - run: npm run check
+
+      - run: npm run build

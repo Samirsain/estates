@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -22,7 +22,9 @@
     "phase6:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/phase6.check.ts",
     "phase7:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/phase7.check.ts",
     "acquisition:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/acquisition.check.ts",
-    "reconcile": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reconcile.ts"
+    "reconcile": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reconcile.ts",
+    "rotate:key": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/rotate-key.ts",
+    "jobs:run": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/run-jobs.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

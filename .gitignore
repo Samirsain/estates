@@ -25,3 +25,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Session log — contains live database credentials and MFA secrets in plain text.
+# Keep it local; never commit it.
+system/dd.md
