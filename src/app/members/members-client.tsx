@@ -5,7 +5,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Eye, Plus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, Plus, Share2, Copy } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { formatIst, istDay, type StaffRole } from "@/lib/tasks";
 import {
   activateMemberAction,
+  createAndActivateMemberAction,
   decideBankDetailsAction,
   enterBankDetailsAction,
   loadBankDetails,
@@ -120,6 +121,17 @@ export default function MembersClient({
   const [openId, setOpenId] = React.useState<string | null>(null);
   const [detail, setDetail] = React.useState<MemberDetail | null>(null);
   const [banks, setBanks] = React.useState<BankDetailView[]>([]);
+
+  function copyInviteText(memberId: string, name: string) {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const link = `${origin}/login?tab=member&loginId=${memberId}`;
+    const text = `🌟 Welcome to 3% Club Real Estate Partner Network!\n\nHi ${name}, your Member account (${memberId}) is active.\n\n🔗 Direct Portal Link:\n${link}\n\n🆔 Member ID: ${memberId}\n🔑 Initial Password: ChangeMe#2026\n\nClick the link above to access your portal, view inventory, request plot holds, and submit buyer leads!`;
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      setNotice({ kind: "ok", text: `Copied portal invitation link & credentials for ${memberId} (${name}) to clipboard!` });
+    }
+  }
 
   const visible = rows.filter(
     (r) =>
@@ -315,6 +327,16 @@ export default function MembersClient({
                     </td>
                     <td className="rounded-r-xl px-3 py-3">
                       <div className="flex flex-wrap gap-1">
+                        {row.status === "ACTIVE" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Copy Portal Invite Link & Credentials"
+                            onClick={() => copyInviteText(row.memberId, row.name)}
+                          >
+                            <Share2 className="mr-1 h-3.5 w-3.5" /> Invite Link
+                          </Button>
+                        )}
                         {permissions.deactivate && (
                           <Button
                             size="sm"
@@ -364,66 +386,14 @@ export default function MembersClient({
       </div>
 
       {dialog?.kind === "ACTIVATE" && (
-        <Modal
-          title="Activate Member"
-          description="Activation is recorded now and cannot be backdated. The Member ID and the Network position become active at this moment."
+        <ActivateMemberDialogForm
+          activatable={activatable}
+          rows={rows}
+          busy={busy}
           onClose={() => setDialog(null)}
-        >
-          <form
-            className="space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              run(() =>
-                activateMemberAction(
-                  {
-                    personId: String(f.get("personId")),
-                    invitedByMemberId: String(f.get("invitedByMemberId") ?? ""),
-                    reraStatus: String(f.get("reraStatus")) as "PENDING",
-                    reraNumber: String(f.get("reraNumber") ?? ""),
-                    reraExpiryDate: String(f.get("reraExpiryDate") ?? ""),
-                    reraNotApplicableReason: String(f.get("reraNotApplicableReason") ?? ""),
-                  },
-                  newKey()
-                )
-              );
-            }}
-          >
-            <Field label="Person">
-              <select name="personId" required className={inputClass} defaultValue="">
-                <option value="" disabled>
-                  Select a Person
-                </option>
-                {activatable.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Invited By — the position and band are taken under this Member">
-              <select name="invitedByMemberId" className={inputClass} defaultValue="">
-                <option value="">No inviting Member</option>
-                {rows
-                  .filter((r) => r.status === "ACTIVE")
-                  .map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.memberId} · {r.name}
-                    </option>
-                  ))}
-              </select>
-            </Field>
-            <ReraFields />
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setDialog(null)}>
-                Back
-              </Button>
-              <Button type="submit" size="sm" disabled={busy}>
-                {busy ? "Processing…" : "Confirm activation"}
-              </Button>
-            </div>
-          </form>
-        </Modal>
+          onSubmitExisting={(input) => run(() => activateMemberAction(input, newKey()))}
+          onSubmitNew={(input) => run(() => createAndActivateMemberAction(input, newKey()))}
+        />
       )}
 
       {dialog?.kind === "STATUS" && (
@@ -927,5 +897,138 @@ function ReraFields({ row }: { row?: MemberRowView }) {
         </Field>
       )}
     </>
+  );
+}
+
+function ActivateMemberDialogForm({
+  activatable,
+  rows,
+  busy,
+  onClose,
+  onSubmitExisting,
+  onSubmitNew,
+}: {
+  activatable: Array<{ id: string; label: string }>;
+  rows: MemberRowView[];
+  busy: boolean;
+  onClose: () => void;
+  onSubmitExisting: (input: Parameters<typeof activateMemberAction>[0]) => void;
+  onSubmitNew: (input: Parameters<typeof createAndActivateMemberAction>[0]) => void;
+}) {
+  const [personMode, setPersonMode] = React.useState<"existing" | "new">(
+    activatable.length > 0 ? "existing" : "new"
+  );
+
+  return (
+    <Modal
+      title="Activate Member"
+      description="Activation is recorded now and cannot be backdated. The Member ID and Network position become active immediately."
+      onClose={onClose}
+    >
+      <div className="flex gap-2 pb-2">
+        <button
+          type="button"
+          onClick={() => setPersonMode("existing")}
+          className={`flex-1 rounded-xl border py-2 text-center text-xs font-semibold ${
+            personMode === "existing"
+              ? "border-primary/40 bg-primary/15 text-primary"
+              : "border-border/60 text-muted-foreground"
+          }`}
+        >
+          Select Existing Person ({activatable.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setPersonMode("new")}
+          className={`flex-1 rounded-xl border py-2 text-center text-xs font-semibold ${
+            personMode === "new"
+              ? "border-primary/40 bg-primary/15 text-primary"
+              : "border-border/60 text-muted-foreground"
+          }`}
+        >
+          + Create New Person
+        </button>
+      </div>
+
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const f = new FormData(e.currentTarget);
+          if (personMode === "existing") {
+            onSubmitExisting({
+              personId: String(f.get("personId")),
+              invitedByMemberId: String(f.get("invitedByMemberId") ?? ""),
+              reraStatus: String(f.get("reraStatus")) as "PENDING",
+              reraNumber: String(f.get("reraNumber") ?? ""),
+              reraExpiryDate: String(f.get("reraExpiryDate") ?? ""),
+              reraNotApplicableReason: String(f.get("reraNotApplicableReason") ?? ""),
+            });
+          } else {
+            onSubmitNew({
+              fullName: String(f.get("fullName")),
+              mobile: String(f.get("mobile")),
+              city: String(f.get("city") ?? ""),
+              invitedByMemberId: String(f.get("invitedByMemberId") ?? ""),
+              reraStatus: String(f.get("reraStatus")) as "PENDING",
+              reraNumber: String(f.get("reraNumber") ?? ""),
+              reraExpiryDate: String(f.get("reraExpiryDate") ?? ""),
+              reraNotApplicableReason: String(f.get("reraNotApplicableReason") ?? ""),
+            });
+          }
+        }}
+      >
+        {personMode === "existing" ? (
+          <Field label="Person">
+            <select name="personId" required className={inputClass} defaultValue="">
+              <option value="" disabled>
+                Select a Person
+              </option>
+              {activatable.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : (
+          <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+            <Field label="Full Name">
+              <Input name="fullName" required placeholder="e.g. Samir Sain" />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Primary Mobile">
+                <Input name="mobile" required placeholder="9876543210" inputMode="tel" />
+              </Field>
+              <Field label="City (optional)">
+                <Input name="city" placeholder="Jaipur" />
+              </Field>
+            </div>
+          </div>
+        )}
+
+        <Field label="Invited By — position and rate band are taken under this Member">
+          <select name="invitedByMemberId" className={inputClass} defaultValue="">
+            <option value="">No inviting Member (Root Member)</option>
+            {rows
+              .filter((r) => r.status === "ACTIVE")
+              .map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.memberId} · {r.name}
+                </option>
+              ))}
+          </select>
+        </Field>
+        <ReraFields />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+            Back
+          </Button>
+          <Button type="submit" size="sm" disabled={busy}>
+            {busy ? "Processing…" : "Confirm activation"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

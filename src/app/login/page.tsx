@@ -15,9 +15,9 @@ const MESSAGES: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; error?: string }>;
+  searchParams: Promise<{ tab?: string; error?: string; loginId?: string }>;
 }) {
-  const { tab = "staff", error } = await searchParams;
+  const { tab = "staff", error, loginId = "" } = await searchParams;
   const member = tab === "member";
 
   return (
@@ -71,6 +71,7 @@ export default async function LoginPage({
                 name="loginId"
                 required
                 autoComplete="username"
+                defaultValue={loginId}
                 placeholder={member ? "MEM-0217" : "STF-0001"}
               />
             </label>

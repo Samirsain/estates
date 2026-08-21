@@ -66,6 +66,64 @@ export async function activateMemberAction(
   }
 }
 
+export async function createAndActivateMemberAction(
+  input: {
+    fullName: string;
+    mobile: string;
+    city?: string;
+    invitedByMemberId: string;
+    reraStatus: "REGISTERED" | "PENDING" | "EXPIRED" | "NOT_APPLICABLE";
+    reraNumber: string;
+    reraExpiryDate: string;
+    reraNotApplicableReason: string;
+  },
+  key: string
+): Promise<ActionResult & { memberId?: string }> {
+  const actor = await requireStaff("MEMBER_ACTIVATE");
+  try {
+    const fullName = input.fullName.trim();
+    const primaryMobile = input.mobile.replace(/\s/g, "");
+    if (!fullName || !primaryMobile) throw new Error("Enter the member's full name and mobile number.");
+
+    let person = await db.person.findFirst({
+      where: {
+        primaryMobile,
+        fullName: { equals: fullName, mode: "insensitive" },
+        mergeStatus: { not: "MERGED_AWAY" },
+      },
+    });
+
+    if (!person) {
+      person = await db.person.create({
+        data: { fullName, primaryMobile, city: input.city?.trim() || null },
+      });
+    }
+
+    const result = await activateMember({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      personId: person.id,
+      invitedByMemberId: input.invitedByMemberId || null,
+      reraStatus: input.reraStatus,
+      reraNumber: input.reraNumber || null,
+      reraExpiryDate: input.reraExpiryDate ? new Date(input.reraExpiryDate) : null,
+      reraNotApplicableReason: input.reraNotApplicableReason || null,
+    });
+
+    refresh();
+    return {
+      ok: true,
+      memberId: result.memberId,
+      message: result.invitePosition
+        ? `Created & Activated as ${result.memberId} at Network position ${result.invitePosition} (${result.inviteRatePercent}% band).`
+        : `Created & Activated as ${result.memberId}. No inviting Member was recorded.`,
+    };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
 export async function setMemberStatusAction(
   memberProfileId: string,
   active: boolean,
