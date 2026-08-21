@@ -1,0 +1,288 @@
+// Enquiry service — PRD.md §6.4, §7; DESIGN.md §8.
+
+import type { EnquirySource, FollowUpOutcome } from "@prisma/client";
+import { db } from "@/lib/db";
+import { resolveOriginalIntroducer, validateSource } from "@/lib/domain/enquiry";
+import { blocked, nextReference, runCommand, type Tx } from "./command";
+import { assignIntroducedPosition } from "./network-service";
+import { completeTask, ensureTask, reviseTask } from "./task-service";
+
+export const ENQUIRY_FOLLOW_UP_PURPOSE = "ENQUIRY_FOLLOW_UP";
+
+/**
+ * PRD §6.4 — freezes Original Introduced By Member from the earliest valid
+ * Member-sourced Enquiry. An existing relationship is never overwritten.
+ */
+export async function applyIntroducerFreeze(tx: Tx, personId: string) {
+  const customer = await tx.customerProfile.findUnique({ where: { personId } });
+  if (!customer) return null; // The claim stays on the Enquiry until a Customer exists.
+
+  const claims = await tx.enquiry.findMany({
+    where: { personId, source: "BY_MEMBER", sourceMemberId: { not: null } },
+    select: { enquiryNo: true, sourceMemberId: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const resolved = resolveOriginalIntroducer(
+    customer.originalIntroducedByMemberId,
+    claims.map((c) => ({ enquiryId: c.enquiryNo, memberId: c.sourceMemberId!, at: c.createdAt }))
+  );
+  if (resolved.frozen || !resolved.memberId) return customer.originalIntroducedByMemberId;
+
+  // RD-02 — freezing the relationship also takes the Customer's position in the
+  // introducing Member's annual Introduced Customer Counter. Without it the
+  // Royalty band would have no position to read.
+  await assignIntroducedPosition(tx, {
+    customerProfileId: customer.id,
+    introducingMemberId: resolved.memberId,
+  });
+  return resolved.memberId;
+}
+
+/**
+ * PRD §23.2 — the Person duplicate check runs, but an existing Person's
+ * details are never exposed to the Member. The Enquiry links to the existing
+ * Person silently, or creates a new one. A shared mobile alone does not merge
+ * two Persons, so the match is on name and mobile together (PRD §17.1).
+ */
+export async function linkOrCreatePerson(
+  tx: Tx,
+  input: { fullName: string; mobile: string; city?: string }
+) {
+  const fullName = input.fullName.trim();
+  const primaryMobile = input.mobile.replace(/\s/g, "");
+  if (!fullName || !primaryMobile) blocked("Enter the buyer's name and mobile number.");
+
+  const existing = await tx.person.findFirst({
+    where: {
+      primaryMobile,
+      fullName: { equals: fullName, mode: "insensitive" },
+      mergeStatus: { not: "MERGED_AWAY" },
+    },
+  });
+  if (existing) return existing;
+
+  return tx.person.create({
+    data: { fullName, primaryMobile, city: input.city?.trim() || null },
+  });
+}
+
+/** PRD §23.2 — a Member-submitted Enquiry is assigned to CRM, never to the Member. */
+export async function defaultCrmAssignee(tx: Tx) {
+  // ponytail: first active CRM account. Swap for a real round-robin or a
+  // configured relationship-CRM when Admin defines the assignment policy.
+  const staff = await tx.staffAccount.findFirst({
+    where: { role: "CRM", status: "ACTIVE" },
+    orderBy: { staffAccountId: "asc" },
+  });
+  if (!staff) blocked("No active CRM user is available to receive this Enquiry.");
+  return staff;
+}
+
+export type CreateEnquiryInput = {
+  idempotencyKey: string;
+  actorRef: string;
+  actorRole: string;
+  personId: string;
+  projectId: string;
+  plotId?: string | null;
+  source: EnquirySource;
+  sourceMemberId?: string | null;
+  sourceCustomerId?: string | null;
+  assignedStaffId: string;
+  assigneeRole: "CRM" | "ADMIN" | "MD";
+  nextFollowUpAt: Date;
+  remark?: string;
+};
+
+export async function createEnquiry(input: CreateEnquiryInput) {
+  const sourceError = validateSource(
+    input.source,
+    input.sourceMemberId ?? null,
+    input.sourceCustomerId ?? null
+  );
+  if (sourceError) blocked(sourceError);
+
+  return runCommand(
+    {
+      idempotencyKey: input.idempotencyKey,
+      operation: "ENQUIRY_CREATE",
+      actorRef: input.actorRef,
+      actorRole: input.actorRole,
+      payload: {
+        personId: input.personId,
+        projectId: input.projectId,
+        plotId: input.plotId ?? null,
+      },
+    },
+    async (tx) => {
+      // PRD §7.1 — one Active Enquiry per Person + Project + Plot, and one
+      // Active general Enquiry per Person + Project.
+      const duplicate = await tx.enquiry.findFirst({
+        where: {
+          personId: input.personId,
+          projectId: input.projectId,
+          plotId: input.plotId ?? null,
+          status: "ACTIVE",
+        },
+      });
+      if (duplicate) {
+        blocked(
+          `An Active Enquiry (${duplicate.enquiryNo}) already exists for this Person, Project and Plot. ` +
+            `Open that Enquiry and use Follow-up instead of creating another.`
+        );
+      }
+
+      const enquiryNo = await nextReference(tx, "ENQ", "Enquiry");
+      const person = await tx.person.findUniqueOrThrow({ where: { id: input.personId } });
+      const project = await tx.project.findUniqueOrThrow({ where: { id: input.projectId } });
+
+      const enquiry = await tx.enquiry.create({
+        data: {
+          enquiryNo,
+          personId: input.personId,
+          projectId: input.projectId,
+          plotId: input.plotId ?? null,
+          source: input.source,
+          sourceMemberId: input.sourceMemberId ?? null,
+          sourceCustomerId: input.sourceCustomerId ?? null,
+          assignedStaffId: input.assignedStaffId,
+          remark: input.remark,
+        },
+      });
+
+      await applyIntroducerFreeze(tx, input.personId);
+
+      // Each Active Enquiry carries exactly one Pending follow-up task.
+      await ensureTask(tx, {
+        recordKind: "Enquiry",
+        recordId: enquiry.id,
+        recordName: `${person.fullName} — ${project.name}`,
+        purpose: ENQUIRY_FOLLOW_UP_PURPOSE,
+        title: "Enquiry Follow-up",
+        assigneeRole: input.assigneeRole,
+        assigneeStaffId: input.assignedStaffId,
+        dueAt: input.nextFollowUpAt,
+        latestResult: input.remark ?? "New Enquiry",
+      });
+
+      return {
+        result: { enquiryId: enquiry.id, enquiryNo },
+        audit: {
+          entity: "Enquiry",
+          entityId: enquiry.id,
+          action: "ENQUIRY_CREATED",
+          after: { enquiryNo, source: input.source, projectId: input.projectId },
+          reason: input.remark,
+        },
+      };
+    }
+  );
+}
+
+/** Revise reuses the same Pending task for that Enquiry (PRD §7.1). */
+export async function recordFollowUp(args: {
+  idempotencyKey: string;
+  actorRef: string;
+  actorRole: string;
+  enquiryId: string;
+  outcome: FollowUpOutcome;
+  remark?: string;
+  nextAt: Date;
+}) {
+  return runCommand(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "ENQUIRY_FOLLOW_UP",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { enquiryId: args.enquiryId, outcome: args.outcome, nextAt: args.nextAt.toISOString() },
+    },
+    async (tx) => {
+      const enquiry = await tx.enquiry.findUniqueOrThrow({ where: { id: args.enquiryId } });
+      if (enquiry.status !== "ACTIVE") blocked("Follow-up applies only to an Active Enquiry.");
+
+      await tx.enquiryFollowUp.create({
+        data: {
+          enquiryId: args.enquiryId,
+          actorRef: args.actorRef,
+          outcome: args.outcome,
+          remark: args.remark,
+          nextAt: args.nextAt,
+        },
+      });
+
+      const task = await tx.task.findFirst({
+        where: { recordKind: "Enquiry", recordId: args.enquiryId, purpose: ENQUIRY_FOLLOW_UP_PURPOSE, status: "PENDING" },
+      });
+      if (task) {
+        await reviseTask(
+          tx,
+          task.id,
+          args.actorRef,
+          args.nextAt,
+          args.outcome.replaceAll("_", " ").toLowerCase(),
+          args.remark
+        );
+      }
+
+      return {
+        result: { enquiryId: args.enquiryId, nextAt: args.nextAt.toISOString() },
+        audit: {
+          entity: "Enquiry",
+          entityId: args.enquiryId,
+          action: "FOLLOW_UP_RECORDED",
+          after: { outcome: args.outcome, nextAt: args.nextAt },
+          reason: args.remark,
+        },
+      };
+    }
+  );
+}
+
+export async function closeEnquiry(args: {
+  idempotencyKey: string;
+  actorRef: string;
+  actorRole: string;
+  enquiryId: string;
+  closeReason: string;
+}) {
+  if (!args.closeReason.trim()) blocked("A Close reason is compulsory.");
+  return runCommand(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "ENQUIRY_CLOSE",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { enquiryId: args.enquiryId },
+    },
+    async (tx) => {
+      await tx.enquiry.update({
+        where: { id: args.enquiryId },
+        data: { status: "CLOSED", closeReason: args.closeReason },
+      });
+      const task = await tx.task.findFirst({
+        where: { recordKind: "Enquiry", recordId: args.enquiryId, status: "PENDING" },
+      });
+      if (task) await completeTask(tx, task.id, args.actorRef, `Enquiry closed — ${args.closeReason}`);
+
+      return {
+        result: { enquiryId: args.enquiryId },
+        audit: {
+          entity: "Enquiry",
+          entityId: args.enquiryId,
+          action: "ENQUIRY_CLOSED",
+          reason: args.closeReason,
+        },
+      };
+    }
+  );
+}
+
+export function listEnquiries() {
+  return db.enquiry.findMany({
+    include: { person: true, project: true, plot: true, sourceMember: true, assignedStaff: true },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+}

@@ -1,0 +1,1678 @@
+// 3% Club CRM v3.1 — Phase 1 (identity and security), Phase 2 (inventory,
+// enquiries, holds, tasks) and Phase 3 (bookings, ownership shares, Payment
+// Received, external references).
+// Boundaries: ARCHITECTURE.md §5. Business rules: PRD.md §7–§10, §12, §14–§17, §20, §22, §24.
+// No rupee column exists anywhere in this schema by design (PRD §1.2).
+// Phase 4 (commission and network) and Phase 5 (cancellation, Change Plot,
+// acquisition and Payment Given) complete the transactional model.
+
+datasource db {
+  provider = "postgresql"
+  // Runtime traffic goes through the Supabase transaction pooler.
+  url       = env("DATABASE_URL")
+  // Schema changes need a direct (non-pooled) connection.
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum StaffRole {
+  MD
+  ADMIN
+  ACCOUNTS
+  CRM
+  MIS
+  PC
+}
+
+enum AccountStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum MemberStatus {
+  ACTIVE
+  DEACTIVATED
+}
+
+/// PRD §14.1 — Pending: no valid number. Available: valid-format number recorded.
+/// Verified: authorised staff has checked identity.
+enum AadhaarStatus {
+  PENDING
+  AVAILABLE
+  VERIFIED
+}
+
+/// PRD §14.2 — PAN Available requires a PAN Number; Not Available requires it empty.
+enum PanStatus {
+  NOT_AVAILABLE
+  AVAILABLE
+  VERIFIED
+}
+
+/// PRD §22 — one surviving Person identity; old IDs remain searchable.
+enum MergeStatus {
+  NONE
+  SURVIVOR
+  MERGED_AWAY
+}
+
+enum SecurityEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  ACCOUNT_LOCKED
+  MFA_FAILURE
+  MFA_REQUIRED
+  SESSION_INVALIDATED
+  /// PRD §17.2 — planned or emergency staff disable.
+  ACCOUNT_DISABLED
+  PERMISSION_DENIED
+  SENSITIVE_ACCESS
+}
+
+/// Immutable human identity. One Person, many capabilities (ARCHITECTURE §3.1).
+model Person {
+  id           String  @id @default(uuid())
+  fullName     String
+  /// main-PRD §18.2 — part of the final buyer details collected before
+  /// Allotment or Registry. Never a document upload.
+  dateOfBirth  DateTime?
+  /// Contact only. Deliberately NOT unique — a mobile may be shared across
+  /// Persons; a Member logs in with Member ID, never with a mobile (PRD §17.1).
+  primaryMobile String
+  altMobile    String?
+  email        String?
+  city         String?
+  addressLine  String?
+
+  // Aadhaar — protected field, never an uploaded document (PRD RD-05).
+  aadhaarCipher     String? // AES-256-GCM payload
+  aadhaarLastFour   String?
+  /// Deterministic keyed hash so duplicates are caught without a searchable plaintext.
+  aadhaarBlindIndex String?       @unique
+  aadhaarStatus     AadhaarStatus @default(PENDING)
+
+  // PAN
+  panCipher     String?
+  panMasked     String?
+  panBlindIndex String?   @unique
+  panStatus     PanStatus @default(NOT_AVAILABLE)
+
+  // Merge foundation (PRD §22) — old records are never deleted.
+  mergeStatus       MergeStatus @default(NONE)
+  survivingPersonId String?
+  survivingPerson   Person?     @relation("PersonMerge", fields: [survivingPersonId], references: [id])
+  mergedPersons     Person[]    @relation("PersonMerge")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customerProfile CustomerProfile?
+  memberProfile   MemberProfile?
+  staffAccount    StaffAccount?
+
+  enquiries    Enquiry[]
+  holds        Hold[]
+  holdRequests HoldRequest[]
+
+  primaryBookings Booking[]      @relation("BookingPrimaryCustomer")
+  soldBookings    Booking[]      @relation("BookingSoldBy")
+  bookingParties  BookingParty[]
+
+  commissions            CommissionRecord[]      @relation("CommissionBeneficiary")
+  acquisitionsAsSeller   Acquisition[]           @relation("AcquisitionSeller")
+  acquisitionsArranged   Acquisition[]           @relation("AcquisitionArranger")
+  commissionOpportunities CommissionOpportunity[] @relation("OpportunitySubject")
+  bankDetails            BankDetail[]
+  mergeRequestsAsSurvivor PersonMergeRequest[]    @relation("MergeSurvivor")
+  mergeRequestsAsMerged   PersonMergeRequest[]    @relation("MergeMerged")
+
+  @@index([primaryMobile])
+  @@index([fullName])
+}
+
+model CustomerProfile {
+  id         String @id @default(uuid())
+  /// Display identity, e.g. CUS-3390. Never reused.
+  customerId String @unique
+  personId   String @unique
+  person     Person @relation(fields: [personId], references: [id])
+
+  customerType String?
+
+  /// PRD §6.4 — frozen at the earliest valid Member-sourced Enquiry.
+  originalIntroducedByMemberId String?
+  originalIntroducedByMember   MemberProfile? @relation("IntroducedCustomers", fields: [originalIntroducedByMemberId], references: [id])
+  introducedPosition           Int?
+  introducedRatePercent        Decimal?       @db.Decimal(6, 3)
+  introducedYearStart          DateTime?
+
+  /// PRD §6.5 — combined lifetime maximum of three; the limit never resets.
+  loyaltySlotsConsumed Int @default(0)
+
+  /// Old Customer IDs kept searchable after a merge (PRD §22).
+  legacyCustomerIds String[] @default([])
+
+  sourcedEnquiries Enquiry[] @relation("CustomerSourcedEnquiries")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MemberProfile {
+  id       String @id @default(uuid())
+  /// Login identifier for the Member portal (PRD §17.1).
+  memberId String @unique
+  personId String @unique
+  person   Person @relation(fields: [personId], references: [id])
+
+  activationDate DateTime?
+  status         MemberStatus @default(ACTIVE)
+
+  invitedByMemberId String?
+  invitedByMember   MemberProfile?  @relation("MemberNetwork", fields: [invitedByMemberId], references: [id])
+  invitedMembers    MemberProfile[] @relation("MemberNetwork")
+
+  /// Positions are assigned once and never renumbered (PRD RD-02).
+  invitePosition    Int?
+  inviteRatePercent Decimal?  @db.Decimal(6, 3)
+  inviteYearStart   DateTime?
+
+  /// A new Member has provided nothing yet, so Pending is the honest default:
+  /// Not Applicable is a decision that carries a compulsory reason (PRD §19.5).
+  reraStatus           ReraStatus @default(PENDING)
+  reraNumber           String?
+  reraExpiryDate       DateTime?
+  /// Compulsory when the status is Not Applicable (PRD §19.5).
+  reraNotApplicableReason String?
+
+  /// PRD §14.11 — a Member-level hold affects every unpaid record.
+  commissionHold       Boolean @default(false)
+  commissionHoldReason String?
+
+  legacyMemberIds String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  portalAccount        PortalAccount?
+  introducedCustomers  CustomerProfile[] @relation("IntroducedCustomers")
+  sourcedEnquiries     Enquiry[]         @relation("MemberSourcedEnquiries")
+  holdRequests         HoldRequest[]
+}
+
+model StaffAccount {
+  id             String @id @default(uuid())
+  staffAccountId String @unique
+  personId       String @unique
+  person         Person @relation(fields: [personId], references: [id])
+
+  role StaffRole
+  /// Extra scoped grants on top of the role baseline. Deny by default.
+  extraPermissions String[] @default([])
+
+  status       AccountStatus @default(ACTIVE)
+  passwordHash String
+
+  /// MFA is mandatory for MD and Admin (PRD §3.1, §17.1).
+  mfaSecretCipher String?
+  mfaEnrolledAt   DateTime?
+
+  /// Bumped on password reset / emergency disable to invalidate every session.
+  sessionVersion Int       @default(1)
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime?
+  lastLoginAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// PRD §17.2 — emergency disable blocks login immediately and queues the
+  /// open work for reassignment. The historical actor identity never changes.
+  disabledAt        DateTime?
+  disabledByRef     String?
+  disabledReason    String?
+  emergencyDisabled Boolean   @default(false)
+
+  assignedEnquiries Enquiry[]
+  assignedTasks     Task[]    @relation("TaskAssignee")
+
+  @@index([role, status])
+}
+
+model PortalAccount {
+  id              String        @id @default(uuid())
+  memberProfileId String        @unique
+  memberProfile   MemberProfile @relation(fields: [memberProfileId], references: [id])
+  /// Equals the Member ID. Mobile alone is never sufficient (PRD §17.1).
+  loginId         String        @unique
+  passwordHash    String
+  status          AccountStatus @default(ACTIVE)
+
+  sessionVersion Int       @default(1)
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime?
+  lastLoginAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// PRD §19 / ARCHITECTURE §8 — a repeated key returns the original result.
+model IdempotencyRecord {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  actorRef    String
+  operation   String
+  requestHash String
+  resultJson  Json?
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  @@index([expiresAt])
+}
+
+/// Append-only. Corrections write a new event; nothing is updated or deleted.
+model AuditEvent {
+  id            String   @id @default(uuid())
+  at            DateTime @default(now())
+  actorRef      String
+  actorRole     String?
+  entity        String
+  entityId      String
+  action        String
+  /// Masked before/after payloads. Passwords and secrets never reach audit (PRD §17.1).
+  beforeMasked  Json?
+  afterMasked   Json?
+  reason        String?
+  correlationId String?
+  ip            String?
+
+  @@index([entity, entityId])
+  @@index([at])
+}
+
+model SecurityEvent {
+  id         String            @id @default(uuid())
+  at         DateTime          @default(now())
+  type       SecurityEventType
+  /// Masked login identifier — never a full Aadhaar, PAN or password.
+  identifier String?
+  ip         String?
+  detail     String?
+
+  @@index([at])
+  @@index([identifier])
+}
+
+// ===========================================================================
+// Phase 2 — Projects, Plot Inventory, Enquiries, Holds and Tasks
+// ===========================================================================
+
+/// PRD §16.1. "Available (Resale)" is a derived display condition, never a status.
+enum ProjectLifecycle {
+  SETUP_NOT_ACTIVE
+  ACTIVE
+  SOLD_OUT
+  COMPLETED
+}
+
+enum ProjectType {
+  RESIDENTIAL
+  COMMERCIAL
+  MIXED
+}
+
+enum PlotType {
+  RESIDENTIAL
+  COMMERCIAL
+  INFORMAL_SECTOR
+}
+
+/// DESIGN §4.2 — the exact visible lifecycle. Process messages are separate.
+enum PlotLifecycle {
+  NOT_AVAILABLE
+  AVAILABLE
+  HOLD
+  WAITING_FOR_BOOKING_APPROVAL
+  BOOKED
+  PAYMENT_COMPLETED
+  REFUND_PENDING
+  DELIVERED
+}
+
+/// DESIGN §7.4. NOT_FOR_SALE and PLEDGE keep a returning Plot Not Available (PRD §15).
+enum PlotRestriction {
+  NONE
+  NOT_YET_RELEASED
+  NOT_FOR_SALE
+  PLEDGE
+}
+
+enum BoundarySide {
+  NORTH
+  SOUTH
+  EAST
+  WEST
+}
+
+enum BoundaryKind {
+  ROAD
+  PLOT
+  PARK
+  OTHER
+}
+
+enum EnquiryStatus {
+  ACTIVE
+  BOOKED
+  CLOSED
+}
+
+/// Source Person is required for BY_MEMBER and BY_CUSTOMER (DESIGN §8.2).
+enum EnquirySource {
+  DIRECT
+  BY_MEMBER
+  BY_CUSTOMER
+  OTHER
+}
+
+/// DESIGN §8.4 — follow-up outcomes.
+enum FollowUpOutcome {
+  CONTACTED
+  NOT_ANSWERED
+  CALL_LATER
+  SITE_VISIT_PLANNED
+  BOOKING_DISCUSSION
+}
+
+enum HoldStatus {
+  ACTIVE
+  /// Booking Request submitted — the remaining duration is frozen, not running
+  /// (PRD §10.5). Rejection restores it; approval ends the Hold permanently.
+  FROZEN
+  EXPIRED
+  CANCELLED
+  CONVERTED_TO_BOOKING
+}
+
+enum ExtensionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  /// The Hold expired before a decision; the old request can never revive it (PRD §8.5).
+  EXPIRED
+}
+
+enum HoldRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+}
+
+enum TaskStatus {
+  PENDING
+  COMPLETED
+}
+
+model Project {
+  id          String           @id @default(uuid())
+  projectCode String           @unique
+  name        String
+  developer   String?
+  location    String?
+  type        ProjectType
+  lifecycle   ProjectLifecycle @default(SETUP_NOT_ACTIVE)
+
+  /// External acquisition container (PRD §11.6). A normal development Project is false.
+  isExternalResaleGroup Boolean @default(false)
+
+  reraNumber     String?
+  reraExpiryDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plots           Plot[]
+  plcRuleVersions PlcRuleVersion[]
+  enquiries       Enquiry[]
+  bookings        Booking[]
+  externalAcquisitions Acquisition[] @relation("ExternalResaleGroup")
+}
+
+/// PRD §16.3 — PLC is percentage only and each distinct component is charged once.
+model PlcRuleVersion {
+  id            String   @id @default(uuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id])
+  version       Int
+  effectiveFrom DateTime @default(now())
+  /// Available / Not Active inventory uses the latest version; Holds and
+  /// Bookings use frozen snapshots.
+  isCurrent     Boolean  @default(true)
+  createdBy     String?
+  reason        String?
+
+  components PlcComponent[]
+  snapshots  PlcSnapshot[]
+
+  @@unique([projectId, version])
+}
+
+model PlcComponent {
+  id            String         @id @default(uuid())
+  ruleVersionId String
+  ruleVersion   PlcRuleVersion @relation(fields: [ruleVersionId], references: [id], onDelete: Cascade)
+  /// Distinct category, e.g. ROAD_FACING. The same category on multiple sides
+  /// is charged once.
+  code          String
+  label         String
+  percent       Decimal        @db.Decimal(6, 3)
+
+  @@unique([ruleVersionId, code])
+}
+
+/// Immutable frozen copy taken at Hold, Booking Request or Change Plot.
+model PlcSnapshot {
+  id            String         @id @default(uuid())
+  ruleVersionId String
+  ruleVersion   PlcRuleVersion @relation(fields: [ruleVersionId], references: [id])
+  plotId        String
+  plot          Plot           @relation(fields: [plotId], references: [id])
+  /// [{ code, label, percent }] exactly as charged.
+  components    Json
+  totalPercent  Decimal        @db.Decimal(6, 3)
+  frozenAt      DateTime       @default(now())
+
+  holds    Hold[]
+  bookings Booking[]
+  changePlotRequests ChangePlotRequest[]
+}
+
+model Plot {
+  id         String   @id @default(uuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id])
+  plotType   PlotType
+  plotNumber String
+
+  // Dimensions. Width and Length are required for a regular Plot; an irregular
+  // Plot uses the override and a compulsory reason (PRD §16.2).
+  widthFt           Decimal? @db.Decimal(10, 3)
+  lengthFt          Decimal? @db.Decimal(10, 3)
+  exactAreaSqFt     Decimal? @db.Decimal(12, 3)
+  exactAreaReason   String?
+  /// Persisted so inventory lists and reports never recompute inconsistently.
+  areaSqFt          Decimal  @db.Decimal(12, 3)
+  areaSqYd          Decimal  @db.Decimal(12, 3)
+  areaSqM           Decimal  @db.Decimal(12, 3)
+
+  parkFacing Boolean @default(false)
+  /// PLC component codes that apply to this Plot, resolved against the
+  /// Project's current rule version. Distinct by construction.
+  plcComponentCodes String[] @default([])
+
+  lifecycle         PlotLifecycle   @default(NOT_AVAILABLE)
+  restriction       PlotRestriction @default(NOT_YET_RELEASED)
+  restrictionReason String?
+  /// Buyback / Purchase for Resale tag. Independent of availability (PRD §15).
+  isResale          Boolean         @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  boundaries   PlotBoundary[]
+  holds        Hold[]
+  holdRequests HoldRequest[]
+  plcSnapshots PlcSnapshot[]
+  events       PlotEvent[]
+  enquiries    Enquiry[]
+  bookings     Booking[]
+  acquisitions Acquisition[]
+  changePlotFrom ChangePlotRequest[] @relation("ChangePlotFrom")
+  changePlotTo   ChangePlotRequest[] @relation("ChangePlotTo")
+
+  /// PRD §16.2 — Plot uniqueness is Project + Plot Type + Plot Number.
+  @@unique([projectId, plotType, plotNumber])
+  @@index([lifecycle])
+}
+
+model PlotBoundary {
+  id                 String       @id @default(uuid())
+  plotId             String
+  plot               Plot         @relation(fields: [plotId], references: [id], onDelete: Cascade)
+  side               BoundarySide
+  kind               BoundaryKind
+  /// Required when kind = ROAD.
+  roadWidthFt        Decimal?     @db.Decimal(8, 2)
+  /// Required when kind = PLOT.
+  adjacentPlotNumber String?
+
+  @@unique([plotId, side])
+}
+
+/// Append-only Plot lifecycle and restriction history (ARCHITECTURE §3.2).
+model PlotEvent {
+  id     String @id @default(uuid())
+  plotId String
+  plot   Plot   @relation(fields: [plotId], references: [id])
+
+  at              DateTime         @default(now())
+  actorRef        String
+  action          String
+  fromLifecycle   PlotLifecycle?
+  toLifecycle     PlotLifecycle?
+  fromRestriction PlotRestriction?
+  toRestriction   PlotRestriction?
+  reason          String?
+
+  @@index([plotId, at])
+}
+
+model Enquiry {
+  id        String  @id @default(uuid())
+  enquiryNo String  @unique
+  personId  String
+  person    Person  @relation(fields: [personId], references: [id])
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id])
+  /// Optional — a Plot-wise Enquiry stays a separate record (PRD §7.1).
+  plotId    String?
+  plot      Plot?   @relation(fields: [plotId], references: [id])
+
+  source                EnquirySource
+  sourceMemberId        String?
+  sourceMember          MemberProfile?   @relation("MemberSourcedEnquiries", fields: [sourceMemberId], references: [id])
+  sourceCustomerId      String?
+  sourceCustomer        CustomerProfile? @relation("CustomerSourcedEnquiries", fields: [sourceCustomerId], references: [id])
+
+  assignedStaffId String?
+  assignedStaff   StaffAccount? @relation(fields: [assignedStaffId], references: [id])
+
+  status      EnquiryStatus @default(ACTIVE)
+  closeReason String?
+  remark      String?
+  /// PRD §17.2 — awaiting reassignment after an emergency disable.
+  needsReassignment Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  followUps EnquiryFollowUp[]
+  holds     Hold[]
+  bookings  Booking[]
+
+  @@index([personId, status])
+  @@index([projectId, status])
+}
+
+/// Append-only follow-up history. One Pending task per Enquiry is reused (PRD §7.1).
+model EnquiryFollowUp {
+  id        String          @id @default(uuid())
+  enquiryId String
+  enquiry   Enquiry         @relation(fields: [enquiryId], references: [id])
+  at        DateTime        @default(now())
+  actorRef  String
+  outcome   FollowUpOutcome
+  remark    String?
+  nextAt    DateTime?
+
+  @@index([enquiryId, at])
+}
+
+model Hold {
+  id     String @id @default(uuid())
+  plotId String
+  plot   Plot   @relation(fields: [plotId], references: [id])
+  /// The actual Person. Anonymous Member Holds are prohibited (PRD §8.1).
+  personId String
+  person   Person @relation(fields: [personId], references: [id])
+
+  enquiryId String?
+  enquiry   Enquiry? @relation(fields: [enquiryId], references: [id])
+  /// Set when the Hold originated from a Member Hold Request.
+  sourceMemberId String?
+
+  responsibleStaffId String?
+
+  startsAt  DateTime   @default(now())
+  expiresAt DateTime
+  status    HoldStatus @default(ACTIVE)
+  closedAt  DateTime?
+  closeReason String?
+
+  plcSnapshotId String?
+  plcSnapshot   PlcSnapshot? @relation(fields: [plcSnapshotId], references: [id])
+
+  extensionCount Int @default(0)
+
+  /// Milliseconds left when the Hold was frozen for a Booking Request. Restored
+  /// exactly on Accounts rejection (PRD §10.5).
+  frozenRemainingMs Int?
+  frozenAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  extensionRequests HoldExtensionRequest[]
+  bookings          Booking[]
+
+  @@index([plotId, status])
+  @@index([personId, status])
+  @@index([status, expiresAt])
+}
+
+model HoldExtensionRequest {
+  id     String @id @default(uuid())
+  holdId String
+  hold   Hold   @relation(fields: [holdId], references: [id])
+
+  requestedByRef String
+  reason         String
+  /// The first extension is CRM's; any further extension needs Admin (PRD §8.5).
+  requiresAdmin  Boolean
+  requestedHours Int
+
+  status       ExtensionStatus @default(PENDING)
+  decidedByRef String?
+  decidedAt    DateTime?
+  decisionNote String?
+
+  createdAt DateTime @default(now())
+
+  @@index([holdId, status])
+}
+
+model HoldRequest {
+  id       String        @id @default(uuid())
+  memberId String
+  member   MemberProfile @relation(fields: [memberId], references: [id])
+  /// The actual Customer/Person the Member is requesting for (PRD §8.1).
+  personId String
+  person   Person        @relation(fields: [personId], references: [id])
+  plotId   String
+  plot     Plot          @relation(fields: [plotId], references: [id])
+
+  createdAt DateTime          @default(now())
+  /// End of the working day, or the next working day when created after cut-off.
+  expiresAt DateTime
+  status    HoldRequestStatus @default(PENDING)
+  decidedAt DateTime?
+  decidedByRef String?
+  decisionNote String?
+  resultingHoldId String?
+
+  @@index([plotId, status])
+  @@index([personId, status])
+  @@index([status, expiresAt])
+}
+
+/// PRD §20 — duplicate prevention key is Record + Purpose.
+model Task {
+  id         String @id @default(uuid())
+  taskNo     String @unique
+  recordKind String
+  recordId   String
+  recordName String
+  purpose    String
+  title      String
+
+  assigneeStaffId String?
+  assigneeStaff   StaffAccount? @relation("TaskAssignee", fields: [assigneeStaffId], references: [id])
+  assigneeRole    StaffRole
+
+  dueAt        DateTime
+  urgent       Boolean    @default(false)
+  status       TaskStatus @default(PENDING)
+  latestResult String?
+  /// Approve / Reject happens on the record's review snapshot, not on the row.
+  decision     Boolean    @default(false)
+  revisions    Int        @default(0)
+  recurrence   String     @default("NONE")
+  origin       String     @default("SYSTEM")
+  /// PRD §17.2 — in the Unassigned Review queue after an emergency disable.
+  needsReassignment Boolean @default(false)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  events TaskEvent[]
+
+  @@index([status, dueAt])
+  @@index([assigneeRole, status])
+}
+
+/// Assignment, revision, escalation and automatic closure are all audited (PRD §20).
+model TaskEvent {
+  id       String   @id @default(uuid())
+  taskId   String
+  task     Task     @relation(fields: [taskId], references: [id])
+  at       DateTime @default(now())
+  actorRef String
+  action   String
+  detail   String?
+  fromDue  DateTime?
+  toDue    DateTime?
+
+  @@index([taskId, at])
+}
+
+// ===========================================================================
+// Phase 3 — Booking Requests, Approved Bookings, Ownership Shares,
+//           Payment Received and External References
+// ===========================================================================
+
+/// PRD §24 status catalogue. The request stage and the approved Booking share
+/// one row: `requestNo` exists from submission, `bookingNumber` only after
+/// Accounts approval (PRD §5.2).
+enum BookingStatus {
+  REQUEST_PENDING
+  REQUEST_REJECTED
+  REQUEST_CANCELLED
+  BOOKED
+  PAYMENT_COMPLETED
+  REFUND_PENDING
+  CANCELLED
+  DELIVERED
+  /// main-PRD §17.9 — the old sale after an approved Buyback: closed history,
+  /// with the previous Customer removed from the active allocation.
+  BUYBACK_COMPLETED
+}
+
+/// ARCHITECTURE §6.3 — only one of these may be active for a Booking at a time.
+enum BookingProcess {
+  NONE
+  REFUND_PENDING
+  CHANGE_PLOT_PENDING
+  BUYBACK_PENDING
+  PRIMARY_CUSTOMER_CHANGE_UNDER_REVIEW
+  SOLD_BY_CORRECTION_UNDER_REVIEW
+  MANAGEMENT_ACTION_REQUIRED
+}
+
+/// PRD §11.3 — separate from Enquiry Source. The closer controls commission.
+enum SoldByType {
+  THREE_PERCENT_CLUB
+  MEMBER
+  CUSTOMER
+}
+
+enum PartyRole {
+  PRIMARY
+  ADDITIONAL
+}
+
+/// PRD §13.3 — the final registration buyer may differ from the commercial
+/// Booking Customer, and both must remain distinguishable.
+enum PartyKind {
+  COMMERCIAL
+  FINAL_REGISTRATION
+}
+
+/// Shared review lifecycle for Booking Request versions, schedule revisions
+/// and Primary Customer changes.
+enum ReviewDecision {
+  PENDING
+  APPROVED
+  REJECTED
+  /// The maker withdrew the version before a decision (PRD §9.1, §9.2).
+  CANCELLED
+}
+
+/// PRD §11.5. §9.4 — PAYMENT_NOT_RECEIVED is valid only where the request
+/// claimed a payment Accounts could not verify, never merely because it is 0%.
+enum BookingRejectReason {
+  PAYMENT_SCHEDULE_INCORRECT
+  INCOMPLETE_DETAILS
+  PAYMENT_NOT_RECEIVED
+  OTHER
+}
+
+enum ScheduleStatus {
+  /// Awaiting Accounts approval of a revision (PRD §10.2).
+  PENDING
+  ACTIVE
+  SUPERSEDED
+  REJECTED
+}
+
+/// PRD §24 — the original entry is never deleted; a correction supersedes it.
+enum EntryStatus {
+  CONFIRMED
+  SUPERSEDED
+}
+
+/// PRD §24 — one correction pattern for every approved external reference.
+enum ReferencePurpose {
+  PAYMENT_RECEIVED
+  PAYMENT_GIVEN
+  REFUND
+  COMMISSION
+  BUYBACK
+  OTHER
+}
+
+enum ReferenceStatus {
+  ACTIVE
+  SUPERSEDED
+}
+
+model Booking {
+  id String @id @default(uuid())
+  /// Temporary pre-approval identifier, e.g. REQ-000123 (PRD §5.2).
+  requestNo String @unique
+  /// Permanent, created only on Accounts approval. Never reused.
+  bookingNumber String? @unique
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id])
+  plotId    String
+  plot      Plot    @relation(fields: [plotId], references: [id])
+
+  /// Commercial Booking Customer. Changing it runs through PrimaryCustomerChange.
+  primaryPersonId String
+  primaryPerson   Person @relation("BookingPrimaryCustomer", fields: [primaryPersonId], references: [id])
+
+  soldByType     SoldByType
+  /// Required for MEMBER and CUSTOMER; null for a 3% Club direct close.
+  soldByPersonId String?
+  soldByPerson   Person? @relation("BookingSoldBy", fields: [soldByPersonId], references: [id])
+
+  bookingDate  DateTime
+  customerType String?
+  remark       String?
+
+  /// Set when the request came from a Hold, so a rejection can restore the
+  /// frozen remainder to the exact Hold it paused (PRD §10.5).
+  holdId    String?
+  hold      Hold?    @relation(fields: [holdId], references: [id])
+  enquiryId String?
+  enquiry   Enquiry? @relation(fields: [enquiryId], references: [id])
+
+  /// Frozen at submission and permanent after approval (PRD §9.1).
+  plcSnapshotId String?
+  plcSnapshot   PlcSnapshot? @relation(fields: [plcSnapshotId], references: [id])
+
+  status        BookingStatus  @default(REQUEST_PENDING)
+  activeProcess BookingProcess @default(NONE)
+
+  /// Cumulative verified Payment Received. Never above 100% (PRD §10.4).
+  paymentReceivedPercent Decimal @default(0) @db.Decimal(7, 4)
+
+  submittedByRef String
+  submittedAt    DateTime  @default(now())
+  approvedByRef  String?
+  approvedAt     DateTime?
+  closedAt       DateTime?
+  closeReason    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviewVersions   BookingReviewVersion[]
+  parties          BookingParty[]
+  commissions      CommissionRecord[]
+  scheduleVersions PaymentScheduleVersion[]
+  paymentEntries   PaymentReceivedEntry[]
+  events            BookingEvent[]
+  customerChanges   PrimaryCustomerChange[]
+  soldByCorrections SoldByCorrection[]
+  cancellations     CancellationRequest[]
+  changePlotRequests ChangePlotRequest[]
+  buybacks          Acquisition[]        @relation("BuybackSource")
+  completions       BookingCompletion[]
+
+  @@index([status])
+  @@index([primaryPersonId, status])
+  @@index([plotId, status])
+}
+
+/// PRD §9.1 — the immutable submission snapshot. While Waiting for Booking
+/// Approval nothing here may be edited; a change cancels this version and
+/// creates the next one.
+model BookingReviewVersion {
+  id        String  @id @default(uuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id])
+  version   Int
+
+  /// The complete frozen payload: parties and shares, Project/Plot, PLC
+  /// snapshot, Sold By and beneficiary, Booking Date, Customer Type, payment
+  /// schedule and remark.
+  snapshot Json
+
+  submittedByRef String
+  submittedAt    DateTime @default(now())
+
+  status       ReviewDecision       @default(PENDING)
+  decidedByRef String?
+  decidedAt    DateTime?
+  rejectReason BookingRejectReason?
+  decisionNote String?
+
+  @@unique([bookingId, version])
+  @@index([status])
+}
+
+/// PRD §12.1 — one Primary Customer; a single final buyer may omit the share
+/// and is treated as 100%. Share changes are effective-dated, never overwritten.
+model BookingParty {
+  id        String  @id @default(uuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id])
+  personId  String
+  person    Person  @relation(fields: [personId], references: [id])
+
+  role PartyRole
+  kind PartyKind @default(COMMERCIAL)
+  /// Null only where this is the sole buyer of its kind (treated as 100%).
+  sharePercent Decimal? @db.Decimal(7, 4)
+
+  effectiveFrom DateTime  @default(now())
+  /// Null means current. A superseded row keeps its old share for History.
+  effectiveTo   DateTime?
+  changeReason  String?
+  actorRef      String
+
+  @@index([bookingId, kind, effectiveTo])
+}
+
+/// PRD §10.2 — received portions stay locked; only the unpaid remainder may be
+/// split, combined or moved, and Accounts approves the revision.
+///
+/// PRD §11.2 — "Payment Given mirrors the protected mechanics of Payment
+/// Received", so one schedule model serves both sides rather than a duplicate
+/// that would drift. The entries stay in separate tables, which is what the
+/// separate-datasets boundary in PRD §1.2 and §21 is about.
+model PaymentScheduleVersion {
+  id        String   @id @default(uuid())
+  bookingId String?
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+  /// Exactly one of bookingId or acquisitionId is set (see constraints.sql).
+  acquisitionId String?
+  acquisition   Acquisition? @relation(fields: [acquisitionId], references: [id])
+  version   Int
+
+  status       ScheduleStatus @default(PENDING)
+  reason       String?
+  createdByRef String
+  createdAt    DateTime       @default(now())
+  decidedByRef String?
+  decidedAt    DateTime?
+  decisionNote String?
+
+  instalments PaymentInstalment[]
+
+  @@unique([bookingId, version])
+  @@unique([acquisitionId, version])
+}
+
+/// PRD §10.1 — Upcoming / Received / Overdue are derived from Remaining and the
+/// due date. There is no stored Partially Received status.
+model PaymentInstalment {
+  id                String                 @id @default(uuid())
+  scheduleVersionId String
+  scheduleVersion   PaymentScheduleVersion @relation(fields: [scheduleVersionId], references: [id], onDelete: Cascade)
+
+  seq              Int
+  scheduledPercent Decimal  @db.Decimal(7, 4)
+  dueDate          DateTime
+  /// Carried forward unchanged when a revision creates the next version.
+  receivedPercent  Decimal  @default(0) @db.Decimal(7, 4)
+
+  @@unique([scheduleVersionId, seq])
+}
+
+/// PRD §12.2, §12.6 — incremental, never cumulative. A correction supersedes
+/// the original and links to it; nothing is deleted.
+model PaymentReceivedEntry {
+  id        String  @id @default(uuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  percent Decimal  @db.Decimal(7, 4)
+  /// Operator-entered action date. Cannot be future-dated (PRD §10.5).
+  paidOn  DateTime
+  /// System entry timestamp, kept separate from the action date (PRD §24).
+  recordedAt DateTime @default(now())
+
+  externalReferenceId String            @unique
+  externalReference   ExternalReference @relation(fields: [externalReferenceId], references: [id])
+
+  /// [{ instalmentId, percent }] — allocation is oldest unpaid first (PRD §12.1).
+  allocations Json
+
+  status EntryStatus @default(CONFIRMED)
+  /// Set on the replacement entry, pointing at the entry it corrects.
+  correctsEntryId String?               @unique
+  correctsEntry   PaymentReceivedEntry?  @relation("PaymentCorrection", fields: [correctsEntryId], references: [id])
+  correctedBy     PaymentReceivedEntry?  @relation("PaymentCorrection")
+
+  confirmedByRef String
+  reason         String?
+  remark         String?
+
+  @@index([bookingId, status])
+}
+
+/// PRD §24 / §10.3 — one active reference value is globally unique across
+/// Payment Received and Payment Given after normalisation.
+model ExternalReference {
+  id       String @id @default(uuid())
+  rawValue String
+  /// Trimmed, collapsed whitespace, upper-cased.
+  normalisedKey String
+  purpose  ReferencePurpose
+
+  /// Operator-entered action date, separate from the system entry timestamp.
+  actionDate DateTime
+  recordedAt DateTime @default(now())
+
+  status ReferenceStatus @default(ACTIVE)
+  /// The superseded reference this one replaces.
+  replacesId String?            @unique
+  replaces   ExternalReference? @relation("ReferenceSupersession", fields: [replacesId], references: [id])
+  replacedBy ExternalReference? @relation("ReferenceSupersession")
+
+  reason   String?
+  actorRef String
+
+  paymentReceivedEntry PaymentReceivedEntry?
+  paymentGivenEntry    PaymentGivenEntry?
+  commissionRecord     CommissionRecord?
+  cancellationRequest  CancellationRequest?
+
+  @@index([normalisedKey])
+  @@index([purpose, status])
+}
+
+/// PRD §12.3 — the old Customer stays official until Accounts approves.
+model PrimaryCustomerChange {
+  id        String  @id @default(uuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  fromPersonId String
+  toPersonId   String
+
+  reason         String
+  requestedByRef String
+  requestedAt    DateTime @default(now())
+
+  status       ReviewDecision @default(PENDING)
+  decidedByRef String?
+  decidedAt    DateTime?
+  decisionNote String?
+
+  @@index([bookingId, status])
+}
+
+/// PRD §6.10 — the attribution correction. Admin/MD approves the change, then
+/// Accounts reviews the commission impact; Booking and Payment history are
+/// never touched by it.
+model SoldByCorrection {
+  id        String  @id @default(uuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  fromSoldByType     SoldByType
+  fromSoldByPersonId String?
+  toSoldByType       SoldByType
+  toSoldByPersonId   String?
+
+  reason         String
+  supportingNote String
+  requestedByRef String
+  requestedAt    DateTime @default(now())
+
+  status       ReviewDecision @default(PENDING)
+  decidedByRef String?
+  decidedAt    DateTime?
+  decisionNote String?
+
+  /// PRD §6.10 step 4 — Accounts reviews the impact after the approval.
+  accountsReviewedByRef String?
+  accountsReviewedAt    DateTime?
+  accountsNote          String?
+
+  @@index([bookingId, status])
+}
+
+/// Append-only Booking history for the record timeline (DESIGN §5.3).
+model BookingEvent {
+  id        String  @id @default(uuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  at         DateTime       @default(now())
+  actorRef   String
+  action     String
+  fromStatus BookingStatus?
+  toStatus   BookingStatus?
+  detail     Json?
+  reason     String?
+
+  @@index([bookingId, at])
+}
+
+// ===========================================================================
+// Phase 4 — Commission and Network Engine
+// PRD §6, §13, §14; main-PRD §14. Percentages only, never a payout amount.
+// ===========================================================================
+
+enum CommissionType {
+  DIRECT
+  INVITE
+  ROYALTY
+  LOYALTY
+  /// Acquisition-side, outside the 4% sale cap. Arrives with Phase 5.
+  BUYING
+}
+
+/// One current record per Booking + commission type + beneficiary role (PRD §6.9).
+enum BeneficiaryRole {
+  SELLING_MEMBER
+  INVITING_MEMBER
+  INTRODUCING_MEMBER
+  CLOSING_CUSTOMER
+  REPEAT_PURCHASE_CUSTOMER
+  ACQUISITION_ARRANGER
+}
+
+/// PRD §14.8 — eligibility and payment are separate axes.
+enum EligibilityState {
+  MILESTONE_PENDING
+  READY
+  ON_HOLD
+}
+
+enum CommissionPaymentState {
+  NOT_PAID
+  PAID
+  /// Processed before eligibility was Ready; the remarks are compulsory.
+  PAID_EARLY
+  ACCOUNTS_ADJUSTMENT_REQUIRED
+  CANCELLED
+}
+
+/// PRD §14.8 — the controlled hold reasons. Nothing else may hold a record.
+enum CommissionHoldReason {
+  AADHAAR_PENDING
+  BANK_VERIFICATION_PENDING
+  RERA_PENDING
+  RERA_EXPIRED
+  MEMBER_COMMISSION_HOLD
+  MEMBER_DEACTIVATED
+  REFUND_PENDING
+  CHANGE_PLOT_PENDING
+  BUYBACK_PENDING
+  PAYMENT_PENDING
+  /// RD-03 — no sale-commission record is Ready or Paid while the total is above 4%.
+  COMMISSION_CONFLICT_ABOVE_4
+}
+
+/// PRD §6.8 — the entitlements that must never be consumed twice.
+enum OpportunityKind {
+  INVITE
+  ROYALTY
+  LOYALTY
+}
+
+enum OpportunityStatus {
+  OPEN
+  CONSUMED
+}
+
+/// PRD §19.5 — Registered or Not Applicable satisfies the Member condition.
+enum ReraStatus {
+  REGISTERED
+  PENDING
+  EXPIRED
+  NOT_APPLICABLE
+}
+
+enum BankStatus {
+  PENDING
+  VERIFIED
+  SUPERSEDED
+}
+
+model CommissionRecord {
+  id        String   @id @default(uuid())
+  /// Sale commission hangs off the Booking; Buying Commission off the
+  /// Acquisition. Exactly one is set (see constraints.sql).
+  bookingId String?
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+  acquisitionId String?
+  acquisition   Acquisition? @relation(fields: [acquisitionId], references: [id])
+
+  type            CommissionType
+  beneficiaryRole BeneficiaryRole
+  beneficiaryPersonId String
+  beneficiaryPerson   Person @relation("CommissionBeneficiary", fields: [beneficiaryPersonId], references: [id])
+
+  percent Decimal @db.Decimal(7, 4)
+  /// The band and rule the percentage came from, frozen for traceability.
+  ruleVersion String
+  /// Verified Payment Received the record becomes eligible at: 25 or 100.
+  milestonePercent Decimal @db.Decimal(7, 4)
+
+  eligibility EligibilityState      @default(MILESTONE_PENDING)
+  holdReason  CommissionHoldReason?
+  payment     CommissionPaymentState @default(NOT_PAID)
+
+  paidOn        DateTime?
+  paidByRef     String?
+  /// Compulsory for Paid Early (PRD §6.11).
+  paymentRemarks String?
+  externalReferenceId String?            @unique
+  externalReference   ExternalReference? @relation(fields: [externalReferenceId], references: [id])
+
+  /// PRD §6.9 — old records are superseded, never deleted.
+  externalProcessingCompleted Boolean   @default(false)
+  isCurrent                   Boolean   @default(true)
+  effectiveFrom               DateTime  @default(now())
+  effectiveTo                 DateTime?
+  closedReason                String?
+  supersededById              String?           @unique
+  supersededBy                CommissionRecord? @relation("CommissionSupersession", fields: [supersededById], references: [id])
+  supersedes                  CommissionRecord? @relation("CommissionSupersession")
+
+  /// Set when the record consumed a one-shot entitlement, so a cancellation
+  /// before legal completion can reopen exactly that slot (PRD §6.1, §6.5).
+  opportunityId String?               @unique
+  opportunity   CommissionOpportunity? @relation(fields: [opportunityId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events CommissionEvent[]
+
+  @@index([bookingId, isCurrent])
+  @@index([beneficiaryPersonId, payment])
+  @@index([eligibility, payment])
+}
+
+/// PRD §6.8 — atomic entitlement tracking. One Invite opportunity per invited
+/// Member, one Royalty opportunity per introduced Customer, and at most three
+/// Loyalty slots per Customer, enforced by unique indexes rather than by
+/// counting rows at read time.
+model CommissionOpportunity {
+  id   String          @id @default(uuid())
+  kind OpportunityKind
+
+  /// The invited Member, the introduced Customer, or the Loyalty Customer.
+  subjectPersonId String
+  subjectPerson   Person @relation("OpportunitySubject", fields: [subjectPersonId], references: [id])
+  /// The Member the entitlement belongs to. Null for a Customer's own Loyalty.
+  beneficiaryPersonId String?
+
+  /// 1, 2 or 3 for Loyalty; always 1 for Invite and Royalty.
+  slotIndex Int               @default(1)
+  status    OpportunityStatus @default(OPEN)
+
+  consumedByBookingId String?
+  consumedAt          DateTime?
+  /// Why a consumed slot was reopened — cancellation before legal completion.
+  reopenedReason String?
+  reopenedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  record CommissionRecord?
+
+  @@index([kind, subjectPersonId, status])
+}
+
+/// Append-only commission history for the record timeline (DESIGN §14.3).
+model CommissionEvent {
+  id           String           @id @default(uuid())
+  recordId     String
+  record       CommissionRecord @relation(fields: [recordId], references: [id])
+  at           DateTime         @default(now())
+  actorRef     String
+  action       String
+  fromState    String?
+  toState      String?
+  reason       String?
+
+  @@index([recordId, at])
+}
+
+/// PRD §14.4 — CRM enters, Accounts verifies, and the existing verified bank
+/// stays active while new details are Pending. A replacement never puts every
+/// Ready commission on hold by itself (PRD §14.3).
+model BankDetail {
+  id       String @id @default(uuid())
+  personId String
+  person   Person @relation(fields: [personId], references: [id])
+
+  accountHolder String
+  bankName      String
+  /// Full account number is protected at rest; lists show the last four only.
+  accountCipher   String
+  accountLastFour String
+  ifsc            String
+
+  status BankStatus @default(PENDING)
+
+  enteredByRef  String
+  verifiedByRef String?
+  verifiedAt    DateTime?
+  reason        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([personId, status])
+}
+
+// ===========================================================================
+// Phase 5 — Cancellation, Change Plot and Acquisition
+// PRD §5, §11, §15; main-PRD §15, §16, §17.
+// ===========================================================================
+
+enum AcquisitionType {
+  /// Previously sold by us and being taken back (main-PRD §17.1).
+  BUYBACK
+  /// New property from outside, bought to resell.
+  PURCHASE_FOR_RESALE
+}
+
+enum AcquisitionStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  /// PRD §11.4 — the Plot becomes Not Available — Deal Cancelled.
+  CANCELLED
+}
+
+/// main-PRD §15 — the formal cancellation that follows an approved Booking.
+/// The prior state is captured so a rejection restores it exactly.
+model CancellationRequest {
+  id        String  @id @default(uuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  reason String
+  remark String?
+
+  /// The exact Booking, Plot and commission state before Refund Pending, so a
+  /// rejection restores it rather than guessing (main-PRD §15.4).
+  restoreSnapshot Json
+
+  requestedByRef String
+  requestedAt    DateTime @default(now())
+
+  status       ReviewDecision @default(PENDING)
+  decidedByRef String?
+  decidedAt    DateTime?
+  decisionNote String?
+
+  /// PRD §15.4 — where payment exists the decision carries a reference and an
+  /// action date. At 0% Accounts approves with No Payment Received.
+  externalReferenceId String?            @unique
+  externalReference   ExternalReference? @relation(fields: [externalReferenceId], references: [id])
+  noPaymentReceived   Boolean            @default(false)
+
+  @@index([bookingId, status])
+}
+
+/// PRD §5.3 — same Project only, same Booking Number, and the replacement PLC
+/// snapshot is frozen at submission and only becomes permanent on approval.
+model ChangePlotRequest {
+  id        String  @id @default(uuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  fromPlotId String
+  fromPlot   Plot   @relation("ChangePlotFrom", fields: [fromPlotId], references: [id])
+  toPlotId   String
+  toPlot     Plot   @relation("ChangePlotTo", fields: [toPlotId], references: [id])
+
+  remark         String
+  requestedByRef String
+  requestedAt    DateTime @default(now())
+
+  /// Frozen at submission; discarded on rejection (PRD §5.3).
+  replacementPlcSnapshotId String?
+  replacementPlcSnapshot   PlcSnapshot? @relation(fields: [replacementPlcSnapshotId], references: [id])
+  /// The Plot state to put back if the request is rejected.
+  restoreSnapshot Json
+
+  /// PRD §5.3 — Accounts manually records the percentage applicable to the
+  /// replacement Plot; no rupee conversion happens anywhere.
+  appliedPercent Decimal? @db.Decimal(7, 4)
+
+  status       ReviewDecision @default(PENDING)
+  decidedByRef String?
+  decidedAt    DateTime?
+  decisionNote String?
+
+  @@index([bookingId, status])
+}
+
+/// main-PRD §17 — Buyback and Purchase for Resale. Payment Given progress is a
+/// percentage; no rupee value is stored anywhere.
+model Acquisition {
+  id             String          @id @default(uuid())
+  acquisitionNo  String          @unique
+  type           AcquisitionType
+  status         AcquisitionStatus @default(PENDING_APPROVAL)
+
+  /// Set from the start for a Buyback; created on approval for a Purchase for
+  /// Resale, when the property enters normal Plot Inventory (main-PRD §17.4).
+  plotId String?
+  plot   Plot?   @relation(fields: [plotId], references: [id])
+  /// The Buyback's original Booking. Its history is never overwritten.
+  sourceBookingId String?
+  sourceBooking   Booking? @relation("BuybackSource", fields: [sourceBookingId], references: [id])
+
+  sellerPersonId String
+  sellerPerson   Person @relation("AcquisitionSeller", fields: [sellerPersonId], references: [id])
+
+  arrangedByType     SoldByType
+  arrangedByPersonId String?
+  arrangedByPerson   Person?    @relation("AcquisitionArranger", fields: [arrangedByPersonId], references: [id])
+
+  // External property details, for a Purchase for Resale (main-PRD §17.4).
+  propertyName     String?
+  location         String?
+  projectType      ProjectType?
+  propertyNumber   String?
+  areaSqFt         Decimal?     @db.Decimal(12, 3)
+  plcPercent       Decimal?     @db.Decimal(6, 3)
+  /// Normalised duplicate key across name, location and property number.
+  duplicateKey     String?
+  /// PRD §11.6 — the External Resale Property Group the property lands in.
+  resaleGroupId    String?
+  resaleGroup      Project?     @relation("ExternalResaleGroup", fields: [resaleGroupId], references: [id])
+
+  purchaseDate DateTime
+  remark       String
+
+  /// Cumulative confirmed Payment Given. Never above 100%.
+  paymentGivenPercent Decimal @default(0) @db.Decimal(7, 4)
+
+  submittedByRef String
+  submittedAt    DateTime  @default(now())
+  decidedByRef   String?
+  decidedAt      DateTime?
+  decisionNote   String?
+  closedReason   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scheduleVersions PaymentScheduleVersion[]
+  paymentEntries   PaymentGivenEntry[]
+  commissions      CommissionRecord[]
+  events           AcquisitionEvent[]
+
+  @@index([status])
+  @@index([duplicateKey])
+}
+
+/// PRD §1.2 — Payment Given is its own dataset, never merged with Payment
+/// Received. The mechanics mirror it exactly (PRD §11.2).
+model PaymentGivenEntry {
+  id            String      @id @default(uuid())
+  acquisitionId String
+  acquisition   Acquisition @relation(fields: [acquisitionId], references: [id])
+
+  percent Decimal  @db.Decimal(7, 4)
+  paidOn  DateTime
+  recordedAt DateTime @default(now())
+
+  externalReferenceId String            @unique
+  externalReference   ExternalReference @relation(fields: [externalReferenceId], references: [id])
+
+  /// [{ instalmentId, percent }] — oldest unpaid first.
+  allocations Json
+
+  status EntryStatus @default(CONFIRMED)
+  correctsEntryId String?             @unique
+  correctsEntry   PaymentGivenEntry?  @relation("GivenCorrection", fields: [correctsEntryId], references: [id])
+  correctedBy     PaymentGivenEntry?  @relation("GivenCorrection")
+
+  confirmedByRef String
+  reason         String?
+  remark         String?
+
+  @@index([acquisitionId, status])
+}
+
+/// Append-only acquisition history for the record timeline.
+model AcquisitionEvent {
+  id            String      @id @default(uuid())
+  acquisitionId String
+  acquisition   Acquisition @relation(fields: [acquisitionId], references: [id])
+
+  at         DateTime           @default(now())
+  actorRef   String
+  action     String
+  fromStatus AcquisitionStatus?
+  toStatus   AcquisitionStatus?
+  detail     Json?
+  reason     String?
+
+  @@index([acquisitionId, at])
+}
+
+/// ARCHITECTURE §10 — jobs are idempotent, observable and catch up after downtime.
+model ScheduledJobRun {
+  id             String    @id @default(uuid())
+  jobType        String
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  /// Everything up to this instant has been processed by a successful run.
+  cursorAt       DateTime?
+  status         String    @default("RUNNING")
+  processedCount Int       @default(0)
+  changedCount   Int       @default(0)
+  error          String?
+  correlationId  String?
+
+  @@index([jobType, startedAt])
+}
+
+// ===========================================================================
+// Phase 6 — Allotment/Registry and Delivered, Reports and Exports,
+//           Administration and Person Merge
+// PRD §4, §17.2, §21, §22; main-PRD §18.
+// ===========================================================================
+
+/// PRD §4.1 — one route only. An Allotment-then-Registry third route needs an
+/// approved change request and does not exist here.
+enum CompletionRoute {
+  ALLOTMENT
+  REGISTRY
+}
+
+/// main-PRD §18.4 — Patta is Yes or Don't Know; there is no "No".
+enum PattaStatus {
+  YES
+  DONT_KNOW
+}
+
+/// main-PRD §18.3–§18.7. One active row per Booking (partial unique index in
+/// constraints.sql); an exceptional MD/Admin reopen sets `reopenedAt` and keeps
+/// the row as history rather than deleting it.
+model BookingCompletion {
+  id        String  @id @default(uuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  route CompletionRoute
+
+  // Allotment route (main-PRD §18.4)
+  allotmentDate    DateTime?
+  allotmentNumber  String?
+  allotmentGivenTo String?
+  pattaStatus      PattaStatus?
+  pattaDate        DateTime?
+
+  // Registry route (main-PRD §18.5)
+  advocateName String?
+  registryDate DateTime?
+
+  /// Set automatically with the completed route (PRD §4.4); never entered.
+  papersLegallyTransferred Boolean  @default(true)
+  deliveredAt              DateTime @default(now())
+  completedByRef           String
+
+  reopenedAt     DateTime?
+  reopenedByRef  String?
+  reopenReason   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([bookingId, reopenedAt])
+}
+
+/// PRD §21 — the export log stores report, filters, timestamp, user and row
+/// count. The exported rows themselves are not retained.
+model ExportLog {
+  id        String   @id @default(uuid())
+  at        DateTime @default(now())
+  actorRef  String
+  actorRole String?
+  report    String
+  filters   Json
+  rowCount  Int
+  /// Optional integrity hash of the masked payload (PRD §21).
+  contentHash String?
+
+  @@index([at])
+  @@index([report, at])
+}
+
+/// PRD §22 — merge needs MD approval, one surviving identity, and a Loyalty
+/// count rebuilt from unique qualifying events rather than added or maximised.
+model PersonMergeRequest {
+  id                String @id @default(uuid())
+  survivingPersonId String
+  survivingPerson   Person @relation("MergeSurvivor", fields: [survivingPersonId], references: [id])
+  mergedPersonId    String
+  mergedPerson      Person @relation("MergeMerged", fields: [mergedPersonId], references: [id])
+
+  status         ReviewDecision @default(PENDING)
+  reason         String
+  requestedByRef String
+  requestedAt    DateTime       @default(now())
+  decidedByRef   String?
+  decidedAt      DateTime?
+  decisionNote   String?
+
+  /// Rebuilt consumed Loyalty slots, capped at three (PRD §22).
+  loyaltyRebuiltTo Int?
+
+  @@index([status])
+  @@index([survivingPersonId])
+}

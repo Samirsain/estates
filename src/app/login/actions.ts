@@ -1,0 +1,208 @@
+"use server";
+
+// Login — PRD.md §17.1. Invalid identifier and invalid password are
+// indistinguishable; every failure path returns the same generic error.
+
+import { cookies, headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { db } from "@/lib/db";
+import { recordSecurityEvent } from "@/lib/security/audit";
+import {
+  burnPasswordTime,
+  isLocked,
+  mfaRequired,
+  rateLimit,
+  registerFailure,
+  registerSuccess,
+  verifyPassword,
+  verifyTotp,
+} from "@/lib/security/auth";
+import { decryptSensitive } from "@/lib/security/identity";
+import {
+  SESSION_COOKIE_MEMBER,
+  SESSION_COOKIE_STAFF,
+  SESSION_HOURS,
+  sessionExpiry,
+  signSession,
+} from "@/lib/security/session";
+
+type Outcome = { ok: true; to: string } | { ok: false; reason: "GENERIC" | "MFA" | "RATE" };
+
+/**
+ * X-Forwarded-For is set by the client unless a trusted proxy overwrites it, so
+ * it is believed only when the deployment says one is in front. Otherwise the
+ * IP is recorded as unknown and the IP bucket is skipped: an attacker-supplied
+ * value must never become an audit fact, and must never become one shared
+ * bucket that a single attacker can fill to lock every user out. The account
+ * bucket and the database lockout are unaffected either way.
+ */
+async function clientIp(): Promise<string | null> {
+  if (process.env.TRUST_PROXY !== "true") return null;
+  const h = await headers();
+  return h.get("x-forwarded-for")?.split(",")[0].trim() || null;
+}
+
+async function setSessionCookie(name: string, token: string) {
+  (await cookies()).set(name, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_HOURS * 3600,
+  });
+}
+
+/* ------------------------------------------------------------------ staff */
+
+async function attemptStaffLogin(form: FormData): Promise<Outcome> {
+  const loginId = String(form.get("loginId") ?? "").trim();
+  const password = String(form.get("password") ?? "");
+  const mfaCode = String(form.get("mfaCode") ?? "");
+  const ip = await clientIp();
+  const now = new Date();
+
+  // Rate limiting applies to IP and account identifier (PRD §17.1).
+  if ((ip && !rateLimit(`ip:${ip}`, now)) || !rateLimit(`staff:${loginId}`, now)) {
+    await recordSecurityEvent({ type: "LOGIN_FAILURE", identifier: loginId, ip, detail: "Rate limited" });
+    return { ok: false, reason: "RATE" };
+  }
+
+  const account = await db.staffAccount.findUnique({ where: { staffAccountId: loginId } });
+
+  // Unknown account, disabled account, lockout and wrong password all look the same.
+  if (!account || account.status !== "ACTIVE") {
+    burnPasswordTime(password);
+    await recordSecurityEvent({ type: "LOGIN_FAILURE", identifier: loginId, ip, detail: "Unknown or disabled account" });
+    return { ok: false, reason: "GENERIC" };
+  }
+  if (isLocked({ failedAttempts: account.failedAttempts, lockedUntil: account.lockedUntil }, now)) {
+    burnPasswordTime(password);
+    await recordSecurityEvent({ type: "ACCOUNT_LOCKED", identifier: loginId, ip });
+    return { ok: false, reason: "GENERIC" };
+  }
+
+  if (!verifyPassword(password, account.passwordHash)) {
+    const next = registerFailure(
+      { failedAttempts: account.failedAttempts, lockedUntil: account.lockedUntil },
+      now
+    );
+    await db.staffAccount.update({ where: { id: account.id }, data: next });
+    await recordSecurityEvent({
+      type: next.lockedUntil && next.lockedUntil > now ? "ACCOUNT_LOCKED" : "LOGIN_FAILURE",
+      identifier: loginId,
+      ip,
+    });
+    return { ok: false, reason: "GENERIC" };
+  }
+
+  // MFA is mandatory for MD and Admin (PRD §3.1, §17.1).
+  if (mfaRequired(account.role)) {
+    if (!account.mfaSecretCipher) {
+      await recordSecurityEvent({ type: "MFA_REQUIRED", identifier: loginId, ip, detail: "Not enrolled" });
+      return { ok: false, reason: "MFA" };
+    }
+    if (!mfaCode) {
+      await recordSecurityEvent({ type: "MFA_REQUIRED", identifier: loginId, ip });
+      return { ok: false, reason: "MFA" };
+    }
+    if (!verifyTotp(decryptSensitive(account.mfaSecretCipher), mfaCode, now)) {
+      await recordSecurityEvent({ type: "MFA_FAILURE", identifier: loginId, ip });
+      return { ok: false, reason: "GENERIC" };
+    }
+  }
+
+  await db.staffAccount.update({
+    where: { id: account.id },
+    data: { ...registerSuccess(), lastLoginAt: now },
+  });
+  await setSessionCookie(
+    SESSION_COOKIE_STAFF,
+    signSession({
+      context: "STAFF",
+      accountId: account.id,
+      loginId: account.staffAccountId,
+      role: account.role,
+      sessionVersion: account.sessionVersion,
+      expiresAt: sessionExpiry(now),
+    })
+  );
+  await recordSecurityEvent({ type: "LOGIN_SUCCESS", identifier: loginId, ip });
+  return { ok: true, to: "/dashboard" };
+}
+
+export async function staffLogin(form: FormData): Promise<void> {
+  const result = await attemptStaffLogin(form);
+  redirect(result.ok ? result.to : `/login?tab=staff&error=${result.reason}`);
+}
+
+/* ----------------------------------------------------------------- member */
+
+async function attemptMemberLogin(form: FormData): Promise<Outcome> {
+  // Member login uses Member ID; a mobile alone is never sufficient (PRD §17.1).
+  const loginId = String(form.get("loginId") ?? "").trim();
+  const password = String(form.get("password") ?? "");
+  const ip = await clientIp();
+  const now = new Date();
+
+  if ((ip && !rateLimit(`ip:${ip}`, now)) || !rateLimit(`member:${loginId}`, now)) {
+    return { ok: false, reason: "RATE" };
+  }
+
+  const account = await db.portalAccount.findUnique({
+    where: { loginId },
+    include: { memberProfile: true },
+  });
+
+  if (
+    !account ||
+    account.status !== "ACTIVE" ||
+    account.memberProfile.status !== "ACTIVE" ||
+    isLocked({ failedAttempts: account.failedAttempts, lockedUntil: account.lockedUntil }, now)
+  ) {
+    burnPasswordTime(password);
+    await recordSecurityEvent({ type: "LOGIN_FAILURE", identifier: loginId, ip, detail: "Portal login refused" });
+    return { ok: false, reason: "GENERIC" };
+  }
+
+  if (!verifyPassword(password, account.passwordHash)) {
+    const next = registerFailure(
+      { failedAttempts: account.failedAttempts, lockedUntil: account.lockedUntil },
+      now
+    );
+    await db.portalAccount.update({ where: { id: account.id }, data: next });
+    await recordSecurityEvent({ type: "LOGIN_FAILURE", identifier: loginId, ip });
+    return { ok: false, reason: "GENERIC" };
+  }
+
+  await db.portalAccount.update({
+    where: { id: account.id },
+    data: { ...registerSuccess(), lastLoginAt: now },
+  });
+  await setSessionCookie(
+    SESSION_COOKIE_MEMBER,
+    signSession({
+      context: "MEMBER",
+      accountId: account.id,
+      loginId: account.loginId,
+      role: "MEMBER",
+      sessionVersion: account.sessionVersion,
+      expiresAt: sessionExpiry(now),
+    })
+  );
+  await recordSecurityEvent({ type: "LOGIN_SUCCESS", identifier: loginId, ip });
+  return { ok: true, to: "/portal" };
+}
+
+export async function memberLogin(form: FormData): Promise<void> {
+  const result = await attemptMemberLogin(form);
+  redirect(result.ok ? result.to : `/login?tab=member&error=${result.reason}`);
+}
+
+/* ---------------------------------------------------------------- sign out */
+
+export async function signOut(): Promise<void> {
+  const jar = await cookies();
+  jar.delete(SESSION_COOKIE_STAFF);
+  jar.delete(SESSION_COOKIE_MEMBER);
+  redirect("/login");
+}
