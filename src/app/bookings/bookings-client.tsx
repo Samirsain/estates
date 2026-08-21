@@ -328,7 +328,7 @@ export default function BookingsClient({
         )}
 
         <Card className="overflow-x-auto p-2">
-          <table className="w-full min-w-[62rem] border-separate border-spacing-y-1 text-sm">
+          <table className="w-full min-w-[52rem] border-separate border-spacing-y-1 text-sm">
             <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">Booking</th>
