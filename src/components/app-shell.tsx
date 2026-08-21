@@ -82,7 +82,7 @@ export function AppShell({
                         ? "bg-primary/15 font-semibold text-primary"
                         : item.href
                           ? "text-muted-foreground hover:bg-accent"
-                          : "cursor-not-allowed text-muted-foreground/60"
+                          : "cursor-default text-foreground/70"
                     }`}
                   >
                     <item.icon className="h-4 w-4 shrink-0" />
@@ -106,7 +106,7 @@ export function AppShell({
                                 ? "font-semibold text-primary"
                                 : child.href
                                   ? "text-muted-foreground hover:bg-accent"
-                                  : "cursor-not-allowed text-muted-foreground/50"
+                                  : "cursor-default text-muted-foreground"
                             }`}
                           >
                             <span>{child.label}</span>

@@ -93,6 +93,10 @@ const RESTRICTION_LABEL: Record<string, string> = {
 const inputClass =
   "h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
+/** Filters sit inline and size to their content, unlike a form field. */
+const filterClass =
+  "h-9 w-auto rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+
 function lifecycleVariant(lifecycle: string) {
   if (lifecycle === "AVAILABLE") return "success" as const;
   if (lifecycle === "HOLD") return "warning" as const;
@@ -195,7 +199,7 @@ export default function PlotsClient({
 
         <div className="flex flex-wrap items-center gap-2">
           <select
-            className={`${inputClass} h-9 w-auto`}
+            className={filterClass}
             value={projectFilter}
             onChange={(e) => setProjectFilter(e.target.value)}
             aria-label="Filter by Project"
@@ -208,7 +212,7 @@ export default function PlotsClient({
             ))}
           </select>
           <select
-            className={`${inputClass} h-9 w-auto`}
+            className={filterClass}
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             aria-label="Filter by status"

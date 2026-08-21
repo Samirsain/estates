@@ -66,8 +66,14 @@
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/15 selection:text-primary;
     font-feature-settings: "rlig" 1, "calt" 1;
-    /* typography.body — 17px/1.47, -0.374px */
-    font-size: 17px;
+    /*
+     * apple.md sets body at 17px, which is a marketing reading size. This is a
+     * dense operational tool — at 17px a Plot row wraps its area onto three
+     * lines and an empty Bookings table still needs a horizontal scrollbar.
+     * 15px keeps the same face and tracking while letting a row breathe;
+     * headings stay on the Display scale, tables a step below.
+     */
+    font-size: 15px;
     line-height: 1.47;
     letter-spacing: -0.374px;
   }

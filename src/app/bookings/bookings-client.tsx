@@ -71,6 +71,10 @@ export type BookableView = {
   holdPersonName: string | null;
 };
 
+/** Filters sit inline and size to their content, unlike a form field. */
+const filterClass =
+  "h-9 w-auto rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+
 type PersonView = { id: string; fullName: string; mobileMasked: string };
 type MemberView = { personId: string; label: string };
 
@@ -279,7 +283,7 @@ export default function BookingsClient({
 
         <div className="flex flex-wrap items-center gap-2">
           <select
-            className={`${inputClass} h-9 w-auto`}
+            className={filterClass}
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             aria-label="Filter by status"
