@@ -380,7 +380,7 @@ export default function BookingsClient({
                         {STATUS_LABEL[row.status] ?? row.status}
                       </Badge>
                       {row.activeProcess !== "NONE" && (
-                        <span className="mt-1 block text-[11px] text-amber-300">
+                        <span className="mt-1 block text-[11px] text-amber-800">
                           {PROCESS_LABEL[row.activeProcess]}
                         </span>
                       )}
@@ -1072,7 +1072,7 @@ function BookingDetailPanel({
                 </ul>
 
                 {detail.plc.correctionReason && (
-                  <p className="text-[11px] text-amber-300">
+                  <p className="text-[11px] text-amber-800">
                     Corrected by {detail.plc.correctedBy} — {detail.plc.correctionReason}
                   </p>
                 )}
@@ -1391,7 +1391,7 @@ function BookingDetailPanel({
                           {ELIGIBILITY_LABEL[c.eligibility] ?? c.eligibility}
                         </Badge>
                         {c.holdReason && (
-                          <span className="mt-1 block text-[11px] text-amber-300">
+                          <span className="mt-1 block text-[11px] text-amber-800">
                             {HOLD_LABEL[c.holdReason] ?? c.holdReason}
                           </span>
                         )}

@@ -144,7 +144,7 @@ model CustomerProfile {
   originalIntroducedByMemberId String?
   originalIntroducedByMember   MemberProfile? @relation("IntroducedCustomers", fields: [originalIntroducedByMemberId], references: [id])
   introducedPosition           Int?
-  introducedRatePercent        Decimal?       @db.Decimal(6, 3)
+  introducedRatePercent        Decimal?       @db.Decimal(7, 4)
   introducedYearStart          DateTime?
 
   /// PRD §6.5 — combined lifetime maximum of three; the limit never resets.
@@ -157,6 +157,24 @@ model CustomerProfile {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Terms §2.1 — "The person accepts the applicable Terms and Privacy Notice".
+/// One row per Member per published version, never updated in place: what a
+/// Member agreed to and when is exactly the kind of record PRD §23.5 keeps
+/// append-only.
+model MemberTermsAcceptance {
+  id              String        @id @default(uuid())
+  memberProfileId String
+  memberProfile   MemberProfile @relation(fields: [memberProfileId], references: [id], onDelete: Cascade)
+  /// The published Terms version, e.g. 2026-08-22.
+  version         String
+  acceptedAt      DateTime      @default(now())
+  /// Recorded for a later dispute, never used to identify anyone (Privacy §5).
+  ip              String?
+
+  @@unique([memberProfileId, version])
+  @@index([version])
 }
 
 model MemberProfile {
@@ -175,7 +193,7 @@ model MemberProfile {
 
   /// Positions are assigned once and never renumbered (PRD RD-02).
   invitePosition    Int?
-  inviteRatePercent Decimal?  @db.Decimal(6, 3)
+  inviteRatePercent Decimal?  @db.Decimal(7, 4)
   inviteYearStart   DateTime?
 
   /// A new Member has provided nothing yet, so Pending is the honest default:
@@ -185,6 +203,10 @@ model MemberProfile {
   reraExpiryDate       DateTime?
   /// Compulsory when the status is Not Applicable (PRD §19.5).
   reraNotApplicableReason String?
+
+  /// Terms §2.1 — acceptance is part of becoming a Member, so it is recorded
+  /// rather than re-asked. A new version asks again and adds its own row.
+  termsAcceptances     MemberTermsAcceptance[]
 
   /// PRD §14.11 — a Member-level hold affects every unpaid record.
   commissionHold       Boolean @default(false)
@@ -352,11 +374,27 @@ enum BoundarySide {
   WEST
 }
 
+/// What lies on one side of a Plot. Only the three Plot kinds close a side; the
+/// rest leave it open (see isOpenSide in src/lib/domain/inventory.ts).
 enum BoundaryKind {
   ROAD
   PLOT
+  COMMERCIAL
+  INFORMAL_SECTOR
   PARK
+  PLAYGROUND
+  FACILITIES
+  PUBLIC_UTILITY
   OTHER
+}
+
+/// The whole PLC vocabulary. A Project sets the percentages; it does not invent
+/// categories, and no code is typed anywhere (PLC spec §2.3, §3.3).
+enum PlcCategory {
+  ROAD_WIDTH
+  OPEN_SIDES
+  PARK_FACING
+  PLAYGROUND_FACING
 }
 
 enum EnquiryStatus {
@@ -483,13 +521,15 @@ model PlcComponent {
   id            String         @id @default(uuid())
   ruleVersionId String
   ruleVersion   PlcRuleVersion @relation(fields: [ruleVersionId], references: [id], onDelete: Cascade)
-  /// Distinct category, e.g. ROAD_FACING. The same category on multiple sides
-  /// is charged once.
-  code          String
-  label         String
-  percent       Decimal        @db.Decimal(6, 3)
+  /// The stable key. The same category on multiple sides is charged once, and a
+  /// banded category charges only the highest band the Plot reaches.
+  category      PlcCategory
+  /// Feet for ROAD_WIDTH, a count of open sides for OPEN_SIDES, null otherwise.
+  /// The displayed label is generated from it, never stored.
+  threshold     Decimal?       @db.Decimal(8, 2)
+  percent       Decimal        @db.Decimal(7, 4)
 
-  @@unique([ruleVersionId, code])
+  @@unique([ruleVersionId, category, threshold])
 }
 
 /// Immutable frozen copy taken at Hold, Booking Request or Change Plot.
@@ -501,9 +541,10 @@ model PlcSnapshot {
   ruleVersion   PlcRuleVersion @relation(fields: [ruleVersionId], references: [id])
   plotId        String
   plot          Plot           @relation(fields: [plotId], references: [id])
-  /// [{ code, label, percent }] exactly as charged.
+  /// [{ category, label, percent, evidence }] exactly as charged, with the
+  /// sides that qualified (PLC spec §7.1).
   components    Json
-  totalPercent  Decimal        @db.Decimal(6, 3)
+  totalPercent  Decimal        @db.Decimal(7, 4)
   frozenAt      DateTime       @default(now())
 
   /// False once superseded by a correction, or once the Change Plot that froze
@@ -535,17 +576,17 @@ model Plot {
   // Plot uses the override and a compulsory reason (PRD §16.2).
   widthFt           Decimal? @db.Decimal(10, 3)
   lengthFt          Decimal? @db.Decimal(10, 3)
-  exactAreaSqFt     Decimal? @db.Decimal(12, 3)
+  exactAreaSqFt     Decimal? @db.Decimal(12, 4)
   exactAreaReason   String?
   /// Persisted so inventory lists and reports never recompute inconsistently.
-  areaSqFt          Decimal  @db.Decimal(12, 3)
-  areaSqYd          Decimal  @db.Decimal(12, 3)
-  areaSqM           Decimal  @db.Decimal(12, 3)
+  areaSqFt          Decimal  @db.Decimal(12, 4)
+  areaSqYd          Decimal  @db.Decimal(12, 4)
+  areaSqM           Decimal  @db.Decimal(12, 4)
 
-  parkFacing Boolean @default(false)
-  /// PLC component codes that apply to this Plot, resolved against the
-  /// Project's current rule version. Distinct by construction.
-  plcComponentCodes String[] @default([])
+  /// No PLC applicability is stored here. It derives from the Plot's own
+  /// boundaries every time it is read (PLC spec §4.1, §4.3), so correcting a
+  /// boundary corrects the PLC with it. Park Facing is one of those boundaries
+  /// rather than a separate flag that could contradict them.
 
   lifecycle         PlotLifecycle   @default(NOT_AVAILABLE)
   restriction       PlotRestriction @default(NOT_YET_RELEASED)
@@ -578,10 +619,11 @@ model PlotBoundary {
   plot               Plot         @relation(fields: [plotId], references: [id], onDelete: Cascade)
   side               BoundarySide
   kind               BoundaryKind
-  /// Required when kind = ROAD.
+  /// Required when kind = ROAD — it decides the PLC band.
   roadWidthFt        Decimal?     @db.Decimal(8, 2)
-  /// Required when kind = PLOT.
-  adjacentPlotNumber String?
+  /// What is on that side, when it is worth naming: the adjacent Plot Number,
+  /// the park or facility number, and so on. Optional for every kind.
+  reference          String?
 
   @@unique([plotId, side])
 }
@@ -1517,8 +1559,8 @@ model Acquisition {
   location         String?
   projectType      ProjectType?
   propertyNumber   String?
-  areaSqFt         Decimal?     @db.Decimal(12, 3)
-  plcPercent       Decimal?     @db.Decimal(6, 3)
+  areaSqFt         Decimal?     @db.Decimal(12, 4)
+  plcPercent       Decimal?     @db.Decimal(7, 4)
   /// Normalised duplicate key across name, location and property number.
   duplicateKey     String?
   /// PRD §11.6 — the External Resale Property Group the property lands in.

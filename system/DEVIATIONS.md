@@ -100,7 +100,7 @@ and when" is always answerable. A role without the field permission gets a
 
 ---
 
-## D-03 · Two visible terms differ from the approved wording
+## D-03 · Three visible terms differ from the approved wording
 
 **Date:** 22 August 2026
 **Approved by:** Product Owner (during the build session)
@@ -112,6 +112,7 @@ and when" is always answerable. A role without the field permission gets a
 | --- | --- |
 | **Plot Location Charge (PLC %)** | `main-PRD.md` §8.5 — "Use the visible term **Location Charge (PLC %)**"; `DESIGN.md` §7.1 lists the column as `Location Charge (PLC %)` |
 | **Unreleased** | `PRD.md` §16.1 and `main-PRD.md` §16.1 list the Project status as **Setup / Not Active** |
+| **Area sq ft**, on the irregular-Plot field | `main-PRD.md` §16.2 calls it **Exact Area Override** |
 
 ### Why it is recorded (D-03)
 
@@ -122,7 +123,7 @@ rather than a surprise.
 
 ### How it behaves (D-03)
 
-Both are labels. `ProjectLifecycle.SETUP_NOT_ACTIVE` is unchanged in the
+All three are labels. `ProjectLifecycle.SETUP_NOT_ACTIVE` is unchanged in the
 database, in the API and in every rule; only the string rendered beside it
 differs. No migration, no permission change, no status transition affected.
 
@@ -142,6 +143,13 @@ Yet Released inside an Active Project.
 `LIFECYCLE_LABEL` in `src/app/projects/projects-client.tsx`; the refusal in
 `src/lib/domain/inventory.ts`; the PLC headings in
 `src/app/plots/plots-client.tsx` and `src/app/bookings/bookings-client.tsx`.
+
+The third is the Prepare Inventory and Edit Plot Details field in
+`src/app/plots/plots-client.tsx`. The word "Exact" was doing no work for the
+person filling the form — they are typing an area, and the field only appears
+once they have said the Plot is irregular. `Plot.exactAreaSqFt` and
+`exactAreaReason` keep their names in the database and in every rule; the
+compulsory reason is unchanged.
 
 ---
 
@@ -187,3 +195,116 @@ person entering data, not removed from the system.
 `generateProjectCode` in `src/lib/services/project-service.ts`; the form in
 `src/app/projects/projects-client.tsx`; migration
 `prisma/migrations/20260823090000_project_card_fields`.
+
+---
+
+## D-05 · Location Charge components are a fixed catalogue, derived from boundaries
+
+**Formal record:** [CR-005](./change-requests/CR-005-plc-catalogue-and-derivation.md)
+
+**Date:** 22 August 2026
+**Approved by:** Product Owner (during the build session)
+**Governed area touched:** inventory — the change request is therefore required,
+not optional
+
+### What changed (D-05)
+
+Two things, and they are one idea seen from either end.
+
+**Nobody types a code any more.** Project setup used to ask for a category code
+(`ROAD_FACING`), a display label and a percentage. It now offers four
+categories, and asks only for a percentage — plus a band where the category
+takes one:
+
+| Category | Band | Reads as |
+| --- | --- | --- |
+| Road width | feet | `Road 60 ft & above`, `Road 40 – 59 ft` |
+| Open sides | a count | `Two side open`, `Three side open`, `Four side open` |
+| Park facing | none | `Park facing` |
+| Playground facing | none | `Playground facing` |
+
+The label is generated from the category and the band, so two Projects cannot
+describe the same band in two different ways.
+
+**Nobody selects applicability per Plot either.** The Prepare Inventory grid's
+free-text `PLC codes` column is gone. In its place the grid asks what each of
+the four sides faces — the fields `main-PRD.md` §16.2 lists as binding and that
+no screen had ever collected. Effective PLC is read from those sides:
+
+- the widest Road the Plot touches picks one road band, once, however many sides
+  are roads;
+- the count of sides that do not abut another Plot picks one open-sides band,
+  so `Three side open` and `Two side open` can never both apply. A Plot closes a
+  side whatever its type, so Commercial and Informal Sector count as closed;
+- a park side charges Park facing once, and a playground side Playground facing.
+
+Area and Location Charge now fill in as the row is typed, from the same two
+domain rules the server runs on save.
+
+### Why it is a deviation (D-05)
+
+`plc.md` §3.2 says "The actual PLC categories and their percentages must come
+from authorised Project setup. Developers must not invent them", and §3.3 shows
+`ROAD_FACING` / `PARK_FACING` / `CORNER` as the example codes. Fixing four
+categories in code reads against the letter of that.
+
+It is recorded rather than resisted because the categories here were specified
+by the owner, not invented by development, and because `main-PRD.md` — the
+binding baseline — never enumerates PLC categories at all. §16.3 states only
+that PLC is a percentage, that each distinct component is charged once, and that
+the same category on multiple sides is not charged repeatedly. All three still
+hold, and the second and third now hold *by construction* rather than by asking
+a person not to type the same code twice.
+
+`plc.md` §2.3 requires deduplication by a stable category key rather than by
+display label. That requirement is met exactly: the key is the category enum, it
+survives a label change, and the label is no longer stored at all.
+
+### What this removed (D-05)
+
+`Plot.plcComponentCodes` and `Plot.parkFacing` are both dropped.
+
+The codes column stored a decision that had to be kept in step with the
+boundaries by hand; nothing now stores applicability, so the two cannot drift.
+`main-PRD.md` §16.2 lists **Park Facing** as a Plot field, and it is still shown
+— derived from a `PARK` boundary rather than from a separate flag that could
+contradict the sides recorded beside it. The migration moves an existing
+`parkFacing = true` onto a free side rather than discarding it.
+
+`BoundaryKind` gains `PLAYGROUND`, `COMMERCIAL`, `INFORMAL_SECTOR`,
+`FACILITIES` and `PUBLIC_UTILITY`. `PlotBoundary.adjacentPlotNumber` widens into
+`reference`, which any kind may carry and none is required to: the old column
+required a Plot Number whenever the side was a Plot, and knowing a Plot sits on
+the east side is worth recording even when nobody knows which Plot. Road width
+stays compulsory — it decides a band rather than describing a side.
+
+### What this added (D-05)
+
+**Edit Plot Details** (`main-PRD.md` §8.4) existed in the approved documents but
+had never been built, so a wrong road width was wrong for the life of the Plot.
+It is now a command under the §8.7 correction rules: a compulsory reason, old
+and new values in History, and revalidation of PLC. The revalidation needs no
+code of its own — effective PLC derives from the boundaries on every read, so an
+Available Plot is correct the moment the correction saves. A frozen Hold or
+Booking snapshot is deliberately not moved (`plc.md` §7.2); the screen reports
+that it no longer matches, and correcting it stays the separate audited decision
+it already was.
+
+`prepareInventory` also now enforces `main-PRD.md` §8.1 — a Commercial Project
+cannot contain a Residential Plot — which nothing had checked.
+
+### Precision (D-05)
+
+`main-PRD.md` §23.1 sets four decimal places for percentages **and for Plot
+area**. Percentages were at three and area at three. Both are now at four, with
+display still normalising to two unless the value carries more.
+
+### Where it lives (D-05)
+
+`buildPlcSnapshot`, `validatePlcComponents`, `plcComponentLabel` and
+`PLC_CATEGORIES` in `src/lib/domain/inventory.ts`; `freezePlcSnapshot` in
+`src/lib/services/plc-service.ts`; `updatePlotDetails` in
+`src/lib/services/inventory-service.ts`; the grid and the Edit Plot Details
+dialog in `src/app/plots/plots-client.tsx`; the category picker in
+`src/app/projects/projects-client.tsx`; migration
+`prisma/migrations/20260824090000_plc_categories`.

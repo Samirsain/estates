@@ -78,6 +78,39 @@ export function formatIst(at: Date | string): string {
   return `${dateFmt.format(d)} ${timeFmt.format(d)} IST`;
 }
 
+/**
+ * PRD §23.1 — percentages and areas are exact to four decimals, and "display
+ * normally to two decimals unless more detail is needed". So two decimals is
+ * the floor, not the ceiling: a value carrying more keeps it rather than being
+ * rounded away on screen.
+ */
+export function formatPercent(value: string | number): string {
+  // String arithmetic, not Number: the stored value is already exact to four
+  // decimals, and routing it through a binary float to print it would be the
+  // one place the exact-decimal rule leaks (ARCHITECTURE §3.4).
+  const [whole, fraction = ""] = `${value}`.split(".");
+  const trimmed = fraction.replace(/0+$/, "").slice(0, 4);
+  return `${whole}.${trimmed.padEnd(2, "0")}%`;
+}
+
+/**
+ * Indian digit grouping for a quantity that is already at the precision it
+ * should display: 1507959 reads 15,07,959. An area with no separators is a
+ * number nobody can check at a glance.
+ *
+ * Grouping only — rounding belongs to the Decimal that produced the value, so
+ * no quantity takes a trip through a binary float on its way to the screen.
+ */
+export function formatQuantity(value: string | number): string {
+  const [whole = "0", fraction = ""] = `${value}`.split(".");
+  const sign = whole.startsWith("-") ? "-" : "";
+  const digits = whole.replace("-", "");
+  const head = digits.slice(0, -3);
+  const tail = digits.slice(-3);
+  const grouped = head ? `${head.replace(/\B(?=(\d{2})+(?!\d))/g, ",")},${tail}` : tail;
+  return fraction ? `${sign}${grouped}.${fraction}` : `${sign}${grouped}`;
+}
+
 export function addIstDays(day: string, days: number): string {
   const t = Date.parse(`${day}T00:00:00Z`) + days * 86_400_000;
   return new Date(t).toISOString().slice(0, 10);

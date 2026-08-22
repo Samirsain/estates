@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
 import { buildPlcSnapshot, derivedFacing } from "@/lib/domain/inventory";
+import { plcRules } from "@/lib/services/plc-service";
 import { listPendingHoldRequests } from "@/lib/services/hold-service";
 import { listPlots } from "@/lib/services/inventory-service";
 import PlotsClient, { type HoldRequestView, type PlotRowView } from "./plots-client";
@@ -44,21 +45,21 @@ export default async function PlotsPage() {
     if (version) {
       try {
         const effective = buildPlcSnapshot(
-          plot.plcComponentCodes,
-          version.components.map((c) => ({
-            code: c.code,
-            label: c.label,
-            percent: c.percent.toString(),
-          }))
+          plot.boundaries.map((b) => ({
+            side: b.side,
+            kind: b.kind,
+            roadWidthFt: b.roadWidthFt?.toString(),
+          })),
+          plcRules(version.components)
         );
         plc = {
           version: version.version,
-          totalPercent: effective.totalPercent.toFixed(3),
+          totalPercent: effective.totalPercent.toFixed(4),
           components: effective.components,
         };
       } catch (error) {
-        // PLC spec §5.3 — a code the published version no longer carries is
-        // surfaced, never silently dropped from the total.
+        // PLC spec §5.3 — a configuration or a boundary that cannot be
+        // evaluated is surfaced, never silently dropped from the total.
         plcIssue = error instanceof Error ? error.message : "PLC could not be evaluated";
       }
     }
@@ -71,16 +72,25 @@ export default async function PlotsPage() {
       projectId: plot.projectId,
       plotType: plot.plotType,
       plotNumber: plot.plotNumber,
-      areaSqYd: plot.areaSqYd.toFixed(2),
-      areaSqFt: plot.areaSqFt.toFixed(2),
+      areaSqYd: plot.areaSqYd.toDecimalPlaces(2).toString(),
+      areaSqFt: plot.areaSqFt.toDecimalPlaces(2).toString(),
+      areaSqM: plot.areaSqM.toDecimalPlaces(2).toString(),
       lifecycle: plot.lifecycle,
       restriction: plot.restriction,
       restrictionReason: plot.restrictionReason,
       isResale: plot.isResale,
-      plcCodes: plot.plcComponentCodes,
+      widthFt: plot.widthFt?.toString() ?? "",
+      lengthFt: plot.lengthFt?.toString() ?? "",
+      exactAreaSqFt: plot.exactAreaSqFt?.toString() ?? "",
+      exactAreaReason: plot.exactAreaReason ?? "",
+      boundaries: plot.boundaries.map((b) => ({
+        side: b.side,
+        kind: b.kind,
+        roadWidthFt: b.roadWidthFt?.toString() ?? "",
+        reference: b.reference ?? "",
+      })),
       facing: derivedFacing(
-        plot.boundaries.map((b) => ({ side: b.side, kind: b.kind, roadWidthFt: b.roadWidthFt?.toString() })),
-        plot.parkFacing
+        plot.boundaries.map((b) => ({ side: b.side, kind: b.kind, roadWidthFt: b.roadWidthFt?.toString() }))
       ),
       hold: hold
         ? {
@@ -122,8 +132,13 @@ export default async function PlotsPage() {
         id: p.id,
         name: p.name,
         lifecycle: p.lifecycle,
-        plcCodes: p.plcRuleVersions[0]?.components.map((c) => `${c.code} (${c.percent.toFixed(2)}%)`) ?? [],
-        rawPlcCodes: p.plcRuleVersions[0]?.components.map((c) => c.code) ?? [],
+        // The grid needs the configured bands themselves, so it can compute the
+        // same effective PLC the server will, live, as the row is typed.
+        plcComponents: plcRules(p.plcRuleVersions[0]?.components ?? []).map((c) => ({
+          category: c.category,
+          threshold: c.threshold == null ? null : String(c.threshold),
+          percent: String(c.percent),
+        })),
       }))}
       people={people}
       permissions={{
@@ -133,6 +148,7 @@ export default async function PlotsPage() {
         extend: can(actor.role, "HOLD_EXTEND_FIRST"),
         decideExtension: can(actor.role, "HOLD_EXTEND_FURTHER"),
         setup: can(actor.role, "PLOT_SETUP"),
+        editDetails: can(actor.role, "PLOT_SETUP"),
         reviewRequests: can(actor.role, "HOLD_REQUEST_REVIEW"),
       }}
     />

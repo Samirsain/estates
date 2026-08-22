@@ -62,7 +62,7 @@ export async function createProjectAction(
       amenities: input.amenities || null,
       reraNumber: input.reraNumber || null,
       isExternalResaleGroup: input.isExternalResaleGroup,
-      components: input.components.filter((c) => c.code.trim() !== ""),
+      components: input.components,
     });
     refresh();
     return {
@@ -110,7 +110,7 @@ export async function revisePlcRulesAction(
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
       projectId,
-      components: components.filter((c) => c.code.trim() !== ""),
+      components,
       reason,
     });
     refresh();
@@ -137,7 +137,7 @@ export async function savePlcDraftAction(
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
       projectId,
-      components: components.filter((c) => c.code.trim() !== ""),
+      components,
       reason,
     });
     refresh();

@@ -35,9 +35,9 @@ export default async function ProjectsPage() {
         components: (
           project.plcRuleVersions.find((v) => v.status === "PUBLISHED")?.components ?? []
         ).map((component) => ({
-          code: component.code,
-          label: component.label,
-          percent: component.percent.toFixed(3),
+          category: component.category,
+          threshold: component.threshold?.toString() ?? null,
+          percent: component.percent.toFixed(4),
         })),
         // PLC spec §15.1 — published, draft and superseded together.
         plcVersions: project.plcRuleVersions.map((version) => ({
@@ -51,9 +51,9 @@ export default async function ProjectsPage() {
           effectiveFrom: version.effectiveFrom?.toISOString() ?? null,
           effectiveTo: version.effectiveTo?.toISOString() ?? null,
           components: version.components.map((component) => ({
-            code: component.code,
-            label: component.label,
-            percent: component.percent.toFixed(3),
+            category: component.category,
+            threshold: component.threshold?.toString() ?? null,
+            percent: component.percent.toFixed(4),
           })),
         })),
       }))}

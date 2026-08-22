@@ -12,8 +12,8 @@ import {
   validateChangePlot,
 } from "@/lib/domain/acquisition";
 import { assertProcessFree, isPaymentComplete, validateSchedule } from "@/lib/domain/booking";
-import { buildPlcSnapshot } from "@/lib/domain/inventory";
 import { blocked, lockBooking, lockPlot, runCommand, type Tx } from "./command";
+import { freezePlcSnapshot } from "./plc-service";
 import { generateForBooking, reassessCommission } from "./commission-service";
 import { createScheduleVersion, syncPaymentFollowUp, type ScheduleInput } from "./payment-service";
 import { closeTasksFor, ensureTask } from "./task-service";
@@ -37,30 +37,7 @@ async function freezeReplacementPlc(tx: Tx, plotId: string, personId: string) {
   if (hold?.plcSnapshotId) {
     return tx.plcSnapshot.findUniqueOrThrow({ where: { id: hold.plcSnapshotId } });
   }
-
-  const plot = await tx.plot.findUniqueOrThrow({
-    where: { id: plotId },
-    include: {
-      project: {
-        include: { plcRuleVersions: { where: { status: "PUBLISHED" }, include: { components: true }, take: 1 } },
-      },
-    },
-  });
-  const version = plot.project.plcRuleVersions[0];
-  if (!version) blocked("The Project has no current PLC rule version.");
-
-  const snapshot = buildPlcSnapshot(
-    plot.plcComponentCodes,
-    version.components.map((c) => ({ code: c.code, label: c.label, percent: c.percent.toString() }))
-  );
-  return tx.plcSnapshot.create({
-    data: {
-      ruleVersionId: version.id,
-      plotId,
-      components: snapshot.components as never,
-      totalPercent: snapshot.totalPercent.toFixed(3),
-    },
-  });
+  return freezePlcSnapshot(tx, plotId);
 }
 
 export async function submitChangePlot(args: {

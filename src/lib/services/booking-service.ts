@@ -16,13 +16,9 @@ import {
   type BookingRejectReason,
 } from "@/lib/domain/booking";
 import { checkOpenPositions } from "@/lib/domain/holds";
-import {
-  buildPlcSnapshot,
-  canAllocate,
-  plotReturnState,
-  type PlotRestriction,
-} from "@/lib/domain/inventory";
+import { canAllocate, plotReturnState, type PlotRestriction } from "@/lib/domain/inventory";
 import { blocked, lockBooking, lockPlot, nextReference, runCommand, type Tx } from "./command";
+import { freezePlcSnapshot } from "./plc-service";
 import { countOpenPositions } from "./hold-service";
 import {
   generateForBooking,
@@ -134,36 +130,15 @@ async function validateSoldBy(tx: Tx, soldByType: SoldByType, soldByPersonId: st
   }
 }
 
-type PlotWithPlc = {
-  id: string;
-  plcComponentCodes: string[];
-  project: {
-    plcRuleVersions: Array<{
-      id: string;
-      components: Array<{ code: string; label: string; percent: { toString(): string } }>;
-    }>;
-  };
-};
+/** All plcSnapshotFor still needs is which Plot to freeze. */
+type PlotWithPlc = { id: string };
 
 /** Reuses the Hold's frozen snapshot, or freezes the current PLC version. */
 async function plcSnapshotFor(tx: Tx, plot: PlotWithPlc, holdSnapshotId: string | null) {
+  // PLC spec §6.4 — a Booking Request from an active Hold carries that Hold's
+  // frozen snapshot forward; one raised from an Available Plot freezes now.
   if (holdSnapshotId) return tx.plcSnapshot.findUniqueOrThrow({ where: { id: holdSnapshotId } });
-
-  const version = plot.project.plcRuleVersions[0];
-  if (!version) blocked("The Project has no current PLC rule version. Complete Project setup first.");
-
-  const snapshot = buildPlcSnapshot(
-    plot.plcComponentCodes,
-    version.components.map((c) => ({ code: c.code, label: c.label, percent: c.percent.toString() }))
-  );
-  return tx.plcSnapshot.create({
-    data: {
-      ruleVersionId: version.id,
-      plotId: plot.id,
-      components: snapshot.components as never,
-      totalPercent: snapshot.totalPercent.toFixed(3),
-    },
-  });
+  return freezePlcSnapshot(tx, plot.id);
 }
 
 async function currentParties(tx: Tx, bookingId: string) {

@@ -135,34 +135,96 @@ async function main() {
   });
 
   // PLC is percentage only; each distinct component is charged once.
-  const existingPlc = await db.plcRuleVersion.findUnique({
-    where: { projectId_version: { projectId: project.id, version: 1 } },
+  //
+  // A published version that carries no components is not a configuration — the
+  // categories migration leaves exactly that behind, because a typed code could
+  // not be turned into a band without inventing one. So the test is "is there a
+  // published version with components", not "does version 1 exist", and the
+  // seed publishes the next version rather than reusing an empty one.
+  const existingPlc = await db.plcRuleVersion.findFirst({
+    where: { projectId: project.id, status: "PUBLISHED", components: { some: {} } },
+  });
+  const latestPlc = await db.plcRuleVersion.findFirst({
+    where: { projectId: project.id },
+    orderBy: { version: "desc" },
   });
   const plc =
     existingPlc ??
     (await db.plcRuleVersion.create({
       data: {
         projectId: project.id,
-        version: 1,
+        version: (latestPlc?.version ?? 0) + 1,
         status: "PUBLISHED",
         effectiveFrom: new Date(),
         publishedAt: new Date(),
         reason: "Initial setup",
         components: {
           create: [
-            { code: "ROAD_FACING", label: "Road facing", percent: "5.000" },
-            { code: "CORNER", label: "Corner", percent: "2.500" },
-            { code: "PARK_FACING", label: "Park facing", percent: "3.000" },
+            // Road width bands: a Plot charges the widest road it touches, once.
+            { category: "ROAD_WIDTH", threshold: "60.00", percent: "5.0000" },
+            { category: "ROAD_WIDTH", threshold: "40.00", percent: "3.0000" },
+            { category: "ROAD_WIDTH", threshold: "30.00", percent: "2.0000" },
+            // Open sides: only the highest band a Plot reaches applies.
+            { category: "OPEN_SIDES", threshold: "4.00", percent: "6.0000" },
+            { category: "OPEN_SIDES", threshold: "3.00", percent: "4.0000" },
+            { category: "OPEN_SIDES", threshold: "2.00", percent: "2.0000" },
+            { category: "PARK_FACING", threshold: null, percent: "2.0000" },
+            { category: "PLAYGROUND_FACING", threshold: null, percent: "1.5000" },
           ],
         },
       },
     }));
 
+  // Boundaries are the whole PLC input now — there is nothing else to seed.
   const plots = [
-    { plotNumber: "A-101", width: "30", length: "45", codes: ["ROAD_FACING"], park: false, release: true },
-    { plotNumber: "A-102", width: "30", length: "50", codes: ["ROAD_FACING", "CORNER"], park: false, release: true },
-    { plotNumber: "A-103", width: "25", length: "40", codes: [], park: true, release: true },
-    { plotNumber: "A-104", width: "30", length: "45", codes: [], park: false, release: false },
+    {
+      plotNumber: "A-101",
+      width: "30",
+      length: "45",
+      release: true,
+      boundaries: [
+        { side: "NORTH", kind: "ROAD", roadWidthFt: "40" },
+        { side: "EAST", kind: "PLOT", reference: "A-105" },
+        { side: "SOUTH", kind: "PLOT", reference: "A-110" },
+        { side: "WEST", kind: "OTHER" },
+      ],
+    },
+    {
+      plotNumber: "A-102",
+      width: "30",
+      length: "50",
+      release: true,
+      boundaries: [
+        { side: "NORTH", kind: "ROAD", roadWidthFt: "60" },
+        { side: "EAST", kind: "ROAD", roadWidthFt: "30" },
+        { side: "SOUTH", kind: "PLOT", reference: "A-110" },
+        { side: "WEST", kind: "PLOT", reference: "A-101" },
+      ],
+    },
+    {
+      plotNumber: "A-103",
+      width: "25",
+      length: "40",
+      release: true,
+      boundaries: [
+        { side: "NORTH", kind: "PLOT", reference: "A-100" },
+        { side: "EAST", kind: "PLAYGROUND" },
+        { side: "SOUTH", kind: "PARK" },
+        { side: "WEST", kind: "PLOT" as const, reference: "A-104" },
+      ],
+    },
+    {
+      plotNumber: "A-104",
+      width: "30",
+      length: "45",
+      release: false,
+      boundaries: [
+        { side: "NORTH", kind: "PLOT", reference: "A-100" },
+        { side: "EAST", kind: "PLOT", reference: "A-103" },
+        { side: "SOUTH", kind: "PLOT", reference: "A-110" },
+        { side: "WEST", kind: "OTHER" },
+      ],
+    },
   ];
 
   for (const p of plots) {
@@ -185,20 +247,18 @@ async function main() {
         plotNumber: p.plotNumber,
         widthFt: p.width,
         lengthFt: p.length,
-        areaSqFt: areas.areaSqFt.toFixed(3),
-        areaSqYd: areas.areaSqYd.toFixed(3),
-        areaSqM: areas.areaSqM.toFixed(3),
-        parkFacing: p.park,
-        plcComponentCodes: p.codes,
+        areaSqFt: areas.areaSqFt.toFixed(4),
+        areaSqYd: areas.areaSqYd.toFixed(4),
+        areaSqM: areas.areaSqM.toFixed(4),
         lifecycle: p.release ? "AVAILABLE" : "NOT_AVAILABLE",
         restriction: p.release ? "NONE" : "NOT_YET_RELEASED",
         boundaries: {
-          create: [
-            { side: "NORTH", kind: p.codes.includes("ROAD_FACING") ? "ROAD" : "PLOT", roadWidthFt: p.codes.includes("ROAD_FACING") ? "30" : null, adjacentPlotNumber: p.codes.includes("ROAD_FACING") ? null : "A-100" },
-            { side: "EAST", kind: p.codes.includes("CORNER") ? "ROAD" : "PLOT", roadWidthFt: p.codes.includes("CORNER") ? "20" : null, adjacentPlotNumber: p.codes.includes("CORNER") ? null : "A-105" },
-            { side: "SOUTH", kind: p.park ? "PARK" : "PLOT", adjacentPlotNumber: p.park ? null : "A-110" },
-            { side: "WEST", kind: "OTHER" },
-          ],
+          create: p.boundaries.map((b) => ({
+            side: b.side as "NORTH",
+            kind: b.kind as "ROAD",
+            roadWidthFt: "roadWidthFt" in b ? b.roadWidthFt ?? null : null,
+            reference: "reference" in b ? b.reference ?? null : null,
+          })),
         },
       },
     });

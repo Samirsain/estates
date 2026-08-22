@@ -5,12 +5,24 @@
 
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { buildPlcSnapshot } from "@/lib/domain/inventory";
+import {
+  PLC_CATEGORIES,
+  buildPlcSnapshot,
+  plcComponentLabel,
+  validatePlcComponents,
+  type PlcCategory,
+} from "@/lib/domain/inventory";
 import { blocked, runCommand, type Tx } from "./command";
+import { plcRules } from "./plc-service";
 
 const D = Prisma.Decimal;
 
-export type PlcComponentInput = { code: string; label: string; percent: string };
+/**
+ * A configured PLC row. There is no code and no label: the category comes from
+ * the fixed catalogue, the band is a number, and the label is generated from
+ * both. Nothing here is free text.
+ */
+export type PlcComponentInput = { category: PlcCategory; threshold?: string | null; percent: string };
 
 /**
  * A Project could not be changed at all until now: the service offered
@@ -427,8 +439,6 @@ export async function correctPlcSnapshot(args: {
   actorRef: string;
   actorRole: string;
   snapshotId: string;
-  /** The applicability the snapshot should have frozen, deduplicated as usual. */
-  componentCodes: string[];
   reason: string;
 }) {
   if (!args.reason.trim()) blocked("A compulsory reason is required to correct a PLC snapshot.");
@@ -443,30 +453,28 @@ export async function correctPlcSnapshot(args: {
       operation: "PLC_SNAPSHOT_CORRECT",
       actorRef: args.actorRef,
       actorRole: args.actorRole,
-      payload: { snapshotId: args.snapshotId, componentCodes: args.componentCodes },
+      payload: { snapshotId: args.snapshotId },
     },
     async (tx) => {
       const old = await tx.plcSnapshot.findUnique({
         where: { id: args.snapshotId },
-        include: { ruleVersion: { include: { components: true } } },
+        include: { ruleVersion: { include: { components: true } }, plot: { include: { boundaries: true } } },
       });
       if (!old) blocked("That PLC snapshot no longer exists.");
       if (!old.isCurrent) {
         blocked("That PLC snapshot has already been superseded. Correct the current one instead.");
       }
 
+      // The correction re-derives from the Plot's boundaries as they stand now,
+      // against the rule version the snapshot froze. There is no applicability
+      // to retype: an authorised Plot correction fixes the boundary, and this
+      // carries that fix into the frozen record (PRD §8.7).
       let rebuilt: ReturnType<typeof buildPlcSnapshot>;
       try {
-        rebuilt = buildPlcSnapshot(
-          args.componentCodes,
-          old.ruleVersion.components.map((c) => ({
-            code: c.code,
-            label: c.label,
-            percent: c.percent.toString(),
-          }))
-        );
+        rebuilt = buildPlcSnapshot(old.plot.boundaries, plcRules(old.ruleVersion.components));
       } catch (error) {
-        // PLC spec §5.3 — an unknown code is refused, never silently dropped.
+        // PLC spec §5.3 — a configuration that cannot be evaluated is refused,
+        // never quietly reduced to a smaller total.
         blocked(
           error instanceof Error ? error.message : "The corrected PLC applicability is not valid."
         );
@@ -476,8 +484,8 @@ export async function correctPlcSnapshot(args: {
         data: {
           ruleVersionId: old.ruleVersionId,
           plotId: old.plotId,
-          components: rebuilt!.components,
-          totalPercent: rebuilt!.totalPercent.toFixed(3),
+          components: rebuilt!.components as never,
+          totalPercent: rebuilt!.totalPercent.toFixed(4),
           correctionReason: args.reason.trim(),
           correctedBy: args.actorRef,
         },
@@ -506,8 +514,8 @@ export async function correctPlcSnapshot(args: {
       return {
         result: {
           snapshotId: corrected.id,
-          oldTotalPercent: old.totalPercent.toFixed(3),
-          newTotalPercent: corrected.totalPercent.toFixed(3),
+          oldTotalPercent: old.totalPercent.toFixed(4),
+          newTotalPercent: corrected.totalPercent.toFixed(4),
         },
         audit: {
           entity: "PlcSnapshot",
@@ -515,11 +523,11 @@ export async function correctPlcSnapshot(args: {
           action: "PLC_SNAPSHOT_CORRECTED",
           before: {
             snapshotId: old.id,
-            totalPercent: old.totalPercent.toFixed(3),
+            totalPercent: old.totalPercent.toFixed(4),
             components: old.components,
           },
           after: {
-            totalPercent: corrected.totalPercent.toFixed(3),
+            totalPercent: corrected.totalPercent.toFixed(4),
             components: corrected.components,
           },
           reason: args.reason,
@@ -558,9 +566,9 @@ export async function plcSnapshotHistory(snapshotId: string) {
 
 function componentRows(components: readonly PlcComponentInput[]) {
   return components.map((component) => ({
-    code: component.code.trim().toUpperCase(),
-    label: component.label.trim(),
-    percent: new D(component.percent).toFixed(3),
+    category: component.category,
+    threshold: PLC_CATEGORIES[component.category].banded ? new D(component.threshold!).toFixed(2) : null,
+    percent: new D(component.percent).toFixed(4),
   }));
 }
 
@@ -608,24 +616,29 @@ async function publishDraft(tx: Tx, projectId: string, draftId: string, actorRef
   return current;
 }
 
-/** PRD §16.3 — percentage only, each code once, and nothing at or below zero. */
+/**
+ * PRD §16.3 and PLC spec §5.2 — percentage only, one row per category and band,
+ * and nothing at or below zero. The shape rules (which categories take a band,
+ * what a band may hold) live with the calculation in the domain layer, so the
+ * screen and the publish check can never disagree about them.
+ */
 function validateComponents(components: readonly PlcComponentInput[]) {
-  const seen = new Set<string>();
-  for (const component of components) {
-    const code = component.code.trim().toUpperCase();
-    if (!code) blocked("Every PLC component needs a code.");
-    if (!component.label.trim()) blocked(`PLC component ${code} needs a label.`);
-    if (seen.has(code)) blocked(`PLC component ${code} appears twice.`);
-    seen.add(code);
+  try {
+    validatePlcComponents(components);
+  } catch (error) {
+    blocked(error instanceof Error ? error.message : "The PLC configuration is not valid.");
+  }
 
+  for (const component of components) {
+    const name = plcComponentLabel(component.category, component.threshold);
     let percent: Prisma.Decimal;
     try {
       percent = new D(component.percent);
     } catch {
-      blocked(`PLC component ${code} has an invalid percentage.`);
+      blocked(`${name} has an invalid percentage.`);
     }
-    if (percent!.lte(0)) blocked(`PLC component ${code} must be greater than 0%.`);
-    if (percent!.gt(100)) blocked(`PLC component ${code} cannot exceed 100%.`);
+    if (percent!.lte(0)) blocked(`${name} must be greater than 0%.`);
+    if (percent!.gt(100)) blocked(`${name} cannot exceed 100%.`);
   }
 }
 
@@ -642,7 +655,7 @@ export async function listProjects() {
     db.project.findMany({
       include: {
         plcRuleVersions: {
-          include: { components: { orderBy: { code: "asc" } } },
+          include: { components: { orderBy: [{ category: "asc" }, { threshold: "desc" }] } },
           orderBy: { version: "desc" },
         },
         _count: { select: { plots: true } },

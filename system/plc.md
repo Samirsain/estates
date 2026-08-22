@@ -179,16 +179,27 @@ Examples of applicability basis may include:
 
 The exact commercial categories must come from authorised Project setup. Developers must not invent them.
 
+> **Superseded by CR-005, 22 August 2026.** The categories are no longer named
+> per Project. They are a fixed catalogue of four — Road width, Open sides, Park
+> facing, Playground facing — and Project setup configures only the percentages
+> and, where the category is banded, the bands. Nothing in §2 changes: PLC is
+> still a percentage, still charged once per distinct category, still
+> deduplicated by a stable key. See
+> [`change-requests/CR-005`](./change-requests/CR-005-plc-catalogue-and-derivation.md).
+
 ### 3.3 Stable category code
 
-The category code must remain stable across versions.
+The category key must remain stable across versions.
 
-Example:
+Under CR-005 the key is an enum rather than a typed string, which meets this
+more strictly — it cannot be mistyped, and the displayed label is generated from
+it rather than stored beside it:
 
 ```text
-ROAD_FACING
+ROAD_WIDTH
+OPEN_SIDES
 PARK_FACING
-CORNER
+PLAYGROUND_FACING
 ```
 
 The display label may change, but deduplication and historical comparison must use the stable category code.
@@ -241,6 +252,12 @@ Plot setup already contains information that may affect PLC, including:
 - Lifecycle status
 
 PLC applicability should be derived from approved Plot characteristics wherever possible.
+
+> **Superseded by CR-005.** Every category in the catalogue derives from the
+> Plot's four boundaries, so there is no manual applicability to record and no
+> per-Plot applicability is stored at all. The audited manual act is correcting
+> the boundary itself, through Edit Plot Details, which carries the actor, time,
+> compulsory reason and before/after values §4.2 asks for.
 
 ### 4.2 Derived versus manual applicability
 

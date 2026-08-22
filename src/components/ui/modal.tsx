@@ -28,8 +28,8 @@ export function Modal({
       ref={ref}
       onClose={onClose}
       className={`${
-        wide ? "w-[min(64rem,95vw)]" : "w-[min(36rem,92vw)]"
-      } rounded-[18px] border border-border bg-card p-0 text-foreground backdrop:bg-black/25`}
+        wide ? "w-[min(72rem,96vw)]" : "w-[min(36rem,92vw)]"
+      } rounded-[20px] border border-border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/40 backdrop:backdrop-blur-xs`}
     >
       <div className="space-y-4 p-6">
         <div>

@@ -11,8 +11,9 @@ import {
   holdRequestExpiry,
   isHoldExpired,
 } from "@/lib/domain/holds";
-import { buildPlcSnapshot, canAllocate, plotReturnState } from "@/lib/domain/inventory";
+import { canAllocate, plotReturnState } from "@/lib/domain/inventory";
 import { blocked, lockPlot, runCommand, type Tx } from "./command";
+import { freezePlcSnapshot } from "./plc-service";
 import { closeTasksFor } from "./task-service";
 
 /** PRD §8.2 — counts Active Holds, Waiting for Booking Approval and Pending requests. */
@@ -27,33 +28,6 @@ export async function countOpenPositions(tx: Tx, personId: string) {
   return { activeHolds, waitingBookingApproval, pendingHoldRequests };
 }
 
-async function freezePlc(tx: Tx, plotId: string) {
-  const plot = await tx.plot.findUniqueOrThrow({
-    where: { id: plotId },
-    include: {
-      project: {
-        include: {
-          plcRuleVersions: { where: { status: "PUBLISHED" }, include: { components: true }, take: 1 },
-        },
-      },
-    },
-  });
-  const version = plot.project.plcRuleVersions[0];
-  if (!version) blocked("The Project has no current PLC rule version. Complete Project setup first.");
-
-  const snapshot = buildPlcSnapshot(
-    plot.plcComponentCodes,
-    version.components.map((c) => ({ code: c.code, label: c.label, percent: c.percent.toString() }))
-  );
-  return tx.plcSnapshot.create({
-    data: {
-      ruleVersionId: version.id,
-      plotId,
-      components: snapshot.components as never,
-      totalPercent: snapshot.totalPercent.toFixed(3),
-    },
-  });
-}
 
 /* ------------------------------------------------------------------ Hold */
 
@@ -93,7 +67,7 @@ async function placeHold(
   const room = checkOpenPositions(positions);
   if (!room.ok) blocked(room.reason);
 
-  const snapshot = await freezePlc(tx, input.plotId);
+  const snapshot = await freezePlcSnapshot(tx, input.plotId);
   const startsAt = new Date();
 
   const hold = await tx.hold.create({

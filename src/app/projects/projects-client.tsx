@@ -11,6 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
+import {
+  PLC_CATEGORIES,
+  PLC_CATEGORY_ORDER,
+  plcComponentLabels,
+  type PlcCategory,
+} from "@/lib/domain/inventory";
+import { formatPercent } from "@/lib/tasks";
 import { formatIst, type StaffRole } from "@/lib/tasks";
 import {
   createProjectAction,
@@ -23,7 +30,7 @@ import {
   type ActionResult,
 } from "./actions";
 
-type ComponentRow = { code: string; label: string; percent: string };
+type ComponentRow = { category: PlcCategory; threshold: string | null; percent: string };
 
 export type ProjectRowView = {
   id: string;
@@ -255,11 +262,15 @@ export default function ProjectsClient({
                       </p>
                       {project.components.length > 0 ? (
                         <ul className="mt-1.5 space-y-1 text-xs text-muted-foreground">
-                          {project.components.map((component) => (
-                            <li key={component.code} className="flex justify-between gap-3">
-                              <span className="truncate">{component.label}</span>
+                          {/* One line per category, not per band. A card that
+                              listed every band ran to eight rows in a narrow
+                              column and truncated each one; the bands themselves
+                              are a click away under PLC versions. */}
+                          {summariseComponents(project.components).map((row) => (
+                            <li key={row.category} className="flex justify-between gap-3">
+                              <span>{row.label}</span>
                               <span className="shrink-0 font-medium tabular-nums text-foreground">
-                                {Number(component.percent).toFixed(2)}%
+                                {row.percent}
                               </span>
                             </li>
                           ))}
@@ -371,6 +382,36 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * The Project card shows what a Project charges, not how it is banded. A banded
+ * category collapses to its range and its band count; the exact bands live in
+ * the PLC versions dialog, where they can be read and edited at full width.
+ */
+function summariseComponents(components: readonly ComponentRow[]) {
+  return PLC_CATEGORY_ORDER.filter((category) =>
+    components.some((c) => c.category === category)
+  ).map((category) => {
+    const rows = components.filter((c) => c.category === category);
+    const percents = rows.map((r) => r.percent);
+    const low = percents.reduce((a, b) => (Number(a) <= Number(b) ? a : b));
+    const high = percents.reduce((a, b) => (Number(a) >= Number(b) ? a : b));
+    return {
+      category,
+      label:
+        rows.length > 1
+          ? `${PLC_CATEGORIES[category].label} · ${rows.length} bands`
+          : PLC_CATEGORIES[category].label,
+      percent: low === high ? formatPercent(low) : `${formatPercent(low)} – ${formatPercent(high)}`,
+    };
+  });
+}
+
+/**
+ * The four categories are the whole vocabulary, so this offers them rather than
+ * asking anyone to invent one. A banded category takes a number — feet of road,
+ * or a count of open sides — and the label is generated from it, which is why
+ * there is no Code field and no Label field here any more.
+ */
 function ComponentEditor({
   rows,
   onChange,
@@ -381,42 +422,74 @@ function ComponentEditor({
   const update = (index: number, patch: Partial<ComponentRow>) =>
     onChange(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
 
+  /** Band labels read as ranges, which needs the whole list, not one row. */
+  const labels = plcComponentLabels(
+    rows.map((r) => ({ category: r.category, threshold: r.threshold, percent: r.percent || "0" }))
+  );
+
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium text-muted-foreground">
-        PLC components — each distinct component is charged once, however many sides qualify
+        Location Charge — each category is charged once, however many sides qualify, and a banded
+        category charges only the highest band the Plot reaches
       </p>
-      {rows.map((row, index) => (
-        <div key={index} className="grid gap-2 md:grid-cols-3">
-          <Field label="Code">
-            <Input
-              value={row.code}
-              onChange={(e) => update(index, { code: e.target.value })}
-              placeholder="ROAD_FACING"
-            />
-          </Field>
-          <Field label="Label">
-            <Input
-              value={row.label}
-              onChange={(e) => update(index, { label: e.target.value })}
-              placeholder="Road facing"
-            />
-          </Field>
-          <Field label="Percent">
-            <Input
-              value={row.percent}
-              inputMode="decimal"
-              onChange={(e) => update(index, { percent: e.target.value })}
-            />
-          </Field>
-        </div>
-      ))}
+      {rows.map((row, index) => {
+        const meta = PLC_CATEGORIES[row.category];
+        return (
+          <div key={index} className="grid gap-2 md:grid-cols-[1.2fr_0.8fr_0.8fr]">
+            <Field label="Category">
+              <select
+                className={inputClass}
+                value={row.category}
+                onChange={(e) => {
+                  const category = e.target.value as PlcCategory;
+                  update(index, {
+                    category,
+                    threshold: PLC_CATEGORIES[category].banded ? (row.threshold ?? "") : null,
+                  });
+                }}
+              >
+                {PLC_CATEGORY_ORDER.map((category) => (
+                  <option key={category} value={category}>
+                    {PLC_CATEGORIES[category].label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label={meta.banded ? `From (${meta.unit})` : "Band"}>
+              {meta.banded ? (
+                <Input
+                  value={row.threshold ?? ""}
+                  inputMode="decimal"
+                  onChange={(e) => update(index, { threshold: e.target.value })}
+                  placeholder={row.category === "OPEN_SIDES" ? "2" : "40"}
+                />
+              ) : (
+                <p className="flex h-10 items-center px-3 text-xs text-muted-foreground">
+                  Not banded
+                </p>
+              )}
+            </Field>
+            <Field label="Percent">
+              <Input
+                value={row.percent}
+                inputMode="decimal"
+                onChange={(e) => update(index, { percent: e.target.value })}
+              />
+            </Field>
+            <p className="text-[11px] text-muted-foreground md:col-span-3">
+              Reads as <span className="text-foreground">{labels[index]}</span>
+              {row.percent.trim() !== "" && ` · ${formatPercent(row.percent)}`}
+            </p>
+          </div>
+        );
+      })}
       <div className="flex gap-2">
         <Button
           type="button"
           size="sm"
           variant="outline"
-          onClick={() => onChange([...rows, { code: "", label: "", percent: "" }])}
+          onClick={() => onChange([...rows, { category: "ROAD_WIDTH", threshold: "", percent: "" }])}
         >
           Add component
         </Button>
@@ -536,7 +609,7 @@ function ProjectDialog({
   onSubmit: (input: Parameters<typeof createProjectAction>[0]) => void;
 }) {
   const [components, setComponents] = React.useState<ComponentRow[]>([
-    { code: "ROAD_FACING", label: "Road facing", percent: "5" },
+    { category: "ROAD_WIDTH", threshold: "40", percent: "5" },
   ]);
   const [external, setExternal] = React.useState(false);
 
@@ -648,8 +721,14 @@ function PlcDialog({
 }) {
   const [components, setComponents] = React.useState<ComponentRow[]>(
     project.components.length > 0
-      ? project.components.map((c) => ({ ...c, percent: Number(c.percent).toString() }))
-      : [{ code: "", label: "", percent: "" }]
+      // Trailing zeros are trimmed for editing by string, not by Number: an
+      // exact stored value should not take a trip through a binary float to be
+      // shown in a text box.
+      ? project.components.map((c) => ({
+          ...c,
+          percent: c.percent.includes(".") ? c.percent.replace(/0+$/, "").replace(/\.$/, "") : c.percent,
+        }))
+      : [{ category: "ROAD_WIDTH" as PlcCategory, threshold: "", percent: "" }]
   );
   const [reason, setReason] = React.useState("");
 
@@ -710,7 +789,9 @@ function PlcDialog({
                 <span>
                   Version {draft.version}
                   <span className="ml-2 text-[11px] text-muted-foreground">
-                    {draft.components.map((c) => `${c.code} ${Number(c.percent).toFixed(2)}%`).join(" · ") ||
+                    {plcComponentLabels(draft.components)
+                      .map((label, i) => `${label} ${formatPercent(draft.components[i].percent)}`)
+                      .join(" · ") ||
                       "No component"}
                   </span>
                   {draft.reason && (
@@ -754,8 +835,8 @@ function PlcDialog({
                     <td className="py-1">
                       {v.components.length === 0
                         ? "—"
-                        : v.components
-                            .map((c) => `${c.code} ${Number(c.percent).toFixed(2)}%`)
+                        : plcComponentLabels(v.components)
+                            .map((label, i) => `${label} ${formatPercent(v.components[i].percent)}`)
                             .join(" · ")}
                     </td>
                     <td className="py-1 text-[11px]">

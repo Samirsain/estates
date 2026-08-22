@@ -15,8 +15,12 @@ import {
   calculateAreas,
   canAllocate,
   derivedFacing,
+  plcComponentLabel,
+  plcComponentLabels,
   plotReturnState,
   restrictionBlocksSale,
+  validatePlcComponents,
+  type PlcComponentRule,
 } from "./inventory.ts";
 import {
   DEFAULT_CALENDAR,
@@ -30,6 +34,7 @@ import {
   isWorkingDay,
   openPositionCount,
 } from "./holds.ts";
+import { parseTerms } from "../terms.ts";
 import {
   duplicateKey,
   enquiryStatusAfterBookingCancelled,
@@ -103,17 +108,18 @@ const asReason = (check: Check) => (check.ok ? "" : check.reason);
 /* ------------------------------------------------------------------ area */
 
 const regular = calculateAreas({ kind: "REGULAR", widthFt: "30", lengthFt: "45" });
-assert.equal(regular.areaSqFt.toFixed(3), "1350.000");
-assert.equal(regular.areaSqYd.toFixed(3), "150.000");
-assert.equal(regular.areaSqM.toFixed(3), "125.419");
+// PRD §23.1 — Plot area is exact to four decimal places.
+assert.equal(regular.areaSqFt.toFixed(4), "1350.0000");
+assert.equal(regular.areaSqYd.toFixed(4), "150.0000");
+assert.equal(regular.areaSqM.toFixed(4), "125.4191");
 
 // Deterministic: the same input always produces the same string.
 assert.equal(
-  calculateAreas({ kind: "REGULAR", widthFt: "30", lengthFt: "45" }).areaSqM.toFixed(3),
-  regular.areaSqM.toFixed(3)
+  calculateAreas({ kind: "REGULAR", widthFt: "30", lengthFt: "45" }).areaSqM.toFixed(4),
+  regular.areaSqM.toFixed(4)
 );
 // Exact decimal, not binary float: 0.1 + 0.2 style drift must not appear.
-assert.equal(calculateAreas({ kind: "REGULAR", widthFt: "0.1", lengthFt: "0.2" }).areaSqFt.toFixed(3), "0.020");
+assert.equal(calculateAreas({ kind: "REGULAR", widthFt: "0.1", lengthFt: "0.2" }).areaSqFt.toFixed(4), "0.0200");
 
 assert.throws(() => calculateAreas({ kind: "REGULAR", widthFt: "0", lengthFt: "45" }));
 assert.throws(
@@ -122,24 +128,243 @@ assert.throws(
   "an irregular Plot override needs a reason"
 );
 assert.equal(
-  calculateAreas({ kind: "EXACT", exactAreaSqFt: "1234.567", reason: "Irregular corner" }).areaSqFt.toFixed(3),
-  "1234.567"
+  calculateAreas({ kind: "EXACT", exactAreaSqFt: "1234.5678", reason: "Irregular corner" }).areaSqFt.toFixed(4),
+  "1234.5678"
 );
 
 /* ------------------------------------------------------------------- PLC */
 
-const rules = [
-  { code: "ROAD_FACING", label: "Road facing", percent: "5" },
-  { code: "CORNER", label: "Corner", percent: "2.5" },
-  { code: "PARK_FACING", label: "Park facing", percent: "3" },
+const rules: PlcComponentRule[] = [
+  { category: "ROAD_WIDTH", threshold: "60", percent: "5" },
+  { category: "ROAD_WIDTH", threshold: "40", percent: "3" },
+  { category: "ROAD_WIDTH", threshold: "30", percent: "2" },
+  { category: "OPEN_SIDES", threshold: "4", percent: "6" },
+  { category: "OPEN_SIDES", threshold: "3", percent: "4" },
+  { category: "OPEN_SIDES", threshold: "2", percent: "2" },
+  { category: "PARK_FACING", threshold: null, percent: "2" },
+  { category: "PLAYGROUND_FACING", threshold: null, percent: "1.5" },
 ];
 
-// The same category on multiple sides is charged once (PRD §16.3).
-const snapshot = buildPlcSnapshot(["ROAD_FACING", "ROAD_FACING", "CORNER"], rules);
-assert.equal(snapshot.components.length, 2);
-assert.equal(snapshot.totalPercent.toFixed(3), "7.500");
-assert.equal(buildPlcSnapshot([], rules).totalPercent.toFixed(3), "0.000");
-assert.throws(() => buildPlcSnapshot(["MAIN_ROAD"], rules), /not in the Project's current rule version/);
+// A width lands in the band it reaches, not the one it matches exactly.
+const banded = buildPlcSnapshot([{ side: "NORTH", kind: "ROAD", roadWidthFt: "45" }], rules);
+assert.equal(banded.components[0].label, "Road 40 – 59 ft");
+assert.equal(banded.totalPercent.toFixed(4), "3.0000");
+
+// Two Road sides are still one Road charge (PRD §16.3), and the widest decides
+// the band — 3% for the road, plus 2% for being open on two sides, never 6%.
+const twoRoads = buildPlcSnapshot(
+  [
+    { side: "NORTH", kind: "ROAD", roadWidthFt: "40" },
+    { side: "EAST", kind: "ROAD", roadWidthFt: "30" },
+  ],
+  rules
+);
+assert.equal(twoRoads.components.filter((c) => c.category === "ROAD_WIDTH").length, 1);
+assert.equal(twoRoads.totalPercent.toFixed(4), "5.0000");
+
+// Three open sides charge Three side open alone; Two side open never rides along.
+const threeOpen = buildPlcSnapshot(
+  [
+    { side: "NORTH", kind: "ROAD", roadWidthFt: "40" },
+    { side: "EAST", kind: "ROAD", roadWidthFt: "30" },
+    { side: "SOUTH", kind: "PARK" },
+    { side: "WEST", kind: "PLOT" },
+  ],
+  rules
+);
+const openSides = threeOpen.components.filter((c) => c.category === "OPEN_SIDES");
+assert.equal(openSides.length, 1);
+assert.equal(openSides[0].label, "Three side open");
+// Road 40-59 = 3, Three side open = 4, Park facing = 2.
+assert.equal(threeOpen.totalPercent.toFixed(4), "9.0000");
+
+// The snapshot names the sides that qualified (PLC spec §7.1).
+assert.match(openSides[0].evidence, /North, East, South open/);
+assert.match(threeOpen.components.find((c) => c.category === "PARK_FACING")!.evidence, /South facing/);
+
+// Park and playground are separate categories and both apply.
+const both = buildPlcSnapshot(
+  [
+    { side: "NORTH", kind: "PARK" },
+    { side: "SOUTH", kind: "PLAYGROUND" },
+  ],
+  rules
+);
+assert.equal(both.totalPercent.toFixed(4), "5.5000"); // 2 open + 2 park + 1.5 playground
+
+// An open side is one that does not abut another Plot, so Other counts too.
+const withOther = buildPlcSnapshot(
+  [
+    { side: "NORTH", kind: "ROAD", roadWidthFt: "30" },
+    { side: "EAST", kind: "PLOT" },
+    { side: "SOUTH", kind: "PLOT" },
+    { side: "WEST", kind: "OTHER" },
+  ],
+  rules
+);
+// Road 30-39 = 2, and Road + Other = two open sides = 2.
+assert.equal(withOther.totalPercent.toFixed(4), "4.0000");
+assert.match(withOther.components.find((c) => c.category === "OPEN_SIDES")!.evidence, /North, West open/);
+
+// A Plot is a Plot whatever its type: Commercial and Informal Sector close a
+// side just as a Residential one does, while a facility or utility does not.
+const mixedNeighbours = buildPlcSnapshot(
+  [
+    { side: "NORTH", kind: "ROAD", roadWidthFt: "40" },
+    { side: "EAST", kind: "COMMERCIAL" },
+    { side: "SOUTH", kind: "PARK" },
+    { side: "WEST", kind: "PLOT" },
+  ],
+  rules
+);
+const mixedOpen = mixedNeighbours.components.find((c) => c.category === "OPEN_SIDES")!;
+assert.equal(mixedOpen.label, "Two side open");
+assert.match(mixedOpen.evidence, /North, South open/, "Commercial and Plot both close their side");
+// Road 40-59 = 3, Two side open = 2, Park facing = 2.
+assert.equal(mixedNeighbours.totalPercent.toFixed(4), "7.0000");
+
+assert.equal(
+  buildPlcSnapshot(
+    [
+      { side: "NORTH", kind: "FACILITIES" },
+      { side: "EAST", kind: "PUBLIC_UTILITY" },
+      { side: "SOUTH", kind: "INFORMAL_SECTOR" },
+      { side: "WEST", kind: "PLOT" },
+    ],
+    rules
+  ).totalPercent.toFixed(4),
+  "2.0000",
+  "facilities and a utility leave two sides open; the informal-sector Plot does not"
+);
+
+// Only neighbouring Plots close a side, so four Plot sides charge nothing.
+assert.equal(
+  buildPlcSnapshot(
+    [
+      { side: "NORTH", kind: "PLOT" },
+      { side: "EAST", kind: "PLOT" },
+      { side: "SOUTH", kind: "PLOT" },
+      { side: "WEST", kind: "PLOT" },
+    ],
+    rules
+  ).totalPercent.toFixed(4),
+  "0.0000"
+);
+
+// A Plot with nothing open evaluates to 0%, and says so rather than failing.
+assert.equal(buildPlcSnapshot([{ side: "NORTH", kind: "PLOT" }], rules).totalPercent.toFixed(4), "0.0000");
+assert.equal(buildPlcSnapshot([], rules).totalPercent.toFixed(4), "0.0000");
+
+// A road with no width cannot be banded, and guessing is forbidden (§5.3).
+assert.throws(
+  () => buildPlcSnapshot([{ side: "NORTH", kind: "ROAD" }], rules),
+  /no width recorded/,
+  "an unmeasured Road blocks rather than falling back"
+);
+
+// A version that configures the same band twice must not publish (§5.2).
+assert.throws(
+  () =>
+    validatePlcComponents([
+      { category: "ROAD_WIDTH", threshold: "40", percent: "3" },
+      { category: "ROAD_WIDTH", threshold: "40", percent: "4" },
+    ]),
+  /configured twice/
+);
+assert.throws(() => validatePlcComponents([{ category: "ROAD_WIDTH", percent: "3" }]), /needs a band/);
+// Unparseable text is refused by name, not by a raw Decimal error.
+assert.throws(
+  () => validatePlcComponents([{ category: "ROAD_WIDTH", threshold: ".", percent: "3" }]),
+  /invalid band value/
+);
+assert.throws(
+  () => validatePlcComponents([{ category: "PARK_FACING", percent: "abc" }]),
+  /invalid percentage/
+);
+assert.throws(
+  () => validatePlcComponents([{ category: "PARK_FACING", threshold: "2", percent: "3" }]),
+  /does not take a band/
+);
+assert.throws(
+  () => validatePlcComponents([{ category: "OPEN_SIDES", threshold: "5", percent: "3" }]),
+  /from 2 to 4/,
+  "a Plot has four sides"
+);
+
+// The highest band reads as open-ended; the ones below it read as ranges.
+assert.equal(plcComponentLabel("ROAD_WIDTH", "60", null), "Road 60 ft & above");
+assert.equal(plcComponentLabel("ROAD_WIDTH", "40", "60"), "Road 40 – 59 ft");
+assert.equal(plcComponentLabel("OPEN_SIDES", "4"), "Four side open");
+assert.equal(plcComponentLabel("PARK_FACING"), "Park facing");
+
+// A band being typed is empty, then half-typed, before it is ever a number.
+// Labelling is display, not validation: it must describe an incomplete row, not
+// throw and take the screen down with it.
+assert.equal(plcComponentLabel("ROAD_WIDTH", ""), "Road width — band not set");
+assert.equal(plcComponentLabel("ROAD_WIDTH", "."), "Road width — band not set");
+assert.equal(plcComponentLabel("ROAD_WIDTH", "-"), "Road width — band not set");
+assert.equal(plcComponentLabel("OPEN_SIDES", ""), "Open sides — band not set");
+assert.equal(plcComponentLabel("ROAD_WIDTH", "40", ""), "Road 40 ft & above");
+assert.deepEqual(
+  plcComponentLabels([{ category: "ROAD_WIDTH", threshold: "", percent: "" }]),
+  ["Road width — band not set"]
+);
+
+// Labelling a whole version: only the top band of a category reads open-ended,
+// which is what a per-row label cannot know and got wrong on the Project card.
+assert.deepEqual(plcComponentLabels(rules), [
+  "Road 60 ft & above",
+  "Road 40 – 59 ft",
+  "Road 30 – 39 ft",
+  "Four side open",
+  "Three side open",
+  "Two side open",
+  "Park facing",
+  "Playground facing",
+]);
+
+/* ------------------------------------------------------ terms and privacy */
+
+// The document numbers its own clauses and only sometimes marks them with #,
+// so the reader keys off the numbering rather than the hashes.
+const parsed = parseTerms(
+  [
+    "2. Member Terms & Conditions",
+    "2.1 Parties and acceptance",
+    "These Terms govern the relationship between the Company and the Member.",
+    "A person becomes a Member only after:",
+    "- The required information is submitted.",
+    "- The Company completes its review.",
+    "",
+    "## 2.5 What a Member may not do",
+    "A Member may not approve a Booking.",
+    "The Company may allow 3 days for a response.",
+  ].join(String.fromCharCode(10))
+);
+
+assert.deepEqual(parsed[0], { kind: "heading", level: 1, text: "2. Member Terms & Conditions" });
+assert.deepEqual(parsed[1], { kind: "heading", level: 2, text: "2.1 Parties and acceptance" });
+// Consecutive prose lines are one paragraph, not one per line.
+assert.deepEqual(parsed[2], {
+  kind: "paragraph",
+  text:
+    "These Terms govern the relationship between the Company and the Member. " +
+    "A person becomes a Member only after:",
+});
+assert.deepEqual(
+  parsed.find((b) => b.kind === "bullets"),
+  { kind: "bullets", items: ["The required information is submitted.", "The Company completes its review."] }
+);
+// A hashed heading reads the same as an unhashed one.
+assert.deepEqual(
+  parsed.find((b) => b.kind === "heading" && b.text.startsWith("2.5")),
+  { kind: "heading", level: 2, text: "2.5 What a Member may not do" }
+);
+// A sentence opening with a figure is prose, not a clause number.
+assert.ok(
+  parsed.some((b) => b.kind === "paragraph" && b.text.includes("3 days")),
+  "a sentence beginning with a number is not mistaken for a heading"
+);
 
 /* ----------------------------------------------- restriction-aware return */
 
@@ -183,12 +408,19 @@ assert.match(
       { side: "EAST", kind: "ROAD", roadWidthFt: 20 },
       { side: "SOUTH", kind: "PLOT" },
       { side: "WEST", kind: "PLOT" },
-    ],
-    false
+    ]
   ),
   /North \/ East road facing · Corner · 2 open sides/
 );
-assert.match(derivedFacing([{ side: "NORTH", kind: "PLOT" }], true), /Park facing · 1 open side/);
+assert.match(
+  derivedFacing([{ side: "NORTH", kind: "PARK" }, { side: "SOUTH", kind: "PLAYGROUND" }]),
+  /Park facing · Playground facing · 2 open sides/
+);
+assert.match(
+  derivedFacing([{ side: "NORTH", kind: "OTHER" }, { side: "SOUTH", kind: "PLOT" }]),
+  /1 open side/,
+  "Other leaves the side open; only a neighbouring Plot closes it"
+);
 
 /* ---------------------------------------------------------------- holds */
 

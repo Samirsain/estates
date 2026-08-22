@@ -30,7 +30,10 @@ export type AreaInput =
 
 export type Areas = { areaSqFt: Decimal; areaSqYd: Decimal; areaSqM: Decimal };
 
-/** Derived areas are rounded to 3 decimals so every screen shows the same number. */
+/**
+ * Derived areas are rounded to 4 decimals so every screen shows the same number.
+ * PRD §23.1 sets the precision: "Plot area: up to four decimal places".
+ */
 export function calculateAreas(input: AreaInput): Areas {
   let areaSqFt: Decimal;
   if (input.kind === "REGULAR") {
@@ -43,10 +46,10 @@ export function calculateAreas(input: AreaInput): Areas {
       throw new Error("An exact area override requires a compulsory reason.");
     }
     areaSqFt = new D(input.exactAreaSqFt);
-    if (areaSqFt.lte(0)) throw new Error("Exact area must be greater than zero.");
+    if (areaSqFt.lte(0)) throw new Error("Area must be greater than zero.");
   }
 
-  const round = (d: Decimal) => new D(d.toFixed(3));
+  const round = (d: Decimal) => new D(d.toFixed(4));
   return {
     areaSqFt: round(areaSqFt),
     areaSqYd: round(areaSqFt.div(SQ_FT_PER_SQ_YD)),
@@ -54,40 +57,285 @@ export function calculateAreas(input: AreaInput): Areas {
   };
 }
 
-/* ------------------------------------------------------------------- PLC */
+/* -------------------------------------------------------------- boundaries */
 
-export type PlcComponentRule = { code: string; label: string; percent: string | number };
-export type PlcSnapshot = {
-  components: Array<{ code: string; label: string; percent: string }>;
-  totalPercent: Decimal;
+export type BoundarySide = "NORTH" | "SOUTH" | "EAST" | "WEST";
+export type BoundaryKind =
+  | "ROAD"
+  | "PLOT"
+  | "COMMERCIAL"
+  | "INFORMAL_SECTOR"
+  | "PARK"
+  | "PLAYGROUND"
+  | "FACILITIES"
+  | "PUBLIC_UTILITY"
+  | "OTHER";
+export type Boundary = {
+  side: BoundarySide;
+  kind: BoundaryKind;
+  /** A Decimal, a string or a number — whatever the caller already holds. */
+  roadWidthFt?: string | number | { toString(): string } | null;
 };
 
 /**
- * PRD §16.3 — PLC is percentage only, each distinct component is charged once,
- * and the same category appearing on multiple sides is not charged repeatedly.
- * An unknown code fails loudly rather than being silently dropped.
+ * A side is open when it does not abut another Plot. A Plot is a Plot whatever
+ * its type, so Commercial and Informal Sector close a side exactly as a
+ * Residential one does; a road, park, playground, facility or public utility
+ * leaves it open.
+ *
+ * Defined by what closes a side rather than by listing what opens one, so a new
+ * boundary kind is open unless it is deliberately made to close.
+ */
+const CLOSED_KINDS: BoundaryKind[] = ["PLOT", "COMMERCIAL", "INFORMAL_SECTOR"];
+
+function isOpenSide(kind: BoundaryKind): boolean {
+  return !CLOSED_KINDS.includes(kind);
+}
+
+/* ------------------------------------------------------------------- PLC */
+
+/**
+ * The PLC catalogue. These four categories are the entire vocabulary: a Project
+ * sets the percentages, it does not invent categories, and no code is typed
+ * anywhere. Deduplication keys off the category, which is the stable key PLC
+ * spec §2.3 and §3.3 require — one that survives a label change.
+ *
+ * A banded category charges the highest band the Plot reaches, so "three side
+ * open" and "two side open" can never both land on the same Plot.
+ */
+export type PlcCategory = "ROAD_WIDTH" | "OPEN_SIDES" | "PARK_FACING" | "PLAYGROUND_FACING";
+
+export const PLC_CATEGORIES: Record<PlcCategory, { label: string; banded: boolean; unit: string | null }> = {
+  ROAD_WIDTH: { label: "Road width", banded: true, unit: "ft" },
+  OPEN_SIDES: { label: "Open sides", banded: true, unit: "sides" },
+  PARK_FACING: { label: "Park facing", banded: false, unit: null },
+  PLAYGROUND_FACING: { label: "Playground facing", banded: false, unit: null },
+};
+
+/** Display order, so a breakdown reads the same way on every screen. */
+export const PLC_CATEGORY_ORDER: PlcCategory[] = [
+  "ROAD_WIDTH",
+  "OPEN_SIDES",
+  "PARK_FACING",
+  "PLAYGROUND_FACING",
+];
+
+/** One configured row of a PLC version: a category, its band, its percentage. */
+export type PlcComponentRule = {
+  category: PlcCategory;
+  /** Feet for ROAD_WIDTH, a count of open sides for OPEN_SIDES, null otherwise. */
+  threshold?: string | number | null;
+  percent: string | number;
+};
+
+export type PlcSnapshotComponent = {
+  category: PlcCategory;
+  label: string;
+  percent: string;
+  /** Which sides qualified — the side evidence PLC spec §7.1 asks a snapshot to keep. */
+  evidence: string;
+};
+
+export type PlcSnapshot = {
+  components: PlcSnapshotComponent[];
+  totalPercent: Decimal;
+};
+
+const SIDE_WORD: Record<number, string> = { 1: "One", 2: "Two", 3: "Three", 4: "Four" };
+
+function hasBand(threshold: string | number | { toString(): string } | null | undefined): boolean {
+  return threshold !== null && threshold !== undefined && `${threshold}`.trim() !== "";
+}
+
+/**
+ * A band under the cursor is empty, then "-", then "4", before it is ever 40.
+ * Anything that is not yet a number reads as null here rather than throwing, so
+ * a half-typed row can be described. Validation is a separate job and stays
+ * strict — this never decides whether a configuration may be saved.
+ */
+function bandValue(
+  threshold: string | number | { toString(): string } | null | undefined
+): Decimal | null {
+  if (!hasBand(threshold)) return null;
+  try {
+    return new D(String(threshold));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The label a configured row displays. It is generated, never typed, so two
+ * Projects can never describe the same band in two different ways.
+ */
+export function plcComponentLabel(
+  category: PlcCategory,
+  threshold?: string | number | null,
+  /** The next band up, when one exists, so a middle band reads as a range. */
+  nextThreshold?: string | number | null
+): string {
+  const meta = PLC_CATEGORIES[category];
+  if (!meta) return String(category);
+  if (!meta.banded) return meta.label;
+
+  const from = bandValue(threshold);
+  if (from === null) return `${meta.label} — band not set`;
+
+  if (category === "OPEN_SIDES") {
+    return `${SIDE_WORD[from.toNumber()] ?? from.toString()} side open`;
+  }
+  const next = bandValue(nextThreshold);
+  if (next === null) return `Road ${from.toString()} ft & above`;
+  return `Road ${from.toString()} – ${next.sub(1).toString()} ft`;
+}
+
+/**
+ * Labels for a whole configured version, in the order given.
+ *
+ * A band only reads as a range once you know the band above it, so labelling
+ * rows one at a time gets it wrong — every road band comes out "& above". This
+ * is the one place that pairing is worked out, and every screen that lists a
+ * configuration uses it.
+ */
+export function plcComponentLabels(rules: readonly PlcComponentRule[]): string[] {
+  return rules.map((rule) => {
+    const mine = PLC_CATEGORIES[rule.category]?.banded ? bandValue(rule.threshold) : null;
+    if (mine === null) return plcComponentLabel(rule.category, rule.threshold);
+
+    const next = rules
+      .filter((r) => r.category === rule.category)
+      .map((r) => bandValue(r.threshold))
+      .filter((t): t is Decimal => t !== null && t.gt(mine))
+      .sort((a, b) => a.cmp(b))[0];
+    return plcComponentLabel(rule.category, rule.threshold, next ? next.toString() : null);
+  });
+}
+
+/**
+ * PLC spec §5.2 — a version whose bands contradict each other must not publish.
+ * This throws rather than choosing one, because §5.3 forbids a silent fallback.
+ */
+export function validatePlcComponents(rules: readonly PlcComponentRule[]): void {
+  const seen = new Set<string>();
+  for (const rule of rules) {
+    const meta = PLC_CATEGORIES[rule.category];
+    if (!meta) throw new Error(`"${rule.category}" is not a PLC category.`);
+
+    const banded = hasBand(rule.threshold);
+    if (meta.banded && !banded) throw new Error(`${meta.label} needs a band value.`);
+    if (!meta.banded && banded) throw new Error(`${meta.label} does not take a band value.`);
+
+    // Say which row and what is wrong with it. Letting Decimal throw its own
+    // "[DecimalError] Invalid argument" would be accurate and useless.
+    const percent = bandValue(rule.percent);
+    if (percent === null) throw new Error(`${meta.label} has an invalid percentage.`);
+    if (percent.lt(0)) throw new Error(`${meta.label} cannot be a negative percentage.`);
+
+    const band = meta.banded ? bandValue(rule.threshold) : null;
+    if (meta.banded && band === null) throw new Error(`${meta.label} has an invalid band value.`);
+
+    if (rule.category === "OPEN_SIDES" && (!band!.isInteger() || band!.lt(2) || band!.gt(4))) {
+      throw new Error("Open sides must be a whole number from 2 to 4 — a Plot has four sides.");
+    }
+    if (rule.category === "ROAD_WIDTH" && band!.lte(0)) {
+      throw new Error("A road width band must be greater than zero.");
+    }
+
+    const key = `${rule.category}|${band ? band.toString() : ""}`;
+    if (seen.has(key)) {
+      throw new Error(`${plcComponentLabel(rule.category, rule.threshold)} is configured twice.`);
+    }
+    seen.add(key);
+  }
+}
+
+/**
+ * PRD §16.3 and PLC spec §2.2–2.4 — effective PLC is the sum of each distinct
+ * applicable category, charged exactly once however many sides qualify.
+ *
+ * Every category derives from the Plot's own boundaries (PLC spec §4.1), so
+ * nothing is picked by hand and no applicability is stored against the Plot:
+ * correct the boundary and the PLC corrects itself, which is the revalidation
+ * PRD §8.7 asks an authorised Plot correction to perform.
+ *
+ * This is the only place effective PLC is computed. Screens call it to display
+ * and services call it to freeze, so both read the same number from one rule.
  */
 export function buildPlcSnapshot(
-  appliedCodes: readonly string[],
+  boundaries: readonly Boundary[],
   ruleComponents: readonly PlcComponentRule[]
 ): PlcSnapshot {
-  const byCode = new Map(ruleComponents.map((c) => [c.code, c]));
-  const seen = new Set<string>();
-  const components: PlcSnapshot["components"] = [];
-  let totalPercent = new D(0);
+  validatePlcComponents(ruleComponents);
 
-  for (const code of appliedCodes) {
-    if (seen.has(code)) continue; // charged once, however many sides qualify
-    const rule = byCode.get(code);
-    if (!rule) throw new Error(`PLC component "${code}" is not in the Project's current rule version.`);
-    seen.add(code);
-    const percent = new D(rule.percent);
-    if (percent.lt(0)) throw new Error(`PLC component "${code}" cannot be negative.`);
-    components.push({ code, label: rule.label, percent: percent.toFixed(3) });
+  const sides = (list: readonly Boundary[]) => list.map((b) => title(b.side)).join(", ");
+  const roads = boundaries.filter((b) => b.kind === "ROAD");
+  const parks = boundaries.filter((b) => b.kind === "PARK");
+  const playgrounds = boundaries.filter((b) => b.kind === "PLAYGROUND");
+  const open = boundaries.filter((b) => isOpenSide(b.kind));
+
+  // PLC spec §5.3 — a Road side with no width cannot be banded, and guessing at
+  // the band is exactly the silent fallback that rule forbids.
+  const unmeasured = roads.find((r) => !hasBand(r.roadWidthFt));
+  if (unmeasured) {
+    throw new Error(
+      `${title(unmeasured.side)} is a Road with no width recorded, so its PLC band cannot be decided.`
+    );
+  }
+  const widestRoad = roads.reduce<Decimal | null>((max, r) => {
+    const width = new D(String(r.roadWidthFt));
+    return max === null || width.gt(max) ? width : max;
+  }, null);
+
+  const matched = new Map<PlcCategory, { rule: PlcComponentRule; label: string; evidence: string }>();
+
+  /** A banded category charges the highest band the Plot reaches — once. */
+  const chargeBand = (category: PlcCategory, reached: Decimal | null, evidence: string) => {
+    if (reached === null) return;
+    const tiers = ruleComponents
+      .filter((c) => c.category === category)
+      .sort((a, b) => new D(b.threshold!).cmp(new D(a.threshold!)));
+    const index = tiers.findIndex((c) => reached.gte(new D(c.threshold!)));
+    if (index === -1) return;
+    const hit = tiers[index];
+    matched.set(category, {
+      rule: hit,
+      label: plcComponentLabel(category, hit.threshold, index === 0 ? null : tiers[index - 1].threshold),
+      evidence,
+    });
+  };
+
+  chargeBand(
+    "ROAD_WIDTH",
+    widestRoad,
+    widestRoad === null ? "" : `${sides(roads)} — widest road ${widestRoad.toString()} ft`
+  );
+  chargeBand("OPEN_SIDES", open.length > 0 ? new D(open.length) : null, `${sides(open)} open`);
+
+  /** An unbanded category applies once if any side qualifies, however many do. */
+  const chargeFlag = (category: PlcCategory, qualifying: readonly Boundary[]) => {
+    if (qualifying.length === 0) return;
+    const rule = ruleComponents.find((c) => c.category === category);
+    if (!rule) return;
+    matched.set(category, {
+      rule,
+      label: plcComponentLabel(category),
+      evidence: `${sides(qualifying)} facing`,
+    });
+  };
+  chargeFlag("PARK_FACING", parks);
+  chargeFlag("PLAYGROUND_FACING", playgrounds);
+
+  const components: PlcSnapshotComponent[] = [];
+  let totalPercent = new D(0);
+  for (const category of PLC_CATEGORY_ORDER) {
+    const hit = matched.get(category);
+    if (!hit) continue;
+    const percent = new D(hit.rule.percent);
+    components.push({ category, label: hit.label, percent: percent.toFixed(4), evidence: hit.evidence });
     totalPercent = totalPercent.add(percent);
   }
 
-  return { components, totalPercent: new D(totalPercent.toFixed(3)) };
+  return { components, totalPercent: new D(totalPercent.toFixed(4)) };
 }
 
 /* --------------------------------------------------- restriction and return */
@@ -168,26 +416,23 @@ export function canAllocate(
 
 /* ----------------------------------------------------------- derived facing */
 
-export type BoundarySide = "NORTH" | "SOUTH" | "EAST" | "WEST";
-export type BoundaryKind = "ROAD" | "PLOT" | "PARK" | "OTHER";
-export type Boundary = { side: BoundarySide; kind: BoundaryKind; roadWidthFt?: string | number | null };
-
-/** Display-only derivation (PRD §16.2) — never stored, never a PLC decision. */
-export function derivedFacing(boundaries: readonly Boundary[], parkFacing: boolean): string {
+/**
+ * Display-only derivation (PRD §16.2) — never stored, and never a PLC decision.
+ * It reads the same boundaries PLC reads, so the words on the row and the
+ * percentage beside them can never disagree.
+ */
+export function derivedFacing(boundaries: readonly Boundary[]): string {
   const roads = boundaries.filter((b) => b.kind === "ROAD");
-  const parks = boundaries.filter((b) => b.kind === "PARK");
   const parts: string[] = [];
 
   if (roads.length > 0) {
     parts.push(`${roads.map((r) => title(r.side)).join(" / ")} road facing`);
   }
   if (roads.length >= 2) parts.push("Corner");
-  if (parkFacing || parks.length > 0) parts.push("Park facing");
+  if (boundaries.some((b) => b.kind === "PARK")) parts.push("Park facing");
+  if (boundaries.some((b) => b.kind === "PLAYGROUND")) parts.push("Playground facing");
 
-  // The Park Facing flag counts as an open side even when no side is recorded
-  // as PARK, but never double-counts one that is.
-  const parkOpenSides = parks.length > 0 ? parks.length : parkFacing ? 1 : 0;
-  const openSides = roads.length + parkOpenSides;
+  const openSides = boundaries.filter((b) => isOpenSide(b.kind)).length;
   parts.push(`${openSides} open side${openSides === 1 ? "" : "s"}`);
   return parts.join(" · ");
 }

@@ -6,12 +6,17 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { GENERIC_LOGIN_ERROR } from "@/lib/security/auth";
 import { memberLogin, staffLogin } from "./actions";
-import { SubmitButton } from "./login-form";
+import { MEMBER_TERMS_VERSION, readTerms } from "@/lib/terms";
+import { SubmitButton, TermsGate } from "./login-form";
 
 const MESSAGES: Record<string, string> = {
   GENERIC: GENERIC_LOGIN_ERROR,
   RATE: "Too many attempts. Wait a minute and try again.",
+  TERMS: "Please read and accept the Terms and Privacy Notice to continue.",
 };
+
+/** TERMS is not a failure — it is the one remaining step (Terms §2.1). */
+const NOTICES = new Set(["TERMS"]);
 
 export default async function LoginPage({
   searchParams,
@@ -20,10 +25,11 @@ export default async function LoginPage({
 }) {
   const { tab = "staff", error, loginId = "" } = await searchParams;
   const member = tab === "member";
+  const needsTerms = member && error === "TERMS";
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md space-y-6">
+      <div className={`w-full space-y-6 ${needsTerms ? "max-w-lg" : "max-w-md"}`}>
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary">
             <Building2 className="h-6 w-6 text-white" />
@@ -59,7 +65,11 @@ export default async function LoginPage({
           {error && (
             <p
               role="alert"
-              className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700"
+              className={`mb-4 rounded-xl border px-3 py-2 text-xs ${
+                NOTICES.has(error)
+                  ? "border-border/60 bg-secondary text-foreground"
+                  : "border-red-500/30 bg-red-500/10 text-red-700"
+              }`}
             >
               {MESSAGES[error] ?? GENERIC_LOGIN_ERROR}
             </p>
@@ -82,6 +92,10 @@ export default async function LoginPage({
               <Input name="password" type="password" required autoComplete="current-password" minLength={10} />
             </label>
 
+            {/* Asked once, on the first sign-in and again when a new version is
+                published — never on every sign-in. What was accepted, and when,
+                is recorded against the Member (Terms §2.1). */}
+            {needsTerms && <TermsGate blocks={readTerms()} version={MEMBER_TERMS_VERSION} />}
 
             <SubmitButton />
           </form>
@@ -92,6 +106,14 @@ export default async function LoginPage({
               ? "A Member signs in with their Member ID. A mobile number is contact information only."
               : "Sessions end after 8 hours. A password reset signs out every device."}
           </p>
+
+          {member && !needsTerms && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              <a href="/terms" className="underline underline-offset-2 hover:text-foreground">
+                Terms and Privacy Notice
+              </a>
+            </p>
+          )}
         </Card>
       </div>
     </div>

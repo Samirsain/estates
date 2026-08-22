@@ -10,7 +10,14 @@ import {
   decideHoldRequest,
   requestHoldExtension,
 } from "@/lib/services/hold-service";
-import { makeAvailable, prepareInventory, setRestriction, type PlotRow } from "@/lib/services/inventory-service";
+import {
+  makeAvailable,
+  prepareInventory,
+  setRestriction,
+  updatePlotDetails,
+  type BoundaryInput,
+  type PlotRow,
+} from "@/lib/services/inventory-service";
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
 
@@ -182,6 +189,46 @@ export async function prepareInventoryAction(
     });
     revalidatePath("/plots");
     return { ok: true, message: `${result.count} Plot(s) prepared as Not Available — Not Yet Released.` };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/**
+ * PRD §8.4 Edit Plot Details, under the §8.7 correction rules. The reason is
+ * compulsory and the old and new values go to History. Effective PLC follows
+ * the corrected boundaries by itself; a frozen Hold or Booking snapshot does
+ * not, so the caller is told when one has drifted and needs its own correction.
+ */
+export async function updatePlotDetailsAction(
+  plotId: string,
+  details: {
+    widthFt?: string;
+    lengthFt?: string;
+    exactAreaSqFt?: string;
+    exactAreaReason?: string;
+    boundaries: BoundaryInput[];
+  },
+  reason: string,
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("PLOT_SETUP");
+  try {
+    const result = await updatePlotDetails({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      plotId,
+      ...details,
+      reason,
+    });
+    revalidatePath("/plots");
+    return {
+      ok: true,
+      message: result.plcSnapshotNeedsCorrection
+        ? "Plot details corrected. The frozen Location Charge snapshot no longer matches — correct it separately."
+        : "Plot details corrected.",
+    };
   } catch (error) {
     return toResult(error);
   }

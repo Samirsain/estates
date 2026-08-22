@@ -49,9 +49,9 @@ async function main() {
     city: "Jaipur",
     amenities: "Clubhouse\n24x7 water",
     components: [
-      { code: "ROAD_FACING", label: "Road facing", percent: "2.000" },
-      { code: "PARK_FACING", label: "Park facing", percent: "1.500" },
-      { code: "CORNER", label: "Corner", percent: "1.000" },
+      { category: "ROAD_WIDTH", threshold: "30", percent: "2.0000" },
+      { category: "PARK_FACING", threshold: null, percent: "1.5000" },
+      { category: "OPEN_SIDES", threshold: "2", percent: "1.0000" },
     ],
   });
 
@@ -72,7 +72,7 @@ async function main() {
     actorRole: "PC",
     name: `${TAG} PLC Lifecycle`,
     type: "RESIDENTIAL",
-    components: [{ code: "CORNER", label: "Corner", percent: "1.000" }],
+    components: [{ category: "OPEN_SIDES", threshold: "2", percent: "1.0000" }],
   });
   assert.notEqual(
     twin.projectCode,
@@ -139,8 +139,8 @@ async function main() {
     actorRole: "PC",
     projectId,
     components: [
-      { code: "ROAD_FACING", label: "Road facing", percent: "3.000" },
-      { code: "CORNER", label: "Corner", percent: "1.000" },
+      { category: "ROAD_WIDTH", threshold: "30", percent: "3.0000" },
+      { category: "OPEN_SIDES", threshold: "2", percent: "1.0000" },
     ],
     reason: "Road-facing raised for the revised layout.",
   });
@@ -187,15 +187,15 @@ async function main() {
 
   /* ================================= 5. conflicting duplicate blocks publish */
 
-  await expectBlocked(/appears twice/, () =>
+  await expectBlocked(/configured twice/, () =>
     savePlcDraft({
       idempotencyKey: key(),
       actorRef: PC,
       actorRole: "PC",
       projectId,
       components: [
-        { code: "ROAD_FACING", label: "Road facing", percent: "2.000" },
-        { code: "ROAD_FACING", label: "Road facing (east)", percent: "3.000" },
+        { category: "ROAD_WIDTH", threshold: "30", percent: "2.0000" },
+        { category: "ROAD_WIDTH", threshold: "30", percent: "3.0000" },
       ],
       reason: "Conflicting configuration.",
     })
@@ -208,7 +208,7 @@ async function main() {
     actorRef: PC,
     actorRole: "PC",
     projectId,
-    components: [{ code: "CORNER", label: "Corner", percent: "1.250" }],
+    components: [{ category: "OPEN_SIDES", threshold: "2", percent: "1.2500" }],
     reason: "Race draft A.",
   });
   const raceB = await savePlcDraft({
@@ -216,7 +216,7 @@ async function main() {
     actorRef: PC,
     actorRole: "PC",
     projectId,
-    components: [{ code: "CORNER", label: "Corner", percent: "1.750" }],
+    components: [{ category: "OPEN_SIDES", threshold: "2", percent: "1.7500" }],
     reason: "Race draft B.",
   });
 
@@ -254,7 +254,7 @@ async function main() {
     actorRef: PC,
     actorRole: "PC",
     projectId,
-    components: [{ code: "CORNER", label: "Corner", percent: "2.000" }],
+    components: [{ category: "OPEN_SIDES", threshold: "2", percent: "2.0000" }],
     reason: "Draft used to prove the database constraint.",
   });
   await assert.rejects(
@@ -276,9 +276,9 @@ async function main() {
     actorRole: "ADMIN",
     projectId,
     components: [
-      { code: "ROAD_FACING", label: "Road facing", percent: "2.000" },
-      { code: "PARK_FACING", label: "Park facing", percent: "1.500" },
-      { code: "CORNER", label: "Corner", percent: "1.000" },
+      { category: "ROAD_WIDTH", threshold: "30", percent: "2.0000" },
+      { category: "PARK_FACING", threshold: null, percent: "1.5000" },
+      { category: "OPEN_SIDES", threshold: "2", percent: "1.0000" },
     ],
     reason: "Baseline for the calculation evidence.",
   });
@@ -295,12 +295,19 @@ async function main() {
       plotNumber: `${TAG}-A1`,
       areaSqFt: "1350",
       areaSqYd: "150",
-      areaSqM: "125.419",
+      areaSqM: "125.4191",
       lifecycle: "AVAILABLE",
       restriction: "NONE",
-      // Road facing qualifies on two sides. It is charged once, and the two
-      // different categories are summed once each (§2.2, §2.3, §19.7, §19.8).
-      plcComponentCodes: ["ROAD_FACING", "ROAD_FACING", "PARK_FACING", "CORNER"],
+      // Road qualifies on two sides. It is charged once, at the widest band,
+      // and the distinct categories sum once each (§2.2, §2.3, §19.7, §19.8).
+      boundaries: {
+        create: [
+          { side: "NORTH", kind: "ROAD", roadWidthFt: "30" },
+          { side: "EAST", kind: "ROAD", roadWidthFt: "35" },
+          { side: "SOUTH", kind: "PARK" },
+          { side: "WEST", kind: "PLOT", reference: "A-900" },
+        ],
+      },
     },
   });
 
@@ -321,14 +328,16 @@ async function main() {
   const frozen = await db.plcSnapshot.findFirstOrThrow({
     where: { holds: { some: { id: hold.holdId } } },
   });
-  const expectedTotal = 4.5; // 2 + 1.5 + 1, with Road facing charged once
+  // Road 30 ft band = 2 (charged once for two Road sides), Park facing = 1.5,
+  // and three open sides clears the two-side band = 1.
+  const expectedTotal = 4.5;
   assert.equal(
     Number(frozen.totalPercent),
     expectedTotal,
     "the same category on two sides is charged once, and distinct categories sum (§19.7, §19.8, §19.10)"
   );
   assert.equal(
-    (frozen.components as Array<{ code: string }>).length,
+    (frozen.components as Array<{ category: string }>).length,
     3,
     "the breakdown holds one row per distinct category"
   );
@@ -340,7 +349,7 @@ async function main() {
     actorRef: ADMIN,
     actorRole: "ADMIN",
     projectId,
-    components: [{ code: "CORNER", label: "Corner", percent: "4.000" }],
+    components: [{ category: "OPEN_SIDES", threshold: "2", percent: "4.0000" }],
     reason: "Post-Hold revision.",
   });
   assert.equal(
@@ -351,12 +360,23 @@ async function main() {
 
   /* ========================================== 31–35. correction and audit */
 
+  // There is no applicability to retype. A correction fixes the Plot fact that
+  // was wrong — here the south side was never a park — and the correction then
+  // re-derives the frozen snapshot from the boundaries as they now stand.
+  await db.plotBoundary.updateMany({
+    where: { plotId: plot.id, side: "SOUTH" },
+    data: { kind: "PLOT", reference: "A-901" },
+  });
+  await db.plotBoundary.updateMany({
+    where: { plotId: plot.id, side: "EAST" },
+    data: { kind: "PLOT", roadWidthFt: null, reference: "A-902" },
+  });
+
   const correction = await correctPlcSnapshot({
     idempotencyKey: key(),
     actorRef: ADMIN,
     actorRole: "ADMIN",
     snapshotId: frozen.id,
-    componentCodes: ["CORNER"],
     reason: "Road and park applicability were recorded against the wrong Plot.",
   });
 
@@ -372,10 +392,12 @@ async function main() {
     expectedTotal,
     "the old snapshot keeps its own total for History (§19.33)"
   );
+  // One 30 ft road remains, so one open side: below the two-side band, and the
+  // park is gone. 2% is all that is left.
   assert.equal(
     Number(corrected.totalPercent),
-    Number(currentVersion.components.find((c) => c.code === "CORNER")!.percent),
-    "the corrected snapshot carries the corrected total"
+    2,
+    "the corrected snapshot re-derives from the corrected boundaries"
   );
   assert.notEqual(
     Number(corrected.totalPercent),
@@ -409,21 +431,20 @@ async function main() {
       actorRef: ADMIN,
       actorRole: "ADMIN",
       snapshotId: frozen.id,
-      componentCodes: ["CORNER"],
       reason: "Second attempt on a superseded snapshot.",
     })
   );
 
-  // §5.3 — an unknown code is refused, never silently dropped.
-  await expectBlocked(/is not in the Project's current rule version/, () =>
-    correctPlcSnapshot({
-      idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
-      snapshotId: corrected.id,
-      componentCodes: ["SEA_FACING"],
-      reason: "Category that was never configured.",
-    })
+  // §5.3 — a Road with no width has no band to land in. The domain rule refuses
+  // it (see domain.check.ts), and the database refuses to store it at all, so
+  // the unbanded road can never reach a correction in the first place.
+  await assert.rejects(
+    db.plotBoundary.updateMany({
+      where: { plotId: plot.id, side: "WEST" },
+      data: { kind: "ROAD", roadWidthFt: null, reference: null },
+    }),
+    /boundary_details_match_kind/,
+    "a Road side cannot be stored without its width"
   );
 
   // §11.1 — the reason is compulsory.
@@ -433,7 +454,6 @@ async function main() {
       actorRef: ADMIN,
       actorRole: "ADMIN",
       snapshotId: corrected.id,
-      componentCodes: ["CORNER"],
       reason: "   ",
     })
   );

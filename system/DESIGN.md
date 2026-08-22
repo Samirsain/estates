@@ -284,52 +284,104 @@ Columns:
 - RESALE tag
 - Next action
 
+### 7.1a Prepare Inventory grid
+
+The controlled Excel-style grid (`main-PRD.md` §16.4). One row per Plot:
+
+- Plot Number
+- Plot Type
+- Width ft / Length ft, or an exact area with a compulsory reason
+- North / East / South / West — what the side faces, and optionally its number.
+  A Road is the one kind whose detail is compulsory: its width decides the band
+- Area sq ft and Location Charge — **read-only, filled in as the row is typed**
+
+There is no Location Charge field to fill. The Charge is read from the four
+sides by the same rule the server runs on save, so the number in the grid is the
+number that gets stored.
+
+### 7.1b Location Charge
+
+The Charge is a percentage only, and comes from four categories. A Project sets
+the percentages; nobody names or types a category.
+
+| Category | Band | Applies when |
+| --- | --- | --- |
+| Road width | feet | the Plot touches a road at least that wide |
+| Open sides | a count | the Plot has at least that many open sides |
+| Park facing | — | any side faces a park |
+| Playground facing | — | any side faces a playground |
+
+A banded category charges one band, the highest the Plot reaches. Two Road sides
+are one road charge, at the wider road's band.
+
+A side may be a Road, a Plot, Commercial, Informal Sector, Park, Playground,
+Facilities, Public Utility or Other. Each may carry a number — the adjacent Plot
+Number, the park number and so on — and that number is never compulsory. Road
+width is, because it decides the band.
+
+An **open side** is any side that does not abut another Plot. A Plot is a Plot
+whatever its type, so Commercial and Informal Sector close a side exactly as a
+Residential one does; a road, park, playground, facility or public utility
+leaves it open.
+
+Available and Not Active inventory derives the Charge on every read, so
+publishing a new version updates the list by itself. Hold and Booking keep the
+snapshot they froze, and that snapshot records which sides qualified each
+component.
+
 ### 7.2 Plot detail page
+
+Reached by clicking the Plot Number on the inventory list, at `/plots/<id>`.
 
 Sections:
 
 - Overview
-- Dimensions and boundaries
-- PLC
-- Current allocation
-- Customer/Booking link
-- Payment progress
-- Commission summary
+- Dimensions
+- Boundaries
+- Location Charge — the total, the components behind it, and the sides that
+  qualified each one
+- Current allocation, and the Booking link with Payment Received
 - Restriction and lifecycle history
+
+The payment schedule and the commission summary are **not** repeated here. Both
+belong to the Booking and its own screen shows them in full; this page links
+there, so there is one place to correct either.
 
 ### 7.3 State actions
 
-**Available**
+#### Available
 
 - Hold
 - Start Booking
-- Edit Plot Details — authorised only
+- Edit Plot Details — authorised only. Width, Length and the four sides, under a
+  compulsory reason. Correcting a side corrects the Location Charge with it; a
+  frozen Hold or Booking snapshot does not move, and the screen says so.
 
-**Hold**
+#### Hold
 
 - Extend Hold
 - Cancel Hold
 - Book
 
-**Waiting for Booking Approval**
+#### Waiting for Booking Approval
 
 - View request
 - Cancel Booking under pre-approval rule
 
-**Booked**
+#### Booked
 
 - Open Booking
 - Follow-up
 - Cancel Booking
 - Change Plot
 
-**Payment Completed**
+#### Payment Completed
 
 - Prepare Allotment / Registry
 - Cancel Booking where permitted
 - Change Plot before Delivered
 
-**Delivered**
+#### Delivered
 
 - View Delivery/Completion
 

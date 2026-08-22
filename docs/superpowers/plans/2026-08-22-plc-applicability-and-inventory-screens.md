@@ -2,6 +2,28 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> ## Superseded in part — 22 August 2026
+>
+> The owner removed the code-based PLC model outright: no typed category codes,
+> no per-Plot applicability selection, and a fixed catalogue of Road width /
+> Open sides / Park facing / Playground facing instead. Effective PLC now derives
+> from the Plot's four boundaries. See
+> [`system/change-requests/CR-005`](../../../system/change-requests/CR-005-plc-catalogue-and-derivation.md)
+> and [`system/DEVIATIONS.md`](../../../system/DEVIATIONS.md) D-05.
+>
+> | Task | Standing |
+> | --- | --- |
+> | 1 · precision | **Done**, and widened further — Plot area is four decimals too (`main-PRD.md` §23.1) |
+> | 2 · `PlotPlcApplicability` table | **Dropped.** Applicability is derived, not stored |
+> | 3 · snapshot side evidence | **Done**, absorbed into the derivation |
+> | 4, 5, 6 · Project city, edit, card | **Done** as written |
+> | 7 · Prepare Inventory grid | **Done differently** — boundary columns and a live Area / Charge read-out, no tick boxes |
+> | 8 · row menu | **Open.** Edit Plot Details from it is built; the `⋯` menu itself is not |
+> | 9 · Plot detail panel | **Open** |
+> | 10 · terminology | **Done** |
+>
+> Tasks 8 and 9 below still read correctly. Everything else is history.
+
 **Goal:** Close the three PLC gaps left open by the version lifecycle — per-Plot applicability records, snapshot side evidence, and four-decimal precision — and rebuild the two screens they land on.
 
 **Architecture:** `Plot.plcComponentCodes String[]` becomes a `PlotPlcApplicability` table holding one row per Plot and category, with the per-code reason the audit trail cannot carry. Effective PLC is still computed by the single `buildPlcSnapshot()` in the domain layer and still derived on read, never stored. The Plot Inventory row collapses into one `⋯` menu and gains an inline detail panel matching the Bookings pattern; the Projects screen gains a card layout, a generated Project Code, and the edit path that has never existed.

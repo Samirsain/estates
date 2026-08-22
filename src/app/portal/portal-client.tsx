@@ -471,7 +471,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                             {c.paidOn ? ` · ${formatIst(c.paidOn)}` : ""}
                           </span>
                           {c.holdReason && (
-                            <span className="block text-[11px] text-amber-300">
+                            <span className="block text-[11px] text-amber-800">
                               {HOLD_LABEL[c.holdReason] ?? c.holdReason}
                             </span>
                           )}

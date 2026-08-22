@@ -315,7 +315,7 @@ export default function MembersClient({
                         {row.status === "ACTIVE" ? "Active" : "Deactivated"}
                       </Badge>
                       {row.commissionHold && (
-                        <span className="mt-1 block text-[11px] text-amber-300">
+                        <span className="mt-1 block text-[11px] text-amber-800">
                           Commission Hold
                         </span>
                       )}
@@ -686,7 +686,7 @@ function MemberDetailPanel({
                       <td className="py-1">
                         {ELIGIBILITY_LABEL[c.eligibility] ?? c.eligibility}
                         {c.holdReason && (
-                          <span className="block text-[11px] text-amber-300">
+                          <span className="block text-[11px] text-amber-800">
                             {c.holdReason.replaceAll("_", " ").toLowerCase()}
                           </span>
                         )}
