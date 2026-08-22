@@ -10,10 +10,13 @@ Migration impact, Acceptance-test impact, Release target.
 | [CR-001](./CR-001-relationship-length.md) | Relationship length shown for Members and Customers | None — display only | Raised, awaiting signature |
 | [CR-002](./CR-002-identity-reveal.md) | Administration screen for reading a full Aadhaar or PAN | Identity | Raised, awaiting signature |
 | [CR-003](./CR-003-remove-mfa.md) | Multi-factor authentication removed | Identity, permissions | Raised, awaiting signature — **contradicts PRD §3.1, §17.1 and gate 8** |
+| [CR-004](./CR-004-loyalty-separate-allowances.md) | Loyalty Bonus split into two separate three-deal allowances | Commission | Raised, awaiting signature — **not implemented; nothing is built until signed** |
 
 **Status meanings**
 
-- **Raised** — written down and implemented, but not yet signed by the owner.
+- **Raised** — written down, but not yet signed by the owner. CR-001, CR-002 and
+  CR-003 were implemented before signature; CR-004 deliberately was not, because
+  it changes a commission entitlement rather than recording one already built.
 - **Approved** — the owner has signed section 7. It is a requirement of the
   system from that date.
 - **Withdrawn** — not proceeding. The reason stays in the file.
