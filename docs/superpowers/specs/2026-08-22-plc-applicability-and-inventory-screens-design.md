@@ -231,10 +231,16 @@ preparation, and 500 Plots cannot be set up one panel at a time.
 | Server error appears as a banner with no row named | The offending row is highlighted |
 | `Back` discards a filled grid without asking | Confirms when the grid has content |
 
-**Multi-row selection.** A checkbox column on the left, select-all in the
-header, and an action bar above the grid once anything is selected. A block of
-Plots usually shares a facing, so `A-101`–`A-120` should take one action, not
-twenty.
+**Adding rows in bulk.** A Project of 100 Plots means pressing `+ Row`
+ninety-nine times today, because it adds exactly one. It is replaced by a count
+and one button — `[ 10 ] Add rows` — defaulting to ten and capped at a hundred
+per press, so a hundred blank rows arrive at once and each Plot is then filled
+in separately.
+
+Nothing else about entry changes. There is no row selection and no bulk action
+bar: the difficulty was reaching a hundred rows, not doing one thing to many of
+them. Rows are still submitted together, and the grid still fails whole rather
+than saving half — the deliberate rule in `inventory-service.ts`.
 
 **Park facing is labelled, not linked.** `Plot.parkFacing` is a fact about the
 Plot (`PRD.md` §16.2 lists it); `PARK_FACING` is a charge that may or may not
@@ -363,9 +369,16 @@ changes who may do what.
 
 ## 11. Open items
 
-One, to settle before the implementation plan:
+None. Every question this design raised has been answered.
 
-**Which bulk actions the multi-row selection offers.** Delete and Apply PLC are
-the two that clearly serve bulk preparation. Set Type, Set Park and Duplicate
-were proposed and not yet decided. The selection mechanism is agreed; the menu
-on it is not.
+Three ideas were considered for bulk entry and deliberately left out, so that a
+later reader does not mistake their absence for an oversight:
+
+- **Row selection with bulk actions** — apply PLC or a Plot Type to many rows
+  at once. Not built: the difficulty was reaching a hundred rows, not doing one
+  thing to many of them.
+- **Plot number ranges** — `A-101` to `A-200` filling a hundred numbered rows.
+  Worth revisiting if numbering turns out to be the slow part in use.
+- **Saving in batches**, and recovering the valid rows when one cell is wrong.
+  Both would overturn the deliberate "fail the whole grid rather than save half
+  of it" rule, which is a decision to take on its own evidence, not in passing.
