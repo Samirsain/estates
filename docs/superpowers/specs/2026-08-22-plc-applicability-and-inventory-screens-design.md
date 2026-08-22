@@ -302,6 +302,43 @@ as bullets on the card. The plainest form bullet data can take; no repeater UI.
 **Unchanged:** name, type, developer, location, RERA number, External Resale
 Property Group, and the PLC components.
 
+### 6.3 Edit Project — new
+
+There is no way to change a Project today. `project-service.ts` offers
+`createProject` and `setProjectLifecycle` and nothing else, so a name typed
+wrongly at setup stays wrong for the life of the Project. This is a gap, not a
+convenience.
+
+Opened from the card's `⋯` menu.
+
+**Editable:** name, type, developer, location, city, amenities, RERA number.
+
+Project **type** is editable because a Plot carries its own Plot Type — Project
+uniqueness is `(projectId, plotType, plotNumber)` — so the Project's type is a
+label over the inventory rather than a rule inside it.
+
+**Not editable, and each for its own reason:**
+
+- **Project Code.** It is generated, hidden from the UI, and the key that ties
+  a report or an export back to a Project. Once an export has left the building,
+  changing the code breaks the way back to what it described.
+- **External Resale Property Group.** `PRD.md` §11.6 makes this the difference
+  between a development Project and an acquisition container. Flipping it after
+  Plots or acquisitions exist changes what those existing records mean.
+
+**Lifecycle keeps its own action.** It already has one, it carries its own
+compulsory reason, and moving a Project to Active is a release decision rather
+than an edit.
+
+A **compulsory reason** on every edit, matching `setProjectLifecycle` and
+`revisePlcRules`, which both demand one. The command runs through `runCommand`
+like every other, so `AuditEvent` records the actor, the time, the reason and
+the before/after — which is how "who renamed this Project, and why" stays
+answerable.
+
+Permission is `PROJECT_SETUP`, the same one that creates a Project. No new
+permission.
+
 ---
 
 ## 7. Terminology
