@@ -144,7 +144,9 @@ async function main() {
       data: {
         projectId: project.id,
         version: 1,
-        isCurrent: true,
+        status: "PUBLISHED",
+        effectiveFrom: new Date(),
+        publishedAt: new Date(),
         reason: "Initial setup",
         components: {
           create: [

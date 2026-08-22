@@ -1036,6 +1036,77 @@ function BookingDetailPanel({
             </div>
           </section>
 
+          {/* PLC spec §15.3 — the frozen Booking PLC. Percentage only: no rupee
+              value is derived from it here or anywhere else. */}
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Location charge (PLC)
+            </h3>
+            {!detail.plc ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                No PLC snapshot is frozen against this Booking.
+              </p>
+            ) : (
+              <div className="mt-2 space-y-2 text-xs">
+                <div className="flex flex-wrap items-baseline justify-between gap-3">
+                  <span className="text-base font-semibold tabular-nums">
+                    {Number(detail.plc.totalPercent).toFixed(2)}%
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Frozen from PLC version {detail.plc.version} · {formatIst(detail.plc.frozenAt)}
+                    {detail.plc.correctionReason ? " · corrected" : " · original freeze"}
+                    {detail.plc.isCurrent ? "" : " · superseded"}
+                  </span>
+                </div>
+
+                <ul className="space-y-0.5">
+                  {detail.plc.components.map((c) => (
+                    <li key={c.code} className="flex justify-between gap-3">
+                      <span>
+                        {c.label}
+                        <span className="ml-2 text-[11px] text-muted-foreground">{c.code}</span>
+                      </span>
+                      <span className="tabular-nums">{Number(c.percent).toFixed(2)}%</span>
+                    </li>
+                  ))}
+                </ul>
+
+                {detail.plc.correctionReason && (
+                  <p className="text-[11px] text-amber-300">
+                    Corrected by {detail.plc.correctedBy} — {detail.plc.correctionReason}
+                  </p>
+                )}
+
+                {detail.plc.history.length > 1 && (
+                  <div className="border-t border-border/50 pt-2">
+                    <p className="text-[11px] font-medium text-muted-foreground">
+                      Correction history
+                    </p>
+                    <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+                      {detail.plc.history.map((h, index) => (
+                        <li key={index} className="flex justify-between gap-3">
+                          <span>
+                            {formatIst(h.frozenAt)} · version {h.version}
+                            {h.correctionReason ? ` — ${h.correctionReason}` : " — original freeze"}
+                          </span>
+                          <span className="tabular-nums">
+                            {Number(h.totalPercent).toFixed(2)}%
+                            {h.isCurrent ? "" : " (superseded)"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-muted-foreground">
+                  A later PLC version does not change this Booking. The snapshot it froze is what
+                  applies.
+                </p>
+              </div>
+            )}
+          </section>
+
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Exception workflows
@@ -2800,7 +2871,7 @@ function ChangePlotDecisionDialog({
         <p className="mt-1 text-muted-foreground">
           {approve
             ? "The same Booking Number continues on the replacement Plot. Existing Payment Reference Numbers stay linked to this Booking, and the old Plot returns to inventory with no RESALE tag."
-            : "The original Plot and the reserved replacement are both restored exactly, and the temporary PLC snapshot is discarded."}
+            : "The original Plot and the reserved replacement are both restored exactly. The temporary PLC snapshot leaves current use and stays in History."}
         </p>
       </div>
 

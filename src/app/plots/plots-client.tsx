@@ -38,6 +38,13 @@ export type PlotRowView = {
   restrictionReason: string | null;
   isResale: boolean;
   plcCodes: string[];
+  /** PLC spec §15.2 — effective total and the deduplicated breakdown behind it. */
+  plc: {
+    version: number;
+    totalPercent: string;
+    components: Array<{ code: string; label: string; percent: string }>;
+  } | null;
+  plcIssue: string | null;
   facing: string;
   hold: {
     id: string;
@@ -372,7 +379,25 @@ export default function PlotsClient({
                       )}
                     </td>
                     <td className="px-3 py-3 text-xs text-muted-foreground">
-                      {plot.plcCodes.length ? plot.plcCodes.join(", ") : "None"}
+                      {plot.plc ? (
+                        <>
+                          <span className="block text-sm font-semibold tabular-nums text-foreground">
+                            {Number(plot.plc.totalPercent).toFixed(2)}%
+                          </span>
+                          {plot.plc.components.length === 0 ? (
+                            <span className="block text-[11px]">No component applies</span>
+                          ) : (
+                            plot.plc.components.map((c) => (
+                              <span key={c.code} className="block text-[11px]">
+                                {c.label} · {Number(c.percent).toFixed(2)}%
+                              </span>
+                            ))
+                          )}
+                          <span className="block text-[11px]">Version {plot.plc.version}</span>
+                        </>
+                      ) : (
+                        <span className="block text-[11px] text-amber-300">{plot.plcIssue}</span>
+                      )}
                       <span className="block text-[11px]">{plot.facing}</span>
                     </td>
                     <td className="px-3 py-3 text-xs">

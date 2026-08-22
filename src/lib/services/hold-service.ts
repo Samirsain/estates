@@ -33,7 +33,7 @@ async function freezePlc(tx: Tx, plotId: string) {
     include: {
       project: {
         include: {
-          plcRuleVersions: { where: { isCurrent: true }, include: { components: true }, take: 1 },
+          plcRuleVersions: { where: { status: "PUBLISHED" }, include: { components: true }, take: 1 },
         },
       },
     },

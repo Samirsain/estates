@@ -7,7 +7,9 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { CommandError } from "@/lib/services/command";
 import {
   createProject,
+  publishPlcVersion,
   revisePlcRules,
+  savePlcDraft,
   setProjectLifecycle,
   type PlcComponentInput,
 } from "@/lib/services/project-service";
@@ -108,6 +110,59 @@ export async function revisePlcRulesAction(
     return {
       ok: true,
       message: `PLC version ${result.version} is now current. Existing Holds and Bookings keep the snapshot they froze.`,
+    };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** PLC spec §3.1 — save the next version as a Draft, changing nothing yet. */
+export async function savePlcDraftAction(
+  projectId: string,
+  components: PlcComponentInput[],
+  reason: string,
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("PROJECT_SETUP");
+  try {
+    const result = await savePlcDraft({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      projectId,
+      components: components.filter((c) => c.code.trim() !== ""),
+      reason,
+    });
+    refresh();
+    return {
+      ok: true,
+      message: `Draft version ${result.version} saved. Inventory keeps using the published version until you publish it.`,
+    };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** PLC spec §3.5 — publish the Draft and supersede the version in force. */
+export async function publishPlcVersionAction(
+  plcRuleVersionId: string,
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("PROJECT_SETUP");
+  try {
+    const result = await publishPlcVersion({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      plcRuleVersionId,
+    });
+    refresh();
+    return {
+      ok: true,
+      message:
+        `PLC version ${result.version} is now current` +
+        (result.supersededVersion ? `, superseding version ${result.supersededVersion}.` : ".") +
+        " Existing Holds and Bookings keep the snapshot they froze.",
     };
   } catch (error) {
     return toResult(error);

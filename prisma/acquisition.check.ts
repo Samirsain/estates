@@ -61,7 +61,7 @@ async function main() {
   await cleanup();
 
   const project = await db.project.findFirstOrThrow({
-    where: { plcRuleVersions: { some: { isCurrent: true } } },
+    where: { plcRuleVersions: { some: { status: "PUBLISHED" } } },
   });
   const seller = await db.person.create({
     data: { fullName: `${TAG} Seller`, primaryMobile: "9500000801" },

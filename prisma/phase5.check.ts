@@ -85,7 +85,7 @@ async function main() {
   await cleanup();
 
   const project = await db.project.findFirstOrThrow({
-    where: { plcRuleVersions: { some: { isCurrent: true } } },
+    where: { plcRuleVersions: { some: { status: "PUBLISHED" } } },
   });
   const otherProject = await db.project.create({
     data: {
@@ -345,8 +345,8 @@ async function main() {
     })
   );
 
-  // Rejection restores both Plots and discards the temporary PLC snapshot.
-  const discardedSnapshotId = pendingChange.replacementPlcSnapshotId!;
+  // Rejection restores both Plots and keeps the temporary PLC snapshot in History.
+  const rejectedSnapshotId = pendingChange.replacementPlcSnapshotId!;
   await decideChangePlot({
     idempotencyKey: key(),
     actorRef: ACC,
@@ -362,10 +362,19 @@ async function main() {
     (await db.booking.findUniqueOrThrow({ where: { id: bookingB } })).activeProcess,
     "NONE"
   );
+  const rejectedSnapshot = await db.plcSnapshot.findUniqueOrThrow({
+    where: { id: rejectedSnapshotId },
+  });
   assert.equal(
-    await db.plcSnapshot.count({ where: { id: discardedSnapshotId } }),
-    0,
-    "the temporary replacement PLC snapshot is discarded (PRD §5.3)"
+    rejectedSnapshot.isCurrent,
+    false,
+    "the rejected replacement PLC snapshot leaves current use (PLC §10.3)"
+  );
+  assert.equal(
+    (await db.changePlotRequest.findUniqueOrThrow({ where: { id: pendingChange.id } }))
+      .replacementPlcSnapshotId,
+    rejectedSnapshotId,
+    "the rejected request stays linked to its temporary snapshot (PLC §10.3)"
   );
 
   // Approval: same Booking Number, Accounts records the applicable percentage.

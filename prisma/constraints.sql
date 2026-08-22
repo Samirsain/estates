@@ -606,3 +606,42 @@ SELECT setval(
   ),
   false
 );
+
+-- ------------------------------------------------------------------ PLC
+
+-- PLC spec §3.5 — exactly one current published PLC version per Project. This
+-- is what makes two simultaneous publishes safe: the second one is refused by
+-- the database, not by a read-then-write check that can interleave.
+CREATE UNIQUE INDEX IF NOT EXISTS "one_published_plc_version_per_project"
+  ON "PlcRuleVersion" ("projectId")
+  WHERE "status" = 'PUBLISHED';
+
+-- PLC spec §3.4 — a superseded version is no longer published, a published one
+-- carries its publish stamp, and no version supersedes itself.
+ALTER TABLE "PlcRuleVersion" DROP CONSTRAINT IF EXISTS "plc_superseded_is_not_published";
+ALTER TABLE "PlcRuleVersion" ADD CONSTRAINT "plc_superseded_is_not_published"
+  CHECK ("supersededById" IS NULL OR "status" = 'SUPERSEDED');
+
+ALTER TABLE "PlcRuleVersion" DROP CONSTRAINT IF EXISTS "plc_published_carries_its_stamp";
+ALTER TABLE "PlcRuleVersion" ADD CONSTRAINT "plc_published_carries_its_stamp"
+  CHECK ("status" = 'DRAFT'
+      OR ("publishedAt" IS NOT NULL AND "effectiveFrom" IS NOT NULL));
+
+ALTER TABLE "PlcRuleVersion" DROP CONSTRAINT IF EXISTS "plc_version_not_self_superseding";
+ALTER TABLE "PlcRuleVersion" ADD CONSTRAINT "plc_version_not_self_superseding"
+  CHECK ("supersededById" IS NULL OR "supersededById" <> "id");
+
+-- PLC spec §7.2 / §11.1 — a superseded snapshot is not current, a correction
+-- always names its reason and actor, and no snapshot supersedes itself.
+ALTER TABLE "PlcSnapshot" DROP CONSTRAINT IF EXISTS "plc_snapshot_superseded_is_not_current";
+ALTER TABLE "PlcSnapshot" ADD CONSTRAINT "plc_snapshot_superseded_is_not_current"
+  CHECK ("supersededById" IS NULL OR "isCurrent" = false);
+
+ALTER TABLE "PlcSnapshot" DROP CONSTRAINT IF EXISTS "plc_correction_names_reason_and_actor";
+ALTER TABLE "PlcSnapshot" ADD CONSTRAINT "plc_correction_names_reason_and_actor"
+  CHECK (("correctionReason" IS NULL AND "correctedBy" IS NULL)
+      OR (length(btrim(COALESCE("correctionReason", ''))) > 0 AND "correctedBy" IS NOT NULL));
+
+ALTER TABLE "PlcSnapshot" DROP CONSTRAINT IF EXISTS "plc_snapshot_not_self_superseding";
+ALTER TABLE "PlcSnapshot" ADD CONSTRAINT "plc_snapshot_not_self_superseding"
+  CHECK ("supersededById" IS NULL OR "supersededById" <> "id");

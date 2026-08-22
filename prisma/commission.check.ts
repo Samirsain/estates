@@ -144,7 +144,7 @@ async function main() {
   await cleanup();
 
   const project = await db.project.findFirstOrThrow({
-    where: { plcRuleVersions: { some: { isCurrent: true } } },
+    where: { plcRuleVersions: { some: { status: "PUBLISHED" } } },
   });
 
   const inviter = await makeEligiblePerson("Inviter", "9600000001");

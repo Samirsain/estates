@@ -146,7 +146,21 @@ export async function purgeCheckData(
   await db.plotEvent.deleteMany({ where: { plotId: { in: plotIds } } });
   await db.plotBoundary.deleteMany({ where: { plotId: { in: plotIds } } });
   await db.plot.deleteMany({ where: { id: { in: plotIds } } });
-  await db.project.deleteMany({ where: { projectCode: { startsWith: tag } } });
+
+  // A PLC version chain points at itself, so the links go before the rows.
+  // Components cascade with their version.
+  const projectIds = (
+    await db.project.findMany({
+      where: { projectCode: { startsWith: tag } },
+      select: { id: true },
+    })
+  ).map((p) => p.id);
+  await db.plcRuleVersion.updateMany({
+    where: { projectId: { in: projectIds } },
+    data: { supersededById: null },
+  });
+  await db.plcRuleVersion.deleteMany({ where: { projectId: { in: projectIds } } });
+  await db.project.deleteMany({ where: { id: { in: projectIds } } });
 
   // Identity last: everything above referenced it.
   await db.bankDetail.deleteMany({ where: { personId: { in: personIds } } });

@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
-import { derivedFacing } from "@/lib/domain/inventory";
+import { buildPlcSnapshot, derivedFacing } from "@/lib/domain/inventory";
 import { listPendingHoldRequests } from "@/lib/services/hold-service";
 import { listPlots } from "@/lib/services/inventory-service";
 import PlotsClient, { type HoldRequestView, type PlotRowView } from "./plots-client";
@@ -16,7 +16,7 @@ export default async function PlotsPage() {
   const [plots, projects, people, requests] = await Promise.all([
     listPlots(),
     db.project.findMany({
-      include: { plcRuleVersions: { where: { isCurrent: true }, include: { components: true }, take: 1 } },
+      include: { plcRuleVersions: { where: { status: "PUBLISHED" }, include: { components: true }, take: 1 } },
       orderBy: { name: "asc" },
     }),
     db.person.findMany({
@@ -28,9 +28,44 @@ export default async function PlotsPage() {
     listPendingHoldRequests(),
   ]);
 
+  // PLC spec §15.2 — the effective PLC for Available / Not Active inventory is
+  // derived on read from the published version, never stored, so publishing a
+  // new version updates this list by construction (§4.3).
+  const publishedPlc = new Map(
+    projects.map((project) => [project.id, project.plcRuleVersions[0] ?? null])
+  );
+
   const rows: PlotRowView[] = plots.map((plot) => {
     const hold = plot.holds[0];
+    const version = publishedPlc.get(plot.projectId) ?? null;
+
+    let plc: PlotRowView["plc"] = null;
+    let plcIssue: string | null = version ? null : "No published PLC version for this Project";
+    if (version) {
+      try {
+        const effective = buildPlcSnapshot(
+          plot.plcComponentCodes,
+          version.components.map((c) => ({
+            code: c.code,
+            label: c.label,
+            percent: c.percent.toString(),
+          }))
+        );
+        plc = {
+          version: version.version,
+          totalPercent: effective.totalPercent.toFixed(3),
+          components: effective.components,
+        };
+      } catch (error) {
+        // PLC spec §5.3 — a code the published version no longer carries is
+        // surfaced, never silently dropped from the total.
+        plcIssue = error instanceof Error ? error.message : "PLC could not be evaluated";
+      }
+    }
+
     return {
+      plc,
+      plcIssue,
       id: plot.id,
       project: plot.project.name,
       projectId: plot.projectId,

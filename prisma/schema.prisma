@@ -438,18 +438,38 @@ model Project {
   externalAcquisitions Acquisition[] @relation("ExternalResaleGroup")
 }
 
+/// PLC spec §3.1 — a version is Draft until it is published. Publishing
+/// supersedes the prior published version; nothing is edited in place (§3.4).
+enum PlcVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+}
+
 /// PRD §16.3 — PLC is percentage only and each distinct component is charged once.
 model PlcRuleVersion {
-  id            String   @id @default(uuid())
-  projectId     String
-  project       Project  @relation(fields: [projectId], references: [id])
-  version       Int
-  effectiveFrom DateTime @default(now())
-  /// Available / Not Active inventory uses the latest version; Holds and
+  id        String           @id @default(uuid())
+  projectId String
+  project   Project          @relation(fields: [projectId], references: [id])
+  version   Int
+  /// Available / Not Active inventory uses the one PUBLISHED version; Holds and
   /// Bookings use frozen snapshots.
-  isCurrent     Boolean  @default(true)
-  createdBy     String?
-  reason        String?
+  status    PlcVersionStatus @default(DRAFT)
+
+  /// Set at publish, not at draft creation — a draft has no effective date.
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  publishedBy String?
+  publishedAt DateTime?
+  reason      String?
+
+  /// PLC spec §3.4 — the old version becomes historical, never deleted.
+  supersededById String?         @unique
+  supersededBy   PlcRuleVersion? @relation("PlcVersionSupersession", fields: [supersededById], references: [id])
+  supersedes     PlcRuleVersion? @relation("PlcVersionSupersession")
 
   components PlcComponent[]
   snapshots  PlcSnapshot[]
@@ -471,6 +491,8 @@ model PlcComponent {
 }
 
 /// Immutable frozen copy taken at Hold, Booking Request or Change Plot.
+/// PLC spec §7.2 — a correction never rewrites this row. It creates a corrected
+/// snapshot and supersedes this one, which stays readable as History.
 model PlcSnapshot {
   id            String         @id @default(uuid())
   ruleVersionId String
@@ -482,9 +504,22 @@ model PlcSnapshot {
   totalPercent  Decimal        @db.Decimal(6, 3)
   frozenAt      DateTime       @default(now())
 
+  /// False once superseded by a correction, or once the Change Plot that froze
+  /// it was rejected (PLC spec §10.3).
+  isCurrent      Boolean      @default(true)
+  supersededById String?      @unique
+  supersededBy   PlcSnapshot? @relation("PlcSnapshotSupersession", fields: [supersededById], references: [id])
+  supersedes     PlcSnapshot? @relation("PlcSnapshotSupersession")
+
+  /// Compulsory on a corrected snapshot (PLC spec §11.1).
+  correctionReason String?
+  correctedBy      String?
+
   holds    Hold[]
   bookings Booking[]
   changePlotRequests ChangePlotRequest[]
+
+  @@index([plotId, isCurrent])
 }
 
 model Plot {

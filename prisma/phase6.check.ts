@@ -114,7 +114,7 @@ async function main() {
   await cleanup();
 
   const project = await db.project.findFirstOrThrow({
-    where: { plcRuleVersions: { some: { isCurrent: true } } },
+    where: { plcRuleVersions: { some: { status: "PUBLISHED" } } },
   });
   const buyer = await makePerson("Buyer", "9500000601", "260000000601");
 

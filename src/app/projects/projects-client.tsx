@@ -14,7 +14,9 @@ import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { formatIst, type StaffRole } from "@/lib/tasks";
 import {
   createProjectAction,
+  publishPlcVersionAction,
   revisePlcRulesAction,
+  savePlcDraftAction,
   setProjectLifecycleAction,
   type ActionResult,
 } from "./actions";
@@ -35,6 +37,25 @@ export type ProjectRowView = {
   plotCount: number;
   plcVersion: number | null;
   components: ComponentRow[];
+  /** PLC spec §15.1 — published, draft and superseded, newest first. */
+  plcVersions: Array<{
+    id: string;
+    version: number;
+    status: string;
+    reason: string | null;
+    createdBy: string | null;
+    createdAt: string;
+    publishedBy: string | null;
+    effectiveFrom: string | null;
+    effectiveTo: string | null;
+    components: ComponentRow[];
+  }>;
+};
+
+const PLC_STATUS_LABEL: Record<string, string> = {
+  DRAFT: "Draft",
+  PUBLISHED: "Published (current)",
+  SUPERSEDED: "Superseded",
 };
 
 const LIFECYCLE_LABEL: Record<string, string> = {
@@ -165,7 +186,7 @@ export default function ProjectsClient({
               {canSetup && (
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="outline" onClick={() => setPlc(project)}>
-                    <Layers className="mr-2 h-3.5 w-3.5" /> Revise PLC
+                    <Layers className="mr-2 h-3.5 w-3.5" /> PLC versions
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setLifecycle(project)}>
                     Change lifecycle
@@ -193,6 +214,10 @@ export default function ProjectsClient({
           onSubmit={(components, reason) =>
             run(() => revisePlcRulesAction(plc.id, components, reason, newKey()))
           }
+          onDraft={(components, reason) =>
+            run(() => savePlcDraftAction(plc.id, components, reason, newKey()))
+          }
+          onPublish={(versionId) => run(() => publishPlcVersionAction(versionId, newKey()))}
         />
       )}
 
@@ -370,22 +395,29 @@ function PlcDialog({
   busy,
   onClose,
   onSubmit,
+  onDraft,
+  onPublish,
 }: {
   project: ProjectRowView;
   busy: boolean;
   onClose: () => void;
   onSubmit: (components: ComponentRow[], reason: string) => void;
+  onDraft: (components: ComponentRow[], reason: string) => void;
+  onPublish: (plcRuleVersionId: string) => void;
 }) {
   const [components, setComponents] = React.useState<ComponentRow[]>(
     project.components.length > 0
       ? project.components.map((c) => ({ ...c, percent: Number(c.percent).toString() }))
       : [{ code: "", label: "", percent: "" }]
   );
+  const [reason, setReason] = React.useState("");
+
+  const drafts = project.plcVersions.filter((v) => v.status === "DRAFT");
 
   return (
     <Modal
-      title={`Revise PLC — ${project.projectCode}`}
-      description="This creates the next version and supersedes the current one. Holds and Bookings keep the snapshot they froze."
+      title={`PLC — ${project.projectCode}`}
+      description="A revision creates the next version. A published version is never edited in place, and Holds and Bookings keep the snapshot they froze."
       wide
       onClose={onClose}
     >
@@ -393,22 +425,112 @@ function PlcDialog({
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
-          onSubmit(components, String(new FormData(e.currentTarget).get("reason")));
+          onSubmit(components, reason);
         }}
       >
         <ComponentEditor rows={components} onChange={setComponents} />
         <Field label="Reason — compulsory">
-          <Input name="reason" required minLength={3} />
+          <Input
+            name="reason"
+            required
+            minLength={3}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
         </Field>
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex flex-wrap justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Back
           </Button>
+          {/* PLC spec §3.1 — a draft changes nothing until it is published. */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy || reason.trim().length < 3}
+            onClick={() => onDraft(components, reason)}
+          >
+            Save as draft
+          </Button>
           <Button type="submit" size="sm" disabled={busy}>
-            {busy ? "Saving…" : "Save new PLC version"}
+            {busy ? "Saving…" : "Save and publish"}
           </Button>
         </div>
       </form>
+
+      {drafts.length > 0 && (
+        <div className="mt-5 border-t border-border/50 pt-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Drafts waiting to be published
+          </h3>
+          <ul className="mt-2 space-y-2 text-xs">
+            {drafts.map((draft) => (
+              <li key={draft.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  Version {draft.version}
+                  <span className="ml-2 text-[11px] text-muted-foreground">
+                    {draft.components.map((c) => `${c.code} ${Number(c.percent).toFixed(2)}%`).join(" · ") ||
+                      "No component"}
+                  </span>
+                  {draft.reason && (
+                    <span className="block text-[11px] text-muted-foreground">{draft.reason}</span>
+                  )}
+                </span>
+                <Button size="sm" disabled={busy} onClick={() => onPublish(draft.id)}>
+                  Publish
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* PLC spec §15.1 — the version history, so what changed and when is
+          answerable without opening the database. */}
+      <div className="mt-5 border-t border-border/50 pt-4">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Version history
+        </h3>
+        {project.plcVersions.length === 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">No PLC version exists yet.</p>
+        ) : (
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[36rem] text-xs">
+              <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="py-1">Version</th>
+                  <th className="py-1">Status</th>
+                  <th className="py-1">Components</th>
+                  <th className="py-1">Effective</th>
+                  <th className="py-1">Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {project.plcVersions.map((v) => (
+                  <tr key={v.id} className={v.status === "PUBLISHED" ? "" : "text-muted-foreground"}>
+                    <td className="py-1 tabular-nums">{v.version}</td>
+                    <td className="py-1">{PLC_STATUS_LABEL[v.status] ?? v.status}</td>
+                    <td className="py-1">
+                      {v.components.length === 0
+                        ? "—"
+                        : v.components
+                            .map((c) => `${c.code} ${Number(c.percent).toFixed(2)}%`)
+                            .join(" · ")}
+                    </td>
+                    <td className="py-1 text-[11px]">
+                      {v.effectiveFrom ? formatIst(v.effectiveFrom) : "Not published"}
+                      {v.effectiveTo && (
+                        <span className="block">to {formatIst(v.effectiveTo)}</span>
+                      )}
+                    </td>
+                    <td className="py-1 text-[11px]">{v.reason ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </Modal>
   );
 }

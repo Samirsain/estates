@@ -60,7 +60,7 @@ export async function prepareInventory(args: {
     async (tx) => {
       const project = await tx.project.findUniqueOrThrow({
         where: { id: args.projectId },
-        include: { plcRuleVersions: { where: { isCurrent: true }, include: { components: true }, take: 1 } },
+        include: { plcRuleVersions: { where: { status: "PUBLISHED" }, include: { components: true }, take: 1 } },
       });
       const validCodes = new Set(project.plcRuleVersions[0]?.components.map((c) => c.code) ?? []);
 

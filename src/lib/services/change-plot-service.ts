@@ -42,7 +42,7 @@ async function freezeReplacementPlc(tx: Tx, plotId: string, personId: string) {
     where: { id: plotId },
     include: {
       project: {
-        include: { plcRuleVersions: { where: { isCurrent: true }, include: { components: true }, take: 1 } },
+        include: { plcRuleVersions: { where: { status: "PUBLISHED" }, include: { components: true }, take: 1 } },
       },
     },
   });
@@ -211,7 +211,7 @@ export type ChangePlotDecisionResult = {
  * returns under its restriction with no RESALE tag, Accounts manually records
  * the percentage applicable to the replacement and enters a revised schedule
  * totalling 100%. On rejection everything goes back and the temporary
- * replacement PLC snapshot is discarded.
+ * replacement PLC snapshot is kept against the rejected request as History.
  */
 export async function decideChangePlot(args: {
   idempotencyKey: string;
@@ -258,11 +258,16 @@ export async function decideChangePlot(args: {
       if (!args.approve) {
         await tx.changePlotRequest.update({
           where: { id: request.id },
-          // The temporary replacement PLC snapshot is discarded (PRD §5.3).
-          data: { status: "REJECTED", replacementPlcSnapshotId: null, ...decision },
+          data: { status: "REJECTED", ...decision },
         });
         if (request.replacementPlcSnapshotId) {
-          await tx.plcSnapshot.delete({ where: { id: request.replacementPlcSnapshotId } });
+          // PLC spec §10.3, §21 — the temporary replacement snapshot leaves
+          // current use but is never hard-deleted. It stays linked to the
+          // rejected request as History.
+          await tx.plcSnapshot.update({
+            where: { id: request.replacementPlcSnapshotId },
+            data: { isCurrent: false },
+          });
         }
 
         await tx.plot.update({

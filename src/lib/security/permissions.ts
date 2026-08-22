@@ -15,6 +15,9 @@ export type Action =
   | "MEMBER_DEACTIVATE"
   | "PERSON_MERGE"
   | "PROJECT_SETUP"
+  // PLC spec §12.1 — a frozen snapshot is a critical correction, so it sits
+  // with Admin/MD and not with the Project setup permission PC also holds.
+  | "PLC_SNAPSHOT_CORRECT"
   | "PLOT_SETUP"
   | "PLOT_RESTRICTION_MANAGE"
   | "PLOT_MAKE_AVAILABLE"
@@ -71,6 +74,7 @@ const ROLE_ACTIONS: Record<Role, readonly Action[]> = {
     "MEMBER_DEACTIVATE",
     "PERSON_MERGE",
     "PROJECT_SETUP",
+    "PLC_SNAPSHOT_CORRECT",
     "PLOT_SETUP",
     "PLOT_RESTRICTION_MANAGE",
     "PLOT_MAKE_AVAILABLE",
@@ -107,6 +111,7 @@ const ROLE_ACTIONS: Record<Role, readonly Action[]> = {
     "MEMBER_DEACTIVATE",
     "PERSON_MERGE",
     "PROJECT_SETUP",
+    "PLC_SNAPSHOT_CORRECT",
     "PLOT_SETUP",
     "PLOT_RESTRICTION_MANAGE",
     "PLOT_MAKE_AVAILABLE",

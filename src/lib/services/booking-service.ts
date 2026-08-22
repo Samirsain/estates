@@ -262,7 +262,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
         where: { id: input.plotId },
         include: {
           project: {
-            include: { plcRuleVersions: { where: { isCurrent: true }, include: { components: true }, take: 1 } },
+            include: { plcRuleVersions: { where: { status: "PUBLISHED" }, include: { components: true }, take: 1 } },
           },
         },
       });
@@ -1545,7 +1545,9 @@ export function getBooking(bookingId: string) {
       plot: true,
       primaryPerson: true,
       soldByPerson: true,
-      plcSnapshot: true,
+      // PLC spec §15.3 — the frozen total, its breakdown and its version, plus
+      // enough to tell a corrected snapshot from an original one.
+      plcSnapshot: { include: { ruleVersion: true, supersedes: { select: { id: true } } } },
       parties: { include: { person: true }, orderBy: { effectiveFrom: "asc" } },
       reviewVersions: { orderBy: { version: "desc" } },
       scheduleVersions: { include: { instalments: { orderBy: { seq: "asc" } } }, orderBy: { version: "desc" } },

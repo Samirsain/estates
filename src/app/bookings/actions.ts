@@ -24,6 +24,7 @@ import {
 } from "@/lib/services/booking-service";
 import { db } from "@/lib/db";
 import { decideCancellation } from "@/lib/services/cancellation-service";
+import { plcSnapshotHistory } from "@/lib/services/project-service";
 import { decideChangePlot, submitChangePlot } from "@/lib/services/change-plot-service";
 import { listCommissionForBooking, markCommissionPaid } from "@/lib/services/commission-service";
 import {
@@ -626,8 +627,42 @@ export async function loadBookingDetail(bookingId: string) {
   if (!booking) return null;
   const commissions = await listCommissionForBooking(bookingId);
 
+  // PLC spec §15.3 — the panel shows the frozen snapshot. The correction chain
+  // is only fetched when this snapshot actually replaced an earlier one.
+  const plcHistory = booking.plcSnapshot?.supersedes
+    ? await plcSnapshotHistory(booking.plcSnapshot.id)
+    : [];
+
   return {
     id: booking.id,
+    /**
+     * PLC spec §15.3 — frozen total, breakdown, version, snapshot date and
+     * whether this is the original freeze or a correction. Percentage only:
+     * no rupee value is derived from it anywhere.
+     */
+    plc: booking.plcSnapshot
+      ? {
+          totalPercent: booking.plcSnapshot.totalPercent.toFixed(3),
+          components: booking.plcSnapshot.components as Array<{
+            code: string;
+            label: string;
+            percent: string;
+          }>,
+          version: booking.plcSnapshot.ruleVersion.version,
+          frozenAt: booking.plcSnapshot.frozenAt.toISOString(),
+          isCurrent: booking.plcSnapshot.isCurrent,
+          correctionReason: booking.plcSnapshot.correctionReason,
+          correctedBy: booking.plcSnapshot.correctedBy,
+          history: plcHistory.map((snapshot) => ({
+            totalPercent: snapshot.totalPercent.toFixed(3),
+            version: snapshot.ruleVersion.version,
+            frozenAt: snapshot.frozenAt.toISOString(),
+            isCurrent: snapshot.isCurrent,
+            correctionReason: snapshot.correctionReason,
+            correctedBy: snapshot.correctedBy,
+          })),
+        }
+      : null,
     parties: booking.parties.map((p) => ({
       personId: p.personId,
       name: p.person.fullName,
