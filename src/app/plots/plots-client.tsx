@@ -193,7 +193,7 @@ export default function PlotsClient({
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Plot Inventory</h1>
             <p className="mt-1 text-xs text-muted-foreground">
-              {visible.length} of {rows.length} Plots · Location Charge is a percentage only ·
+              {visible.length} of {rows.length} Plots · Plot Location Charge is a percentage only ·
               times in Asia/Kolkata
             </p>
           </div>
@@ -340,7 +340,7 @@ export default function PlotsClient({
                   <th className="px-3 py-1">Plot Type / Number</th>
                   <th className="px-3 py-1">Area</th>
                   <th className="px-3 py-1">Status</th>
-                  <th className="px-3 py-1">Location Charge (PLC %)</th>
+                  <th className="px-3 py-1">Plot Location Charge (PLC %)</th>
                   <th className="px-3 py-1">Restriction</th>
                   <th className="px-3 py-1">Customer</th>
                   <th className="px-3 py-1">Next action</th>

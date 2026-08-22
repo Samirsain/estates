@@ -25,10 +25,12 @@ export default async function ProjectsPage() {
         lifecycle: project.lifecycle,
         developer: project.developer,
         location: project.location,
+        city: project.city,
+        amenities: project.amenities,
         reraNumber: project.reraNumber,
-        reraExpiryDate: project.reraExpiryDate?.toISOString() ?? null,
         isExternalResaleGroup: project.isExternalResaleGroup,
         plotCount: project._count.plots,
+        plotTypeCounts: project.plotTypeCounts,
         plcVersion: project.plcRuleVersions.find((v) => v.status === "PUBLISHED")?.version ?? null,
         components: (
           project.plcRuleVersions.find((v) => v.status === "PUBLISHED")?.components ?? []

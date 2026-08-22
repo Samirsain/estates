@@ -8,6 +8,7 @@ import { CommandError } from "@/lib/services/command";
 import {
   createProject,
   publishPlcVersion,
+  updateProject,
   revisePlcRules,
   savePlcDraft,
   setProjectLifecycle,
@@ -27,40 +28,46 @@ function refresh() {
   revalidatePath("/acquisitions");
 }
 
+export type ProjectFields = {
+  name: string;
+  type: "RESIDENTIAL" | "COMMERCIAL" | "MIXED";
+  developer: string;
+  location: string;
+  city: string;
+  amenities: string;
+  reraNumber: string;
+};
+
 export async function createProjectAction(
-  input: {
-    projectCode: string;
-    name: string;
-    type: "RESIDENTIAL" | "COMMERCIAL" | "MIXED";
-    developer: string;
-    location: string;
-    reraNumber: string;
-    reraExpiryDate: string;
+  input: ProjectFields & {
     isExternalResaleGroup: boolean;
     components: PlcComponentInput[];
   },
   key: string
 ): Promise<ActionResult> {
   const actor = await requireStaff("PROJECT_SETUP");
+  // The form offers Residential and Commercial only. Refusing rather than
+  // quietly rewriting keeps a surprising value from becoming a stored one.
+  if (input.type === "MIXED") return { ok: false, error: "Choose Residential or Commercial." };
   try {
     const result = await createProject({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
-      projectCode: input.projectCode,
       name: input.name,
       type: input.type,
       developer: input.developer || null,
       location: input.location || null,
+      city: input.city || null,
+      amenities: input.amenities || null,
       reraNumber: input.reraNumber || null,
-      reraExpiryDate: input.reraExpiryDate ? new Date(input.reraExpiryDate) : null,
       isExternalResaleGroup: input.isExternalResaleGroup,
       components: input.components.filter((c) => c.code.trim() !== ""),
     });
     refresh();
     return {
       ok: true,
-      message: `${result.projectCode} created as Setup / Not Active. Prepare inventory, then make it Active before anything is sold.`,
+      message: `${input.name} created as Unreleased (code ${result.projectCode}). Prepare inventory, then make it Active before anything is sold.`,
     };
   } catch (error) {
     return toResult(error);
@@ -164,6 +171,37 @@ export async function publishPlcVersionAction(
         (result.supersededVersion ? `, superseding version ${result.supersededVersion}.` : ".") +
         " Existing Holds and Bookings keep the snapshot they froze.",
     };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** The edit path a Project has never had. Compulsory reason, like every other
+ * Project-level command here. */
+export async function updateProjectAction(
+  projectId: string,
+  input: ProjectFields,
+  reason: string,
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("PROJECT_SETUP");
+  try {
+    await updateProject({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      projectId,
+      name: input.name,
+      type: input.type,
+      developer: input.developer || null,
+      location: input.location || null,
+      city: input.city || null,
+      amenities: input.amenities || null,
+      reraNumber: input.reraNumber || null,
+      reason,
+    });
+    refresh();
+    return { ok: true, message: `${input.name} updated.` };
   } catch (error) {
     return toResult(error);
   }

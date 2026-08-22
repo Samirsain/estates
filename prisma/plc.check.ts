@@ -16,6 +16,7 @@ import {
   publishPlcVersion,
   revisePlcRules,
   savePlcDraft,
+  updateProject,
 } from "@/lib/services/project-service";
 
 const db = new PrismaClient();
@@ -43,15 +44,87 @@ async function main() {
     idempotencyKey: key(),
     actorRef: PC,
     actorRole: "PC",
-    projectCode: `${TAG}-01`,
     name: `${TAG} PLC Lifecycle`,
     type: "RESIDENTIAL",
+    city: "Jaipur",
+    amenities: "Clubhouse\n24x7 water",
     components: [
       { code: "ROAD_FACING", label: "Road facing", percent: "2.000" },
       { code: "PARK_FACING", label: "Park facing", percent: "1.500" },
       { code: "CORNER", label: "Corner", percent: "1.000" },
     ],
   });
+
+  /* ================================ Project Code is generated, not typed */
+
+  const created = await db.project.findUniqueOrThrow({ where: { id: projectId } });
+  assert.match(
+    created.projectCode,
+    /^[A-Z]{1,3}-\d{2}$/,
+    "the code is derived from the name, not typed by a person"
+  );
+  assert.equal(created.city, "Jaipur");
+  assert.equal(created.amenities, "Clubhouse\n24x7 water", "amenities are one per line");
+
+  const twin = await createProject({
+    idempotencyKey: key(),
+    actorRef: PC,
+    actorRole: "PC",
+    name: `${TAG} PLC Lifecycle`,
+    type: "RESIDENTIAL",
+    components: [{ code: "CORNER", label: "Corner", percent: "1.000" }],
+  });
+  assert.notEqual(
+    twin.projectCode,
+    created.projectCode,
+    "a repeated name takes the next number rather than colliding"
+  );
+
+  /* ============================================= Project edit (spec §6.3) */
+
+  await updateProject({
+    idempotencyKey: key(),
+    actorRef: ADMIN,
+    actorRole: "ADMIN",
+    projectId,
+    name: `${TAG} PLC Lifecycle Renamed`,
+    type: "COMMERCIAL",
+    city: "Udaipur",
+    reason: "The developer renamed the launch.",
+  });
+
+  const edited = await db.project.findUniqueOrThrow({ where: { id: projectId } });
+  assert.equal(edited.name, `${TAG} PLC Lifecycle Renamed`);
+  assert.equal(edited.type, "COMMERCIAL", "type is a label over the inventory, so it may change");
+  assert.equal(edited.city, "Udaipur");
+  assert.equal(
+    edited.projectCode,
+    created.projectCode,
+    "the Project Code never changes — it is what an export points back to"
+  );
+  assert.equal(
+    edited.isExternalResaleGroup,
+    created.isExternalResaleGroup,
+    "and the External Resale Group flag is not editable (PRD §11.6)"
+  );
+
+  await expectBlocked(/compulsory reason/, () =>
+    updateProject({
+      idempotencyKey: key(),
+      actorRef: ADMIN,
+      actorRole: "ADMIN",
+      projectId,
+      name: `${TAG} No Reason`,
+      type: "COMMERCIAL",
+      reason: "   ",
+    })
+  );
+
+  const editAudit = await db.auditEvent.findFirstOrThrow({
+    where: { entity: "Project", entityId: projectId, action: "PROJECT_UPDATED" },
+  });
+  assert.equal(editAudit.reason, "The developer renamed the launch.");
+  assert.ok(editAudit.beforeMasked && editAudit.afterMasked, "before and after are both recorded");
 
   const v1 = await db.plcRuleVersion.findFirstOrThrow({
     where: { projectId, version: 1 },
@@ -377,7 +450,11 @@ async function main() {
 
 main()
   .catch(async (error) => {
-    await cleanup().catch(() => {});
+    await cleanup().catch((purgeError) => {
+      // A swallowed purge failure is why a later check script fails on data
+      // this one left behind. Say so here, where it happened.
+      console.error("Cleanup failed — tagged rows may remain:", purgeError);
+    });
     console.error(error);
     process.exitCode = 1;
   })

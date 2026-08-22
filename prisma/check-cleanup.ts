@@ -14,7 +14,8 @@ import type { PrismaClient } from "@prisma/client";
  * Conventions the checks follow so this can find their rows:
  *   Person.fullName        starts with TAG
  *   Plot.plotNumber        starts with TAG
- *   Project.projectCode    starts with TAG
+ *   Project.projectCode    starts with TAG, or Project.name does
+ *                          (the code is generated now, so it may not carry the TAG)
  *   Booking.submittedByRef starts with TAG
  *   ExternalReference.actorRef starts with TAG
  *   Task.recordName        contains TAG
@@ -43,7 +44,7 @@ export async function purgeCheckData(
           // A Plot the application itself created inside a tagged Project —
           // an approved Purchase for Resale names it after the property, not
           // after the tag.
-          { project: { projectCode: { startsWith: tag } } },
+          { project: { OR: [{ projectCode: { startsWith: tag } }, { name: { startsWith: tag } }] } },
           ...(options.extraPlotWhere?.restrictionReason
             ? [{ restrictionReason: options.extraPlotWhere.restrictionReason }]
             : []),
@@ -151,7 +152,7 @@ export async function purgeCheckData(
   // Components cascade with their version.
   const projectIds = (
     await db.project.findMany({
-      where: { projectCode: { startsWith: tag } },
+      where: { OR: [{ projectCode: { startsWith: tag } }, { name: { startsWith: tag } }] },
       select: { id: true },
     })
   ).map((p) => p.id);

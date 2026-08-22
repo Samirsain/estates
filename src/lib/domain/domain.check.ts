@@ -166,7 +166,9 @@ assert.equal(canAllocate("BOOKED", "NONE", "ACTIVE").ok, false);
 // however Available the Plot looks.
 const setup = canAllocate("AVAILABLE", "NONE", "SETUP_NOT_ACTIVE");
 assert.equal(setup.ok, false);
-assert.match(setup.ok === false ? setup.reason : "", /Setup \/ Not Active/);
+// The reason reaches the user verbatim (DESIGN §5.4), so it carries the
+// screen wording rather than the enum name (DEVIATIONS D-03).
+assert.match(setup.ok === false ? setup.reason : "", /Unreleased/);
 // Sold Out and Completed still allow it: a returned RESALE Plot in such a
 // Project stays sellable as Available (Resale) (PRD §8.8).
 assert.deepEqual(canAllocate("AVAILABLE", "NONE", "SOLD_OUT"), { ok: true });

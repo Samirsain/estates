@@ -153,7 +153,7 @@ export function canAllocate(
     return {
       ok: false,
       reason:
-        "The Project is still in Setup / Not Active and cannot accept a Hold or Booking. " +
+        "The Project is still Unreleased and cannot accept a Hold or Booking. " +
         "Admin or MD must activate the Project first.",
     };
   }

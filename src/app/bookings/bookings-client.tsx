@@ -1040,7 +1040,7 @@ function BookingDetailPanel({
               value is derived from it here or anywhere else. */}
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Location charge (PLC)
+              Plot Location Charge (PLC %)
             </h3>
             {!detail.plc ? (
               <p className="mt-2 text-xs text-muted-foreground">

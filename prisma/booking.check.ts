@@ -105,7 +105,7 @@ async function main() {
       restriction: "NONE",
     },
   });
-  await expectBlocked(/Setup \/ Not Active/, () =>
+  await expectBlocked(/Unreleased/, () =>
     createHold({
       idempotencyKey: key(),
       actorRef: CRM,
@@ -114,7 +114,7 @@ async function main() {
       personId: buyer.id,
     })
   );
-  await expectBlocked(/Setup \/ Not Active/, () =>
+  await expectBlocked(/Unreleased/, () =>
     submitBookingRequest({
       idempotencyKey: key(),
       actorRef: CRM,
@@ -651,7 +651,11 @@ main()
   .then(() => db.$disconnect())
   .catch(async (error) => {
     console.error(error);
-    await cleanup().catch(() => {});
+    await cleanup().catch((purgeError) => {
+      // A swallowed purge failure is why a later check script fails on data
+      // this one left behind. Say so here, where it happened.
+      console.error("Cleanup failed — tagged rows may remain:", purgeError);
+    });
     await db.$disconnect();
     process.exit(1);
   });

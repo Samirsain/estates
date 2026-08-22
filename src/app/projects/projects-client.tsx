@@ -4,7 +4,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Layers, Plus } from "lucide-react";
+import { Building2, Layers, MapPin, Pencil, Plus, ScrollText } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ import {
   publishPlcVersionAction,
   revisePlcRulesAction,
   savePlcDraftAction,
+  updateProjectAction,
+  type ProjectFields,
   setProjectLifecycleAction,
   type ActionResult,
 } from "./actions";
@@ -31,10 +33,12 @@ export type ProjectRowView = {
   lifecycle: string;
   developer: string | null;
   location: string | null;
+  city: string | null;
+  amenities: string | null;
   reraNumber: string | null;
-  reraExpiryDate: string | null;
   isExternalResaleGroup: boolean;
   plotCount: number;
+  plotTypeCounts: Array<{ plotType: string; count: number }>;
   plcVersion: number | null;
   components: ComponentRow[];
   /** PLC spec §15.1 — published, draft and superseded, newest first. */
@@ -58,8 +62,36 @@ const PLC_STATUS_LABEL: Record<string, string> = {
   SUPERSEDED: "Superseded",
 };
 
+const TYPE_LABEL: Record<string, string> = {
+  RESIDENTIAL: "Residential",
+  COMMERCIAL: "Commercial",
+  MIXED: "Mixed",
+};
+
+/** Plot Types, in the order the inventory grid offers them. */
+const PLOT_TYPE_LABEL: Record<string, string> = {
+  RESIDENTIAL: "Residential",
+  COMMERCIAL: "Commercial",
+  INFORMAL_SECTOR: "Informal Sector",
+};
+
+const BULLET = "•";
+
+/**
+ * Amenities are stored one per line, without the bullet. The bullet belongs to
+ * the field you type in and to the card you read; storing it would put a
+ * decoration inside the data.
+ */
+function amenityList(amenities: string | null): string[] {
+  return (amenities ?? "")
+    .split("\n")
+    .map((a) => a.replace(/^[•\-*]\s*/, "").trim())
+    .filter(Boolean);
+}
+
 const LIFECYCLE_LABEL: Record<string, string> = {
-  SETUP_NOT_ACTIVE: "Setup / Not Active",
+  // Screen wording only. The enum value stays SETUP_NOT_ACTIVE — DEVIATIONS D-03.
+  SETUP_NOT_ACTIVE: "Unreleased",
   ACTIVE: "Active",
   SOLD_OUT: "Sold Out",
   COMPLETED: "Completed",
@@ -83,6 +115,7 @@ export default function ProjectsClient({
   const router = useRouter();
   const [creating, setCreating] = React.useState(false);
   const [plc, setPlc] = React.useState<ProjectRowView | null>(null);
+  const [editing, setEditing] = React.useState<ProjectRowView | null>(null);
   const [lifecycle, setLifecycle] = React.useState<ProjectRowView | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
@@ -95,6 +128,7 @@ export default function ProjectsClient({
     if (result.ok) {
       setCreating(false);
       setPlc(null);
+      setEditing(null);
       setLifecycle(null);
       router.refresh();
     }
@@ -107,7 +141,7 @@ export default function ProjectsClient({
           <div>
             <h1 className="text-xl font-semibold">Projects</h1>
             <p className="text-xs text-muted-foreground">
-              A Project starts as Setup / Not Active. Inventory can be prepared while inactive;
+              A Project starts as Unreleased. Inventory can be prepared while it is unreleased;
               nothing may be sold until it is Active. PLC is a percentage only.
             </p>
           </div>
@@ -128,18 +162,20 @@ export default function ProjectsClient({
           </Card>
         )}
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid items-stretch gap-4 md:grid-cols-2">
           {rows.map((project) => (
-            <Card key={project.id} className="space-y-3 p-5">
+            <Card key={project.id} className="flex flex-col gap-4 p-5">
+              {/* Name first, status opposite it. Everything else is quieter by
+                  design — apple.md: hierarchy from type and space, not chrome. */}
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold">
-                    {project.projectCode} · {project.name}
+                <div className="min-w-0">
+                  <h2 className="truncate text-[17px] font-semibold leading-tight tracking-[-0.01em]">
+                    {project.name}
                   </h2>
-                  <p className="text-xs text-muted-foreground">
-                    {project.type}
-                    {project.location ? ` · ${project.location}` : ""}
-                    {project.developer ? ` · ${project.developer}` : ""}
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {project.isExternalResaleGroup
+                      ? "External Resale Property Group"
+                      : (TYPE_LABEL[project.type] ?? project.type)}
                   </p>
                 </div>
                 <Badge variant={project.lifecycle === "ACTIVE" ? "success" : "outline"}>
@@ -147,47 +183,113 @@ export default function ProjectsClient({
                 </Badge>
               </div>
 
-              <dl className="space-y-1 text-xs">
-                <Row label="Plots" value={String(project.plotCount)} />
-                <Row
-                  label="RERA"
-                  value={
-                    project.reraNumber
-                      ? `${project.reraNumber}${
-                          project.reraExpiryDate ? ` · expires ${formatIst(project.reraExpiryDate)}` : ""
-                        }`
-                      : "—"
-                  }
-                />
-                {project.isExternalResaleGroup && (
-                  <Row label="Type" value="External Resale Property Group" />
-                )}
-              </dl>
+              {(project.city || project.location || project.developer || project.reraNumber) && (
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  {(project.city || project.location) && (
+                    <p className="flex items-start gap-2">
+                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>{[project.location, project.city].filter(Boolean).join(", ")}</span>
+                    </p>
+                  )}
+                  {project.developer && (
+                    <p className="flex items-start gap-2">
+                      <Building2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>{project.developer}</span>
+                    </p>
+                  )}
+                  {project.reraNumber && (
+                    <p className="flex items-start gap-2">
+                      <ScrollText className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>RERA {project.reraNumber}</span>
+                    </p>
+                  )}
+                </div>
+              )}
 
-              <div>
-                <p className="text-xs font-medium text-muted-foreground">
-                  PLC {project.plcVersion ? `version ${project.plcVersion}` : "— none set"}
-                </p>
-                {project.components.length > 0 && (
-                  <ul className="mt-1 space-y-0.5 text-xs">
-                    {project.components.map((component) => (
-                      <li key={component.code} className="flex justify-between gap-3">
-                        <span>
-                          {component.label}
-                          <span className="ml-2 text-muted-foreground">{component.code}</span>
-                        </span>
-                        <span className="tabular-nums">{Number(component.percent).toFixed(2)}%</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              {/* An External Resale Property Group holds acquired properties, not
+                  developed inventory (PRD §11.6). Plots, PLC and amenities do not
+                  apply to it. */}
+              {!project.isExternalResaleGroup && (
+                <>
+                  <div className="grid gap-4 border-t border-border/50 pt-4 sm:grid-cols-2">
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        Plots
+                      </p>
+                      <p className="mt-1 text-xl font-semibold tabular-nums leading-none">
+                        {project.plotCount}
+                      </p>
+                      {project.plotTypeCounts.length > 0 && (
+                        <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+                          {/* Only the types this Project holds — a residential
+                              layout should not read "0 Commercial". */}
+                          {project.plotTypeCounts.map(({ plotType, count }) => (
+                            <li key={plotType} className="tabular-nums">
+                              {count} {PLOT_TYPE_LABEL[plotType] ?? plotType}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        Plot Location Charge
+                      </p>
+                      <p className="mt-1 text-xl font-semibold leading-none">
+                        {project.plcVersion ? `Version ${project.plcVersion}` : "—"}
+                      </p>
+                      {project.components.length > 0 ? (
+                        <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+                          {project.components.map((component) => (
+                            <li key={component.code} className="flex justify-between gap-3">
+                              <span className="truncate">{component.label}</span>
+                              <span className="tabular-nums">
+                                {Number(component.percent).toFixed(2)}%
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-2 text-[11px] text-muted-foreground">
+                          No published version
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {amenityList(project.amenities).length > 0 && (
+                    <div className="border-t border-border/50 pt-4">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        Amenities
+                      </p>
+                      <ul className="mt-2 flex flex-wrap gap-1.5">
+                        {amenityList(project.amenities).map((amenity) => (
+                          <li
+                            key={amenity}
+                            className="rounded-full bg-secondary px-2.5 py-0.5 text-[11px] text-secondary-foreground"
+                          >
+                            {amenity}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
 
               {canSetup && (
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setPlc(project)}>
-                    <Layers className="mr-2 h-3.5 w-3.5" /> PLC versions
-                  </Button>
+                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-4">
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setEditing(project)}>
+                      <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
+                    </Button>
+                    {!project.isExternalResaleGroup && (
+                      <Button size="sm" variant="outline" onClick={() => setPlc(project)}>
+                        <Layers className="mr-2 h-3.5 w-3.5" /> PLC versions
+                      </Button>
+                    )}
+                  </div>
                   <Button size="sm" variant="ghost" onClick={() => setLifecycle(project)}>
                     Change lifecycle
                   </Button>
@@ -203,6 +305,17 @@ export default function ProjectsClient({
           busy={busy}
           onClose={() => setCreating(false)}
           onSubmit={(input) => run(() => createProjectAction(input, newKey()))}
+        />
+      )}
+
+      {editing && (
+        <EditProjectDialog
+          project={editing}
+          busy={busy}
+          onClose={() => setEditing(null)}
+          onSubmit={(input, reason) =>
+            run(() => updateProjectAction(editing.id, input, reason, newKey()))
+          }
         />
       )}
 
@@ -303,6 +416,98 @@ function ComponentEditor({
   );
 }
 
+/** The fields a Project carries on both the create and the edit form. */
+function ProjectFieldset({ row }: { row?: ProjectRowView }) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <Field label="Project Name">
+        <Input name="name" required defaultValue={row?.name ?? ""} />
+      </Field>
+      <Field label="Type">
+        <select name="type" className={inputClass} defaultValue={row?.type ?? "RESIDENTIAL"}>
+          <option value="RESIDENTIAL">Residential</option>
+          <option value="COMMERCIAL">Commercial</option>
+          {/* Mixed is no longer offered for a new Project, but a Project that
+              already carries it keeps the option — without it the select would
+              fall back to Residential and change the type on save. */}
+          {row?.type === "MIXED" && <option value="MIXED">Mixed</option>}
+        </select>
+      </Field>
+      <Field label="City">
+        <Input name="city" defaultValue={row?.city ?? ""} />
+      </Field>
+      <Field label="Location">
+        <Input name="location" defaultValue={row?.location ?? ""} />
+      </Field>
+      <Field label="Developer / Company">
+        <Input name="developer" defaultValue={row?.developer ?? ""} />
+      </Field>
+      <Field label="RERA Number">
+        <Input name="reraNumber" defaultValue={row?.reraNumber ?? ""} />
+      </Field>
+      <div className="md:col-span-2">
+        <AmenitiesField defaultValue={row?.amenities ?? ""} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The bullets are typed for you: pressing Enter starts the next amenity, and
+ * the first appears as soon as you begin. They are stripped again on the way
+ * out, so what is stored is the amenity and nothing else.
+ */
+function AmenitiesField({ defaultValue }: { defaultValue: string }) {
+  const [text, setText] = React.useState(() =>
+    amenityList(defaultValue)
+      .map((a) => `${BULLET} ${a}`)
+      .join("\n")
+  );
+
+  return (
+    <Field label="Amenities">
+      <textarea
+        name="amenities"
+        rows={4}
+        className={`${inputClass} h-auto py-2 leading-relaxed`}
+        value={text}
+        placeholder={`${BULLET} Clubhouse`}
+        onChange={(e) => {
+          const next = e.target.value;
+          // The first character gets a bullet, so the list never has to be
+          // started by hand.
+          setText(next && !next.startsWith(BULLET) ? `${BULLET} ${next}` : next);
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          const el = e.currentTarget;
+          const at = el.selectionStart;
+          setText(`${text.slice(0, at)}\n${BULLET} ${text.slice(el.selectionEnd)}`);
+          // Put the caret after the bullet just inserted, rather than wherever
+          // React would otherwise leave it.
+          requestAnimationFrame(() => {
+            el.selectionStart = el.selectionEnd = at + 3;
+          });
+        }}
+      />
+    </Field>
+  );
+}
+
+function readProjectFields(f: FormData): ProjectFields {
+  return {
+    name: String(f.get("name")),
+    type: String(f.get("type")) as ProjectFields["type"],
+    developer: String(f.get("developer") ?? ""),
+    location: String(f.get("location") ?? ""),
+    city: String(f.get("city") ?? ""),
+    // The bullets are the field's, not the data's.
+    amenities: amenityList(String(f.get("amenities") ?? "")).join("\n"),
+    reraNumber: String(f.get("reraNumber") ?? ""),
+  };
+}
+
 function ProjectDialog({
   busy,
   onClose,
@@ -320,7 +525,7 @@ function ProjectDialog({
   return (
     <Modal
       title="New Project"
-      description="Created as Setup / Not Active. Make it Active only when it is ready to sell."
+      description="Created as Unreleased. Make it Active only when it is ready to sell. The Project Code is generated from the name."
       wide
       onClose={onClose}
     >
@@ -328,47 +533,14 @@ function ProjectDialog({
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
-          const f = new FormData(e.currentTarget);
           onSubmit({
-            projectCode: String(f.get("projectCode")),
-            name: String(f.get("name")),
-            type: String(f.get("type")) as "RESIDENTIAL" | "COMMERCIAL" | "MIXED",
-            developer: String(f.get("developer") ?? ""),
-            location: String(f.get("location") ?? ""),
-            reraNumber: String(f.get("reraNumber") ?? ""),
-            reraExpiryDate: String(f.get("reraExpiryDate") ?? ""),
+            ...readProjectFields(new FormData(e.currentTarget)),
             isExternalResaleGroup: external,
             components,
           });
         }}
       >
-        <div className="grid gap-3 md:grid-cols-2">
-          <Field label="Project Code">
-            <Input name="projectCode" required placeholder="GRN" />
-          </Field>
-          <Field label="Project Name">
-            <Input name="name" required />
-          </Field>
-          <Field label="Type">
-            <select name="type" className={inputClass} defaultValue="RESIDENTIAL">
-              <option value="RESIDENTIAL">Residential</option>
-              <option value="COMMERCIAL">Commercial</option>
-              <option value="MIXED">Mixed</option>
-            </select>
-          </Field>
-          <Field label="Developer">
-            <Input name="developer" />
-          </Field>
-          <Field label="Location">
-            <Input name="location" />
-          </Field>
-          <Field label="RERA Number">
-            <Input name="reraNumber" />
-          </Field>
-          <Field label="RERA expiry">
-            <Input type="date" name="reraExpiryDate" />
-          </Field>
-        </div>
+        <ProjectFieldset />
 
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <input type="checkbox" checked={external} onChange={(e) => setExternal(e.target.checked)} />
@@ -383,6 +555,57 @@ function ProjectDialog({
           </Button>
           <Button type="submit" size="sm" disabled={busy}>
             {busy ? "Creating…" : "Create Project"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * The Project Code and the External Resale Property Group flag are not here.
+ * The code is what ties an issued export back to what it described, and the
+ * flag is what PRD §11.6 uses to tell a development Project from an acquisition
+ * container. Lifecycle has its own dialog: releasing is not editing.
+ */
+function EditProjectDialog({
+  project,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  project: ProjectRowView;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (input: ProjectFields, reason: string) => void;
+}) {
+  return (
+    <Modal
+      title={`Edit ${project.name}`}
+      description="The Project Code and the External Resale Property Group setting cannot be changed. Use Change lifecycle to release the Project."
+      wide
+      onClose={onClose}
+    >
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const f = new FormData(e.currentTarget);
+          onSubmit(readProjectFields(f), String(f.get("reason")));
+        }}
+      >
+        <ProjectFieldset row={project} />
+
+        <Field label="Reason — compulsory">
+          <Input name="reason" required minLength={3} />
+        </Field>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+            Back
+          </Button>
+          <Button type="submit" size="sm" disabled={busy}>
+            {busy ? "Saving…" : "Save changes"}
           </Button>
         </div>
       </form>
@@ -552,7 +775,7 @@ function LifecycleDialog({
   return (
     <Modal
       title={`Change lifecycle — ${project.projectCode}`}
-      description="Nothing may be sold while a Project is Setup / Not Active."
+      description="Nothing may be sold while a Project is Unreleased."
       onClose={onClose}
     >
       <form

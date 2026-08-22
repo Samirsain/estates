@@ -13,26 +13,134 @@ const D = Prisma.Decimal;
 export type PlcComponentInput = { code: string; label: string; percent: string };
 
 /**
+ * A Project could not be changed at all until now: the service offered
+ * createProject and setProjectLifecycle and nothing else, so a name typed
+ * wrongly at setup stayed wrong for the life of the Project.
+ *
+ * Two fields are missing on purpose. The Project Code is generated and is what
+ * ties an issued export back to what it described. The External Resale Property
+ * Group flag is what PRD §11.6 uses to tell a development Project from an
+ * acquisition container, so flipping it would change the meaning of records
+ * already attached to it. Lifecycle keeps its own command: moving a Project to
+ * Active is a release decision, not an edit.
+ */
+export async function updateProject(args: {
+  idempotencyKey: string;
+  actorRef: string;
+  actorRole: string;
+  projectId: string;
+  name: string;
+  /** MIXED is no longer offered for a new Project, but one that already
+   *  carries it must be able to save without silently changing type. */
+  type: "RESIDENTIAL" | "COMMERCIAL" | "MIXED";
+  developer?: string | null;
+  location?: string | null;
+  city?: string | null;
+  amenities?: string | null;
+  reraNumber?: string | null;
+  reason: string;
+}) {
+  if (!args.name.trim()) blocked("A Project Name is required.");
+  if (!args.reason.trim()) blocked("A compulsory reason is required to change a Project.");
+
+  return runCommand<{ projectId: string }>(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "PROJECT_UPDATE",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { projectId: args.projectId, name: args.name, type: args.type },
+    },
+    async (tx) => {
+      const snapshot = (project: {
+        name: string;
+        type: string;
+        developer: string | null;
+        location: string | null;
+        city: string | null;
+        amenities: string | null;
+        reraNumber: string | null;
+      }) => ({
+        name: project.name,
+        type: project.type,
+        developer: project.developer,
+        location: project.location,
+        city: project.city,
+        amenities: project.amenities,
+        reraNumber: project.reraNumber,
+      });
+
+      const before = await tx.project.findUniqueOrThrow({ where: { id: args.projectId } });
+      const after = await tx.project.update({
+        where: { id: args.projectId },
+        data: {
+          name: args.name.trim(),
+          type: args.type,
+          developer: args.developer?.trim() || null,
+          location: args.location?.trim() || null,
+          city: args.city?.trim() || null,
+          amenities: args.amenities?.trim() || null,
+          reraNumber: args.reraNumber?.trim() || null,
+        },
+      });
+
+      return {
+        result: { projectId: after.id },
+        audit: {
+          entity: "Project",
+          entityId: after.id,
+          action: "PROJECT_UPDATED",
+          before: snapshot(before),
+          after: snapshot(after),
+          reason: args.reason,
+        },
+      };
+    }
+  );
+}
+
+/**
  * PRD §16.1 — a Project starts as Setup / Not Active. Inventory can be prepared
  * while it is inactive; nothing may be sold until it is Active.
  */
+/**
+ * The Project Code is no longer typed. It stays in the database, unique, and
+ * remains the key that ties a report or an export back to a Project — but
+ * nobody should have to invent one, and Project.name carries no uniqueness to
+ * replace it with.
+ */
+async function generateProjectCode(tx: Tx, name: string): Promise<string> {
+  const stem = name.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "PRJ";
+
+  const taken = await tx.project.findMany({
+    where: { projectCode: { startsWith: `${stem}-` } },
+    select: { projectCode: true },
+  });
+  const used = new Set(taken.map((p) => p.projectCode));
+
+  for (let n = 1; n < 100; n += 1) {
+    const candidate = `${stem}-${String(n).padStart(2, "0")}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  blocked(`Too many Projects already share the code ${stem}. Give this one a different name.`);
+}
+
 export async function createProject(args: {
   idempotencyKey: string;
   actorRef: string;
   actorRole: string;
-  projectCode: string;
   name: string;
-  type: "RESIDENTIAL" | "COMMERCIAL" | "MIXED";
+  type: "RESIDENTIAL" | "COMMERCIAL";
   developer?: string | null;
   location?: string | null;
+  city?: string | null;
+  /** One amenity per line. */
+  amenities?: string | null;
   reraNumber?: string | null;
-  reraExpiryDate?: Date | null;
   /** PRD §11.6 — an External Resale Property Group holds acquired properties. */
   isExternalResaleGroup?: boolean;
   components: PlcComponentInput[];
 }) {
-  const code = args.projectCode.trim().toUpperCase();
-  if (!code) blocked("A Project Code is required.");
   if (!args.name.trim()) blocked("A Project Name is required.");
 
   validateComponents(args.components);
@@ -43,11 +151,10 @@ export async function createProject(args: {
       operation: "PROJECT_CREATE",
       actorRef: args.actorRef,
       actorRole: args.actorRole,
-      payload: { projectCode: code, name: args.name, type: args.type },
+      payload: { name: args.name, type: args.type },
     },
     async (tx) => {
-      const clash = await tx.project.findUnique({ where: { projectCode: code } });
-      if (clash) blocked(`Project Code ${code} already exists.`);
+      const code = await generateProjectCode(tx, args.name);
 
       const project = await tx.project.create({
         data: {
@@ -56,8 +163,9 @@ export async function createProject(args: {
           type: args.type,
           developer: args.developer?.trim() || null,
           location: args.location?.trim() || null,
+          city: args.city?.trim() || null,
+          amenities: args.amenities?.trim() || null,
           reraNumber: args.reraNumber?.trim() || null,
-          reraExpiryDate: args.reraExpiryDate ?? null,
           isExternalResaleGroup: args.isExternalResaleGroup ?? false,
           lifecycle: "SETUP_NOT_ACTIVE",
         },
@@ -526,15 +634,28 @@ function validateComponents(components: readonly PlcComponentInput[]) {
  * the version history together, so "what applies now" and "what changed when"
  * are answerable from one place. Newest version first.
  */
-export function listProjects() {
-  return db.project.findMany({
-    include: {
-      plcRuleVersions: {
-        include: { components: { orderBy: { code: "asc" } } },
-        orderBy: { version: "desc" },
+export async function listProjects() {
+  // The breakdown is counted in the database rather than by loading every Plot:
+  // a Project with five hundred Plots should not cost five hundred rows to say
+  // how many of each type it holds.
+  const [projects, byType] = await Promise.all([
+    db.project.findMany({
+      include: {
+        plcRuleVersions: {
+          include: { components: { orderBy: { code: "asc" } } },
+          orderBy: { version: "desc" },
+        },
+        _count: { select: { plots: true } },
       },
-      _count: { select: { plots: true } },
-    },
-    orderBy: { projectCode: "asc" },
-  });
+      orderBy: { projectCode: "asc" },
+    }),
+    db.plot.groupBy({ by: ["projectId", "plotType"], _count: { _all: true } }),
+  ]);
+
+  return projects.map((project) => ({
+    ...project,
+    plotTypeCounts: byType
+      .filter((row) => row.projectId === project.id)
+      .map((row) => ({ plotType: row.plotType, count: row._count._all })),
+  }));
 }

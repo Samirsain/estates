@@ -307,7 +307,11 @@ main()
   .catch(async (error) => {
     if (error instanceof CommandError) console.error(`${error.code}: ${error.message}`);
     console.error(error);
-    await cleanup().catch(() => {});
+    await cleanup().catch((purgeError) => {
+      // A swallowed purge failure is why a later check script fails on data
+      // this one left behind. Say so here, where it happened.
+      console.error("Cleanup failed — tagged rows may remain:", purgeError);
+    });
     await db.$disconnect();
     process.exit(1);
   });
