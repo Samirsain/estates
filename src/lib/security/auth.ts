@@ -45,11 +45,11 @@ export function verifyPassword(password: string, stored: string): boolean {
  * would answer in a fraction of the time that scrypt takes and quietly
  * enumerate valid accounts. Burning the same work closes that channel.
  */
-let decoyHash: string | null = null;
+const DUMMY_DECOY_HASH =
+  "scrypt$16384$8$1$0123456789abcdef0123456789abcdef$0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 export function burnPasswordTime(password: string): void {
-  decoyHash ??= hashPassword(randomBytes(32).toString("hex"));
-  verifyPassword(password, decoyHash);
+  verifyPassword(password, DUMMY_DECOY_HASH);
 }
 
 /* --------------------------------------------------------------- lockout */

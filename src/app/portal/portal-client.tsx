@@ -65,6 +65,24 @@ export type PortalData = {
   invitedBy: string | null;
   invitePosition: number | null;
   inviteRatePercent: string | null;
+  /** DESIGN §3.2, §13.2 — the Member's own Network. */
+  invitedMembers: Array<{
+    memberId: string;
+    name: string;
+    position: number | null;
+    ratePercent: string | null;
+    status: string;
+    activationDate: string | null;
+  }>;
+  /**
+   * PRD §23.1 — positions and bands only. A Customer's name and Customer ID are
+   * buyer-private and never reach the portal.
+   */
+  introducedCustomers: Array<{
+    position: number | null;
+    ratePercent: string | null;
+    loyaltySlotsConsumed: number;
+  }>;
   projects: Array<{ id: string; name: string }>;
   plots: Array<{ id: string; projectId: string; project: string; label: string; areaSqYd: string }>;
   buyers: Array<{ id: string; label: string }>;
@@ -101,7 +119,7 @@ export type PortalData = {
   }>;
 };
 
-const TABS = ["Available Plots", "Hold Requests", "Enquiries", "Profile"] as const;
+const TABS = ["Available Plots", "Hold Requests", "Enquiries", "Network", "Profile"] as const;
 
 const inputClass =
   "h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
@@ -290,6 +308,107 @@ export default function PortalClient({ data }: { data: PortalData }) {
             ))
           )}
         </section>
+      )}
+
+      {tab === "Network" && (
+        <Card className="space-y-4 p-5 text-sm">
+          <Row label="Invited By" value={data.invitedBy ?? "—"} />
+          <Row
+            label="Your position and band"
+            value={
+              data.invitePosition
+                ? `Position ${data.invitePosition} · ${data.inviteRatePercent ?? "—"}%`
+                : "Not assigned"
+            }
+          />
+
+          <div className="border-t border-border/50 pt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Members you invited
+            </h3>
+            {data.invitedMembers.length === 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                You have not invited any Member yet.
+              </p>
+            ) : (
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full min-w-[28rem] text-xs">
+                  <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="py-1">Member</th>
+                      <th className="py-1 text-right">Position</th>
+                      <th className="py-1 text-right">Band</th>
+                      <th className="py-1">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.invitedMembers.map((m) => (
+                      <tr key={m.memberId}>
+                        <td className="py-1">
+                          {m.name}
+                          <span className="block text-[11px] text-muted-foreground">{m.memberId}</span>
+                        </td>
+                        <td className="py-1 text-right tabular-nums">{m.position ?? "—"}</td>
+                        <td className="py-1 text-right tabular-nums">
+                          {m.ratePercent ? `${m.ratePercent}%` : "—"}
+                        </td>
+                        <td className="py-1">
+                          <span className="block">{humanise(m.status)}</span>
+                          {m.activationDate && (
+                            <span className="block text-[11px] text-muted-foreground">
+                              {formatIst(m.activationDate)}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-border/50 pt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Customers you introduced
+            </h3>
+            {data.introducedCustomers.length === 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                You have not introduced any Customer yet.
+              </p>
+            ) : (
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full min-w-[24rem] text-xs">
+                  <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="py-1 text-right">Position</th>
+                      <th className="py-1 text-right">Band</th>
+                      <th className="py-1 text-right">Loyalty slots used</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.introducedCustomers.map((c, index) => (
+                      <tr key={index}>
+                        <td className="py-1 text-right tabular-nums">{c.position ?? "—"}</td>
+                        <td className="py-1 text-right tabular-nums">
+                          {c.ratePercent ? `${c.ratePercent}%` : "—"}
+                        </td>
+                        <td className="py-1 text-right tabular-nums">
+                          {c.loyaltySlotsConsumed} of 3
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <p className="pt-1 text-[11px] leading-relaxed text-muted-foreground">
+            Introduced Customers are shown as positions and bands only. The portal never shows a
+            Customer&apos;s name, Customer ID or contact details (PRD §23.1).
+          </p>
+        </Card>
       )}
 
       {tab === "Profile" && (

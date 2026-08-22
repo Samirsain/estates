@@ -250,4 +250,32 @@ verifyPassword("some-wrong-password", hashPassword("a-real-password"));
 const realMs = Date.now() - realStart;
 assert.ok(decoyMs > 0 && realMs > 0, "both paths perform scrypt work");
 
+/* ------------------------------------------------ Member portal privacy */
+
+// PRD §23.1 / §25 test 20 / DESIGN §13.3 — the Member portal shows the
+// Member's own Network as positions and bands. A Customer's name, Customer ID
+// or contact detail is buyer-private and must never be assembled into the
+// portal payload in the first place. A source check, because the payload is
+// built in a server component that no unit test can call.
+const portalSource = readFileSync(new URL("../../app/portal/page.tsx", import.meta.url), "utf8");
+assert.ok(
+  portalSource.includes("introducedCustomers"),
+  "the portal payload builds the Member's own Network (DESIGN §3.2, §13.2)"
+);
+
+// A Customer ID must not appear anywhere in what the portal assembles. Inviting
+// Members are Members, so their name and Member ID are allowed (DESIGN §13.2);
+// an introduced Customer's identity is not.
+assert.ok(
+  !portalSource.includes("customerId"),
+  "no Customer ID reaches the Member portal (PRD §23.1)"
+);
+
+// And the name cannot arrive by the back door either: joining Person onto the
+// introduced Customers is what would load it.
+assert.ok(
+  !portalSource.includes("introducedCustomers: { include:"),
+  "introduced Customers are not joined to Person in the portal query (PRD §23.1)"
+);
+
 console.log("security.check.ts OK");

@@ -17,7 +17,12 @@ export default async function PortalPage() {
   const [profile, availablePlots, ownEnquiries, ownRequests, commissions] = await Promise.all([
     db.memberProfile.findUniqueOrThrow({
       where: { id: member.memberProfileId },
-      include: { person: true, invitedByMember: { include: { person: true } } },
+      include: {
+        person: true,
+        invitedByMember: { include: { person: true } },
+        invitedMembers: { include: { person: true }, orderBy: { invitePosition: "asc" } },
+        introducedCustomers: { orderBy: { introducedPosition: "asc" } },
+      },
     }),
     db.plot.findMany({
       // PRD §16.1 — a Project still in Setup / Not Active accepts no Hold, so
@@ -58,6 +63,21 @@ export default async function PortalPage() {
       : null,
     invitePosition: profile.invitePosition,
     inviteRatePercent: profile.inviteRatePercent?.toFixed(3) ?? null,
+    invitedMembers: profile.invitedMembers.map((m) => ({
+      memberId: m.memberId,
+      name: m.person.fullName,
+      position: m.invitePosition,
+      ratePercent: m.inviteRatePercent?.toFixed(2) ?? null,
+      status: m.status,
+      activationDate: m.activationDate?.toISOString() ?? null,
+    })),
+    // PRD §23.1 / DESIGN §13.2 — the Member sees their own introduced positions
+    // and bands, never the Customer's name or Customer ID.
+    introducedCustomers: profile.introducedCustomers.map((c) => ({
+      position: c.introducedPosition,
+      ratePercent: c.introducedRatePercent?.toFixed(2) ?? null,
+      loyaltySlotsConsumed: c.loyaltySlotsConsumed,
+    })),
     projects: [...new Map(availablePlots.map((p) => [p.projectId, p.project.name])).entries()].map(
       ([id, name]) => ({ id, name })
     ),

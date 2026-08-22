@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { GENERIC_LOGIN_ERROR } from "@/lib/security/auth";
 import { memberLogin, staffLogin } from "./actions";
+import { SubmitButton } from "./login-form";
 
 const MESSAGES: Record<string, string> = {
   GENERIC: GENERIC_LOGIN_ERROR,
@@ -82,9 +83,7 @@ export default async function LoginPage({
             </label>
 
 
-            <Button type="submit" className="w-full">
-              Sign in
-            </Button>
+            <SubmitButton />
           </form>
 
           <p className="mt-4 flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground">
