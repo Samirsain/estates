@@ -164,42 +164,53 @@ export default function ProjectsClient({
 
         <div className="grid items-stretch gap-4 md:grid-cols-2">
           {rows.map((project) => (
-            <Card key={project.id} className="flex flex-col gap-4 p-5">
-              {/* Name first, status opposite it. Everything else is quieter by
-                  design — apple.md: hierarchy from type and space, not chrome. */}
+            <Card
+              key={project.id}
+              className="group flex flex-col gap-4 rounded-xl border border-border/60 bg-card/70 p-5 shadow-sm transition-all hover:border-border hover:shadow-md dark:bg-card/40"
+            >
+              {/* One status in the header, on the right. The Project type is
+                  not a status, so it reads as a quiet line under the name
+                  rather than a second pill competing with the badge. */}
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="truncate text-[17px] font-semibold leading-tight tracking-[-0.01em]">
+                  <h2 className="truncate text-lg font-semibold leading-tight tracking-tight text-foreground">
                     {project.name}
                   </h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {project.isExternalResaleGroup
                       ? "External Resale Property Group"
                       : (TYPE_LABEL[project.type] ?? project.type)}
                   </p>
                 </div>
-                <Badge variant={project.lifecycle === "ACTIVE" ? "success" : "outline"}>
+                <Badge
+                  variant={project.lifecycle === "ACTIVE" ? "success" : "outline"}
+                  className="shrink-0"
+                >
                   {LIFECYCLE_LABEL[project.lifecycle] ?? project.lifecycle}
                 </Badge>
               </div>
 
+              {/* Where it is, who builds it, what it is registered as. All
+                  metadata, all at one size — none of it should compete with the
+                  name above. A missing RERA number says nothing at all: the Edit
+                  button is where you add one. */}
               {(project.city || project.location || project.developer || project.reraNumber) && (
-                <div className="space-y-1 text-xs text-muted-foreground">
+                <div className="space-y-1.5 text-xs text-muted-foreground">
                   {(project.city || project.location) && (
                     <p className="flex items-start gap-2">
-                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <MapPin className="mt-px h-3.5 w-3.5 shrink-0" />
                       <span>{[project.location, project.city].filter(Boolean).join(", ")}</span>
                     </p>
                   )}
                   {project.developer && (
                     <p className="flex items-start gap-2">
-                      <Building2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <Building2 className="mt-px h-3.5 w-3.5 shrink-0" />
                       <span>{project.developer}</span>
                     </p>
                   )}
                   {project.reraNumber && (
                     <p className="flex items-start gap-2">
-                      <ScrollText className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <ScrollText className="mt-px h-3.5 w-3.5 shrink-0" />
                       <span>RERA {project.reraNumber}</span>
                     </p>
                   )}
@@ -211,16 +222,16 @@ export default function ProjectsClient({
                   apply to it. */}
               {!project.isExternalResaleGroup && (
                 <>
-                  <div className="grid gap-4 border-t border-border/50 pt-4 sm:grid-cols-2">
+                  <div className="grid gap-4 rounded-lg border border-border/50 bg-muted/30 p-3.5 sm:grid-cols-2">
                     <div>
                       <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                         Plots
                       </p>
-                      <p className="mt-1 text-xl font-semibold tabular-nums leading-none">
+                      <p className="mt-1 text-2xl font-semibold tabular-nums leading-none tracking-tight text-foreground">
                         {project.plotCount}
                       </p>
                       {project.plotTypeCounts.length > 0 && (
-                        <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+                        <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
                           {/* Only the types this Project holds — a residential
                               layout should not read "0 Commercial". */}
                           {project.plotTypeCounts.map(({ plotType, count }) => (
@@ -233,25 +244,28 @@ export default function ProjectsClient({
                     </div>
 
                     <div>
+                      {/* The version is a label, not a figure. It sits with the
+                          heading rather than in the position the plot count uses
+                          for a real number — a large "Version 1" beside a large
+                          "120" reads as though the two were the same kind of
+                          thing. The components are the content of this column. */}
                       <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                         Plot Location Charge
-                      </p>
-                      <p className="mt-1 text-xl font-semibold leading-none">
-                        {project.plcVersion ? `Version ${project.plcVersion}` : "—"}
+                        {project.plcVersion ? ` · v${project.plcVersion}` : ""}
                       </p>
                       {project.components.length > 0 ? (
-                        <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+                        <ul className="mt-1.5 space-y-1 text-xs text-muted-foreground">
                           {project.components.map((component) => (
                             <li key={component.code} className="flex justify-between gap-3">
                               <span className="truncate">{component.label}</span>
-                              <span className="tabular-nums">
+                              <span className="shrink-0 font-medium tabular-nums text-foreground">
                                 {Number(component.percent).toFixed(2)}%
                               </span>
                             </li>
                           ))}
                         </ul>
                       ) : (
-                        <p className="mt-2 text-[11px] text-muted-foreground">
+                        <p className="mt-1.5 text-xs text-muted-foreground">
                           No published version
                         </p>
                       )}
@@ -259,15 +273,15 @@ export default function ProjectsClient({
                   </div>
 
                   {amenityList(project.amenities).length > 0 && (
-                    <div className="border-t border-border/50 pt-4">
+                    <div className="space-y-1.5">
                       <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                         Amenities
                       </p>
-                      <ul className="mt-2 flex flex-wrap gap-1.5">
+                      <ul className="flex flex-wrap gap-1.5">
                         {amenityList(project.amenities).map((amenity) => (
                           <li
                             key={amenity}
-                            className="rounded-full bg-secondary px-2.5 py-0.5 text-[11px] text-secondary-foreground"
+                            className="rounded-full bg-secondary/80 px-2.5 py-0.5 text-xs font-medium text-secondary-foreground"
                           >
                             {amenity}
                           </li>
@@ -279,7 +293,7 @@ export default function ProjectsClient({
               )}
 
               {canSetup && (
-                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-4">
+                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-3.5">
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => setEditing(project)}>
                       <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
@@ -442,8 +456,12 @@ function ProjectFieldset({ row }: { row?: ProjectRowView }) {
       <Field label="Developer / Company">
         <Input name="developer" defaultValue={row?.developer ?? ""} />
       </Field>
-      <Field label="RERA Number">
-        <Input name="reraNumber" defaultValue={row?.reraNumber ?? ""} />
+      <Field label="RERA Number (Optional)">
+        <Input
+          name="reraNumber"
+          placeholder="Optional — can be added later via Edit"
+          defaultValue={row?.reraNumber ?? ""}
+        />
       </Field>
       <div className="md:col-span-2">
         <AmenitiesField defaultValue={row?.amenities ?? ""} />
