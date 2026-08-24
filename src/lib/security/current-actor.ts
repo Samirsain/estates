@@ -83,7 +83,7 @@ export async function currentMember(): Promise<MemberActor | null> {
 /** Guards the Member portal. The staff context is never accepted here. */
 export async function requireMember(): Promise<MemberActor> {
   const actor = await currentMember();
-  if (!actor) redirect("/login?tab=member");
+  if (!actor) redirect("/portal/login");
   return actor;
 }
 

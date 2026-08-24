@@ -131,6 +131,8 @@ export default async function PlotsPage() {
       projects={projects.map((p) => ({
         id: p.id,
         name: p.name,
+        city: p.city,
+        location: p.location,
         lifecycle: p.lifecycle,
         // The grid needs the configured bands themselves, so it can compute the
         // same effective PLC the server will, live, as the row is typed.
@@ -138,6 +140,7 @@ export default async function PlotsPage() {
           category: c.category,
           threshold: c.threshold == null ? null : String(c.threshold),
           percent: String(c.percent),
+          remark: c.remark || null,
         })),
       }))}
       people={people}

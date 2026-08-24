@@ -2,11 +2,13 @@
 2.1 Parties and acceptance
 These Terms govern the relationship between the 3% Real Estate Club and the individual approved and activated as a Member (“Member”).
 A person becomes a Member only after:
+
 - The required information is submitted.
 - The Company completes its review.
 - The person accepts the applicable Terms and Privacy Notice.
 - The Member profile is activated.
 - A valid Member ID is issued.
+
 Submitting an application does not itself create membership, commission or business rights.
 2.2 Nature of the relationship
 The Member is an independent business associate.
@@ -75,6 +77,7 @@ A Member may not:
 
 2.6 Member responsibilities
 The Member must:
+
 - Provide complete and accurate identity, contact, tax and bank information.
 - Keep information updated.
 - Maintain registrations or licences required by law for the Member’s activities.
@@ -152,14 +155,16 @@ General commission conditions.
 - Paid or processed commission may require adjustment after cancellation, correction, reversal or another valid event.
 - Old records are preserved for audit and are not silently deleted.
 - Paid Early, when allowed, is discretionary and does not create a right to duplicate payment.
-* No income merely for joining
-* No payment merely for recruiting a Member
-* No unlimited levels or downline
-* Only the immediate introducer may receive a limited benefit
-* The benefit arises only after an actual qualifying property transaction
-* Membership fees must not finance introduction rewards
+- No income merely for joining
+- No payment merely for recruiting a Member
+- No unlimited levels or downline
+- Only the immediate introducer may receive a limited benefit
+- The benefit arises only after an actual qualifying property transaction
+- Membership fees must not finance introduction rewards
+
 2.10 Commission payment and taxation
 Before payment, the Member may be required to provide:
+
 - Verified bank information.
 - PAN.
 - Aadhaar or identity information where lawfully required.
@@ -172,6 +177,7 @@ No CRM staff member may promise an exact payment date unless the Company has iss
 
 2.11 Privacy, confidentiality and portal use
 The Member shall:
+
 - Use personal and Customer data only for the approved purpose.
 - Not share sensitive data, screenshots or internal information.
 - Not use Customer data for unrelated marketing.
@@ -294,7 +300,9 @@ Oral or WhatsApp promises do not modify approved written Terms.
 Any exception must be issued by an authorised Company person.
 Member Terms, Privacy Notice, Project information and approved policies form the complete agreement.
 Failure by the Company to act immediately does not waive its future rights.
+
 Add to Customer Terms & Conditions
+
 3. Customer Terms & Conditions
 3.1 Parties and role
 These Terms govern the Customer’s operational interaction with the 3% Real Estate Club platform.
@@ -308,6 +316,7 @@ For every Project or transaction, the dashboard or Project Information page shou
 
 3% Club does not become the developer, promoter, owner, title guarantor or lender merely because it operates the CRM or coordinates the transaction.
 Project-specific legal and commercial documents prevail for:
+
 - Price.
 - Taxes and charges.
 - Title.
@@ -328,6 +337,7 @@ Different genuine Customers may enquire for the same Plot.
 
 3.3 Hold
 A Hold:
+
 - Begins only after system or Company confirmation.
 - Is temporary.
 - Is linked to the actual identified Customer.
@@ -385,6 +395,7 @@ A request to change the remaining payment schedule:
 3.8 Cancellation and refund
 Before permanent Booking approval, withdrawal normally closes only the provisional Booking Request.
 After Booking approval:
+
 - Cancellation may enter the formal refund-review process.
 - The Plot may remain blocked during review.
 - The Customer must provide the required reason and documents.
@@ -405,6 +416,7 @@ Cross-Project change may require cancellation and a fresh Booking Request.
 3.10 Primary Customer, additional buyers and ownership shares
 A Booking should have one Primary Customer.
 Where multiple final buyers exist:
+
 - Every buyer must provide accurate identity details.
 - Ownership share must be recorded for each buyer.
 - Total ownership must equal 100%.
@@ -532,6 +544,7 @@ Written Terms and Project documents form the complete agreement.
 One invalid provision does not automatically invalidate the remaining Terms.
 Failure to enforce a provision once is not a permanent waiver.
 Applicable statutory rights and remedies remain protected.
+
 4. Member & Customer FAQs
 4A. Member FAQs
 Is 3% Club an MLM?
@@ -543,6 +556,7 @@ Lead supply is not guaranteed. Members may submit genuine Enquiries. Any Company
 When will commission be paid?
 Eligibility and status may be tracked in the CRM. Actual payment depends on the applicable milestone, verification, bank and tax documents, accounting process and current payout policy.
 Does adding an Enquiry guarantee commission?
+
 No. Enquiry Source and final approved Sold By are separate. Commission depends on the final approved transaction and applicable policy.
 ## How is the original introducing Member decided?
 The Company uses the valid recorded introduction and supporting evidence. Duplicate or later claims do not automatically replace an earlier valid relationship.
@@ -612,6 +626,7 @@ Operational complaints should be sent to the Company grievance contact. Project/
 3%  Real Estate Club LLP
 5.2 Information collected
 Depending on the relationship and transaction, the Company may collect:
+
 - Name.
 - Mobile number.
 - Email.
@@ -629,8 +644,10 @@ Depending on the relationship and transaction, the Company may collect:
 - Commission and Member activity.
 - Communication and complaint history.
 - Login, security and audit records.
+
 ## 5.3 Why the data is used
 The data may be used for:
+
 - Identity and duplicate checks.
 - Member application and activation.
 - Enquiry and Customer follow-up.
@@ -643,8 +660,10 @@ The data may be used for:
 - Accounting and tax processing.
 - Complaint and dispute handling.
 - Audit and fraud prevention.
+
 ## 5.4 Data sharing
 Information may be shared, where required with:
+
 - Developer, promoter or seller.
 - Authorised Company staff.
 - Accounts and banking service providers.
@@ -659,8 +678,10 @@ Only information required for the approved purpose should be shared.
 - Full access should be limited and logged.
 - PAN and bank information should be visible only to authorised users.
 - Bank details should be verified before payment or refund processing.
+
 ## 5.6 Retention
 Information will be retained for:
+
 - The active relationship.
 - Transaction history.
 - Audit requirements.
@@ -675,6 +696,7 @@ By accepting the applicable consent, the person authorises operational communica
 - WhatsApp.
 - Email.
 - Dashboard notification.
+
 Marketing communication should be handled separately where required.
 ## 5.8 Correction and grievance
 A request to correct personal information or raise a privacy complaint may be sent to:

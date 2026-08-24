@@ -21,7 +21,7 @@ export default function TermsPage() {
   return (
     <main className="mx-auto min-h-screen w-full max-w-3xl px-5 py-10">
       <Link
-        href="/login?tab=member"
+        href="/portal/login"
         className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in

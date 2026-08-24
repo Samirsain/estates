@@ -9,12 +9,13 @@ import { blocked, type Tx } from "./command";
 
 /** Prisma component rows in the shape the domain rule reads. */
 export function plcRules(
-  components: readonly { category: string; threshold: unknown; percent: unknown }[]
+  components: readonly { category: string; threshold: unknown; percent: unknown; remark?: unknown }[]
 ): PlcComponentRule[] {
   return components.map((c) => ({
     category: c.category as PlcComponentRule["category"],
     threshold: c.threshold === null || c.threshold === undefined ? null : String(c.threshold),
     percent: String(c.percent),
+    remark: c.remark === null || c.remark === undefined ? null : String(c.remark),
   }));
 }
 

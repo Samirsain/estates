@@ -223,6 +223,36 @@ assert.match(mixedOpen.evidence, /North, South open/, "Commercial and Plot both 
 // Road 40-59 = 3, Two side open = 2, Park facing = 2.
 assert.equal(mixedNeighbours.totalPercent.toFixed(4), "7.0000");
 
+// Test distinct Corner Plot (2.5) vs Two Side Open (2) rules:
+const rulesWithCorner: PlcComponentRule[] = [
+  ...rules,
+  { category: "OPEN_SIDES", threshold: "2.5", percent: "3.5" },
+];
+
+const cornerPlot = buildPlcSnapshot(
+  [
+    { side: "NORTH", kind: "ROAD", roadWidthFt: "30" },
+    { side: "EAST", kind: "PLOT" },
+    { side: "SOUTH", kind: "PLOT" },
+    { side: "WEST", kind: "OTHER" },
+  ],
+  rulesWithCorner
+);
+assert.equal(cornerPlot.components.find((c) => c.category === "OPEN_SIDES")!.label, "Corner Plot");
+assert.equal(cornerPlot.totalPercent.toFixed(4), "5.5000");
+
+const oppositePlot = buildPlcSnapshot(
+  [
+    { side: "NORTH", kind: "ROAD", roadWidthFt: "30" },
+    { side: "EAST", kind: "PLOT" },
+    { side: "SOUTH", kind: "ROAD", roadWidthFt: "30" },
+    { side: "WEST", kind: "PLOT" },
+  ],
+  rulesWithCorner
+);
+assert.equal(oppositePlot.components.find((c) => c.category === "OPEN_SIDES")!.label, "Two side open");
+assert.equal(oppositePlot.totalPercent.toFixed(4), "4.0000");
+
 assert.equal(
   buildPlcSnapshot(
     [
@@ -287,15 +317,15 @@ assert.throws(
 );
 assert.throws(
   () => validatePlcComponents([{ category: "OPEN_SIDES", threshold: "5", percent: "3" }]),
-  /from 2 to 4/,
+  /Open sides must be 2 \(Two Side Open\), 2.5 \(Corner Plot\), 3 \(Three Side Open\), or 4 \(Four Side Open\)/,
   "a Plot has four sides"
 );
 
 // The highest band reads as open-ended; the ones below it read as ranges.
-assert.equal(plcComponentLabel("ROAD_WIDTH", "60", null), "Road 60 ft & above");
-assert.equal(plcComponentLabel("ROAD_WIDTH", "40", "60"), "Road 40 – 59 ft");
+assert.equal(plcComponentLabel("ROAD_WIDTH", "60"), "Road 60 ft");
+assert.equal(plcComponentLabel("ROAD_WIDTH", "40"), "Road 40 ft");
 assert.equal(plcComponentLabel("OPEN_SIDES", "4"), "Four side open");
-assert.equal(plcComponentLabel("PARK_FACING"), "Park facing");
+assert.equal(plcComponentLabel("PARK_FACING"), "Park / Playground facing");
 
 // A band being typed is empty, then half-typed, before it is ever a number.
 // Labelling is display, not validation: it must describe an incomplete row, not
@@ -304,23 +334,21 @@ assert.equal(plcComponentLabel("ROAD_WIDTH", ""), "Road width — band not set")
 assert.equal(plcComponentLabel("ROAD_WIDTH", "."), "Road width — band not set");
 assert.equal(plcComponentLabel("ROAD_WIDTH", "-"), "Road width — band not set");
 assert.equal(plcComponentLabel("OPEN_SIDES", ""), "Open sides — band not set");
-assert.equal(plcComponentLabel("ROAD_WIDTH", "40", ""), "Road 40 ft & above");
+assert.equal(plcComponentLabel("ROAD_WIDTH", "40"), "Road 40 ft");
 assert.deepEqual(
   plcComponentLabels([{ category: "ROAD_WIDTH", threshold: "", percent: "" }]),
   ["Road width — band not set"]
 );
 
-// Labelling a whole version: only the top band of a category reads open-ended,
-// which is what a per-row label cannot know and got wrong on the Project card.
 assert.deepEqual(plcComponentLabels(rules), [
-  "Road 60 ft & above",
-  "Road 40 – 59 ft",
-  "Road 30 – 39 ft",
+  "Road 60 ft",
+  "Road 40 ft",
+  "Road 30 ft",
   "Four side open",
   "Three side open",
   "Two side open",
-  "Park facing",
-  "Playground facing",
+  "Park / Playground facing",
+  "Park / Playground facing",
 ]);
 
 /* ------------------------------------------------------ terms and privacy */

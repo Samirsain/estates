@@ -65,3 +65,53 @@ export function verifySession(
 export function sessionExpiry(now: Date = new Date()): number {
   return now.getTime() + SESSION_HOURS * 3_600_000;
 }
+
+export type AutoLoginPayload = {
+  purpose: "MEMBER_AUTO_LOGIN";
+  memberId: string;
+  portalAccountId: string;
+  expiresAt: number;
+};
+
+export function signAutoLoginToken(
+  payload: { memberId: string; portalAccountId: string },
+  expiresInDays: number = 7,
+  key: Buffer = secret()
+): string {
+  const expiresAt = Date.now() + expiresInDays * 24 * 3_600_000;
+  const fullPayload: AutoLoginPayload = {
+    purpose: "MEMBER_AUTO_LOGIN",
+    memberId: payload.memberId,
+    portalAccountId: payload.portalAccountId,
+    expiresAt,
+  };
+  const body = Buffer.from(JSON.stringify(fullPayload), "utf8").toString("base64url");
+  const mac = createHmac("sha256", key).update(body).digest("base64url");
+  return `${body}.${mac}`;
+}
+
+export function verifyAutoLoginToken(
+  token: string | undefined | null,
+  now: Date = new Date(),
+  key: Buffer = secret()
+): AutoLoginPayload | null {
+  if (!token) return null;
+  const [body, mac] = token.split(".");
+  if (!body || !mac) return null;
+
+  const expected = createHmac("sha256", key).update(body).digest("base64url");
+  const a = Buffer.from(expected);
+  const b = Buffer.from(mac);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+
+  let payload: AutoLoginPayload;
+  try {
+    payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (payload.purpose !== "MEMBER_AUTO_LOGIN") return null;
+  if (payload.expiresAt <= now.getTime()) return null;
+  return payload;
+}
+

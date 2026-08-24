@@ -60,7 +60,11 @@ export type MergeView = {
   id: string;
   status: string;
   survivor: string;
+  survivorMobile: string;
+  survivorCity: string;
   merged: string;
+  mergedMobile: string;
+  mergedCity: string;
   reason: string;
   requestedByRef: string;
   requestedAt: string;
@@ -79,6 +83,15 @@ export type AuditView = {
   reason: string | null;
 };
 
+export type SecurityLogView = {
+  id: string;
+  at: string;
+  type: string;
+  identifier: string;
+  ip: string;
+  detail: string;
+};
+
 const newKey = () => `admin-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 export default function AdministrationClient(props: {
@@ -94,6 +107,7 @@ export default function AdministrationClient(props: {
   queuedEnquiries: QueuedEnquiryView[];
   merges: MergeView[];
   audit: AuditView[];
+  securityLogs: SecurityLogView[];
 }) {
   const router = useRouter();
   const [tab, setTab] = React.useState("staff");
@@ -137,6 +151,9 @@ export default function AdministrationClient(props: {
             </TabsTrigger>
             <TabsTrigger value="identity">Aadhaar / PAN</TabsTrigger>
             <TabsTrigger value="audit">Activity History</TabsTrigger>
+            {(props.role === "MD" || props.role === "ADMIN") && (
+              <TabsTrigger value="security">Security Logs</TabsTrigger>
+            )}
           </TabsList>
         </Tabs>
 
@@ -166,6 +183,9 @@ export default function AdministrationClient(props: {
         )}
         {tab === "identity" && <IdentityTab canReveal={props.canRevealIdentity} />}
         {tab === "audit" && <AuditTab rows={props.audit} />}
+        {(props.role === "MD" || props.role === "ADMIN") && tab === "security" && (
+          <SecurityTab rows={props.securityLogs} />
+        )}
       </div>
     </AppShell>
   );
@@ -659,8 +679,28 @@ function DecideMergeModal({
       description={`${merge.merged} merges into ${merge.survivor}`}
       onClose={onClose}
     >
-      <div className="space-y-3">
+      <div className="space-y-4">
         <p className="text-xs text-muted-foreground">Raised by {merge.requestedByRef}: {merge.reason}</p>
+        
+        <div className="grid grid-cols-2 gap-4 rounded-xl border border-border/40 p-4 bg-muted/20 text-xs">
+          <div>
+            <h4 className="font-semibold text-emerald-600 mb-1.5">Surviving Identity (Remains)</h4>
+            <div className="space-y-1 text-muted-foreground">
+              <p><span className="font-medium text-foreground">Name:</span> {merge.survivor}</p>
+              <p><span className="font-medium text-foreground">Mobile:</span> {merge.survivorMobile}</p>
+              <p><span className="font-medium text-foreground">City:</span> {merge.survivorCity}</p>
+            </div>
+          </div>
+          <div className="border-l border-border/40 pl-4">
+            <h4 className="font-semibold text-rose-600 mb-1.5">Merged Away (Deactivated)</h4>
+            <div className="space-y-1 text-muted-foreground">
+              <p><span className="font-medium text-foreground">Name:</span> {merge.merged}</p>
+              <p><span className="font-medium text-foreground">Mobile:</span> {merge.mergedMobile}</p>
+              <p><span className="font-medium text-foreground">City:</span> {merge.mergedCity}</p>
+            </div>
+          </div>
+        </div>
+
         <Field label="Compulsory remark">
           <Input value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
@@ -717,6 +757,53 @@ function AuditTab({ rows }: { rows: AuditView[] }) {
                 </td>
                 <td className="py-2 pr-4">{row.action}</td>
                 <td className="py-2 pr-4">{row.reason ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------- security */
+
+function SecurityTab({ rows }: { rows: SecurityLogView[] }) {
+  if (rows.length === 0) {
+    return <Card className="p-5 text-sm text-muted-foreground">No security logs recorded yet.</Card>;
+  }
+
+  return (
+    <Card className="space-y-3 p-5">
+      <h2 className="flex items-center gap-2 text-sm font-semibold">
+        <ShieldOff className="h-4 w-4 text-red-500" /> Security Logs & Alerts
+      </h2>
+      <p className="text-xs text-muted-foreground">
+        Incidents including failed logins, sensitive identity reveals, session invalidations, and emergency account lockouts.
+      </p>
+      <div className="max-h-[32rem] overflow-auto">
+        <table className="w-full text-left text-xs">
+          <thead className="sticky top-0 bg-card text-muted-foreground">
+            <tr>
+              <th className="py-2 pr-4 font-medium">When</th>
+              <th className="py-2 pr-4 font-medium">Event Type</th>
+              <th className="py-2 pr-4 font-medium">Target Identity</th>
+              <th className="py-2 pr-4 font-medium">IP Address</th>
+              <th className="py-2 pr-4 font-medium">Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-t border-border/40 hover:bg-muted/10">
+                <td className="whitespace-nowrap py-2 pr-4">{formatIst(row.at)}</td>
+                <td className="py-2 pr-4">
+                  <Badge variant={row.type.includes("FAILURE") || row.type.includes("LOCKED") || row.type.includes("DENIED") ? "destructive" : "secondary"}>
+                    {row.type.replaceAll("_", " ")}
+                  </Badge>
+                </td>
+                <td className="py-2 pr-4 font-mono font-medium">{row.identifier}</td>
+                <td className="py-2 pr-4 font-mono text-muted-foreground">{row.ip}</td>
+                <td className="py-2 pr-4 text-muted-foreground">{row.detail}</td>
               </tr>
             ))}
           </tbody>

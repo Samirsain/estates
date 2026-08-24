@@ -528,6 +528,7 @@ model PlcComponent {
   /// The displayed label is generated from it, never stored.
   threshold     Decimal?       @db.Decimal(8, 2)
   percent       Decimal        @db.Decimal(7, 4)
+  remark        String?
 
   @@unique([ruleVersionId, category, threshold])
 }

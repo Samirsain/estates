@@ -21,6 +21,7 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
 import { formatIst, formatPercent, formatQuantity } from "@/lib/tasks";
 import EditPlotDetailsLauncher from "./edit-launcher";
+import EditPlotRestrictionLauncher from "./edit-restriction-launcher";
 
 export const dynamic = "force-dynamic";
 
@@ -46,11 +47,11 @@ const BOUNDARY_KIND_LABEL: Record<string, string> = {
   PLOT: "Plot",
   COMMERCIAL: "Commercial",
   INFORMAL_SECTOR: "Informal Sector",
-  PARK: "Park",
-  PLAYGROUND: "Playground",
+  PARK: "Park / Playground",
+  PLAYGROUND: "Park / Playground",
   FACILITIES: "Facilities",
   PUBLIC_UTILITY: "Public Utility",
-  OTHER: "Other",
+  OTHER: "Other Land",
 };
 
 const SIDES = ["NORTH", "EAST", "SOUTH", "WEST"] as const;
@@ -279,19 +280,33 @@ export default async function PlotDetailPage({
               { label: "Lifecycle", value: LIFECYCLE_LABEL[plot.lifecycle] ?? plot.lifecycle },
               {
                 label: "Restriction",
-                value:
-                  plot.restriction === "NONE" ? (
-                    <span className="text-muted-foreground">None</span>
-                  ) : (
-                    <>
-                      {humaniseRestriction(plot.restriction)}
-                      {plot.restrictionReason && (
-                        <span className="block text-xs text-muted-foreground">
-                          {plot.restrictionReason}
-                        </span>
+                value: (
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div>
+                      {plot.restriction === "NONE" ? (
+                        <span className="text-muted-foreground">None</span>
+                      ) : (
+                        <>
+                          <span className="font-semibold text-rose-600">
+                            {humaniseRestriction(plot.restriction)}
+                          </span>
+                          {plot.restrictionReason && (
+                            <span className="block text-xs text-muted-foreground mt-0.5">
+                              {plot.restrictionReason}
+                            </span>
+                          )}
+                        </>
                       )}
-                    </>
-                  ),
+                    </div>
+                    {can(actor.role, "PLOT_RESTRICTION_MANAGE") && (
+                      <EditPlotRestrictionLauncher
+                        plotId={plot.id}
+                        currentRestriction={plot.restriction}
+                        currentReason={plot.restrictionReason ?? ""}
+                      />
+                    )}
+                  </div>
+                ),
               },
             ]}
           />

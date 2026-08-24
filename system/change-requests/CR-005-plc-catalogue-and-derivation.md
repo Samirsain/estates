@@ -13,7 +13,7 @@ Raised under [`PRD.md`](../PRD.md) §28 and the change-control rule in
 
 **This CR touches inventory, a governed area.** It does not change any
 percentage, any entitlement, or the arithmetic of effective PLC. It changes
-*where the inputs come from*: who names a category, and who decides that a Plot
+_where the inputs come from_: who names a category, and who decides that a Plot
 qualifies for one. The plain-language summary is [D-05](../DEVIATIONS.md).
 
 ---

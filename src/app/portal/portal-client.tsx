@@ -1,13 +1,23 @@
 "use client";
 
 // Member portal UI — DESIGN.md §3.2, §13.
+// Apple Parchment Light Theme — High-End Clean Minimalist Aesthetics.
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Building2, CheckCircle2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  Building2,
+  CheckCircle2,
+  Layers,
+  LogOut,
+  Plus,
+  ShieldCheck,
+  UserCheck,
+  Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, Modal } from "@/components/ui/modal";
 import { formatIst } from "@/lib/tasks";
@@ -122,7 +132,7 @@ export type PortalData = {
 const TABS = ["Available Plots", "Hold Requests", "Enquiries", "Network", "Profile"] as const;
 
 const inputClass =
-  "h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+  "h-10 w-full rounded-xl border border-slate-200 bg-[#fafafc] px-3 text-sm text-[#1d1d1f] placeholder:text-[#7a7a7a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0066cc]";
 
 const humanise = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
 
@@ -148,44 +158,61 @@ export default function PortalClient({ data }: { data: PortalData }) {
   const newKey = () => globalThis.crypto.randomUUID();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 px-4 py-8">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
-            <Building2 className="h-5 w-5 text-white" />
+    <div className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6">
+      {/* Header Container — Clean Parchment Card */}
+      <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xl shadow-slate-200/50">
+        <header className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0066cc] text-white shadow-md shadow-[#0066cc]/20">
+              <Building2 className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold tracking-tight text-[#1d1d1f]">Member Portal</h1>
+                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-[#0066cc] border border-blue-100">
+                  <UserCheck className="h-3 w-3" /> Member
+                </span>
+              </div>
+              <p className="text-xs text-[#7a7a7a]">
+                {data.name} · <span className="font-mono font-medium text-[#1d1d1f]">{data.memberId}</span>
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-bold tracking-tight">Member portal</h1>
-            <p className="text-xs text-muted-foreground">
-              {data.name} · {data.memberId}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="gradient" onClick={() => setAddingEnquiry(true)}>
-            Add Enquiry
-          </Button>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="rounded-xl border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
-            >
-              Sign out
-            </button>
-          </form>
-        </div>
-      </header>
 
-      <div className="flex flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setAddingEnquiry(true)}
+              className="flex items-center gap-1.5 rounded-full bg-[#0066cc] px-4 py-2 text-xs font-medium text-white shadow-md shadow-[#0066cc]/20 transition-all hover:bg-[#0071e3] active:scale-95"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add Enquiry</span>
+            </button>
+
+            <form action={signOut}>
+              <button
+                type="submit"
+                title="Sign out"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-[#fafafc] text-slate-500 transition-colors hover:bg-slate-100 hover:text-[#1d1d1f]"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </form>
+          </div>
+        </header>
+      </div>
+
+      {/* Pill Navigation Bar */}
+      <div className="flex flex-wrap gap-1.5 rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-sm">
         {TABS.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             aria-pressed={tab === t}
-            className={`rounded-xl border px-3 py-1.5 text-xs font-semibold ${
+            className={`rounded-xl px-4 py-2 text-xs font-semibold transition-all ${
               tab === t
-                ? "border-primary/40 bg-primary/15 text-primary"
-                : "border-border/60 text-muted-foreground hover:bg-accent"
+                ? "bg-[#0066cc] text-white shadow-md shadow-[#0066cc]/20"
+                : "text-slate-600 hover:bg-[#f5f5f7] hover:text-[#1d1d1f]"
             }`}
           >
             {t}
@@ -194,168 +221,191 @@ export default function PortalClient({ data }: { data: PortalData }) {
       </div>
 
       {notice && (
-        <Card
-          className={`p-4 ${
-            notice.kind === "ok" ? "border-emerald-500/40 bg-emerald-500/5" : "border-red-500/40 bg-red-500/5"
+        <div
+          className={`rounded-2xl border p-4 shadow-sm ${
+            notice.kind === "ok"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-red-200 bg-red-50 text-red-800"
           }`}
         >
-          <p
-            role="status"
-            className={`flex items-start gap-2 text-sm ${
-              notice.kind === "ok" ? "text-emerald-700" : "text-red-700"
-            }`}
-          >
+          <p role="status" className="flex items-start gap-2.5 text-xs font-medium">
             {notice.kind === "ok" ? (
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
             ) : (
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
             )}
             <span>{notice.text}</span>
           </p>
-        </Card>
+        </div>
       )}
 
+      {/* Available Plots Section */}
       {tab === "Available Plots" && (
         <section className="space-y-3">
           {data.plots.length === 0 ? (
-            <Card className="p-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-3xl border border-slate-200/80 bg-white p-12 text-center text-xs text-[#7a7a7a] shadow-sm">
               No Plots are currently Available.
-            </Card>
+            </div>
           ) : (
             data.plots.map((p) => (
-              <Card key={p.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
-                <div>
-                  <p className="text-sm font-semibold">
-                    {p.project} · <span className="font-mono text-primary">{p.label}</span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">{p.areaSqYd} sq yd · Available</p>
+              <div
+                key={p.id}
+                className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition-all hover:shadow-md"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-[#1d1d1f]">{p.project}</p>
+                      <span className="rounded-md bg-blue-50 px-2 py-0.5 font-mono text-xs font-semibold text-[#0066cc]">
+                        {p.label}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-[#7a7a7a]">{p.areaSqYd} sq yd · Available</p>
+                  </div>
+                  <button
+                    disabled={busy}
+                    onClick={() => setRequesting(p)}
+                    className="flex items-center gap-1 rounded-full border border-[#0066cc] bg-white px-4 py-1.5 text-xs font-semibold text-[#0066cc] transition-all hover:bg-[#0066cc] hover:text-white disabled:opacity-50"
+                  >
+                    <span>Request Hold</span>
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-                <Button size="sm" disabled={busy} onClick={() => setRequesting(p)}>
-                  Request Hold
-                </Button>
-              </Card>
+              </div>
             ))
           )}
         </section>
       )}
 
+      {/* Hold Requests Section */}
       {tab === "Hold Requests" && (
         <section className="space-y-3">
           {data.holdRequests.length === 0 ? (
-            <Card className="p-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-3xl border border-slate-200/80 bg-white p-12 text-center text-xs text-[#7a7a7a] shadow-sm">
               You have not submitted a Hold Request yet.
-            </Card>
+            </div>
           ) : (
             data.holdRequests.map((r) => (
-              <Card key={r.id} className="flex flex-wrap items-start justify-between gap-3 p-4">
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm font-semibold">
-                    {r.project} · <span className="font-mono text-primary">{r.plot}</span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    For {r.buyer} · submitted {formatIst(r.createdAt)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {r.status === "PENDING"
-                      ? `Expires ${formatIst(r.expiresAt)} unless CRM decides sooner.`
-                      : r.decisionNote ?? "—"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant={
-                      r.status === "APPROVED" ? "success" : r.status === "PENDING" ? "info" : "outline"
-                    }
-                  >
-                    {humanise(r.status)}
-                  </Badge>
-                  {r.status === "PENDING" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => run(() => withdrawHoldRequestAction(r.id, newKey()))}
+              <div key={r.id} className="rounded-2xl border border-slate-200/80 bg-white p-4.5 space-y-2 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm font-semibold text-[#1d1d1f]">
+                      {r.project} · <span className="font-mono text-[#0066cc]">{r.plot}</span>
+                    </p>
+                    <p className="text-xs text-[#7a7a7a]">
+                      Buyer: <span className="font-medium text-[#1d1d1f]">{r.buyer}</span> · Submitted {formatIst(r.createdAt)}
+                    </p>
+                    <p className="text-xs text-[#7a7a7a]">
+                      {r.status === "PENDING"
+                        ? `Expires ${formatIst(r.expiresAt)} unless CRM decides sooner.`
+                        : r.decisionNote ?? "—"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded-full px-3 py-0.5 text-xs font-semibold ${
+                        r.status === "APPROVED"
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : r.status === "PENDING"
+                            ? "bg-amber-50 text-amber-800 border border-amber-200"
+                            : "bg-slate-100 text-slate-600 border border-slate-200"
+                      }`}
                     >
-                      Withdraw
-                    </Button>
-                  )}
+                      {humanise(r.status)}
+                    </span>
+                    {r.status === "PENDING" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => run(() => withdrawHoldRequestAction(r.id, newKey()))}
+                        className="border-slate-200 text-xs text-slate-700 hover:bg-slate-50"
+                      >
+                        Withdraw
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </Card>
+              </div>
             ))
           )}
         </section>
       )}
 
+      {/* Enquiries Section */}
       {tab === "Enquiries" && (
         <section className="space-y-3">
           {data.enquiries.length === 0 ? (
-            <Card className="p-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-3xl border border-slate-200/80 bg-white p-12 text-center text-xs text-[#7a7a7a] shadow-sm">
               You have not submitted an Enquiry yet. Use Add Enquiry above.
-            </Card>
+            </div>
           ) : (
             data.enquiries.map((e) => (
-              <Card key={e.enquiryNo} className="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div key={e.enquiryNo} className="rounded-2xl border border-slate-200/80 bg-white p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
                 <div>
-                  <p className="text-sm font-semibold">
-                    <span className="font-mono text-primary">{e.enquiryNo}</span> · {e.buyer}
+                  <p className="text-sm font-semibold text-[#1d1d1f]">
+                    <span className="font-mono text-[#0066cc]">{e.enquiryNo}</span> · {e.buyer}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    {e.mobileMasked} · {e.project} · {e.plot} · submitted {formatIst(e.createdAt)}
+                  <p className="mt-0.5 text-xs text-[#7a7a7a]">
+                    {e.mobileMasked} · {e.project} · {e.plot} · Submitted {formatIst(e.createdAt)}
                   </p>
                 </div>
-                <Badge variant={e.status === "ACTIVE" ? "info" : "outline"}>{humanise(e.status)}</Badge>
-              </Card>
+                <span className="rounded-full bg-slate-100 px-3 py-0.5 text-xs font-semibold text-slate-700 border border-slate-200">
+                  {humanise(e.status)}
+                </span>
+              </div>
             ))
           )}
         </section>
       )}
 
+      {/* Network Section */}
       {tab === "Network" && (
-        <Card className="space-y-4 p-5 text-sm">
-          <Row label="Invited By" value={data.invitedBy ?? "—"} />
-          <Row
-            label="Your position and band"
-            value={
-              data.invitePosition
-                ? `Position ${data.invitePosition} · ${data.inviteRatePercent ?? "—"}%`
-                : "Not assigned"
-            }
-          />
+        <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xl shadow-slate-200/50 space-y-5 text-xs">
+          <div className="space-y-2">
+            <Row label="Invited By" value={data.invitedBy ?? "—"} />
+            <Row
+              label="Your position and band"
+              value={
+                data.invitePosition
+                  ? `Position ${data.invitePosition} · ${data.inviteRatePercent ?? "—"}%`
+                  : "Not assigned"
+              }
+            />
+          </div>
 
-          <div className="border-t border-border/50 pt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Members you invited
+          <div className="border-t border-slate-100 pt-4 space-y-3">
+            <h3 className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-[#0066cc]">
+              <Users className="h-3 w-3" /> Members you invited
             </h3>
             {data.invitedMembers.length === 0 ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                You have not invited any Member yet.
-              </p>
+              <p className="text-[#7a7a7a]">You have not invited any Member yet.</p>
             ) : (
-              <div className="mt-2 overflow-x-auto">
+              <div className="overflow-x-auto">
                 <table className="w-full min-w-[28rem] text-xs">
-                  <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <thead className="text-left text-[11px] uppercase tracking-wider text-[#7a7a7a] border-b border-slate-100">
                     <tr>
-                      <th className="py-1">Member</th>
-                      <th className="py-1 text-right">Position</th>
-                      <th className="py-1 text-right">Band</th>
-                      <th className="py-1">Status</th>
+                      <th className="pb-2">Member</th>
+                      <th className="pb-2 text-right">Position</th>
+                      <th className="pb-2 text-right">Band</th>
+                      <th className="pb-2">Status</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {data.invitedMembers.map((m) => (
                       <tr key={m.memberId}>
-                        <td className="py-1">
-                          {m.name}
-                          <span className="block text-[11px] text-muted-foreground">{m.memberId}</span>
+                        <td className="py-2.5">
+                          <span className="font-semibold text-[#1d1d1f]">{m.name}</span>
+                          <span className="block font-mono text-[11px] text-[#7a7a7a]">{m.memberId}</span>
                         </td>
-                        <td className="py-1 text-right tabular-nums">{m.position ?? "—"}</td>
-                        <td className="py-1 text-right tabular-nums">
+                        <td className="py-2.5 text-right tabular-nums text-slate-700">{m.position ?? "—"}</td>
+                        <td className="py-2.5 text-right tabular-nums font-semibold text-[#0066cc]">
                           {m.ratePercent ? `${m.ratePercent}%` : "—"}
                         </td>
-                        <td className="py-1">
-                          <span className="block">{humanise(m.status)}</span>
+                        <td className="py-2.5">
+                          <span className="text-slate-800">{humanise(m.status)}</span>
                           {m.activationDate && (
-                            <span className="block text-[11px] text-muted-foreground">
+                            <span className="block text-[11px] text-[#7a7a7a]">
                               {formatIst(m.activationDate)}
                             </span>
                           )}
@@ -368,32 +418,30 @@ export default function PortalClient({ data }: { data: PortalData }) {
             )}
           </div>
 
-          <div className="border-t border-border/50 pt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Customers you introduced
+          <div className="border-t border-slate-100 pt-4 space-y-3">
+            <h3 className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-emerald-700">
+              <Layers className="h-3 w-3" /> Customers you introduced
             </h3>
             {data.introducedCustomers.length === 0 ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                You have not introduced any Customer yet.
-              </p>
+              <p className="text-[#7a7a7a]">You have not introduced any Customer yet.</p>
             ) : (
-              <div className="mt-2 overflow-x-auto">
+              <div className="overflow-x-auto">
                 <table className="w-full min-w-[24rem] text-xs">
-                  <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <thead className="text-left text-[11px] uppercase tracking-wider text-[#7a7a7a] border-b border-slate-100">
                     <tr>
-                      <th className="py-1 text-right">Position</th>
-                      <th className="py-1 text-right">Band</th>
-                      <th className="py-1 text-right">Loyalty slots used</th>
+                      <th className="pb-2 text-right">Position</th>
+                      <th className="pb-2 text-right">Band</th>
+                      <th className="pb-2 text-right">Loyalty slots used</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {data.introducedCustomers.map((c, index) => (
                       <tr key={index}>
-                        <td className="py-1 text-right tabular-nums">{c.position ?? "—"}</td>
-                        <td className="py-1 text-right tabular-nums">
+                        <td className="py-2.5 text-right tabular-nums text-slate-700">{c.position ?? "—"}</td>
+                        <td className="py-2.5 text-right tabular-nums font-semibold text-[#0066cc]">
                           {c.ratePercent ? `${c.ratePercent}%` : "—"}
                         </td>
-                        <td className="py-1 text-right tabular-nums">
+                        <td className="py-2.5 text-right tabular-nums text-slate-700">
                           {c.loyaltySlotsConsumed} of 3
                         </td>
                       </tr>
@@ -404,15 +452,16 @@ export default function PortalClient({ data }: { data: PortalData }) {
             )}
           </div>
 
-          <p className="pt-1 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="pt-2 text-[11px] leading-relaxed text-[#7a7a7a]">
             Introduced Customers are shown as positions and bands only. The portal never shows a
             Customer&apos;s name, Customer ID or contact details (PRD §23.1).
           </p>
-        </Card>
+        </div>
       )}
 
+      {/* Profile Section */}
       {tab === "Profile" && (
-        <Card className="space-y-2 p-5 text-sm">
+        <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xl shadow-slate-200/50 space-y-4 text-xs">
           <Row label="Member ID" value={data.memberId} />
           <Row label="Name" value={data.name} />
           <Row
@@ -429,49 +478,50 @@ export default function PortalClient({ data }: { data: PortalData }) {
                 : "Not assigned"
             }
           />
-          <p className="pt-2 text-[11px] leading-relaxed text-muted-foreground">
+
+          <p className="pt-1 text-[11px] leading-relaxed text-[#7a7a7a]">
             The portal never shows buyer identity, Aadhaar, PAN, bank details or internal Accounts
             remarks.
           </p>
 
-          <div className="mt-4 border-t border-border/50 pt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Commission
+          <div className="border-t border-slate-100 pt-4 space-y-3">
+            <h3 className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-[#0066cc]">
+              <ShieldCheck className="h-3 w-3" /> Commission Breakdown
             </h3>
             {data.commissions.length === 0 ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                No commission has been generated for you yet.
-              </p>
+              <p className="text-[#7a7a7a]">No commission has been generated for you yet.</p>
             ) : (
-              <div className="mt-2 overflow-x-auto">
+              <div className="overflow-x-auto">
                 <table className="w-full min-w-[32rem] text-xs">
-                  <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <thead className="text-left text-[11px] uppercase tracking-wider text-[#7a7a7a] border-b border-slate-100">
                     <tr>
-                      <th className="py-1">Project · Plot</th>
-                      <th className="py-1">Type</th>
-                      <th className="py-1 text-right">%</th>
-                      <th className="py-1 text-right">Milestone</th>
-                      <th className="py-1">Status</th>
+                      <th className="pb-2">Project · Plot</th>
+                      <th className="pb-2">Type</th>
+                      <th className="pb-2 text-right">%</th>
+                      <th className="pb-2 text-right">Milestone</th>
+                      <th className="pb-2">Status</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {data.commissions.map((c, index) => (
                       <tr key={index}>
-                        <td className="py-1">
-                          {c.project}
-                          <span className="block text-[11px] text-muted-foreground">{c.plot}</span>
+                        <td className="py-2.5">
+                          <span className="font-semibold text-[#1d1d1f]">{c.project}</span>
+                          <span className="block font-mono text-[11px] font-medium text-[#0066cc]">{c.plot}</span>
                         </td>
-                        <td className="py-1">{COMMISSION_LABEL[c.type] ?? c.type}</td>
-                        <td className="py-1 text-right tabular-nums">{c.percent}</td>
-                        <td className="py-1 text-right tabular-nums">{c.milestonePercent}%</td>
-                        <td className="py-1">
-                          <span className="block">{ELIGIBILITY_LABEL[c.eligibility] ?? c.eligibility}</span>
-                          <span className="block text-[11px] text-muted-foreground">
+                        <td className="py-2.5 text-slate-700">{COMMISSION_LABEL[c.type] ?? c.type}</td>
+                        <td className="py-2.5 text-right tabular-nums font-semibold text-[#0066cc]">{c.percent}</td>
+                        <td className="py-2.5 text-right tabular-nums text-slate-700">{c.milestonePercent}%</td>
+                        <td className="py-2.5">
+                          <span className="block font-medium text-[#1d1d1f]">
+                            {ELIGIBILITY_LABEL[c.eligibility] ?? c.eligibility}
+                          </span>
+                          <span className="block text-[11px] text-[#7a7a7a]">
                             {PAYMENT_LABEL[c.payment] ?? c.payment}
                             {c.paidOn ? ` · ${formatIst(c.paidOn)}` : ""}
                           </span>
                           {c.holdReason && (
-                            <span className="block text-[11px] text-amber-800">
+                            <span className="block text-[11px] font-medium text-amber-700">
                               {HOLD_LABEL[c.holdReason] ?? c.holdReason}
                             </span>
                           )}
@@ -483,24 +533,24 @@ export default function PortalClient({ data }: { data: PortalData }) {
               </div>
             )}
           </div>
-        </Card>
+        </div>
       )}
 
+      {/* Modals */}
       {requesting && (
         <Modal title="Request Hold" onClose={() => setRequesting(null)}>
-          <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
-            <p className="font-semibold text-foreground">
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-xs space-y-1">
+            <p className="font-bold text-[#0066cc]">
               {requesting.project} · {requesting.label}
             </p>
-            <p className="mt-1 text-muted-foreground">
+            <p className="text-slate-600 leading-relaxed">
               A Hold Request must name the actual buyer — anonymous requests are not allowed. It
               expires at the end of the working day, or the next working day when submitted after
-              the cut-off. Only one Pending request may exist for the same buyer and Plot, and the
-              buyer may hold at most three open Plot positions.
+              the cut-off. Only one Pending request may exist for the same buyer and Plot.
             </p>
           </div>
           <form
-            className="space-y-4"
+            className="space-y-4 pt-2"
             onSubmit={async (e) => {
               e.preventDefault();
               const personId = String(new FormData(e.currentTarget).get("personId"));
@@ -520,11 +570,11 @@ export default function PortalClient({ data }: { data: PortalData }) {
                 ))}
               </select>
             </Field>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setRequesting(null)}>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setRequesting(null)} className="border-slate-200 text-slate-700">
                 Back
               </Button>
-              <Button type="submit" size="sm" disabled={busy}>
+              <Button type="submit" size="sm" disabled={busy} className="bg-[#0066cc] text-white font-medium hover:bg-[#0071e3]">
                 {busy ? "Submitting…" : "Submit request"}
               </Button>
             </div>
@@ -534,11 +584,11 @@ export default function PortalClient({ data }: { data: PortalData }) {
 
       {addingEnquiry && (
         <Modal title="Add Enquiry" onClose={() => setAddingEnquiry(false)}>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-[#7a7a7a]">
             The Source is recorded as By Member automatically and the Enquiry is assigned to CRM.
           </p>
           <form
-            className="space-y-4"
+            className="space-y-4 pt-2"
             onSubmit={async (e) => {
               e.preventDefault();
               const f = new FormData(e.currentTarget);
@@ -560,13 +610,13 @@ export default function PortalClient({ data }: { data: PortalData }) {
           >
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Buyer name">
-                <Input name="fullName" required />
+                <Input name="fullName" required className={inputClass} />
               </Field>
               <Field label="Mobile">
-                <Input name="mobile" required inputMode="numeric" />
+                <Input name="mobile" required inputMode="numeric" className={inputClass} />
               </Field>
               <Field label="City">
-                <Input name="city" />
+                <Input name="city" className={inputClass} />
               </Field>
               <Field label="Interested Project">
                 <select name="projectId" required defaultValue="" className={inputClass}>
@@ -592,13 +642,13 @@ export default function PortalClient({ data }: { data: PortalData }) {
               </select>
             </Field>
             <Field label="Remark (optional)">
-              <Input name="remark" />
+              <Input name="remark" className={inputClass} />
             </Field>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setAddingEnquiry(false)}>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setAddingEnquiry(false)} className="border-slate-200 text-slate-700">
                 Back
               </Button>
-              <Button type="submit" size="sm" disabled={busy}>
+              <Button type="submit" size="sm" disabled={busy} className="bg-[#0066cc] text-white font-medium hover:bg-[#0071e3]">
                 {busy ? "Submitting…" : "Submit Enquiry"}
               </Button>
             </div>
@@ -611,11 +661,9 @@ export default function PortalClient({ data }: { data: PortalData }) {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-4 border-b border-border/40 py-1.5 last:border-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-right text-xs font-medium">{value}</span>
+    <div className="flex justify-between gap-4 border-b border-slate-100 py-2.5 last:border-0">
+      <span className="text-xs text-[#7a7a7a]">{label}</span>
+      <span className="text-right text-xs font-semibold text-[#1d1d1f]">{value}</span>
     </div>
   );
 }
-
-

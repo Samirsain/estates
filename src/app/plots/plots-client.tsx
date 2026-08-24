@@ -6,7 +6,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Clock, Plus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Plus, X, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -101,10 +101,17 @@ export type BoundaryRow = {
 type ProjectView = {
   id: string;
   name: string;
+  city?: string | null;
+  location?: string | null;
   lifecycle: string;
   /** The configured bands, so the grid derives the same PLC the server will. */
-  plcComponents: Array<{ category: string; threshold: string | null; percent: string }>;
+  plcComponents: Array<{ category: string; threshold: string | null; percent: string; remark?: string | null }>;
 };
+
+function projectFullLabel(p: { name: string; city?: string | null; location?: string | null }): string {
+  const loc = [p.location, p.city].filter(Boolean).join(", ");
+  return loc ? `${p.name} — ${loc}` : p.name;
+}
 
 const LIFECYCLE_LABEL: Record<string, string> = {
   NOT_AVAILABLE: "Not Available",
@@ -146,7 +153,6 @@ const BOUNDARY_KINDS = [
   "COMMERCIAL",
   "INFORMAL_SECTOR",
   "PARK",
-  "PLAYGROUND",
   "FACILITIES",
   "PUBLIC_UTILITY",
   "OTHER",
@@ -157,11 +163,11 @@ const BOUNDARY_KIND_LABEL: Record<string, string> = {
   PLOT: "Plot",
   COMMERCIAL: "Commercial",
   INFORMAL_SECTOR: "Informal Sector",
-  PARK: "Park",
-  PLAYGROUND: "Playground",
+  PARK: "Park / Playground",
+  PLAYGROUND: "Park / Playground",
   FACILITIES: "Facilities",
   PUBLIC_UTILITY: "Public Utility",
-  OTHER: "Other",
+  OTHER: "Other Land",
 };
 
 function emptyBoundaries(): BoundaryRow[] {
@@ -181,6 +187,56 @@ type Preview = {
   issue: string | null;
 };
 
+export function parseDimension(input: string): string {
+  const clean = input.trim();
+  if (!clean) return "";
+
+  // 1. If it's a standard integer or decimal (e.g. "25", "25.6", "25.5"), keep it as is.
+  if (/^\d+(\.\d+)?$/.test(clean)) {
+    return clean;
+  }
+
+  // 2. Handle format like 25'6" or 25' 6" or 25ft 6in or 25'6
+  const ftInRegex = /^(?:(\d+)\s*['’]|(\d+)\s*ft)?\s*(?:(\d+)\s*["”]|(\d+)\s*in|(\d+))?$/i;
+  const match = clean.match(ftInRegex);
+  if (match) {
+    const feetStr = match[1] || match[2] || "0";
+    const inchesStr = match[3] || match[4] || match[5] || "0";
+    const feet = parseInt(feetStr, 10);
+    const inches = parseInt(inchesStr, 10);
+    if (!isNaN(feet) || !isNaN(inches)) {
+      const decimalValue = feet + (inches / 12);
+      return String(Number(decimalValue.toFixed(4)));
+    }
+  }
+
+  // 3. Handle format like 25-6 (feet-inches with hyphen)
+  const hyphenRegex = /^(\d+)-(\d+)$/;
+  const hyphenMatch = clean.match(hyphenRegex);
+  if (hyphenMatch) {
+    const feet = parseInt(hyphenMatch[1], 10);
+    const inches = parseInt(hyphenMatch[2], 10);
+    if (!isNaN(feet) && !isNaN(inches)) {
+      const decimalValue = feet + (inches / 12);
+      return String(Number(decimalValue.toFixed(4)));
+    }
+  }
+
+  // 4. Handle space-separated like 25 6
+  const spaceRegex = /^(\d+)\s+(\d+)$/;
+  const spaceMatch = clean.match(spaceRegex);
+  if (spaceMatch) {
+    const feet = parseInt(spaceMatch[1], 10);
+    const inches = parseInt(spaceMatch[2], 10);
+    if (!isNaN(feet) && !isNaN(inches)) {
+      const decimalValue = feet + (inches / 12);
+      return String(Number(decimalValue.toFixed(4)));
+    }
+  }
+
+  return clean;
+}
+
 function derivePreview(
   row: { widthFt: string; lengthFt: string; exactAreaSqFt: string; exactAreaReason: string },
   boundaries: readonly BoundaryRow[],
@@ -194,6 +250,8 @@ function derivePreview(
     formatQuantity(d.toDecimalPlaces(2).toString());
 
   let areas: ReturnType<typeof calculateAreas> | null = null;
+  const parsedWidth = parseDimension(row.widthFt);
+  const parsedLength = parseDimension(row.lengthFt);
   try {
     areas = row.exactAreaSqFt
       ? calculateAreas({
@@ -201,8 +259,8 @@ function derivePreview(
           exactAreaSqFt: row.exactAreaSqFt,
           reason: row.exactAreaReason || "pending",
         })
-      : row.widthFt && row.lengthFt
-        ? calculateAreas({ kind: "REGULAR", widthFt: row.widthFt, lengthFt: row.lengthFt })
+      : parsedWidth && parsedLength
+        ? calculateAreas({ kind: "REGULAR", widthFt: parsedWidth, lengthFt: parsedLength })
         : null;
   } catch {
     return { ...blank, issue: "Check Width and Length" };
@@ -268,22 +326,42 @@ function SideControl({
   boundary,
   onChange,
   layout = "row",
+  plcComponents = [],
 }: {
   boundary: BoundaryRow;
   onChange: (patch: Partial<BoundaryRow>) => void;
   layout?: "row" | "inline";
+  plcComponents?: Array<{ category: string; threshold: string | null; percent: string; remark?: string | null }>;
 }) {
   const detailLabel = REFERENCE_LABEL[boundary.kind] ?? "Reference";
   const isRoad = boundary.kind === "ROAD";
+  const roads = plcComponents.filter((c) => c.category === "ROAD_WIDTH");
+  const hasPreconfiguredRoads = isRoad && roads.length > 0;
+
+  const selectedRoad = roads.find(
+    (r) =>
+      r.threshold &&
+      Number(r.threshold) === Number(boundary.roadWidthFt) &&
+      (r.remark || "") === (boundary.reference || "")
+  );
+
+  const isCustomRoad = isRoad && !selectedRoad;
 
   const kindSelect = (
     <select
       className={`${inputClass} ${
-        layout === "row" ? "h-9 text-xs" : "h-8 text-xs font-medium"
-      } min-w-0 flex-1`}
+        layout === "row" ? "h-9 text-xs" : "h-7 text-xs font-medium"
+      } w-full min-w-0`}
       aria-label={`${boundary.side.toLowerCase()} boundary`}
       value={boundary.kind}
-      onChange={(e) => onChange({ kind: e.target.value })}
+      onChange={(e) => {
+        const nextKind = e.target.value;
+        onChange({
+          kind: nextKind,
+          roadWidthFt: nextKind === "ROAD" ? "" : undefined,
+          reference: "",
+        });
+      }}
     >
       {BOUNDARY_KINDS.map((kind) => (
         <option key={kind} value={kind}>
@@ -296,34 +374,116 @@ function SideControl({
   const detailInput = (
     <input
       className={`${inputClass} ${
-        layout === "row" ? "h-9 text-xs" : "h-8 text-xs font-normal"
-      } min-w-0 flex-1`}
+        layout === "row" ? "h-9 text-xs" : "h-7 text-xs font-normal"
+      } w-full min-w-0`}
       inputMode={isRoad ? "decimal" : undefined}
-      placeholder={isRoad ? "Width ft (req.)" : "Ref # (opt.)"}
+      placeholder={isRoad ? "Width ft" : "Ref # (opt.)"}
       aria-label={
         isRoad
           ? `${boundary.side.toLowerCase()} road width in feet`
           : `${boundary.side.toLowerCase()} side reference, optional`
       }
-      value={isRoad ? boundary.roadWidthFt : boundary.reference}
+      value={isRoad ? (boundary.roadWidthFt ?? "") : (boundary.reference ?? "")}
       onChange={(e) =>
         onChange(isRoad ? { roadWidthFt: e.target.value } : { reference: e.target.value })
       }
     />
   );
 
+  const roadSelect = hasPreconfiguredRoads && (
+    <select
+      className={`${inputClass} ${
+        layout === "row" ? "h-9 text-xs" : "h-7 text-xs font-medium"
+      } w-full min-w-0`}
+      value={selectedRoad ? `${selectedRoad.threshold}|${selectedRoad.remark || ""}` : "custom"}
+      onChange={(e) => {
+        const val = e.target.value;
+        if (val === "custom") {
+          onChange({ roadWidthFt: "", reference: "" });
+        } else {
+          const [threshold, remark] = val.split("|");
+          onChange({
+            roadWidthFt: threshold,
+            reference: remark || "",
+          });
+        }
+      }}
+    >
+      <option value="custom">Custom Width</option>
+      {roads.map((r, ri) => {
+        const pct = r.percent.includes(".") ? r.percent.replace(/0+$/, "").replace(/\.$/, "") : r.percent;
+        const nameStr = r.remark ? `${r.remark} (${r.threshold}ft, ${pct}%)` : `Road ${r.threshold}ft (${pct}%)`;
+        return (
+          <option key={ri} value={`${r.threshold}|${r.remark || ""}`}>
+            {nameStr}
+          </option>
+        );
+      })}
+    </select>
+  );
+
   if (layout === "inline") {
     return (
-      <div className="flex items-center gap-1.5 rounded-xl border border-border/70 bg-card p-1.5 shadow-2xs transition-all hover:border-primary/40 focus-within:border-primary/50">
+      <div className="flex items-start gap-2 px-3 py-2 min-w-0">
+        {/* Side letter badge - darker & bolder for clarity */}
         <span
           title={`${SIDE_NAME[boundary.side]} Boundary`}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-xs font-bold text-primary"
+          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-stone-700 bg-stone-200 border border-stone-300/60 select-none shadow-2xs"
         >
           {boundary.side.charAt(0)}
         </span>
-        <div className="grid min-w-0 flex-1 grid-cols-2 gap-1.5">
-          {kindSelect}
-          {detailInput}
+        {/* Controls stacked */}
+        <div className="flex flex-col gap-1 min-w-0 flex-1">
+          <select
+            className="h-7 w-full rounded-md border border-stone-300 bg-white px-2 text-xs font-medium text-stone-800 focus:outline-none focus:ring-1 focus:ring-stone-400 transition-colors"
+            aria-label={`${boundary.side.toLowerCase()} boundary`}
+            value={boundary.kind}
+            onChange={(e) => {
+              const nextKind = e.target.value;
+              onChange({
+                kind: nextKind,
+                roadWidthFt: nextKind === "ROAD" ? "" : undefined,
+                reference: "",
+              });
+            }}
+          >
+            {BOUNDARY_KINDS.map((kind) => (
+              <option key={kind} value={kind}>{BOUNDARY_KIND_LABEL[kind]}</option>
+            ))}
+          </select>
+          {isRoad && hasPreconfiguredRoads && (
+            <select
+              className="h-7 w-full rounded-md border border-stone-300 bg-white px-2 text-xs text-stone-800 focus:outline-none focus:ring-1 focus:ring-stone-400 transition-colors"
+              value={selectedRoad ? `${selectedRoad.threshold}|${selectedRoad.remark || ""}` : "custom"}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "custom") {
+                  onChange({ roadWidthFt: "", reference: "" });
+                } else {
+                  const [threshold, remark] = val.split("|");
+                  onChange({ roadWidthFt: threshold, reference: remark || "" });
+                }
+              }}
+            >
+              <option value="custom">Custom width</option>
+              {roads.map((r, ri) => {
+                const pct = r.percent.includes(".") ? r.percent.replace(/0+$/, "").replace(/\.$/, "") : r.percent;
+                const nameStr = r.remark ? `${r.remark} (${r.threshold}ft, ${pct}%)` : `Road ${r.threshold}ft (${pct}%)`;
+                return <option key={ri} value={`${r.threshold}|${r.remark || ""}`}>{nameStr}</option>;
+              })}
+            </select>
+          )}
+          {(!hasPreconfiguredRoads || isCustomRoad) && (
+            <input
+              className="h-7 w-full rounded-md border border-stone-300 bg-white px-2 text-xs text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-400 transition-colors"
+              inputMode={isRoad ? "decimal" : undefined}
+              placeholder={isRoad ? "Width ft" : "Ref # (opt.)"}
+              value={isRoad ? (boundary.roadWidthFt ?? "") : (boundary.reference ?? "")}
+              onChange={(e) =>
+                onChange(isRoad ? { roadWidthFt: e.target.value } : { reference: e.target.value })
+              }
+            />
+          )}
         </div>
       </div>
     );
@@ -336,7 +496,12 @@ function SideControl({
       <label htmlFor={`${boundary.side}-detail`} className="text-right text-[11px] text-muted-foreground">
         {detailLabel}
       </label>
-      {React.cloneElement(detailInput, { id: `${boundary.side}-detail` })}
+      <div className="flex flex-col gap-1 w-full">
+        {roadSelect}
+        {(!hasPreconfiguredRoads || isCustomRoad) && (
+          React.cloneElement(detailInput, { id: `${boundary.side}-detail` })
+        )}
+      </div>
     </div>
   );
 }
@@ -1153,18 +1318,22 @@ export function EditPlotDetailsDialog({
         </p>
       )}
 
+      <p className="text-[11px] bg-primary/5 text-primary border border-primary/20 rounded-xl px-3 py-2 mb-2">
+        <strong>Tip:</strong> You can enter dimensions in feet and inches (e.g. <strong>25'6"</strong>, <strong>25-6</strong>, or <strong>25 6</strong>) and they will be converted automatically (e.g. 25'6" = 25.5 ft).
+      </p>
+
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Width ft">
           <Input
-            inputMode="decimal"
             value={form.widthFt}
+            placeholder="e.g. 25'6&quot; or 25-6"
             onChange={(e) => setForm({ ...form, widthFt: e.target.value })}
           />
         </Field>
         <Field label="Length ft">
           <Input
-            inputMode="decimal"
             value={form.lengthFt}
+            placeholder="e.g. 50'"
             onChange={(e) => setForm({ ...form, lengthFt: e.target.value })}
           />
         </Field>
@@ -1193,6 +1362,7 @@ export function EditPlotDetailsDialog({
           <SideControl
             key={boundary.side}
             boundary={boundary}
+            plcComponents={components}
             onChange={(patch) =>
               setBoundaries((prev) => prev.map((x, j) => (j === i ? { ...x, ...patch } : x)))
             }
@@ -1226,8 +1396,8 @@ export function EditPlotDetailsDialog({
           onClick={() =>
             onSubmit(
               {
-                widthFt: form.widthFt || undefined,
-                lengthFt: form.lengthFt || undefined,
+                widthFt: parseDimension(form.widthFt) || undefined,
+                lengthFt: parseDimension(form.lengthFt) || undefined,
                 exactAreaSqFt: form.exactAreaSqFt || undefined,
                 exactAreaReason: form.exactAreaReason || undefined,
                 boundaries: boundaries.map((b) => ({
@@ -1261,13 +1431,26 @@ function PrepareInventoryDialog({
   onSubmit: (projectId: string, rows: Parameters<typeof prepareInventoryAction>[1]) => void;
 }) {
   const [projectId, setProjectId] = React.useState(projects[0]?.id ?? "");
-  const [rows, setRows] = React.useState<GridRow[]>([
-    { ...EMPTY_ROW, boundaries: emptyBoundaries() },
-  ]);
+  const [rows, setRows] = React.useState<GridRow[]>([]);
+  const [bulkCount, setBulkCount] = React.useState("1");
+
   const project = projects.find((p) => p.id === projectId);
 
   const update = (index: number, patch: Partial<GridRow>) =>
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+
+  /** Generate N sequential rows starting from bulkStart (numeric increment). */
+  function handleBulkAdd() {
+    const count = Math.max(1, Math.min(500, parseInt(bulkCount, 10) || 1));
+    setRows((prev) => {
+      const newRows: GridRow[] = Array.from({ length: count }, () => ({
+        ...EMPTY_ROW,
+        boundaries: emptyBoundaries(),
+        plotNumber: "",
+      }));
+      return [...prev, ...newRows];
+    });
+  }
 
   const bands = project
     ? plcComponentLabels(
@@ -1283,38 +1466,37 @@ function PrepareInventoryDialog({
 
   return (
     <Modal title="Prepare Inventory" onClose={onClose} wide>
-      <p className="text-xs text-muted-foreground">
-        Each Plot starts Not Available — Not Yet Released. Area and Location Charge fill in as you
-        type; the Charge is read from the four sides, so there is nothing to select.
-      </p>
 
-      <div className="space-y-2">
-        <Field label="Project">
+      {/* ── Project selector + PLC bands ── */}
+      <div className="space-y-3 pb-3 border-b border-[#EAEAEA]">
+        <div className="flex items-center gap-3">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 whitespace-nowrap w-16 shrink-0">
+            Project
+          </label>
           <select
-            className={inputClass}
+            className="flex-1 h-9 rounded-lg border border-[#EAEAEA] bg-white px-3 text-sm text-stone-800 focus:outline-none focus:ring-1 focus:ring-stone-300 transition-colors"
             value={projectId}
             onChange={(e) => setProjectId(e.target.value)}
           >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name}
+                {projectFullLabel(p)}
               </option>
             ))}
           </select>
-        </Field>
+        </div>
 
-        {/* What this Project charges. Read-only: it is what the Charge below is
-            computed against, and it belongs to Project setup, not to this grid. */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-secondary/60 px-3 py-2">
+        {/* PLC rate strip */}
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-[#EAEAEA] bg-stone-50 px-3 py-2">
           {bands.length === 0 ? (
-            <span className="text-[11px] text-amber-800">
-              No published Location Charge version — publish one in Project setup first.
+            <span className="text-[11px] text-amber-700 font-medium">
+              No published PLC version — publish one in Project setup first.
             </span>
           ) : (
             bands.map((label, i) => (
-              <span key={label} className="text-[11px] text-muted-foreground">
+              <span key={label} className="text-[11px] text-stone-500">
                 {label}{" "}
-                <span className="font-semibold tabular-nums text-foreground">
+                <span className="font-semibold tabular-nums text-stone-800">
                   {formatPercent(project!.plcComponents[i].percent)}
                 </span>
               </span>
@@ -1323,214 +1505,225 @@ function PrepareInventoryDialog({
         </div>
       </div>
 
-      <div className="max-h-[56vh] space-y-3 overflow-y-auto pr-1">
+      {/* ── Column header ── */}
+      <div className="hidden lg:grid lg:grid-cols-[2rem_5rem_9rem_13rem_1fr] gap-3 px-1 pt-2 pb-1">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-stone-400">#</span>
+        {["Plot No.", "Type", "Dimensions (W × L ft)", "Boundaries"].map((h) => (
+          <span key={h} className="text-[10px] font-bold uppercase tracking-widest text-stone-500">
+            {h}
+          </span>
+        ))}
+      </div>
+
+      {/* ── Plot rows ── */}
+      <div className="max-h-[58vh] space-y-2 overflow-y-auto pb-1 pr-0.5">
         {rows.map((row, i) => {
           const preview = derivePreview(row, row.boundaries, project?.plcComponents ?? []);
           return (
-            <div
+          <div
               key={i}
-              className="space-y-3 rounded-2xl border border-border/70 bg-card p-4 shadow-2xs transition-all hover:border-border"
+              className="rounded-xl border border-stone-300 bg-white transition-shadow hover:border-stone-400 hover:shadow-md"
             >
-              <div className="flex flex-wrap items-end justify-between gap-4">
-                <div className="flex flex-wrap items-end gap-3">
-                  <label className="w-28">
-                    <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Plot No.
-                    </span>
+              {/* ── Top line: plot details ── */}
+              <div className="grid grid-cols-1 lg:grid-cols-[2rem_5rem_9rem_13rem_1fr] gap-3 items-center px-3 py-2 border-b border-stone-200">
+                {/* Row serial */}
+                <span className="hidden lg:flex items-center justify-center text-[11px] font-bold tabular-nums text-stone-600 select-none bg-stone-100 rounded h-6 w-6 border border-stone-200">
+                  {i + 1}
+                </span>
+
+                {/* Plot No. */}
+                <input
+                  className="h-8 w-full rounded-lg border border-stone-300 bg-stone-50 px-2 text-xs font-mono font-bold text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white transition-colors"
+                  placeholder="Plot no."
+                  value={row.plotNumber}
+                  onChange={(e) => update(i, { plotNumber: e.target.value })}
+                />
+
+                {/* Type */}
+                <select
+                  className="h-8 w-full rounded-lg border border-stone-300 bg-stone-50 px-2 text-xs font-medium text-stone-800 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white transition-colors"
+                  value={row.plotType}
+                  onChange={(e) => update(i, { plotType: e.target.value })}
+                >
+                  {Object.entries(PLOT_TYPE_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+
+                {/* Dimensions */}
+                {row.irregular ? (
+                  <input
+                    className="h-8 w-full rounded-lg border border-stone-300 bg-stone-50 px-2 text-xs text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white transition-colors"
+                    placeholder="Area sq ft"
+                    inputMode="decimal"
+                    value={row.exactAreaSqFt}
+                    onChange={(e) => update(i, { exactAreaSqFt: e.target.value })}
+                  />
+                ) : (
+                  <div className="flex items-center gap-2">
                     <input
-                      className={`${inputClass} h-9 font-mono font-medium`}
-                      placeholder="e.g. 101"
-                      value={row.plotNumber}
-                      onChange={(e) => update(i, { plotNumber: e.target.value })}
+                      className="h-8 w-full rounded-lg border border-stone-300 bg-stone-50 px-2 text-xs text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white transition-colors"
+                      placeholder="Width"
+                      value={row.widthFt}
+                      onChange={(e) => update(i, { widthFt: e.target.value })}
                     />
-                  </label>
+                    <span className="text-stone-400 font-bold select-none">×</span>
+                    <input
+                      className="h-8 w-full rounded-lg border border-stone-300 bg-stone-50 px-2 text-xs text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white transition-colors"
+                      placeholder="Length"
+                      value={row.lengthFt}
+                      onChange={(e) => update(i, { lengthFt: e.target.value })}
+                    />
+                  </div>
+                )}
 
-                  <label className="w-36">
-                    <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Type
-                    </span>
-                    <select
-                      className={`${inputClass} h-9`}
-                      value={row.plotType}
-                      onChange={(e) => update(i, { plotType: e.target.value })}
+                {/* PLC + controls */}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">PLC</span>
+                  <span className="tabular-nums text-xs font-bold text-stone-900 bg-stone-100 border border-stone-200 px-2 py-0.5 rounded">{preview.plc}</span>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <label
+                      title="Irregular plot — specify area directly"
+                      className="flex items-center gap-1 cursor-pointer text-[10px] font-medium text-stone-500 hover:text-stone-800 transition-colors select-none"
                     >
-                      {Object.entries(PLOT_TYPE_LABEL).map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  {row.irregular ? (
-                    <>
-                      <label className="w-32">
-                        <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          Area sq ft
-                        </span>
-                        <input
-                          className={`${inputClass} h-9`}
-                          inputMode="decimal"
-                          value={row.exactAreaSqFt}
-                          onChange={(e) => update(i, { exactAreaSqFt: e.target.value })}
-                        />
-                      </label>
-                      <label className="w-44">
-                        <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          Reason — compulsory
-                        </span>
-                        <input
-                          className={`${inputClass} h-9`}
-                          value={row.exactAreaReason}
-                          onChange={(e) => update(i, { exactAreaReason: e.target.value })}
-                        />
-                      </label>
-                    </>
-                  ) : (
-                    <div className="flex items-end gap-2">
-                      <label className="w-24">
-                        <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          Width ft
-                        </span>
-                        <input
-                          className={`${inputClass} h-9`}
-                          inputMode="decimal"
-                          value={row.widthFt}
-                          onChange={(e) => update(i, { widthFt: e.target.value })}
-                        />
-                      </label>
-                      <span className="pb-2 text-xs font-semibold text-muted-foreground">×</span>
-                      <label className="w-24">
-                        <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          Length ft
-                        </span>
-                        <input
-                          className={`${inputClass} h-9`}
-                          inputMode="decimal"
-                          value={row.lengthFt}
-                          onChange={(e) => update(i, { lengthFt: e.target.value })}
-                        />
-                      </label>
-                    </div>
-                  )}
-                </div>
-
-                <div className="ml-auto flex items-center gap-4 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2">
-                  <AreaReadout preview={preview} />
-                  <div className="border-l border-primary/20 pl-3 text-right">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      PLC Charge
-                    </p>
-                    <p className="text-base font-bold tabular-nums text-primary">
-                      {preview.plc}
-                    </p>
+                      <input
+                        type="checkbox"
+                        className="h-3 w-3 rounded border-stone-300 accent-stone-800"
+                        checked={row.irregular}
+                        onChange={(e) =>
+                          update(i, {
+                            irregular: e.target.checked,
+                            ...(e.target.checked
+                              ? { widthFt: "", lengthFt: "" }
+                              : { exactAreaSqFt: "", exactAreaReason: "" }),
+                          })
+                        }
+                      />
+                      Irreg.
+                    </label>
+                    {rows.length > 1 && (
+                      <button
+                        type="button"
+                        title="Remove this plot"
+                        className="p-1 rounded text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-1.5 pt-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-                  Boundaries (North · East · South · West)
-                </span>
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-                  {row.boundaries.map((boundary, b) => (
-                    <SideControl
-                      key={boundary.side}
-                      layout="inline"
-                      boundary={boundary}
-                      onChange={(patch) =>
-                        update(i, {
-                          boundaries: row.boundaries.map((x, j) => (j === b ? { ...x, ...patch } : x)),
-                        })
-                      }
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-border/40">
-                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    className="rounded border-input text-primary focus:ring-primary/40 h-4 w-4"
-                    checked={row.irregular}
-                    onChange={(e) =>
+              {/* ── Bottom line: 4 boundaries with shaded background and dark vertical dividers ── */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 bg-stone-50/80 divide-x divide-y lg:divide-y-0 divide-stone-300 rounded-b-xl border-t border-stone-200">
+                {row.boundaries.map((boundary, b) => (
+                  <SideControl
+                    key={boundary.side}
+                    layout="inline"
+                    boundary={boundary}
+                    plcComponents={project?.plcComponents}
+                    onChange={(patch) =>
                       update(i, {
-                        irregular: e.target.checked,
-                        ...(e.target.checked
-                          ? { widthFt: "", lengthFt: "" }
-                          : { exactAreaSqFt: "", exactAreaReason: "" }),
+                        boundaries: row.boundaries.map((x, j) => (j === b ? { ...x, ...patch } : x)),
                       })
                     }
                   />
-                  <span>Irregular Plot — specify area directly</span>
-                </label>
-                <div className="flex items-center gap-3">
-                  {preview.issue && (
-                    <span className="rounded-md bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-700 dark:text-amber-400 border border-amber-500/20">
-                      {preview.issue}
-                    </span>
-                  )}
-                  {rows.length > 1 && (
-                    <button
-                      type="button"
-                      className="text-xs font-medium text-destructive hover:underline"
-                      onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
-                    >
-                      Remove Plot
-                    </button>
-                  )}
-                </div>
+                ))}
               </div>
+
+              {/* Validation issue */}
+              {preview.issue && (
+                <div className="px-3 py-1.5 border-t border-[#EAEAEA] rounded-b-xl bg-amber-50">
+                  <span className="text-[11px] font-medium text-amber-700">{preview.issue}</span>
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => setRows((r) => [...r, { ...EMPTY_ROW, boundaries: emptyBoundaries() }])}
-        >
-          <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Plot
-        </Button>
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={onClose}>
-            Back
-          </Button>
-          <Button
+      {/* ── Footer actions ── */}
+      <div className="flex flex-col gap-3 pt-3 border-t border-[#EAEAEA]">
+
+        {/* Bulk-add bar */}
+        <div className="flex items-center gap-2 rounded-xl border border-[#EAEAEA] bg-stone-50 px-3 py-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 whitespace-nowrap shrink-0">
+            Add plots
+          </span>
+          <div className="flex items-center gap-2 flex-1">
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={1}
+                max={500}
+                className="h-7 w-16 rounded-lg border border-[#EAEAEA] bg-white px-2 text-xs text-stone-800 tabular-nums focus:outline-none focus:ring-1 focus:ring-stone-300 transition-colors"
+                value={bulkCount}
+                onChange={(e) => setBulkCount(e.target.value)}
+                title="Number of plots to add"
+              />
+              <span className="text-[11px] text-stone-400">plots</span>
+            </div>
+          </div>
+          <button
             type="button"
-            size="sm"
-            disabled={busy || !projectId || named === 0}
-            onClick={() =>
-              onSubmit(
-                projectId,
-                rows
-                  .filter((r) => r.plotNumber.trim())
-                  .map((r) => ({
-                    plotNumber: r.plotNumber,
-                    plotType: r.plotType as "RESIDENTIAL",
-                    widthFt: r.irregular ? undefined : r.widthFt || undefined,
-                    lengthFt: r.irregular ? undefined : r.lengthFt || undefined,
-                    exactAreaSqFt: r.irregular ? r.exactAreaSqFt || undefined : undefined,
-                    exactAreaReason: r.irregular ? r.exactAreaReason || undefined : undefined,
-                    boundaries: r.boundaries.map((b) => ({
-                      side: b.side as "NORTH",
-                      kind: b.kind as "ROAD",
-                      roadWidthFt: b.roadWidthFt || undefined,
-                      reference: b.reference || undefined,
-                    })),
-                  }))
-              )
-            }
+            onClick={handleBulkAdd}
+            className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100 hover:border-stone-300 transition-colors shrink-0"
           >
-            {busy ? "Saving…" : named > 0 ? `Save ${named} Plot${named === 1 ? "" : "s"}` : "Save"}
-          </Button>
+            <Plus className="h-3.5 w-3.5" />
+            Add {parseInt(bulkCount, 10) > 1 ? `${parseInt(bulkCount, 10)} plots` : "plot"}
+          </button>
         </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] text-stone-400">
+            {rows.length > 0 ? `${rows.length} plot${rows.length === 1 ? "" : "s"} in grid` : "No plots yet — add some above"}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onClose}
+              className="rounded-lg border-[#EAEAEA] text-stone-600 hover:bg-stone-50"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || !projectId || named === 0}
+              onClick={() =>
+                onSubmit(
+                  projectId,
+                  rows
+                    .filter((r) => r.plotNumber.trim())
+                    .map((r) => ({
+                      plotNumber: r.plotNumber,
+                      plotType: r.plotType as "RESIDENTIAL",
+                      widthFt: r.irregular ? undefined : parseDimension(r.widthFt) || undefined,
+                      lengthFt: r.irregular ? undefined : parseDimension(r.lengthFt) || undefined,
+                      exactAreaSqFt: r.irregular ? r.exactAreaSqFt || undefined : undefined,
+                      exactAreaReason: r.irregular ? r.exactAreaReason || undefined : undefined,
+                      boundaries: r.boundaries.map((b) => ({
+                        side: b.side as "NORTH",
+                        kind: b.kind as "ROAD",
+                        roadWidthFt: b.roadWidthFt || undefined,
+                        reference: b.reference || undefined,
+                      })),
+                    }))
+                )
+              }
+              className="rounded-lg bg-stone-900 text-white hover:bg-stone-700 border-0"
+            >
+              {busy ? "Saving…" : named > 0 ? `Save ${named} Plot${named === 1 ? "" : "s"}` : "Save"}
+            </Button>
+          </div>
+        </div>
+
       </div>
-      <p className="text-[11px] text-muted-foreground">Prepared on {istDay(new Date())} (IST).</p>
+
+      <p className="text-[10px] text-stone-400 text-right">Prepared {istDay(new Date())} (IST).</p>
     </Modal>
   );
 }

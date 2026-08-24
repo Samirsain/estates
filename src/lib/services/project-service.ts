@@ -22,7 +22,12 @@ const D = Prisma.Decimal;
  * the fixed catalogue, the band is a number, and the label is generated from
  * both. Nothing here is free text.
  */
-export type PlcComponentInput = { category: PlcCategory; threshold?: string | null; percent: string };
+export type PlcComponentInput = {
+  category: PlcCategory;
+  threshold?: string | null;
+  percent: string;
+  remark?: string | null;
+};
 
 /**
  * A Project could not be changed at all until now: the service offered
@@ -569,6 +574,7 @@ function componentRows(components: readonly PlcComponentInput[]) {
     category: component.category,
     threshold: PLC_CATEGORIES[component.category].banded ? new D(component.threshold!).toFixed(2) : null,
     percent: new D(component.percent).toFixed(4),
+    remark: component.remark || null,
   }));
 }
 
@@ -637,7 +643,7 @@ function validateComponents(components: readonly PlcComponentInput[]) {
     } catch {
       blocked(`${name} has an invalid percentage.`);
     }
-    if (percent!.lte(0)) blocked(`${name} must be greater than 0%.`);
+    if (percent!.lt(0)) blocked(`${name} cannot be a negative percentage.`);
     if (percent!.gt(100)) blocked(`${name} cannot exceed 100%.`);
   }
 }

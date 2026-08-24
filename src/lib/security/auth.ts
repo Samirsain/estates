@@ -107,3 +107,6 @@ export function rateLimit(key: string, now: Date = new Date()): boolean {
 export function resetRateLimit(): void {
   buckets.clear();
 }
+
+export { recordSecurityEvent } from "./audit.ts";
+

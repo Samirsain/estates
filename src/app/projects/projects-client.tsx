@@ -4,7 +4,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Building2, Layers, MapPin, Pencil, Plus, ScrollText } from "lucide-react";
+import { Building2, ChevronDown, ChevronRight, Info, Layers, MapPin, Pencil, Plus, ScrollText } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ import {
   type ActionResult,
 } from "./actions";
 
-type ComponentRow = { category: PlcCategory; threshold: string | null; percent: string };
+type ComponentRow = { category: PlcCategory; threshold: string | null; percent: string; remark?: string | null };
 
 export type ProjectRowView = {
   id: string;
@@ -126,6 +126,7 @@ export default function ProjectsClient({
   const [lifecycle, setLifecycle] = React.useState<ProjectRowView | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
+  const [detail, setDetail] = React.useState<ProjectRowView | null>(null);
 
   async function run(action: () => Promise<ActionResult>) {
     setBusy(true);
@@ -180,9 +181,18 @@ export default function ProjectsClient({
                   rather than a second pill competing with the badge. */}
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="truncate text-lg font-semibold leading-tight tracking-tight text-foreground">
-                    {project.name}
-                  </h2>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 text-left group"
+                    onClick={() => router.push(`/projects/${project.id}`)}
+                    title="Click to view full details"
+                  >
+                    <Info className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
+                    <h2 className="truncate text-lg font-semibold leading-tight tracking-tight text-foreground group-hover:text-primary transition-colors">
+                      {project.name}
+                    </h2>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </button>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {project.isExternalResaleGroup
                       ? "External Resale Property Group"
@@ -323,6 +333,66 @@ export default function ProjectsClient({
             </Card>
           ))}
         </div>
+
+        {detail && (
+          <div className="rounded-2xl border border-border/80 bg-card/70 p-5 shadow-sm space-y-4 text-sm">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-foreground">{detail.name} — Full Details</h3>
+              <button
+                type="button"
+                onClick={() => setDetail(null)}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >Close ✕</button>
+            </div>
+            <dl className="grid gap-2 sm:grid-cols-2 text-xs">
+              <Row label="Project Code" value={detail.projectCode} />
+              <Row label="Type" value={TYPE_LABEL[detail.type] ?? detail.type} />
+              <Row label="Lifecycle" value={LIFECYCLE_LABEL[detail.lifecycle] ?? detail.lifecycle} />
+              <Row label="City" value={detail.city ?? "—"} />
+              <Row label="Location" value={detail.location ?? "—"} />
+              <Row label="Developer" value={detail.developer ?? "—"} />
+              <Row label="RERA Number" value={detail.reraNumber ?? "Not recorded"} />
+              <Row label="Total Plots" value={String(detail.plotCount)} />
+            </dl>
+            {detail.plotTypeCounts.length > 0 && (
+              <div className="text-xs">
+                <p className="font-medium text-muted-foreground mb-1">Plot Breakdown</p>
+                <ul className="space-y-0.5">
+                  {detail.plotTypeCounts.map(({ plotType, count }) => (
+                    <li key={plotType} className="tabular-nums">
+                      {count} {PLOT_TYPE_LABEL[plotType] ?? plotType}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {detail.plcVersions.length > 0 && (
+              <div className="text-xs">
+                <p className="font-medium text-muted-foreground mb-1">PLC Version History</p>
+                <ul className="space-y-1.5">
+                  {detail.plcVersions.map((v) => (
+                    <li key={v.id} className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
+                      <div className="flex justify-between gap-2">
+                        <span className="font-medium">v{v.version} · {PLC_STATUS_LABEL[v.status] ?? v.status}</span>
+                        {v.effectiveFrom && (
+                          <span className="text-muted-foreground">{formatIst(v.effectiveFrom)}</span>
+                        )}
+                      </div>
+                      {v.reason && <p className="mt-0.5 text-muted-foreground">{v.reason}</p>}
+                      {v.components.length > 0 && (
+                        <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                          {v.components.map((c, i) => (
+                            <li key={i}>{plcComponentLabels([c])[0]} · {formatPercent(c.percent)}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {creating && (
@@ -424,7 +494,12 @@ function ComponentEditor({
 
   /** Band labels read as ranges, which needs the whole list, not one row. */
   const labels = plcComponentLabels(
-    rows.map((r) => ({ category: r.category, threshold: r.threshold, percent: r.percent || "0" }))
+    rows.map((r) => ({
+      category: r.category,
+      threshold: r.threshold,
+      percent: r.percent || "0",
+      remark: r.remark,
+    }))
   );
 
   return (
@@ -435,69 +510,136 @@ function ComponentEditor({
       </p>
       {rows.map((row, index) => {
         const meta = PLC_CATEGORIES[row.category];
+
         return (
-          <div key={index} className="grid gap-2 md:grid-cols-[1.2fr_0.8fr_0.8fr]">
-            <Field label="Category">
-              <select
-                className={inputClass}
-                value={row.category}
-                onChange={(e) => {
-                  const category = e.target.value as PlcCategory;
-                  update(index, {
-                    category,
-                    threshold: PLC_CATEGORIES[category].banded ? (row.threshold ?? "") : null,
-                  });
-                }}
-              >
-                {PLC_CATEGORY_ORDER.map((category) => (
-                  <option key={category} value={category}>
-                    {PLC_CATEGORIES[category].label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label={meta.banded ? `From (${meta.unit})` : "Band"}>
-              {meta.banded ? (
-                <Input
-                  value={row.threshold ?? ""}
-                  inputMode="decimal"
-                  onChange={(e) => update(index, { threshold: e.target.value })}
-                  placeholder={row.category === "OPEN_SIDES" ? "2" : "40"}
-                />
+          <div key={index} className="rounded-xl border border-border/70 bg-muted/20 p-3 space-y-2 transition-all">
+            <div className="grid gap-2 md:grid-cols-[1fr_1fr_0.6fr_0.6fr_auto] items-end">
+              <Field label="Category">
+                <select
+                  className={inputClass}
+                  value={row.category}
+                  onChange={(e) => {
+                    const category = e.target.value as PlcCategory;
+                    update(index, {
+                      category,
+                      threshold: PLC_CATEGORIES[category].banded ? (row.threshold ?? "") : null,
+                      remark: "",
+                    });
+                  }}
+                >
+                  {PLC_CATEGORY_ORDER.map((category) => (
+                    <option key={category} value={category}>
+                      {PLC_CATEGORIES[category].label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              {row.category === "OPEN_SIDES" ? (
+                <div className="md:col-span-2">
+                  <Field label="Open Side Type">
+                    <select
+                      className={inputClass}
+                      value={row.threshold ?? ""}
+                      onChange={(e) => update(index, { threshold: e.target.value })}
+                    >
+                      <option value="">-- Select Open Side Type --</option>
+                      <option value="2">Two Side Open</option>
+                      <option value="2.5">Corner Plot</option>
+                      <option value="3">Three Side Open</option>
+                      <option value="4">Four Side Open</option>
+                    </select>
+                  </Field>
+                </div>
+              ) : !meta.banded ? (
+                <div className="md:col-span-2">
+                  <Field label="Charge Rule">
+                    <div className="flex h-9 items-center rounded-lg border border-border/70 bg-card px-3 text-xs font-medium text-muted-foreground">
+                      Flat Single Charge — Applies once if plot faces a park or playground
+                    </div>
+                  </Field>
+                </div>
               ) : (
-                <p className="flex h-10 items-center px-3 text-xs text-muted-foreground">
-                  Not banded
-                </p>
+                <>
+                  <Field label="Remark / Road Name">
+                    <Input
+                      value={row.remark ?? ""}
+                      onChange={(e) => update(index, { remark: e.target.value })}
+                      placeholder="e.g. Expressway, Highway, 60ft Main Road"
+                    />
+                  </Field>
+                  <Field label={`From (${meta.unit})`}>
+                    <Input
+                      value={row.threshold ?? ""}
+                      inputMode="decimal"
+                      onChange={(e) => update(index, { threshold: e.target.value })}
+                      placeholder="40"
+                    />
+                  </Field>
+                </>
               )}
-            </Field>
-            <Field label="Percent">
-              <Input
-                value={row.percent}
-                inputMode="decimal"
-                onChange={(e) => update(index, { percent: e.target.value })}
-              />
-            </Field>
-            <p className="text-[11px] text-muted-foreground md:col-span-3">
-              Reads as <span className="text-foreground">{labels[index]}</span>
-              {row.percent.trim() !== "" && ` · ${formatPercent(row.percent)}`}
-            </p>
+
+              <Field label="Percent">
+                <Input
+                  value={row.percent}
+                  inputMode="decimal"
+                  onChange={(e) => update(index, { percent: e.target.value })}
+                  placeholder="%"
+                />
+              </Field>
+
+              <div className="pb-0.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-9 w-9 p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  title="Remove component"
+                  onClick={() => onChange(rows.filter((_, i) => i !== index))}
+                >
+                  ✕
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-border/40 pt-1.5 text-[11px] text-muted-foreground">
+              <span>
+                Reads as: <strong className="font-semibold text-foreground">{labels[index]}</strong>
+              </span>
+              {row.percent.trim() !== "" && (
+                <span className="rounded bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                  +{formatPercent(row.percent)}
+                </span>
+              )}
+            </div>
           </div>
         );
       })}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2 pt-1">
         <Button
           type="button"
           size="sm"
           variant="outline"
-          onClick={() => onChange([...rows, { category: "ROAD_WIDTH", threshold: "", percent: "" }])}
+          onClick={() => onChange([...rows, { category: "ROAD_WIDTH", threshold: "", percent: "", remark: "" }])}
         >
-          Add component
+          + Road Rule
         </Button>
-        {rows.length > 0 && (
-          <Button type="button" size="sm" variant="ghost" onClick={() => onChange(rows.slice(0, -1))}>
-            Remove last
-          </Button>
-        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => onChange([...rows, { category: "OPEN_SIDES", threshold: "2.5", percent: "", remark: "" }])}
+        >
+          + Open Side Rule
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => onChange([...rows, { category: "PARK_FACING", threshold: null, percent: "", remark: "" }])}
+        >
+          + Park / Playground Facing Rule
+        </Button>
       </div>
     </div>
   );
@@ -608,16 +750,10 @@ function ProjectDialog({
   onClose: () => void;
   onSubmit: (input: Parameters<typeof createProjectAction>[0]) => void;
 }) {
-  const [components, setComponents] = React.useState<ComponentRow[]>([
-    { category: "ROAD_WIDTH", threshold: "40", percent: "5" },
-  ]);
-  const [external, setExternal] = React.useState(false);
-
   return (
     <Modal
       title="New Project"
       description="Created as Unreleased. Make it Active only when it is ready to sell. The Project Code is generated from the name."
-      wide
       onClose={onClose}
     >
       <form
@@ -626,19 +762,12 @@ function ProjectDialog({
           e.preventDefault();
           onSubmit({
             ...readProjectFields(new FormData(e.currentTarget)),
-            isExternalResaleGroup: external,
-            components,
+            isExternalResaleGroup: false,
+            components: [],
           });
         }}
       >
         <ProjectFieldset />
-
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <input type="checkbox" checked={external} onChange={(e) => setExternal(e.target.checked)} />
-          This is an External Resale Property Group (holds acquired outside properties, PRD §11.6)
-        </label>
-
-        {!external && <ComponentEditor rows={components} onChange={setComponents} />}
 
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
@@ -727,8 +856,9 @@ function PlcDialog({
       ? project.components.map((c) => ({
           ...c,
           percent: c.percent.includes(".") ? c.percent.replace(/0+$/, "").replace(/\.$/, "") : c.percent,
+          remark: c.remark || "",
         }))
-      : [{ category: "ROAD_WIDTH" as PlcCategory, threshold: "", percent: "" }]
+      : [{ category: "ROAD_WIDTH" as PlcCategory, threshold: "", percent: "", remark: "" }]
   );
   const [reason, setReason] = React.useState("");
 

@@ -6,7 +6,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Eye } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -55,7 +55,7 @@ export default function CustomersClient({
   rows: CustomerRowView[];
   permissions: { viewFullAadhaar: boolean; manageEnquiry: boolean };
 }) {
-  useRouter();
+  const router = useRouter();
   const [search, setSearch] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState("ALL");
   const [openId, setOpenId] = React.useState<string | null>(null);
@@ -147,11 +147,12 @@ export default function CustomersClient({
                     <td className="rounded-l-xl px-3 py-3">
                       <button
                         type="button"
-                        className="text-left font-semibold hover:underline"
-                        onClick={() => openDetail(row)}
-                        aria-expanded={openId === row.id}
+                        className="inline-flex items-center gap-1.5 font-bold text-primary hover:underline group"
+                        onClick={() => router.push(`/customers/${row.id}`)}
+                        aria-label={`View details for ${row.customerId}`}
                       >
-                        {row.customerId}
+                        <Eye className="h-3.5 w-3.5 text-primary/70 group-hover:text-primary transition-colors" />
+                        <span>{row.customerId}</span>
                       </button>
                       <span className="block text-[11px] text-muted-foreground">{row.name}</span>
                       {row.experience && (

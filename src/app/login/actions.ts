@@ -242,7 +242,7 @@ export async function memberLogin(form: FormData): Promise<void> {
     result.reason === "TERMS"
       ? `&loginId=${encodeURIComponent(String(form.get("loginId") ?? "").trim())}`
       : "";
-  redirect(`/login?tab=member&error=${result.reason}${loginId}`);
+  redirect(`/portal/login?error=${result.reason}${loginId}`);
 }
 
 /* ---------------------------------------------------------------- sign out */

@@ -24,6 +24,7 @@ import {
   setCommissionHoldAction,
   setMemberStatusAction,
   updateMemberReraAction,
+  generateMemberAutoLoginLinkAction,
   type ActionResult,
   type BankDetailView,
   type MemberDetail,
@@ -122,14 +123,16 @@ export default function MembersClient({
   const [detail, setDetail] = React.useState<MemberDetail | null>(null);
   const [banks, setBanks] = React.useState<BankDetailView[]>([]);
 
-  function copyInviteText(memberId: string, name: string) {
+  async function copyInviteText(memberId: string, name: string) {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const link = `${origin}/login?tab=member&loginId=${memberId}`;
-    const text = `🌟 Welcome to 3% Club Real Estate Partner Network!\n\nHi ${name}, your Member account (${memberId}) is active.\n\n🔗 Direct Portal Link:\n${link}\n\n🆔 Member ID: ${memberId}\n🔑 Initial Password: ChangeMe#2026\n\nClick the link above to access your portal, view inventory, request plot holds, and submit buyer leads!`;
+    const res = await generateMemberAutoLoginLinkAction(memberId);
+
+    const link = res.ok && res.linkPath ? `${origin}${res.linkPath}` : `${origin}/portal/login?loginId=${memberId}`;
+    const text = `🌟 Welcome to 3% Real Estate Club Member Portal!\n\nHi ${name}, your Member account (${memberId}) is active.\n\n🔗 Instant Auto-Login Link (Direct Portal Access):\n${link}\n\n🆔 Member ID: ${memberId}\n🔑 Initial Password: ChangeMe#2026\n\nClick the link above to log in automatically and access your portal!`;
 
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(text);
-      setNotice({ kind: "ok", text: `Copied portal invitation link & credentials for ${memberId} (${name}) to clipboard!` });
+      await navigator.clipboard.writeText(text);
+      setNotice({ kind: "ok", text: `Copied instant auto-login link for ${memberId} (${name}) to clipboard!` });
     }
   }
 
@@ -268,11 +271,12 @@ export default function MembersClient({
                     <td className="rounded-l-xl px-3 py-3">
                       <button
                         type="button"
-                        className="text-left font-semibold hover:underline"
-                        onClick={() => openDetail(row)}
-                        aria-expanded={openId === row.id}
+                        className="inline-flex items-center gap-1.5 font-bold text-primary hover:underline group"
+                        onClick={() => router.push(`/members/${row.id}`)}
+                        aria-label={`View details for ${row.memberId}`}
                       >
-                        {row.memberId}
+                        <Eye className="h-3.5 w-3.5 text-primary/70 group-hover:text-primary transition-colors" />
+                        <span>{row.memberId}</span>
                       </button>
                       <span className="block text-[11px] text-muted-foreground">{row.name}</span>
                       {row.experience && (

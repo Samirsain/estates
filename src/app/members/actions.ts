@@ -11,6 +11,7 @@ import { recordSecurityEvent } from "@/lib/security/audit";
 import { CommandError } from "@/lib/services/command";
 import { decideBankDetails, enterBankDetails, listBankDetails } from "@/lib/services/bank-service";
 import { applyMemberCommissionHold } from "@/lib/services/commission-service";
+import { signAutoLoginToken } from "@/lib/security/session";
 import { db } from "@/lib/db";
 import {
   activateMember,
@@ -392,3 +393,37 @@ export async function loadMemberDetail(memberProfileId: string) {
 }
 
 export type MemberDetail = NonNullable<Awaited<ReturnType<typeof loadMemberDetail>>>;
+
+export async function generateMemberAutoLoginLinkAction(
+  memberId: string
+): Promise<ActionResult & { linkPath?: string }> {
+  await requireStaff();
+  try {
+    const member = await db.memberProfile.findUnique({
+      where: { memberId },
+      include: { portalAccount: true },
+    });
+    if (!member || !member.portalAccount) {
+      return { ok: false, error: "Member portal account not found." };
+    }
+    if (member.status !== "ACTIVE" || member.portalAccount.status !== "ACTIVE") {
+      return { ok: false, error: "Member account is deactivated." };
+    }
+
+    const token = signAutoLoginToken(
+      {
+        memberId: member.memberId,
+        portalAccountId: member.portalAccount.id,
+      },
+      7
+    );
+
+    return {
+      ok: true,
+      linkPath: `/portal/autologin?token=${token}`,
+    };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+

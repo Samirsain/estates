@@ -108,8 +108,8 @@ export type PlcCategory = "ROAD_WIDTH" | "OPEN_SIDES" | "PARK_FACING" | "PLAYGRO
 export const PLC_CATEGORIES: Record<PlcCategory, { label: string; banded: boolean; unit: string | null }> = {
   ROAD_WIDTH: { label: "Road width", banded: true, unit: "ft" },
   OPEN_SIDES: { label: "Open sides", banded: true, unit: "sides" },
-  PARK_FACING: { label: "Park facing", banded: false, unit: null },
-  PLAYGROUND_FACING: { label: "Playground facing", banded: false, unit: null },
+  PARK_FACING: { label: "Park / Playground facing", banded: false, unit: null },
+  PLAYGROUND_FACING: { label: "Park / Playground facing", banded: false, unit: null },
 };
 
 /** Display order, so a breakdown reads the same way on every screen. */
@@ -117,7 +117,6 @@ export const PLC_CATEGORY_ORDER: PlcCategory[] = [
   "ROAD_WIDTH",
   "OPEN_SIDES",
   "PARK_FACING",
-  "PLAYGROUND_FACING",
 ];
 
 /** One configured row of a PLC version: a category, its band, its percentage. */
@@ -126,6 +125,7 @@ export type PlcComponentRule = {
   /** Feet for ROAD_WIDTH, a count of open sides for OPEN_SIDES, null otherwise. */
   threshold?: string | number | null;
   percent: string | number;
+  remark?: string | null;
 };
 
 export type PlcSnapshotComponent = {
@@ -170,9 +170,7 @@ function bandValue(
  */
 export function plcComponentLabel(
   category: PlcCategory,
-  threshold?: string | number | null,
-  /** The next band up, when one exists, so a middle band reads as a range. */
-  nextThreshold?: string | number | null
+  threshold?: string | number | null
 ): string {
   const meta = PLC_CATEGORIES[category];
   if (!meta) return String(category);
@@ -182,32 +180,23 @@ export function plcComponentLabel(
   if (from === null) return `${meta.label} — band not set`;
 
   if (category === "OPEN_SIDES") {
-    return `${SIDE_WORD[from.toNumber()] ?? from.toString()} side open`;
+    const val = from.toNumber();
+    if (val === 2) return "Two side open";
+    if (val === 2.5) return "Corner Plot";
+    if (val === 3) return "Three side open";
+    if (val === 4) return "Four side open";
+    return `${SIDE_WORD[val] ?? from.toString()} side open`;
   }
-  const next = bandValue(nextThreshold);
-  if (next === null) return `Road ${from.toString()} ft & above`;
-  return `Road ${from.toString()} – ${next.sub(1).toString()} ft`;
+  return `Road ${from.toString()} ft`;
 }
 
 /**
  * Labels for a whole configured version, in the order given.
- *
- * A band only reads as a range once you know the band above it, so labelling
- * rows one at a time gets it wrong — every road band comes out "& above". This
- * is the one place that pairing is worked out, and every screen that lists a
- * configuration uses it.
  */
 export function plcComponentLabels(rules: readonly PlcComponentRule[]): string[] {
   return rules.map((rule) => {
-    const mine = PLC_CATEGORIES[rule.category]?.banded ? bandValue(rule.threshold) : null;
-    if (mine === null) return plcComponentLabel(rule.category, rule.threshold);
-
-    const next = rules
-      .filter((r) => r.category === rule.category)
-      .map((r) => bandValue(r.threshold))
-      .filter((t): t is Decimal => t !== null && t.gt(mine))
-      .sort((a, b) => a.cmp(b))[0];
-    return plcComponentLabel(rule.category, rule.threshold, next ? next.toString() : null);
+    const label = plcComponentLabel(rule.category, rule.threshold);
+    return rule.remark ? `${label} (${rule.remark})` : label;
   });
 }
 
@@ -234,8 +223,11 @@ export function validatePlcComponents(rules: readonly PlcComponentRule[]): void 
     const band = meta.banded ? bandValue(rule.threshold) : null;
     if (meta.banded && band === null) throw new Error(`${meta.label} has an invalid band value.`);
 
-    if (rule.category === "OPEN_SIDES" && (!band!.isInteger() || band!.lt(2) || band!.gt(4))) {
-      throw new Error("Open sides must be a whole number from 2 to 4 — a Plot has four sides.");
+    if (rule.category === "OPEN_SIDES") {
+      const val = band!.toNumber();
+      if (val !== 2 && val !== 2.5 && val !== 3 && val !== 4) {
+        throw new Error("Open sides must be 2 (Two Side Open), 2.5 (Corner Plot), 3 (Three Side Open), or 4 (Four Side Open).");
+      }
     }
     if (rule.category === "ROAD_WIDTH" && band!.lte(0)) {
       throw new Error("A road width band must be greater than zero.");
@@ -297,9 +289,10 @@ export function buildPlcSnapshot(
     const index = tiers.findIndex((c) => reached.gte(new D(c.threshold!)));
     if (index === -1) return;
     const hit = tiers[index];
+    const baseLabel = plcComponentLabel(category, hit.threshold);
     matched.set(category, {
       rule: hit,
-      label: plcComponentLabel(category, hit.threshold, index === 0 ? null : tiers[index - 1].threshold),
+      label: hit.remark ? `${baseLabel} (${hit.remark})` : baseLabel,
       evidence,
     });
   };
@@ -309,21 +302,35 @@ export function buildPlcSnapshot(
     widestRoad,
     widestRoad === null ? "" : `${sides(roads)} — widest road ${widestRoad.toString()} ft`
   );
-  chargeBand("OPEN_SIDES", open.length > 0 ? new D(open.length) : null, `${sides(open)} open`);
+  let openSidesCount = open.length > 0 ? new D(open.length) : null;
+  if (open.length === 2) {
+    const s1 = open[0].side;
+    const s2 = open[1].side;
+    const opposite =
+      (s1 === "NORTH" && s2 === "SOUTH") ||
+      (s1 === "SOUTH" && s2 === "NORTH") ||
+      (s1 === "EAST" && s2 === "WEST") ||
+      (s1 === "WEST" && s2 === "EAST");
+    if (!opposite) {
+      openSidesCount = new D("2.5");
+    }
+  }
+  chargeBand("OPEN_SIDES", openSidesCount, open.length > 0 ? `${sides(open)} open` : "");
 
-  /** An unbanded category applies once if any side qualifies, however many do. */
-  const chargeFlag = (category: PlcCategory, qualifying: readonly Boundary[]) => {
-    if (qualifying.length === 0) return;
-    const rule = ruleComponents.find((c) => c.category === category);
-    if (!rule) return;
-    matched.set(category, {
-      rule,
-      label: plcComponentLabel(category),
-      evidence: `${sides(qualifying)} facing`,
-    });
-  };
-  chargeFlag("PARK_FACING", parks);
-  chargeFlag("PLAYGROUND_FACING", playgrounds);
+  /** Park and Playground facing are a single combined green-area PLC category — charged once if any side qualifies. */
+  const greenAreas = boundaries.filter((b) => b.kind === "PARK" || b.kind === "PLAYGROUND");
+  if (greenAreas.length > 0) {
+    const greenRule = ruleComponents.find(
+      (c) => c.category === "PARK_FACING" || c.category === "PLAYGROUND_FACING"
+    );
+    if (greenRule) {
+      matched.set(greenRule.category, {
+        rule: greenRule,
+        label: plcComponentLabel(greenRule.category),
+        evidence: `${sides(greenAreas)} facing`,
+      });
+    }
+  }
 
   const components: PlcSnapshotComponent[] = [];
   let totalPercent = new D(0);

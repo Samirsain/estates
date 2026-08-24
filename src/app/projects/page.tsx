@@ -38,6 +38,7 @@ export default async function ProjectsPage() {
           category: component.category,
           threshold: component.threshold?.toString() ?? null,
           percent: component.percent.toFixed(4),
+          remark: component.remark,
         })),
         // PLC spec §15.1 — published, draft and superseded together.
         plcVersions: project.plcRuleVersions.map((version) => ({
@@ -54,6 +55,7 @@ export default async function ProjectsPage() {
             category: component.category,
             threshold: component.threshold?.toString() ?? null,
             percent: component.percent.toFixed(4),
+            remark: component.remark,
           })),
         })),
       }))}
