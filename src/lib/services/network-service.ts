@@ -178,6 +178,7 @@ export async function activateMember(args: {
               reraNumber: args.reraNumber?.trim() || null,
               reraExpiryDate: args.reraExpiryDate ?? null,
               reraNotApplicableReason: args.reraNotApplicableReason?.trim() || null,
+            },
           });
 
       // Ensure PortalAccount exists so the Member can log into the Member Portal (PRD §17.1).
