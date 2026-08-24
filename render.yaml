@@ -22,7 +22,10 @@ services:
     # Render has no India region; Singapore is the closest to the Mumbai
     # database. Keep the two as close as the platform allows.
     region: singapore
-    buildCommand: npm ci && npm run build
+    # migrate deploy applies only pending migrations and never resets data. It
+    # runs before the build so a deploy can never serve code against a schema
+    # that has not caught up. It uses DIRECT_URL, which bypasses the pooler.
+    buildCommand: npm ci && npx prisma migrate deploy && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:

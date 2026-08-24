@@ -14,7 +14,7 @@
     "db:check": "node --env-file=.env prisma/db.check.ts && npm run booking:check && npm run commission:check && npm run phase5:check && npm run plc:check && npm run acquisition:check && npm run phase6:check && npm run phase7:check",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "check": "node src/lib/tasks.check.ts && node src/lib/security/security.check.ts && node src/lib/domain/domain.check.ts && tsc --noEmit",
+    "check": "node --import ./prisma/alias-loader.mjs src/lib/tasks.check.ts && node --import ./prisma/alias-loader.mjs src/lib/security/security.check.ts && node --import ./prisma/alias-loader.mjs src/lib/domain/domain.check.ts && tsc --noEmit",
     "booking:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/booking.check.ts",
     "db:ping": "node --env-file=.env prisma/ping.ts",
     "commission:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/commission.check.ts",

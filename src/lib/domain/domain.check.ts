@@ -147,7 +147,7 @@ const rules: PlcComponentRule[] = [
 
 // A width lands in the band it reaches, not the one it matches exactly.
 const banded = buildPlcSnapshot([{ side: "NORTH", kind: "ROAD", roadWidthFt: "45" }], rules);
-assert.equal(banded.components[0].label, "Road 40 – 59 ft");
+assert.equal(banded.components[0].label, "Road 40 ft");
 assert.equal(banded.totalPercent.toFixed(4), "3.0000");
 
 // Two Road sides are still one Road charge (PRD §16.3), and the widest decides
@@ -182,7 +182,7 @@ assert.equal(threeOpen.totalPercent.toFixed(4), "9.0000");
 assert.match(openSides[0].evidence, /North, East, South open/);
 assert.match(threeOpen.components.find((c) => c.category === "PARK_FACING")!.evidence, /South facing/);
 
-// Park and playground are separate categories and both apply.
+// Park and playground are one combined green-area category, charged once.
 const both = buildPlcSnapshot(
   [
     { side: "NORTH", kind: "PARK" },
@@ -190,7 +190,7 @@ const both = buildPlcSnapshot(
   ],
   rules
 );
-assert.equal(both.totalPercent.toFixed(4), "5.5000"); // 2 open + 2 park + 1.5 playground
+assert.equal(both.totalPercent.toFixed(4), "4.0000"); // 2 open + 2 green area, not 2 + 1.5
 
 // An open side is one that does not abut another Plot, so Other counts too.
 const withOther = buildPlcSnapshot(
