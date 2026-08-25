@@ -6,8 +6,14 @@
  * Apple museum-gallery design system — system/apple.md.
  *
  * A light gallery: white and parchment canvases, one interactive colour
- * (Action Blue #0066cc), hairline dividers instead of borders, and no shadows
- * on chrome. The interface recedes so the records can be read.
+ * (#c1471a, the logo's own hue), hairline dividers instead of borders, and no
+ * shadows on chrome. The interface recedes so the records can be read.
+ *
+ * The interactive colour is a darker shade than the logo's #FF7844 / #E85C31:
+ * those are built for a large gradient shape and carry white text at 2.6:1 and
+ * 3.5:1. This one reads 5.0:1, so a button label stays legible. The destructive
+ * red moved with it — at the logo's hue it sat 13 degrees from the action
+ * colour, which makes Delete and Publish the same button at a glance.
  *
  * Every token is HSL triplets because Tailwind composes them with opacity.
  */
@@ -24,7 +30,7 @@
     --popover-foreground: 240 6% 12%;
 
     /* Action Blue — the single interactive colour */
-    --primary: 210 100% 40%; /* #0066cc */
+    --primary: 16 76% 43%; /* #c1471a - the logo's hue, dark enough to carry white text */
     --primary-foreground: 0 0% 100%;
 
     /* parchment, for surfaces that sit behind the canvas */
@@ -35,15 +41,15 @@
     --muted-foreground: 0 0% 48%; /* ink-muted-48 #7a7a7a */
 
     --accent: 240 9% 96%;
-    --accent-foreground: 210 100% 40%;
+    --accent-foreground: 16 76% 43%;
 
-    --destructive: 3 78% 47%;
+    --destructive: 350 72% 42%; /* #b81e38 - 26 degrees off the primary */
     --destructive-foreground: 0 0% 100%;
 
     /* hairline #e0e0e0, divider-soft #f0f0f0 */
     --border: 0 0% 88%;
     --input: 0 0% 88%;
-    --ring: 210 100% 45%; /* primary-focus #0071e3 */
+    --ring: 16 76% 48%; /* primary-focus #d74f1d */
 
     /* rounded.md 11px is the working default; sm 8px, lg 18px */
     --radius: 0.6875rem;

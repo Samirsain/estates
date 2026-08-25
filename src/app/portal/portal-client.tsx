@@ -253,7 +253,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-foreground">{p.project}</p>
-                      <span className="rounded-md bg-blue-50 px-2 py-0.5 font-mono text-xs font-semibold text-primary">
+                      <span className="rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-semibold text-primary">
                         {p.label}
                       </span>
                     </div>
@@ -372,7 +372,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
           </div>
 
           <div className="border-t border-border/50 pt-4 space-y-3">
-            <h3 className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-primary">
+            <h3 className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-primary">
               <Users className="h-3 w-3" /> Members you invited
             </h3>
             {data.invitedMembers.length === 0 ? (
@@ -482,7 +482,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
           </p>
 
           <div className="border-t border-border/50 pt-4 space-y-3">
-            <h3 className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-primary">
+            <h3 className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-primary">
               <ShieldCheck className="h-3 w-3" /> Commission Breakdown
             </h3>
             {data.commissions.length === 0 ? (
@@ -536,7 +536,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
       {/* Modals */}
       {requesting && (
         <Modal title="Request Hold" onClose={() => setRequesting(null)}>
-          <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-xs space-y-1">
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-xs space-y-1">
             <p className="font-bold text-primary">
               {requesting.project} · {requesting.label}
             </p>

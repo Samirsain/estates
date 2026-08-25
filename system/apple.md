@@ -3,6 +3,29 @@ version: alpha
 name: Apple-design-analysis
 description: A photography-first interface that turns marketing into a museum gallery. Edge-to-edge product tiles alternate light and dark canvases, framed by SF Pro Display headlines with negative letter-spacing and a single Action Blue (#0066cc) interactive color. UI chrome recedes so the product can speak — no decorative gradients, no shadows on chrome, only the one signature drop-shadow under product imagery resting on a surface.
 
+<!--
+  THIS PROJECT DEPARTS FROM THE REFERENCE ON ONE THING: the interactive colour.
+
+  Everything below describes Apple's system, where the single action colour is
+  Action Blue. The 3% Club logo is orange, and an interface whose only
+  interactive colour argues with its own mark is not one design. So the tokens
+  in src/app/globals.css carry the logo's hue instead:
+
+      primary        #c1471a   (was #0066cc)
+      primary-focus  #d74f1d   (was #0071e3)
+      destructive    #b81e38   (was #d5241a)
+
+  Not the logo's own #FF7844 / #E85C31 — those are built for a large gradient
+  shape and carry white text at 2.6:1 and 3.5:1, below AA. #c1471a is the same
+  hue at 5.0:1. The destructive red moved too: beside an orange action colour
+  the old red sat 13 degrees away, close enough that Delete and Publish read as
+  the same button. It is now 26 degrees off.
+
+  Every other rule here — one interactive colour and only one, hairline
+  dividers, no decorative gradients, no shadow on chrome — still holds.
+  globals.css is the source of truth for values; this file is the reasoning.
+-->
+
 colors:
   primary: "#0066cc"
   primary-focus: "#0071e3"

@@ -45,7 +45,7 @@ export default async function MemberLoginPage({
               role="alert"
               className={`mb-5 rounded-2xl border px-3.5 py-2.5 text-xs font-medium ${
                 NOTICES.has(error)
-                  ? "border-blue-200 bg-blue-50 text-blue-900"
+                  ? "border-primary/20 bg-primary/10 text-primary"
                   : "border-red-200 bg-red-50 text-red-700"
               }`}
             >
