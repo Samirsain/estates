@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowUpRight,
-  Building2,
   CheckCircle2,
   Layers,
   LogOut,
@@ -163,13 +162,11 @@ export default function PortalClient({ data }: { data: PortalData }) {
       <div className="rounded-2xl border border-border bg-card p-4">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-              <Building2 className="h-6 w-6" />
-            </div>
+            <img src="/logo.svg" alt="" className="h-12 w-12" />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold tracking-tight text-foreground">Member Portal</h1>
-                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-primary border border-blue-100">
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary border border-primary/20">
                   <UserCheck className="h-3 w-3" /> Member
                 </span>
               </div>

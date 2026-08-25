@@ -1,6 +1,6 @@
 // Staff and Member portal are separate security contexts (ARCHITECTURE §9.1).
 
-import { Building2, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { GENERIC_LOGIN_ERROR } from "@/lib/security/auth";
@@ -27,9 +27,7 @@ export default async function LoginPage({
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-md space-y-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary">
-            <Building2 className="h-6 w-6 text-white" />
-          </div>
+          <img src="/logo.svg" alt="" className="h-11 w-11" />
           <div>
             <h1 className="text-lg font-bold tracking-tight gradient-text">3% Club CRM</h1>
             <p className="text-xs text-muted-foreground">v3.1 — Staff Login</p>

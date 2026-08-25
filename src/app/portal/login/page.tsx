@@ -1,7 +1,7 @@
 // Member portal login — separate from Staff login (ARCHITECTURE §9.1).
 // A Member signs in with their Member ID. No Staff tab is shown here.
 
-import { Building2, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { GENERIC_LOGIN_ERROR } from "@/lib/security/auth";
@@ -30,9 +30,7 @@ export default async function MemberLoginPage({
     <div className="flex min-h-screen items-center justify-center px-4 py-12">
       <div className={`w-full space-y-4 ${needsTerms ? "max-w-lg" : "max-w-md"}`}>
         <div className="text-center space-y-2">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-            <Building2 className="h-6 w-6" />
-          </div>
+          <img src="/logo.svg" alt="" className="mx-auto h-12 w-12" />
           <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             Member Portal
           </h1>
