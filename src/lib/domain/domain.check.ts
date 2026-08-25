@@ -17,6 +17,7 @@ import {
   derivedFacing,
   plcComponentLabel,
   plcComponentLabels,
+  plcDisplayComponents,
   plotReturnState,
   restrictionBlocksSale,
   validatePlcComponents,
@@ -192,6 +193,27 @@ const both = buildPlcSnapshot(
 );
 assert.equal(both.totalPercent.toFixed(4), "4.0000"); // 2 open + 2 green area, not 2 + 1.5
 
+// A Project may configure the green area under either category name. Charging
+// it depended on the category the rule happened to carry, so a version that
+// named only Playground facing charged nothing at all — silently.
+const playgroundOnly = buildPlcSnapshot(
+  [{ side: "NORTH", kind: "PLAYGROUND" }],
+  [{ category: "PLAYGROUND_FACING", threshold: null, percent: "1.5" }]
+);
+assert.equal(playgroundOnly.totalPercent.toFixed(4), "1.5000");
+assert.equal(playgroundOnly.components.length, 1);
+
+// Charged once means the dearer of the two, not whichever the array listed
+// first: the order of a configured version must not decide the price.
+const greenReversed = buildPlcSnapshot(
+  [{ side: "NORTH", kind: "PARK" }],
+  [
+    { category: "PLAYGROUND_FACING", threshold: null, percent: "1.5" },
+    { category: "PARK_FACING", threshold: null, percent: "2" },
+  ]
+);
+assert.equal(greenReversed.totalPercent.toFixed(4), "2.0000");
+
 // An open side is one that does not abut another Plot, so Other counts too.
 const withOther = buildPlcSnapshot(
   [
@@ -349,6 +371,19 @@ assert.deepEqual(plcComponentLabels(rules), [
   "Two side open",
   "Park / Playground facing",
   "Park / Playground facing",
+]);
+
+// plcComponentLabels maps one label per configured row, which is what an editor
+// of the version needs. A reader of the version needs the charges instead: the
+// two green-area rows are one line, at the price the snapshot would use.
+assert.deepEqual(plcDisplayComponents(rules), [
+  { label: "Road 60 ft", percent: "5" },
+  { label: "Road 40 ft", percent: "3" },
+  { label: "Road 30 ft", percent: "2" },
+  { label: "Four side open", percent: "6" },
+  { label: "Three side open", percent: "4" },
+  { label: "Two side open", percent: "2" },
+  { label: "Park / Playground facing", percent: "2" },
 ]);
 
 /* ------------------------------------------------------ terms and privacy */

@@ -201,6 +201,60 @@ export function plcComponentLabels(rules: readonly PlcComponentRule[]): string[]
 }
 
 /**
+ * PLC spec §2 — Park facing and Playground facing are one green-area charge.
+ * The charge is emitted under this category whichever of the two a version
+ * happens to name, because PLC_CATEGORY_ORDER decides what reaches a snapshot
+ * and a category missing from it is dropped without a word.
+ */
+export const GREEN_AREA_CATEGORY = "PARK_FACING" as const;
+
+export function isGreenArea(category: PlcCategory): boolean {
+  return category === "PARK_FACING" || category === "PLAYGROUND_FACING";
+}
+
+/**
+ * The dearer of the configured green-area rules. Charged once means the higher
+ * percentage, not whichever row the version listed first: the order a Project
+ * happened to enter them in must not decide the price.
+ */
+export function greenAreaRule(
+  rules: readonly PlcComponentRule[]
+): PlcComponentRule | null {
+  const green = rules.filter((r) => isGreenArea(r.category));
+  if (green.length === 0) return null;
+  return green.reduce((dearest, r) =>
+    new D(r.percent).gt(new D(dearest.percent)) ? r : dearest
+  );
+}
+
+/**
+ * A configured version as it should be read: one row per charge. The two
+ * green-area rows collapse into the single one the derivation actually makes,
+ * so a reader can never add 2% and 1.5% and arrive at a price nobody pays.
+ */
+export function plcDisplayComponents(
+  rules: readonly PlcComponentRule[]
+): { label: string; percent: string }[] {
+  const labels = plcComponentLabels(rules);
+  const green = greenAreaRule(rules);
+  const out: { label: string; percent: string }[] = [];
+  let greenDone = false;
+  rules.forEach((rule, i) => {
+    if (isGreenArea(rule.category)) {
+      if (greenDone || !green) return;
+      greenDone = true;
+      out.push({
+        label: plcComponentLabel(GREEN_AREA_CATEGORY),
+        percent: String(green.percent),
+      });
+      return;
+    }
+    out.push({ label: labels[i], percent: String(rule.percent) });
+  });
+  return out;
+}
+
+/**
  * PLC spec §5.2 — a version whose bands contradict each other must not publish.
  * This throws rather than choosing one, because §5.3 forbids a silent fallback.
  */
@@ -320,13 +374,11 @@ export function buildPlcSnapshot(
   /** Park and Playground facing are a single combined green-area PLC category — charged once if any side qualifies. */
   const greenAreas = boundaries.filter((b) => b.kind === "PARK" || b.kind === "PLAYGROUND");
   if (greenAreas.length > 0) {
-    const greenRule = ruleComponents.find(
-      (c) => c.category === "PARK_FACING" || c.category === "PLAYGROUND_FACING"
-    );
+    const greenRule = greenAreaRule(ruleComponents);
     if (greenRule) {
-      matched.set(greenRule.category, {
+      matched.set(GREEN_AREA_CATEGORY, {
         rule: greenRule,
-        label: plcComponentLabel(greenRule.category),
+        label: plcComponentLabel(GREEN_AREA_CATEGORY),
         evidence: `${sides(greenAreas)} facing`,
       });
     }

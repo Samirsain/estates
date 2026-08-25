@@ -6,7 +6,7 @@ import Link from "next/link";
 import { requireStaff } from "@/lib/security/current-actor";
 import { listProjects } from "@/lib/services/project-service";
 import { formatIst, formatPercent } from "@/lib/tasks";
-import { plcComponentLabels } from "@/lib/domain/inventory";
+import { plcDisplayComponents } from "@/lib/domain/inventory";
 import { plcRules } from "@/lib/services/plc-service";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -209,11 +209,11 @@ export default async function ProjectDetailPage({
               >
                 {publishedVersion ? (
                   <ul className="space-y-1 text-xs">
-                    {plcComponentLabels(plcRules(publishedVersion.components)).map((label, i) => (
+                    {plcDisplayComponents(plcRules(publishedVersion.components)).map((c, i) => (
                       <li key={i} className="flex justify-between gap-3">
-                        <span className="text-muted-foreground">{label}</span>
+                        <span className="text-muted-foreground">{c.label}</span>
                         <span className="tabular-nums font-medium">
-                          {formatPercent(String(publishedVersion.components[i].percent))}
+                          {formatPercent(c.percent)}
                         </span>
                       </li>
                     ))}
@@ -302,11 +302,11 @@ export default async function ProjectDetailPage({
 
                       {v.components.length > 0 && (
                         <ul className="space-y-1 text-xs border-t border-border/40 pt-2">
-                          {plcComponentLabels(plcRules(v.components)).map((label, i) => (
+                          {plcDisplayComponents(plcRules(v.components)).map((c, i) => (
                             <li key={i} className="flex justify-between gap-3">
-                              <span className="text-muted-foreground">{label}</span>
+                              <span className="text-muted-foreground">{c.label}</span>
                               <span className="tabular-nums font-medium">
-                                {formatPercent(String(v.components[i].percent))}
+                                {formatPercent(c.percent)}
                               </span>
                             </li>
                           ))}

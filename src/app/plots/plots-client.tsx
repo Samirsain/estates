@@ -21,7 +21,7 @@ import { formatIst, formatPercent, formatQuantity, istDay, type StaffRole } from
 import {
   buildPlcSnapshot,
   calculateAreas,
-  plcComponentLabels,
+  plcDisplayComponents,
   type Boundary,
   type PlcComponentRule,
 } from "@/lib/domain/inventory";
@@ -1453,7 +1453,7 @@ function PrepareInventoryDialog({
   }
 
   const bands = project
-    ? plcComponentLabels(
+    ? plcDisplayComponents(
         project.plcComponents.map((c) => ({
           category: c.category as PlcComponentRule["category"],
           threshold: c.threshold,
@@ -1493,11 +1493,11 @@ function PrepareInventoryDialog({
               No published PLC version — publish one in Project setup first.
             </span>
           ) : (
-            bands.map((label, i) => (
-              <span key={label} className="text-[11px] text-stone-500">
-                {label}{" "}
+            bands.map((band, i) => (
+              <span key={i} className="text-[11px] text-stone-500">
+                {band.label}{" "}
                 <span className="font-semibold tabular-nums text-stone-800">
-                  {formatPercent(project!.plcComponents[i].percent)}
+                  {formatPercent(band.percent)}
                 </span>
               </span>
             ))

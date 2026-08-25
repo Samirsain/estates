@@ -15,6 +15,7 @@ import {
   PLC_CATEGORIES,
   PLC_CATEGORY_ORDER,
   plcComponentLabels,
+  plcDisplayComponents,
   type PlcCategory,
 } from "@/lib/domain/inventory";
 import { formatPercent } from "@/lib/tasks";
@@ -381,8 +382,11 @@ export default function ProjectsClient({
                       {v.reason && <p className="mt-0.5 text-muted-foreground">{v.reason}</p>}
                       {v.components.length > 0 && (
                         <ul className="mt-1 space-y-0.5 text-muted-foreground">
-                          {v.components.map((c, i) => (
-                            <li key={i}>{plcComponentLabels([c])[0]} · {formatPercent(c.percent)}</li>
+                          {plcDisplayComponents(v.components).map((c, i) => (
+                            <li key={i} className="flex justify-between gap-3">
+                              <span>{c.label}</span>
+                              <span className="tabular-nums">{formatPercent(c.percent)}</span>
+                            </li>
                           ))}
                         </ul>
                       )}
@@ -919,10 +923,9 @@ function PlcDialog({
                 <span>
                   Version {draft.version}
                   <span className="ml-2 text-[11px] text-muted-foreground">
-                    {plcComponentLabels(draft.components)
-                      .map((label, i) => `${label} ${formatPercent(draft.components[i].percent)}`)
-                      .join(" · ") ||
-                      "No component"}
+                    {plcDisplayComponents(draft.components)
+                      .map((c) => `${c.label} ${formatPercent(c.percent)}`)
+                      .join(" · ") || "No component"}
                   </span>
                   {draft.reason && (
                     <span className="block text-[11px] text-muted-foreground">{draft.reason}</span>
@@ -952,30 +955,44 @@ function PlcDialog({
                 <tr>
                   <th className="py-1">Version</th>
                   <th className="py-1">Status</th>
-                  <th className="py-1">Components</th>
+                  <th className="py-1 w-1/2">Components</th>
                   <th className="py-1">Effective</th>
                   <th className="py-1">Reason</th>
                 </tr>
               </thead>
               <tbody>
                 {project.plcVersions.map((v) => (
-                  <tr key={v.id} className={v.status === "PUBLISHED" ? "" : "text-muted-foreground"}>
-                    <td className="py-1 tabular-nums">{v.version}</td>
-                    <td className="py-1">{PLC_STATUS_LABEL[v.status] ?? v.status}</td>
-                    <td className="py-1">
-                      {v.components.length === 0
-                        ? "—"
-                        : plcComponentLabels(v.components)
-                            .map((label, i) => `${label} ${formatPercent(v.components[i].percent)}`)
-                            .join(" · ")}
-                    </td>
-                    <td className="py-1 text-[11px]">
-                      {v.effectiveFrom ? formatIst(v.effectiveFrom) : "Not published"}
-                      {v.effectiveTo && (
-                        <span className="block">to {formatIst(v.effectiveTo)}</span>
+                  <tr
+                    key={v.id}
+                    className={`align-top border-t border-border/40 ${
+                      v.status === "PUBLISHED" ? "" : "text-muted-foreground"
+                    }`}
+                  >
+                    <td className="py-1.5 tabular-nums">{v.version}</td>
+                    <td className="py-1.5">{PLC_STATUS_LABEL[v.status] ?? v.status}</td>
+                    <td className="py-1.5">
+                      {v.components.length === 0 ? (
+                        "—"
+                      ) : (
+                        <ul className="space-y-0.5">
+                          {plcDisplayComponents(v.components).map((c, i) => (
+                            <li key={i} className="flex justify-between gap-3">
+                              <span>{c.label}</span>
+                              <span className="tabular-nums">{formatPercent(c.percent)}</span>
+                            </li>
+                          ))}
+                        </ul>
                       )}
                     </td>
-                    <td className="py-1 text-[11px]">{v.reason ?? "—"}</td>
+                    <td className="py-1.5 text-[11px] tabular-nums">
+                      {v.effectiveFrom ? formatIst(v.effectiveFrom) : "Not published"}
+                      {v.effectiveTo && (
+                        <span className="block text-muted-foreground">
+                          to {formatIst(v.effectiveTo)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1.5 text-[11px]">{v.reason ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>
