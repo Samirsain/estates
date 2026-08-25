@@ -23,8 +23,17 @@ name: Scheduled jobs
 # comment the three lines below out again rather than leaving it red.
 on:
   schedule:
-    # Every 15 minutes: a Hold expires at its exact stored time.
-    - cron: "*/15 * * * *"
+    # Every 30 minutes, not every 15. On a private repository Actions minutes
+    # are metered — 2,000 a month on the free plan, and GitHub rounds every job
+    # up to a whole minute. At */15 this workflow alone bills about 2,900 and
+    # stops working three weeks into the month; at */30 it bills about 1,470.
+    #
+    # The cost is that a Hold can outlive its stored expiry by up to half an
+    # hour. The schedule was never exact anyway — GitHub's is best effort, as
+    # the note above says — and every job is idempotent, so the later run
+    # catches up. A Hold that expires late is visible and recoverable; a
+    # scheduler that stopped on the 21st is neither.
+    - cron: "*/30 * * * *"
     # 19:30 UTC = 01:00 IST the next morning, for the daily catalogue.
     - cron: "30 19 * * *"
   workflow_dispatch:
