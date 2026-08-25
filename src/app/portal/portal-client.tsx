@@ -571,7 +571,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
               <Button type="button" variant="outline" size="sm" onClick={() => setRequesting(null)} className="border-border text-foreground">
                 Back
               </Button>
-              <Button type="submit" size="sm" disabled={busy} className="bg-primary text-primary-foreground font-medium hover:bg-ring">
+              <Button type="submit" size="sm" disabled={busy} className="font-medium">
                 {busy ? "Submitting…" : "Submit request"}
               </Button>
             </div>
@@ -645,7 +645,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
               <Button type="button" variant="outline" size="sm" onClick={() => setAddingEnquiry(false)} className="border-border text-foreground">
                 Back
               </Button>
-              <Button type="submit" size="sm" disabled={busy} className="bg-primary text-primary-foreground font-medium hover:bg-ring">
+              <Button type="submit" size="sm" disabled={busy} className="font-medium">
                 {busy ? "Submitting…" : "Submit Enquiry"}
               </Button>
             </div>
