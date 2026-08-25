@@ -5,14 +5,10 @@ name: CI
 # write tagged data, so they stay a deliberate local or staging run — see
 # prisma/check-guard.ts.
 
-# Automatic runs are off: every push mailed a failure to the repository owner.
-# Run it by hand from the Actions tab, or uncomment the three lines to switch
-# the automatic verification back on.
 on:
-  # push:
-  #   branches: [main]
-  # pull_request:
-  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
 
 jobs:
   verify:
