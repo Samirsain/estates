@@ -25,7 +25,10 @@ services:
     # migrate deploy applies only pending migrations and never resets data. It
     # runs before the build so a deploy can never serve code against a schema
     # that has not caught up. It uses DIRECT_URL, which bypasses the pooler.
-    buildCommand: npm ci && npx prisma migrate deploy && npm run build
+    # The node -e prints only the host, never the password. It is here because a
+    # stale DIRECT_URL is invisible otherwise: migrate deploy names the host it
+    # failed on, but not which variable the value came from.
+    buildCommand: npm ci && node -e "console.log('DIRECT_URL host ->', new URL(process.env.DIRECT_URL).host)" && npx prisma migrate deploy && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
