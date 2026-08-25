@@ -428,14 +428,14 @@ function SideControl({
         {/* Side letter badge - darker & bolder for clarity */}
         <span
           title={`${SIDE_NAME[boundary.side]} Boundary`}
-          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-stone-700 bg-stone-200 border border-stone-300/60 select-none shadow-2xs"
+          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-foreground bg-secondary border border-border/60 select-none shadow-2xs"
         >
           {boundary.side.charAt(0)}
         </span>
         {/* Controls stacked */}
         <div className="flex flex-col gap-1 min-w-0 flex-1">
           <select
-            className="h-7 w-full rounded-md border border-stone-300 bg-white px-2 text-xs font-medium text-stone-800 focus:outline-none focus:ring-1 focus:ring-stone-400 transition-colors"
+            className="h-7 w-full rounded-md border border-border bg-card px-2 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
             aria-label={`${boundary.side.toLowerCase()} boundary`}
             value={boundary.kind}
             onChange={(e) => {
@@ -453,7 +453,7 @@ function SideControl({
           </select>
           {isRoad && hasPreconfiguredRoads && (
             <select
-              className="h-7 w-full rounded-md border border-stone-300 bg-white px-2 text-xs text-stone-800 focus:outline-none focus:ring-1 focus:ring-stone-400 transition-colors"
+              className="h-7 w-full rounded-md border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
               value={selectedRoad ? `${selectedRoad.threshold}|${selectedRoad.remark || ""}` : "custom"}
               onChange={(e) => {
                 const val = e.target.value;
@@ -475,7 +475,7 @@ function SideControl({
           )}
           {(!hasPreconfiguredRoads || isCustomRoad) && (
             <input
-              className="h-7 w-full rounded-md border border-stone-300 bg-white px-2 text-xs text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-400 transition-colors"
+              className="h-7 w-full rounded-md border border-border bg-card px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
               inputMode={isRoad ? "decimal" : undefined}
               placeholder={isRoad ? "Width ft" : "Ref # (opt.)"}
               value={isRoad ? (boundary.roadWidthFt ?? "") : (boundary.reference ?? "")}
@@ -663,13 +663,13 @@ export default function PlotsClient({
             className={`p-4 ${
               notice.kind === "ok"
                 ? "border-emerald-500/40 bg-emerald-500/5"
-                : "border-red-500/40 bg-red-500/5"
+                : "border-destructive/40 bg-destructive/5"
             }`}
           >
             <p
               role="status"
               className={`flex items-start gap-2 text-sm ${
-                notice.kind === "ok" ? "text-emerald-700" : "text-red-700"
+                notice.kind === "ok" ? "text-emerald-700" : "text-destructive"
               }`}
             >
               {notice.kind === "ok" ? (
@@ -1468,13 +1468,13 @@ function PrepareInventoryDialog({
     <Modal title="Prepare Inventory" onClose={onClose} wide>
 
       {/* ── Project selector + PLC bands ── */}
-      <div className="space-y-3 pb-3 border-b border-[#EAEAEA]">
+      <div className="space-y-3 pb-3 border-b border-border">
         <div className="flex items-center gap-3">
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 whitespace-nowrap w-16 shrink-0">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap w-16 shrink-0">
             Project
           </label>
           <select
-            className="flex-1 h-9 rounded-lg border border-[#EAEAEA] bg-white px-3 text-sm text-stone-800 focus:outline-none focus:ring-1 focus:ring-stone-300 transition-colors"
+            className="flex-1 h-9 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
             value={projectId}
             onChange={(e) => setProjectId(e.target.value)}
           >
@@ -1487,16 +1487,16 @@ function PrepareInventoryDialog({
         </div>
 
         {/* PLC rate strip */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-[#EAEAEA] bg-stone-50 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-border bg-muted px-3 py-2">
           {bands.length === 0 ? (
             <span className="text-[11px] text-amber-700 font-medium">
               No published PLC version — publish one in Project setup first.
             </span>
           ) : (
             bands.map((band, i) => (
-              <span key={i} className="text-[11px] text-stone-500">
+              <span key={i} className="text-[11px] text-muted-foreground">
                 {band.label}{" "}
-                <span className="font-semibold tabular-nums text-stone-800">
+                <span className="font-semibold tabular-nums text-foreground">
                   {formatPercent(band.percent)}
                 </span>
               </span>
@@ -1507,9 +1507,9 @@ function PrepareInventoryDialog({
 
       {/* ── Column header ── */}
       <div className="hidden lg:grid lg:grid-cols-[2rem_5rem_9rem_13rem_1fr] gap-3 px-1 pt-2 pb-1">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-stone-400">#</span>
+        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">#</span>
         {["Plot No.", "Type", "Dimensions (W × L ft)", "Boundaries"].map((h) => (
-          <span key={h} className="text-[10px] font-bold uppercase tracking-widest text-stone-500">
+          <span key={h} className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
             {h}
           </span>
         ))}
@@ -1522,18 +1522,18 @@ function PrepareInventoryDialog({
           return (
           <div
               key={i}
-              className="rounded-xl border border-stone-300 bg-white transition-shadow hover:border-stone-400 hover:shadow-md"
+              className="rounded-xl border border-border bg-card transition-colors hover:border-border"
             >
               {/* ── Top line: plot details ── */}
-              <div className="grid grid-cols-1 lg:grid-cols-[2rem_5rem_9rem_13rem_1fr] gap-3 items-center px-3 py-2 border-b border-stone-200">
+              <div className="grid grid-cols-1 lg:grid-cols-[2rem_5rem_9rem_13rem_1fr] gap-3 items-center px-3 py-2 border-b border-border">
                 {/* Row serial */}
-                <span className="hidden lg:flex items-center justify-center text-[11px] font-bold tabular-nums text-stone-600 select-none bg-stone-100 rounded h-6 w-6 border border-stone-200">
+                <span className="hidden lg:flex items-center justify-center text-[11px] font-bold tabular-nums text-muted-foreground select-none bg-secondary rounded h-6 w-6 border border-border">
                   {i + 1}
                 </span>
 
                 {/* Plot No. */}
                 <input
-                  className="h-8 w-full rounded-lg border border-stone-300 bg-stone-50 px-2 text-xs font-mono font-bold text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white transition-colors"
+                  className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs font-mono font-bold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
                   placeholder="Plot no."
                   value={row.plotNumber}
                   onChange={(e) => update(i, { plotNumber: e.target.value })}
@@ -1541,7 +1541,7 @@ function PrepareInventoryDialog({
 
                 {/* Type */}
                 <select
-                  className="h-8 w-full rounded-lg border border-stone-300 bg-stone-50 px-2 text-xs font-medium text-stone-800 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white transition-colors"
+                  className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
                   value={row.plotType}
                   onChange={(e) => update(i, { plotType: e.target.value })}
                 >
@@ -1553,7 +1553,7 @@ function PrepareInventoryDialog({
                 {/* Dimensions */}
                 {row.irregular ? (
                   <input
-                    className="h-8 w-full rounded-lg border border-stone-300 bg-stone-50 px-2 text-xs text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white transition-colors"
+                    className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
                     placeholder="Area sq ft"
                     inputMode="decimal"
                     value={row.exactAreaSqFt}
@@ -1562,14 +1562,14 @@ function PrepareInventoryDialog({
                 ) : (
                   <div className="flex items-center gap-2">
                     <input
-                      className="h-8 w-full rounded-lg border border-stone-300 bg-stone-50 px-2 text-xs text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white transition-colors"
+                      className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
                       placeholder="Width"
                       value={row.widthFt}
                       onChange={(e) => update(i, { widthFt: e.target.value })}
                     />
-                    <span className="text-stone-400 font-bold select-none">×</span>
+                    <span className="text-muted-foreground font-bold select-none">×</span>
                     <input
-                      className="h-8 w-full rounded-lg border border-stone-300 bg-stone-50 px-2 text-xs text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white transition-colors"
+                      className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
                       placeholder="Length"
                       value={row.lengthFt}
                       onChange={(e) => update(i, { lengthFt: e.target.value })}
@@ -1579,16 +1579,16 @@ function PrepareInventoryDialog({
 
                 {/* PLC + controls */}
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">PLC</span>
-                  <span className="tabular-nums text-xs font-bold text-stone-900 bg-stone-100 border border-stone-200 px-2 py-0.5 rounded">{preview.plc}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">PLC</span>
+                  <span className="tabular-nums text-xs font-bold text-foreground bg-secondary border border-border px-2 py-0.5 rounded">{preview.plc}</span>
                   <div className="flex items-center gap-1.5 ml-auto">
                     <label
                       title="Irregular plot — specify area directly"
-                      className="flex items-center gap-1 cursor-pointer text-[10px] font-medium text-stone-500 hover:text-stone-800 transition-colors select-none"
+                      className="flex items-center gap-1 cursor-pointer text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors select-none"
                     >
                       <input
                         type="checkbox"
-                        className="h-3 w-3 rounded border-stone-300 accent-stone-800"
+                        className="h-3 w-3 rounded border-border accent-primary"
                         checked={row.irregular}
                         onChange={(e) =>
                           update(i, {
@@ -1605,7 +1605,7 @@ function PrepareInventoryDialog({
                       <button
                         type="button"
                         title="Remove this plot"
-                        className="p-1 rounded text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                         onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
                       >
                         <X className="h-3.5 w-3.5" />
@@ -1616,7 +1616,7 @@ function PrepareInventoryDialog({
               </div>
 
               {/* ── Bottom line: 4 boundaries with shaded background and dark vertical dividers ── */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 bg-stone-50/80 divide-x divide-y lg:divide-y-0 divide-stone-300 rounded-b-xl border-t border-stone-200">
+              <div className="grid grid-cols-2 lg:grid-cols-4 bg-muted/80 divide-x divide-y lg:divide-y-0 divide-border rounded-b-xl border-t border-border">
                 {row.boundaries.map((boundary, b) => (
                   <SideControl
                     key={boundary.side}
@@ -1634,7 +1634,7 @@ function PrepareInventoryDialog({
 
               {/* Validation issue */}
               {preview.issue && (
-                <div className="px-3 py-1.5 border-t border-[#EAEAEA] rounded-b-xl bg-amber-50">
+                <div className="px-3 py-1.5 border-t border-border rounded-b-xl bg-amber-50">
                   <span className="text-[11px] font-medium text-amber-700">{preview.issue}</span>
                 </div>
               )}
@@ -1644,11 +1644,11 @@ function PrepareInventoryDialog({
       </div>
 
       {/* ── Footer actions ── */}
-      <div className="flex flex-col gap-3 pt-3 border-t border-[#EAEAEA]">
+      <div className="flex flex-col gap-3 pt-3 border-t border-border">
 
         {/* Bulk-add bar */}
-        <div className="flex items-center gap-2 rounded-xl border border-[#EAEAEA] bg-stone-50 px-3 py-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 whitespace-nowrap shrink-0">
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-muted px-3 py-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap shrink-0">
             Add plots
           </span>
           <div className="flex items-center gap-2 flex-1">
@@ -1657,18 +1657,18 @@ function PrepareInventoryDialog({
                 type="number"
                 min={1}
                 max={500}
-                className="h-7 w-16 rounded-lg border border-[#EAEAEA] bg-white px-2 text-xs text-stone-800 tabular-nums focus:outline-none focus:ring-1 focus:ring-stone-300 transition-colors"
+                className="h-7 w-16 rounded-lg border border-border bg-card px-2 text-xs text-foreground tabular-nums focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
                 value={bulkCount}
                 onChange={(e) => setBulkCount(e.target.value)}
                 title="Number of plots to add"
               />
-              <span className="text-[11px] text-stone-400">plots</span>
+              <span className="text-[11px] text-muted-foreground">plots</span>
             </div>
           </div>
           <button
             type="button"
             onClick={handleBulkAdd}
-            className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100 hover:border-stone-300 transition-colors shrink-0"
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary hover:border-border transition-colors shrink-0"
           >
             <Plus className="h-3.5 w-3.5" />
             Add {parseInt(bulkCount, 10) > 1 ? `${parseInt(bulkCount, 10)} plots` : "plot"}
@@ -1676,7 +1676,7 @@ function PrepareInventoryDialog({
         </div>
 
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] text-stone-400">
+          <span className="text-[10px] text-muted-foreground">
             {rows.length > 0 ? `${rows.length} plot${rows.length === 1 ? "" : "s"} in grid` : "No plots yet — add some above"}
           </span>
           <div className="flex items-center gap-2">
@@ -1685,7 +1685,7 @@ function PrepareInventoryDialog({
               variant="outline"
               size="sm"
               onClick={onClose}
-              className="rounded-lg border-[#EAEAEA] text-stone-600 hover:bg-stone-50"
+              className="rounded-lg border-border text-muted-foreground hover:bg-muted"
             >
               Cancel
             </Button>
@@ -1714,7 +1714,6 @@ function PrepareInventoryDialog({
                     }))
                 )
               }
-              className="rounded-lg bg-stone-900 text-white hover:bg-stone-700 border-0"
             >
               {busy ? "Saving…" : named > 0 ? `Save ${named} Plot${named === 1 ? "" : "s"}` : "Save"}
             </Button>
@@ -1723,7 +1722,7 @@ function PrepareInventoryDialog({
 
       </div>
 
-      <p className="text-[10px] text-stone-400 text-right">Prepared {istDay(new Date())} (IST).</p>
+      <p className="text-[10px] text-muted-foreground text-right">Prepared {istDay(new Date())} (IST).</p>
     </Modal>
   );
 }
