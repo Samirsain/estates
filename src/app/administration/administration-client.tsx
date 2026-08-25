@@ -122,7 +122,7 @@ export default function AdministrationClient(props: {
 
   return (
     <AppShell role={props.role} actorName={props.actorName} staffAccountId={props.staffAccountId}>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <div>
           <h1 className="text-xl font-semibold">Administration</h1>
           <p className="text-xs text-muted-foreground">
@@ -208,7 +208,7 @@ function StaffTab({
   const [creating, setCreating] = React.useState(false);
 
   return (
-    <Card className="space-y-3 p-5">
+    <Card className="space-y-3 p-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">Staff accounts</h2>
         <Button size="sm" onClick={() => setCreating(true)}>
@@ -401,14 +401,14 @@ function QueueTab({
 
   if (tasks.length === 0 && enquiries.length === 0) {
     return (
-      <Card className="p-5 text-sm text-muted-foreground">
+      <Card className="p-4 text-sm text-muted-foreground">
         Nothing is waiting for reassignment.
       </Card>
     );
   }
 
   return (
-    <Card className="space-y-4 p-5">
+    <Card className="space-y-4 p-4">
       {tasks.length > 0 && (
         <div className="space-y-2">
           <h2 className="text-sm font-semibold">Tasks</h2>
@@ -490,7 +490,7 @@ function MergeTab({
   const [deciding, setDeciding] = React.useState<MergeView | null>(null);
 
   return (
-    <Card className="space-y-4 p-5">
+    <Card className="space-y-4 p-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">Person Merge</h2>
         {canMerge && (
@@ -724,11 +724,11 @@ function DecideMergeModal({
 
 function AuditTab({ rows }: { rows: AuditView[] }) {
   if (rows.length === 0) {
-    return <Card className="p-5 text-sm text-muted-foreground">No audit entries visible to this role.</Card>;
+    return <Card className="p-4 text-sm text-muted-foreground">No audit entries visible to this role.</Card>;
   }
 
   return (
-    <Card className="space-y-3 p-5">
+    <Card className="space-y-3 p-4">
       <h2 className="flex items-center gap-2 text-sm font-semibold">
         <History className="h-4 w-4" /> Activity History
       </h2>
@@ -770,11 +770,11 @@ function AuditTab({ rows }: { rows: AuditView[] }) {
 
 function SecurityTab({ rows }: { rows: SecurityLogView[] }) {
   if (rows.length === 0) {
-    return <Card className="p-5 text-sm text-muted-foreground">No security logs recorded yet.</Card>;
+    return <Card className="p-4 text-sm text-muted-foreground">No security logs recorded yet.</Card>;
   }
 
   return (
-    <Card className="space-y-3 p-5">
+    <Card className="space-y-3 p-4">
       <h2 className="flex items-center gap-2 text-sm font-semibold">
         <ShieldOff className="h-4 w-4 text-red-500" /> Security Logs & Alerts
       </h2>
@@ -1038,7 +1038,7 @@ function IdentityTab({ canReveal }: { canReveal: boolean }) {
   }
 
   return (
-    <Card className="space-y-3 p-5">
+    <Card className="space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Eye className="h-4 w-4" /> Aadhaar and PAN

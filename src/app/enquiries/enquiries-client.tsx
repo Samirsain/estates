@@ -108,7 +108,7 @@ export default function EnquiriesClient({
 
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="mx-auto max-w-6xl space-y-5">
+      <div className="mx-auto max-w-6xl space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Enquiries</h1>

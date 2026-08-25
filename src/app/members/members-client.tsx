@@ -185,7 +185,7 @@ export default function MembersClient({
 
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="mx-auto max-w-6xl space-y-5">
+      <div className="mx-auto max-w-6xl space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Members</h1>
@@ -571,11 +571,11 @@ function MemberDetailPanel({
   const [revealed, setRevealed] = React.useState<Record<string, string>>({});
 
   if (!detail || detail.id !== row.id) {
-    return <Card className="p-6 text-xs text-muted-foreground">Loading Member details…</Card>;
+    return <Card className="p-4 text-xs text-muted-foreground">Loading Member details…</Card>;
   }
 
   return (
-    <Card className="space-y-4 p-5">
+    <Card className="space-y-4 p-4">
       <div className="flex flex-wrap gap-2">
         {(["NETWORK", "COMMISSION", "BANK"] as const).map((t) => (
           <button

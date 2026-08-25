@@ -127,7 +127,7 @@ export default function AcquisitionsClient({
 
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">Acquisitions</h1>
@@ -154,7 +154,7 @@ export default function AcquisitionsClient({
         )}
 
         {rows.length === 0 ? (
-          <Card className="p-6 text-sm text-muted-foreground">
+          <Card className="p-4 text-sm text-muted-foreground">
             No acquisitions yet. A Buyback takes back a Booking we sold; a Purchase for Resale brings
             an outside property into inventory.
           </Card>
@@ -417,7 +417,7 @@ function Detail({
   const live = row.status === "PENDING_APPROVAL" || row.status === "APPROVED";
 
   return (
-    <div className="grid gap-5 md:grid-cols-2">
+    <div className="grid gap-4 md:grid-cols-2">
       <section className="space-y-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Payment Given schedule

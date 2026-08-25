@@ -103,7 +103,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="mx-auto max-w-4xl space-y-4">
         {/* Back navigation */}
         <Link
           href="/members"
@@ -114,7 +114,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
         </Link>
 
         {/* Hero Card */}
-        <Card className="p-6 space-y-4">
+        <Card className="p-4 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -145,9 +145,9 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
           </div>
         </Card>
 
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           {/* Profile */}
-          <Card className="p-5 space-y-4">
+          <Card className="p-4 space-y-4">
             <Section title="Profile" icon={<Building2 className="h-3.5 w-3.5" />}>
               <Row label="Mobile" value={maskMobile(member.person.primaryMobile)} />
               {member.person.altMobile && <Row label="Alt Mobile" value={maskMobile(member.person.altMobile)} />}
@@ -158,7 +158,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
           </Card>
 
           {/* RERA */}
-          <Card className="p-5 space-y-4">
+          <Card className="p-4 space-y-4">
             <Section title="RERA" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
               <Row
                 label="Status"
@@ -194,7 +194,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
         </div>
 
         {/* Network */}
-        <Card className="p-5 space-y-5">
+        <Card className="p-4 space-y-4">
           <Section title="Network" icon={<Users className="h-3.5 w-3.5" />}>
             <div className="text-xs space-y-1">
               <Row
@@ -267,7 +267,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
         </Card>
 
         {/* Commission */}
-        <Card className="p-5 space-y-4">
+        <Card className="p-4 space-y-4">
           <Section title="Commission Records" icon={<Layers className="h-3.5 w-3.5" />}>
             {commissions.length === 0 ? (
               <p className="text-xs text-muted-foreground">No commission records yet.</p>
@@ -325,7 +325,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
 
         {/* Bank Details */}
         {(banks.length > 0 || canManage) && (
-          <Card className="p-5 space-y-4">
+          <Card className="p-4 space-y-4">
             <Section title="Bank Details" icon={<Banknote className="h-3.5 w-3.5" />}>
               {banks.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No bank details recorded.</p>

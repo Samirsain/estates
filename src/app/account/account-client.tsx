@@ -28,7 +28,7 @@ export default function AccountClient({
 
   if (context === "MEMBER") {
     return (
-      <main className="mx-auto w-full max-w-3xl space-y-6 p-6">
+      <main className="mx-auto w-full max-w-3xl space-y-4 p-4">
         <h1 className="text-xl font-semibold">My Account</h1>
         {body}
       </main>
@@ -37,7 +37,7 @@ export default function AccountClient({
 
   return (
     <AppShell role={role as StaffRole} actorName={name} staffAccountId={loginId}>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <h1 className="text-xl font-semibold">My Account</h1>
         {body}
       </div>
@@ -67,7 +67,7 @@ function PasswordCard({ loginId, name }: { loginId: string; name: string }) {
   }
 
   return (
-    <Card className="max-w-xl space-y-4 p-6">
+    <Card className="max-w-xl space-y-4 p-4">
       <div className="flex items-center gap-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
           <KeyRound className="h-4 w-4 text-primary" />

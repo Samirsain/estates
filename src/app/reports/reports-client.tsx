@@ -73,7 +73,7 @@ export default function ReportsClient({
 
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <div>
           <h1 className="text-xl font-semibold">Reports</h1>
           <p className="text-xs text-muted-foreground">
@@ -82,7 +82,7 @@ export default function ReportsClient({
           </p>
         </div>
 
-        <Card className="space-y-4 p-5">
+        <Card className="space-y-4 p-4">
           <div className="grid gap-3 md:grid-cols-4">
             <Field label="Report">
               <select
@@ -140,7 +140,7 @@ export default function ReportsClient({
         )}
 
         {result?.ok && (
-          <Card className="space-y-3 p-5">
+          <Card className="space-y-3 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold">
                 {active.label} · {result.rows.length} row{result.rows.length === 1 ? "" : "s"}
@@ -161,7 +161,7 @@ export default function ReportsClient({
         )}
 
         {canExport && recentExports.length > 0 && (
-          <Card className="space-y-3 p-5">
+          <Card className="space-y-3 p-4">
             <h2 className="flex items-center gap-2 text-sm font-semibold">
               <FileSpreadsheet className="h-4 w-4" /> Recent exports
             </h2>

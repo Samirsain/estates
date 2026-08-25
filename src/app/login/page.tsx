@@ -25,7 +25,7 @@ export default async function LoginPage({
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md space-y-6">
+      <div className="w-full max-w-md space-y-4">
         <div className="flex items-center gap-3">
           <img src="/logo.svg" alt="" className="h-11 w-11" />
           <div>
@@ -34,7 +34,7 @@ export default async function LoginPage({
           </div>
         </div>
 
-        <Card className="p-6">
+        <Card className="p-4">
           {error && (
             <p
               role="alert"

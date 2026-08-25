@@ -145,7 +145,7 @@ export default function ProjectsClient({
 
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">Projects</h1>
@@ -175,7 +175,7 @@ export default function ProjectsClient({
           {rows.map((project) => (
             <Card
               key={project.id}
-              className="group flex flex-col gap-4 rounded-xl border border-border/60 bg-card/70 p-5 shadow-sm transition-all hover:border-border hover:shadow-md dark:bg-card/40"
+              className="group flex flex-col gap-4 rounded-xl border border-border/60 bg-card/70 p-4 shadow-sm transition-all hover:border-border hover:shadow-md dark:bg-card/40"
             >
               {/* One status in the header, on the right. The Project type is
                   not a status, so it reads as a quiet line under the name
@@ -336,7 +336,7 @@ export default function ProjectsClient({
         </div>
 
         {detail && (
-          <div className="rounded-2xl border border-border/80 bg-card/70 p-5 shadow-sm space-y-4 text-sm">
+          <div className="rounded-2xl border border-border/80 bg-card/70 p-4 shadow-sm space-y-4 text-sm">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-foreground">{detail.name} — Full Details</h3>
               <button

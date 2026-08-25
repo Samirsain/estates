@@ -266,7 +266,7 @@ export default function BookingsClient({
 
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="mx-auto max-w-6xl space-y-5">
+      <div className="mx-auto max-w-6xl space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Bookings</h1>
@@ -904,7 +904,7 @@ function BookingDetailPanel({
 
   if (!detail || detail.id !== row.id) {
     return (
-      <Card className="p-6 text-xs text-muted-foreground">Loading Booking details…</Card>
+      <Card className="p-4 text-xs text-muted-foreground">Loading Booking details…</Card>
     );
   }
 
@@ -915,7 +915,7 @@ function BookingDetailPanel({
   const pendingSoldBy = detail.soldByCorrections.find((c) => c.status === "PENDING");
 
   return (
-    <Card className="space-y-4 p-5">
+    <Card className="space-y-4 p-4">
       <div className="flex flex-wrap gap-2">
         {(["OVERVIEW", "PAYMENT", "COMMISSION", "HISTORY"] as const).map((t) => (
           <button

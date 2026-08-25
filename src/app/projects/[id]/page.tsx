@@ -131,7 +131,7 @@ export default async function ProjectDetailPage({
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="mx-auto max-w-4xl space-y-4">
         {/* Back */}
         <Link
           href="/projects"
@@ -142,7 +142,7 @@ export default async function ProjectDetailPage({
         </Link>
 
         {/* Hero */}
-        <Card className="p-6 space-y-4">
+        <Card className="p-4 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-3">
@@ -186,9 +186,9 @@ export default async function ProjectDetailPage({
         </Card>
 
         {!project.isExternalResaleGroup && (
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2">
             {/* Plot Inventory */}
-            <Card className="p-5 space-y-4">
+            <Card className="p-4 space-y-4">
               <Section title="Plot Inventory" icon={<Layers className="h-3.5 w-3.5" />}>
                 <Row label="Total Plots" value={String(project._count.plots)} />
                 {project.plotTypeCounts.map(({ plotType, count }) => (
@@ -202,7 +202,7 @@ export default async function ProjectDetailPage({
             </Card>
 
             {/* Current PLC Summary */}
-            <Card className="p-5 space-y-4">
+            <Card className="p-4 space-y-4">
               <Section
                 title={`Plot Location Charge${publishedVersion ? ` · v${publishedVersion.version}` : ""}`}
                 icon={<Info className="h-3.5 w-3.5" />}
@@ -228,7 +228,7 @@ export default async function ProjectDetailPage({
 
         {/* Amenities */}
         {amenities.length > 0 && (
-          <Card className="p-5 space-y-3">
+          <Card className="p-4 space-y-3">
             <Section title="Amenities" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
               <ul className="flex flex-wrap gap-1.5">
                 {amenities.map((a) => (
@@ -246,7 +246,7 @@ export default async function ProjectDetailPage({
 
         {/* PLC Version History */}
         {!project.isExternalResaleGroup && project.plcRuleVersions.length > 0 && (
-          <Card className="p-5 space-y-4">
+          <Card className="p-4 space-y-4">
             <Section title="PLC Version History" icon={<History className="h-3.5 w-3.5" />}>
               {/* Explanation box — answers "v1 · Superseded" question */}
               <div className="rounded-xl border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">

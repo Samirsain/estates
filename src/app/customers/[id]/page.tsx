@@ -154,7 +154,7 @@ export default async function CustomerDetailPage({
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="mx-auto max-w-4xl space-y-4">
         {/* Back */}
         <Link
           href="/customers"
@@ -165,7 +165,7 @@ export default async function CustomerDetailPage({
         </Link>
 
         {/* Hero */}
-        <Card className="p-6 space-y-4">
+        <Card className="p-4 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -209,9 +209,9 @@ export default async function CustomerDetailPage({
           </div>
         </Card>
 
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           {/* Profile */}
-          <Card className="p-5 space-y-4">
+          <Card className="p-4 space-y-4">
             <Section title="Profile" icon={<User className="h-3.5 w-3.5" />}>
               <Row label="Mobile" value={maskMobile(customer.person.primaryMobile)} />
               {customer.person.altMobile && (
@@ -223,7 +223,7 @@ export default async function CustomerDetailPage({
           </Card>
 
           {/* Identity */}
-          <Card className="p-5 space-y-4">
+          <Card className="p-4 space-y-4">
             <Section title="Identity" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
               <p className="text-xs text-muted-foreground">
                 Aadhaar is a protected field. Full access is restricted and logged.
@@ -256,7 +256,7 @@ export default async function CustomerDetailPage({
         </div>
 
         {/* Property Activity */}
-        <Card className="p-5 space-y-4">
+        <Card className="p-4 space-y-4">
           <Section title="Property Activity" icon={<Activity className="h-3.5 w-3.5" />}>
             {activity.length === 0 ? (
               <p className="text-xs text-muted-foreground">
@@ -287,7 +287,7 @@ export default async function CustomerDetailPage({
         </Card>
 
         {/* Loyalty */}
-        <Card className="p-5 space-y-4">
+        <Card className="p-4 space-y-4">
           <Section title="Loyalty Bonus Slots" icon={<Star className="h-3.5 w-3.5" />}>
             <p className="text-xs text-muted-foreground">
               Lifetime maximum of 3 Loyalty Bonuses — from any mix of introduced-buyer sales and
@@ -315,7 +315,7 @@ export default async function CustomerDetailPage({
         </Card>
 
         {/* Bank Details */}
-        <Card className="p-5 space-y-4">
+        <Card className="p-4 space-y-4">
           <Section title="Bank Details" icon={<Banknote className="h-3.5 w-3.5" />}>
             {banks.length === 0 ? (
               <p className="text-xs text-muted-foreground">No bank details recorded.</p>

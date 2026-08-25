@@ -128,7 +128,7 @@ export default async function PlotDetailPage({
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
-      <div className="mx-auto max-w-3xl space-y-8 pb-12">
+      <div className="mx-auto max-w-3xl space-y-5 pb-12">
         <header className="space-y-4">
           <Link
             href="/plots"
