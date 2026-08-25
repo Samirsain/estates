@@ -28,20 +28,20 @@ export default async function MemberLoginPage({
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-12">
-      <div className={`w-full space-y-6 ${needsTerms ? "max-w-lg" : "max-w-md"}`}>
+      <div className={`w-full space-y-4 ${needsTerms ? "max-w-lg" : "max-w-md"}`}>
         <div className="text-center space-y-2">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0066cc] text-white shadow-lg shadow-[#0066cc]/20">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
             <Building2 className="h-6 w-6" />
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[#1d1d1f] sm:text-3xl">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             Member Portal
           </h1>
-          <p className="text-xs text-[#7a7a7a]">
+          <p className="text-xs text-muted-foreground">
             3% Real Estate Club
           </p>
         </div>
 
-        <Card className="border border-slate-200/80 bg-white p-7 shadow-xl shadow-slate-200/60 rounded-3xl">
+        <Card className="border border-border bg-card p-5 rounded-2xl">
           {error && (
             <p
               role="alert"
@@ -56,7 +56,7 @@ export default async function MemberLoginPage({
           )}
 
           <form action={memberLogin} className="space-y-4">
-            <label className="block space-y-1 text-xs font-medium text-[#1d1d1f]">
+            <label className="block space-y-1 text-xs font-medium text-foreground">
               <span>Member ID</span>
               <Input
                 name="loginId"
@@ -64,11 +64,11 @@ export default async function MemberLoginPage({
                 autoComplete="username"
                 defaultValue={loginId}
                 placeholder="MEM-0217"
-                className="h-11 rounded-xl border-slate-200 bg-[#fafafc] text-sm text-[#1d1d1f] placeholder:text-[#7a7a7a] focus-visible:ring-[#0066cc]"
+                className="h-11 rounded-xl border-border bg-muted text-sm text-foreground placeholder:text-muted-foreground focus-visible:ring-primary"
               />
             </label>
 
-            <label className="block space-y-1 text-xs font-medium text-[#1d1d1f]">
+            <label className="block space-y-1 text-xs font-medium text-foreground">
               <span>Password</span>
               <Input
                 name="password"
@@ -76,7 +76,7 @@ export default async function MemberLoginPage({
                 required
                 autoComplete="current-password"
                 minLength={10}
-                className="h-11 rounded-xl border-slate-200 bg-[#fafafc] text-sm text-[#1d1d1f] placeholder:text-[#7a7a7a] focus-visible:ring-[#0066cc]"
+                className="h-11 rounded-xl border-border bg-muted text-sm text-foreground placeholder:text-muted-foreground focus-visible:ring-primary"
               />
             </label>
 
@@ -88,15 +88,15 @@ export default async function MemberLoginPage({
             <SubmitButton />
           </form>
 
-          <div className="mt-5 border-t border-slate-100 pt-4 space-y-2">
-            <p className="flex items-start gap-2 text-[11px] leading-relaxed text-[#7a7a7a]">
-              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0066cc]" />
+          <div className="mt-5 border-t border-border/50 pt-4 space-y-2">
+            <p className="flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
               <span>A Member signs in with their assigned Member ID.</span>
             </p>
 
             {!needsTerms && (
-              <p className="text-[11px] text-[#7a7a7a]">
-                <a href="/terms" className="underline underline-offset-2 hover:text-[#0066cc] transition-colors">
+              <p className="text-[11px] text-muted-foreground">
+                <a href="/terms" className="underline underline-offset-2 hover:text-primary transition-colors">
                   Terms and Privacy Notice
                 </a>
               </p>
@@ -104,9 +104,9 @@ export default async function MemberLoginPage({
           </div>
         </Card>
 
-        <p className="text-center text-xs text-[#7a7a7a]">
+        <p className="text-center text-xs text-muted-foreground">
           Staff Account?{" "}
-          <a href="/login" className="font-medium text-[#0066cc] underline underline-offset-2 hover:text-[#0071e3] transition-colors">
+          <a href="/login" className="font-medium text-primary underline underline-offset-2 hover:text-ring transition-colors">
             Staff CRM Login
           </a>
         </p>
