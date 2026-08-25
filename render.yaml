@@ -33,6 +33,12 @@ services:
         value: "22"
       - key: DATABASE_URL
         sync: false
+      # Must be the session-mode pooler on port 5432:
+      #   postgresql://postgres.<ref>:<pw>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres
+      # NOT db.<ref>.supabase.co:5432 — that host resolves to IPv6 only and
+      # Render has no IPv6 outbound, so migrate deploy fails with P1001. Port
+      # 6543 is transaction mode and cannot run migrations; 5432 on the same
+      # pooler host is session mode and can.
       - key: DIRECT_URL
         sync: false
       - key: SESSION_SECRET
