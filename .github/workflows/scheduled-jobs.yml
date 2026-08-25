@@ -17,16 +17,16 @@ name: Scheduled jobs
 #   APP_URL      https://your-service.onrender.com
 #   JOBS_SECRET  the same value the service has
 
-# The schedule is off until the service is deployed and the two secrets below
-# exist. Without them APP_URL is an empty string, curl never reaches a host, and
-# every run fails within seconds and mails the repository owner. Uncomment the
-# three lines to switch the scheduler back on; nothing else needs to change.
+# The schedule is on: the service is deployed and both secrets exist. If either
+# secret is ever removed, APP_URL becomes an empty string, curl never reaches a
+# host, and every run fails within seconds and mails the repository owner —
+# comment the three lines below out again rather than leaving it red.
 on:
-  # schedule:
-  #   # Every 15 minutes: a Hold expires at its exact stored time.
-  #   - cron: "*/15 * * * *"
-  #   # 19:30 UTC = 01:00 IST the next morning, for the daily catalogue.
-  #   - cron: "30 19 * * *"
+  schedule:
+    # Every 15 minutes: a Hold expires at its exact stored time.
+    - cron: "*/15 * * * *"
+    # 19:30 UTC = 01:00 IST the next morning, for the daily catalogue.
+    - cron: "30 19 * * *"
   workflow_dispatch:
     inputs:
       job:
