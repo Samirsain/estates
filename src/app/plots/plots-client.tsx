@@ -434,7 +434,7 @@ function SideControl({
         {/* Side letter badge - darker & bolder for clarity */}
         <span
           title={`${SIDE_NAME[boundary.side]} Boundary`}
-          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-foreground bg-secondary border border-border/60 select-none shadow-2xs"
+          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-foreground bg-secondary border border-border/60 select-none"
         >
           {boundary.side.charAt(0)}
         </span>
@@ -773,7 +773,7 @@ export default function PlotsClient({
               </thead>
               <tbody>
                 {visible.map((plot) => (
-                  <tr key={plot.id} className="glass-card rounded-xl align-top">
+                  <tr key={plot.id} className="card-surface rounded-xl align-top">
                     <td className="rounded-l-xl px-3 py-3">{plot.project}</td>
                     <td className="px-3 py-3">
                       <Link

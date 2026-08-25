@@ -19,11 +19,11 @@ export default function Error({
   reset: () => void;
 }) {
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
-      <Card className="max-w-lg space-y-4 p-6">
+    <main className="flex min-h-screen items-center justify-center p-4">
+      <Card className="max-w-lg space-y-4 p-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10">
-            <AlertTriangle className="h-4 w-4 text-red-700" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-destructive/10">
+            <AlertTriangle className="h-4 w-4 text-destructive" />
           </div>
           <h1 className="text-sm font-semibold">Something went wrong</h1>
         </div>

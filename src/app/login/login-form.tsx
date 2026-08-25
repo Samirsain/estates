@@ -14,7 +14,7 @@ export function SubmitButton() {
     <Button type="submit" className="w-full transition-all" disabled={pending}>
       {pending ? (
         <span className="flex items-center justify-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin text-white" />
+          <Loader2 className="h-4 w-4 animate-spin text-primary-foreground" />
           Signing in…
         </span>
       ) : (

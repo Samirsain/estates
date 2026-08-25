@@ -4,8 +4,8 @@ import { Card } from "@/components/ui/card";
 
 export default function NotFound() {
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
-      <Card className="max-w-lg space-y-3 p-6">
+    <main className="flex min-h-screen items-center justify-center p-4">
+      <Card className="max-w-lg space-y-3 p-4">
         <h1 className="text-sm font-semibold">That page does not exist</h1>
         <p className="text-xs text-muted-foreground">
           The link may be out of date, or the record may have been closed or merged. Old Customer and

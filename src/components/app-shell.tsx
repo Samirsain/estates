@@ -56,7 +56,7 @@ export function AppShell({
 
   return (
     <div className="min-h-screen md:grid md:grid-cols-[15rem_1fr]">
-      <aside className="glass-panel border-b md:border-b-0 md:border-r border-border/50 md:min-h-screen">
+      <aside className="chrome-surface border-b md:border-b-0 md:border-r border-border/50 md:min-h-screen">
         <div className="flex items-center gap-3 px-5 py-4">
           <img src="/logo.svg" alt="" className="h-9 w-9" />
           <div>
@@ -126,7 +126,7 @@ export function AppShell({
       </aside>
 
       <div className="flex min-w-0 flex-col">
-        <header className="glass-panel sticky top-0 z-40 flex flex-wrap items-center gap-3 border-b border-border/50 px-5 py-3">
+        <header className="chrome-surface sticky top-0 z-40 flex flex-wrap items-center gap-3 border-b border-border/50 px-5 py-3">
           <div className="relative min-w-[12rem] flex-1">
             <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
             <Input
@@ -153,7 +153,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 px-4 py-6 md:px-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-6 md:px-5">{children}</main>
       </div>
     </div>
   );

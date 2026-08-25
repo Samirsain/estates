@@ -119,12 +119,12 @@
  * signature shadow belongs under product imagery, and a CRM has none. So panels
  * are separated by hairlines and a change of canvas, never by elevation.
  */
-.glass-panel {
+.chrome-surface {
   background: hsl(var(--secondary));
   border-color: hsl(var(--border));
 }
 
-.glass-card {
+.card-surface {
   background: hsl(var(--muted));
   border: 1px solid hsl(var(--border));
 }
