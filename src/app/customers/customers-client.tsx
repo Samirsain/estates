@@ -215,6 +215,7 @@ function CustomerDetailPanel({
 }) {
   const [tab, setTab] = React.useState<"ACTIVITY" | "IDENTITY" | "LOYALTY">("ACTIVITY");
   const [aadhaar, setAadhaar] = React.useState<string | null>(null);
+  const [revealing, setRevealing] = React.useState(false);
 
   if (!detail || detail.id !== row.id) {
     return <Card className="p-4 text-xs text-muted-foreground">Loading Customer details…</Card>;
@@ -278,13 +279,23 @@ function CustomerDetailPanel({
                 <Button
                   size="sm"
                   variant="ghost"
+                  disabled={revealing}
                   onClick={async () => {
-                    const result = await revealAadhaarAction(detail.personId);
-                    if (result.ok) setAadhaar(result.aadhaar);
-                    else onError(result.error);
+                    // Every reveal writes a SENSITIVE_ACCESS row. Without this
+                    // guard a double click files the same look-up twice, and the
+                    // record of who saw an Aadhaar is the point of the feature.
+                    if (revealing) return;
+                    setRevealing(true);
+                    try {
+                      const result = await revealAadhaarAction(detail.personId);
+                      if (result.ok) setAadhaar(result.aadhaar);
+                      else onError(result.error);
+                    } finally {
+                      setRevealing(false);
+                    }
                   }}
                 >
-                  <Eye className="mr-1 h-3 w-3" /> Reveal
+                  <Eye className="mr-1 h-3 w-3" /> {revealing ? "Revealing…" : "Reveal"}
                 </Button>
               )}
             </div>

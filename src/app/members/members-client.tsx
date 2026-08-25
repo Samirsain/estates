@@ -569,6 +569,8 @@ function MemberDetailPanel({
 }) {
   const [tab, setTab] = React.useState<"NETWORK" | "COMMISSION" | "BANK">("NETWORK");
   const [revealed, setRevealed] = React.useState<Record<string, string>>({});
+  const [revealing, setRevealing] = React.useState<string | null>(null);
+  const [revealError, setRevealError] = React.useState<string | null>(null);
 
   if (!detail || detail.id !== row.id) {
     return <Card className="p-4 text-xs text-muted-foreground">Loading Member details…</Card>;
@@ -711,6 +713,11 @@ function MemberDetailPanel({
             Commission eligibility requires a currently Verified bank. A pending replacement never
             puts a Ready commission on hold by itself.
           </p>
+          {revealError && (
+            <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-destructive">
+              {revealError}
+            </p>
+          )}
           {banks.length === 0 ? (
             <p className="text-muted-foreground">No bank details recorded.</p>
           ) : (
@@ -741,14 +748,29 @@ function MemberDetailPanel({
                         <Button
                           size="sm"
                           variant="ghost"
+                          disabled={revealing === b.id}
                           onClick={async () => {
-                            const result = await revealBankAccountAction(b.id);
-                            if (result.ok) {
-                              setRevealed((prev) => ({ ...prev, [b.id]: result.accountNumber }));
+                            // A refused reveal used to do nothing at all: the
+                            // button moved and the account number never came,
+                            // which reads as a broken screen rather than a
+                            // permission answer.
+                            if (revealing) return;
+                            setRevealing(b.id);
+                            setRevealError(null);
+                            try {
+                              const result = await revealBankAccountAction(b.id);
+                              if (result.ok) {
+                                setRevealed((prev) => ({ ...prev, [b.id]: result.accountNumber }));
+                              } else {
+                                setRevealError(result.error);
+                              }
+                            } finally {
+                              setRevealing(null);
                             }
                           }}
                         >
-                          <Eye className="mr-1 h-3 w-3" /> Reveal
+                          <Eye className="mr-1 h-3 w-3" />{" "}
+                          {revealing === b.id ? "Revealing…" : "Reveal"}
                         </Button>
                       )}
                       {b.status === "PENDING" && permissions.verifyBank && (

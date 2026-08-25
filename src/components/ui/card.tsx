@@ -9,7 +9,19 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-2xl border border-border/50 bg-card/60 text-card-foreground shadow-xl backdrop-blur-md glass-card transition-all duration-200 hover:border-border/80",
+      // glass-card sets background and border, at the same specificity as a
+      // Tailwind utility but later in the file, so it won both: bg-card/60 and
+      // border-border/50 were here without ever rendering. backdrop-blur-md did
+      // apply and did nothing, having an opaque background to blur through.
+      //
+      // shadow-xl rendered, against the rule written directly above glass-card
+      // in globals.css: chrome is separated by a hairline and a change of
+      // canvas, never by elevation. It is the one line here that was visible,
+      // and the one that should not have been.
+      //
+      // hover:border-border/80 stays — a pseudo-class outranks glass-card on
+      // specificity, so unlike the rest it does what it says.
+      "rounded-2xl text-card-foreground glass-card transition-colors duration-200 hover:border-border/80",
       className
     )}
     {...props}
