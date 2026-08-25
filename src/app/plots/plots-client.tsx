@@ -6,13 +6,19 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Clock, Plus, X, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Plus, X, Trash2, MoreHorizontal, Pencil, Lock, Pause, Calendar, XCircle } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, Modal } from "@/components/ui/modal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { formatIst, formatPercent, formatQuantity, istDay, type StaffRole } from "@/lib/tasks";
 // The grid computes Area and Location Charge live from the same domain rules
 // the server runs on save, which is the only way the two cannot disagree. It
