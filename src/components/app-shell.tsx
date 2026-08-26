@@ -54,18 +54,58 @@ export function AppShell({
   const canAdminister = role === "MD" || role === "ADMIN";
   const pathname = usePathname();
 
+  // The rail shows icons; opening it is a click, not a hover. A click works the
+  // same for a mouse, a finger and a keyboard, and it does not open itself when
+  // the pointer merely crosses the edge of the screen.
+  const [menuOpen, setMenuOpen] = React.useState(false);
+
+  // Following a link has answered the question the menu was open for.
+  React.useEffect(() => setMenuOpen(false), [pathname]);
+
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[15rem_1fr]">
-      <aside className="chrome-surface border-b md:border-b-0 md:border-r border-border/50 md:min-h-screen">
-        <div className="flex items-center gap-3 px-5 py-4">
-          <img src="/logo.svg" alt="" className="h-9 w-9" />
-          <div>
+    <div className="min-h-screen md:grid md:grid-cols-[3.5rem_1fr]">
+      {/*
+        A rail at rest, the full menu on hover.
+
+        The column stays 3.5rem wide and the aside grows over the page instead
+        of pushing it, so opening the menu never reflows what is being read
+        underneath. focus-within is there with hover because a menu that only
+        answers a mouse is a menu a keyboard cannot reach — it costs one class
+        and changes nothing for the pointer.
+      */}
+      {/* The open menu covers the page rather than pushing it, so there has to
+          be a way out that is not "pick something". Clicking the page closes
+          it; Escape does too, for anyone not using a pointer. */}
+      {menuOpen && (
+        <button
+          type="button"
+          aria-label="Close menu"
+          className="fixed inset-0 z-40 hidden cursor-default md:block"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
+
+      <aside
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setMenuOpen(false);
+        }}
+        className={`chrome-surface z-50 border-b border-border/50 md:sticky md:top-0 md:h-screen md:overflow-hidden md:border-b-0 md:border-r md:transition-[width] md:duration-200 ${
+          menuOpen ? "md:w-60" : "md:w-14"
+        }`}
+      >
+        <div className="flex items-center gap-3 px-4 py-4">
+          <img src="/logo.svg" alt="" className="h-6 w-6 shrink-0" />
+          <div
+            className={`hidden whitespace-nowrap transition-opacity md:block ${
+              menuOpen ? "md:opacity-100" : "md:opacity-0"
+            }`}
+          >
             <p className="text-sm font-bold tracking-tight gradient-text">3% Club CRM</p>
             <p className="text-[10px] text-muted-foreground">v3.1 baseline</p>
           </div>
         </div>
 
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col md:overflow-visible">
+        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col md:overflow-y-auto md:overflow-x-hidden">
           {NAV.filter((item) => !("admin" in item && item.admin) || canAdminister).map(
             (item) => {
               const active = item.href === pathname;
@@ -75,6 +115,17 @@ export function AppShell({
                     href={item.href ?? undefined}
                     aria-disabled={!item.href}
                     aria-current={active ? "page" : undefined}
+                    aria-expanded={menuOpen}
+                    title={menuOpen ? undefined : item.label}
+                    // Closed, the icon is the way in: it opens the menu instead
+                    // of navigating, so one click never lands somewhere the
+                    // label was not readable.
+                    onClick={(event) => {
+                      if (!menuOpen) {
+                        event.preventDefault();
+                        setMenuOpen(true);
+                      }
+                    }}
                     className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors ${
                       active
                         ? "bg-primary/15 font-semibold text-primary"
@@ -84,7 +135,13 @@ export function AppShell({
                     }`}
                   >
                     <item.icon className="h-4 w-4 shrink-0" />
-                    <span>{item.label}</span>
+                    <span
+                      className={`whitespace-nowrap transition-opacity ${
+                        menuOpen ? "md:opacity-100" : "md:opacity-0"
+                      }`}
+                    >
+                      {item.label}
+                    </span>
                     {item.phase && (
                       <span className="ml-auto hidden rounded-md border border-border/60 px-1.5 py-0.5 text-[9px] text-muted-foreground md:inline">
                         {item.phase}
@@ -92,7 +149,13 @@ export function AppShell({
                     )}
                   </a>
                   {"children" in item && item.children && (
-                    <ul className="hidden md:block">
+                    // No icon of their own, so nothing to show on the rail —
+                    // these appear with the labels or not at all.
+                    <ul
+                      className={`hidden md:block md:overflow-hidden ${
+                        menuOpen ? "md:h-auto" : "md:h-0"
+                      }`}
+                    >
                       {item.children.map((child) => (
                         <li key={child.label}>
                           <a
