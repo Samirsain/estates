@@ -27,7 +27,10 @@ import { formatIst, formatPercent, formatQuantity, istDay, type StaffRole } from
 import {
   buildPlcSnapshot,
   calculateAreas,
+  displayLifecycle,
   plcDisplayComponents,
+  type PlotLifecycle,
+  type ProjectLifecycle,
   type Boundary,
   type PlcComponentRule,
 } from "@/lib/domain/inventory";
@@ -356,7 +359,7 @@ function SideControl({
   const kindSelect = (
     <select
       className={`${inputClass} ${
-        layout === "row" ? "h-9 text-xs" : "h-7 text-xs font-medium"
+        layout === "row" ? "h-8 text-xs" : "h-7 text-xs font-medium"
       } w-full min-w-0`}
       aria-label={`${boundary.side.toLowerCase()} boundary`}
       value={boundary.kind}
@@ -380,10 +383,12 @@ function SideControl({
   const detailInput = (
     <input
       className={`${inputClass} ${
-        layout === "row" ? "h-9 text-xs" : "h-7 text-xs font-normal"
+        layout === "row" ? "h-8 text-xs" : "h-7 text-xs font-normal"
       } w-full min-w-0`}
       inputMode={isRoad ? "decimal" : undefined}
-      placeholder={isRoad ? "Width ft" : "Ref # (opt.)"}
+      // The label column this replaces said exactly this, in the same row, for
+      // every one of the four sides.
+      placeholder={isRoad ? "Width ft" : detailLabel}
       aria-label={
         isRoad
           ? `${boundary.side.toLowerCase()} road width in feet`
@@ -399,7 +404,7 @@ function SideControl({
   const roadSelect = hasPreconfiguredRoads && (
     <select
       className={`${inputClass} ${
-        layout === "row" ? "h-9 text-xs" : "h-7 text-xs font-medium"
+        layout === "row" ? "h-8 text-xs" : "h-7 text-xs font-medium"
       } w-full min-w-0`}
       value={selectedRoad ? `${selectedRoad.threshold}|${selectedRoad.remark || ""}` : "custom"}
       onChange={(e) => {
@@ -415,7 +420,7 @@ function SideControl({
         }
       }}
     >
-      <option value="custom">Custom Width</option>
+      <option value="custom">Custom</option>
       {roads.map((r, ri) => {
         const pct = r.percent.includes(".") ? r.percent.replace(/0+$/, "").replace(/\.$/, "") : r.percent;
         const nameStr = r.remark ? `${r.remark} (${r.threshold}ft, ${pct}%)` : `Road ${r.threshold}ft (${pct}%)`;
@@ -496,13 +501,10 @@ function SideControl({
   }
 
   return (
-    <div className="grid grid-cols-[3.5rem_minmax(8.5rem,1fr)_7rem_minmax(6rem,12rem)] items-center gap-2">
-      <span className="text-xs font-medium text-foreground">{SIDE_NAME[boundary.side]}</span>
+    <div className="grid grid-cols-[3.25rem_1fr_1fr] items-start gap-1.5">
+      <span className="pt-1.5 text-xs font-medium text-foreground">{SIDE_NAME[boundary.side]}</span>
       {kindSelect}
-      <label htmlFor={`${boundary.side}-detail`} className="text-right text-[11px] text-muted-foreground">
-        {detailLabel}
-      </label>
-      <div className="flex flex-col gap-1 w-full">
+      <div className="flex w-full flex-col gap-1">
         {roadSelect}
         {(!hasPreconfiguredRoads || isCustomRoad) && (
           React.cloneElement(detailInput, { id: `${boundary.side}-detail` })
@@ -534,6 +536,7 @@ function lifecycleVariant(lifecycle: string) {
   return "info" as const;
 }
 
+
 export default function PlotsClient({
   role,
   actorName,
@@ -543,6 +546,7 @@ export default function PlotsClient({
   projects,
   people,
   permissions,
+  initialProject,
 }: {
   role: StaffRole;
   actorName: string;
@@ -550,6 +554,8 @@ export default function PlotsClient({
   rows: PlotRowView[];
   holdRequests: HoldRequestView[];
   projects: ProjectView[];
+  /** A Project id from ?project=, or "ALL". */
+  initialProject: string;
   people: Array<{ id: string; fullName: string; primaryMobile: string }>;
   permissions: {
     makeAvailable: boolean;
@@ -565,7 +571,7 @@ export default function PlotsClient({
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<{ kind: "ok" | "error"; text: string } | null>(null);
-  const [projectFilter, setProjectFilter] = React.useState("ALL");
+  const [projectFilter, setProjectFilter] = React.useState(initialProject);
   const [statusFilter, setStatusFilter] = React.useState("ALL");
   const [search, setSearch] = React.useState("");
   const [dialog, setDialog] = React.useState<
@@ -772,7 +778,17 @@ export default function PlotsClient({
                 </tr>
               </thead>
               <tbody>
-                {visible.map((plot) => (
+                {visible.map((plot) => {
+                  // The row payload carries these as plain strings; the values
+                  // are Prisma enums either way, so this is the boundary cast
+                  // rather than a widening.
+                  const shown = displayLifecycle(
+                    plot.lifecycle as PlotLifecycle,
+                    projects.find((p) => p.id === plot.projectId)?.lifecycle as
+                      | ProjectLifecycle
+                      | undefined
+                  );
+                  return (
                   <tr key={plot.id} className="card-surface rounded-xl align-top">
                     <td className="rounded-l-xl px-3 py-3">{plot.project}</td>
                     <td className="px-3 py-3">
@@ -793,9 +809,14 @@ export default function PlotsClient({
                       </span>
                     </td>
                     <td className="px-3 py-3">
-                      <Badge variant={lifecycleVariant(plot.lifecycle)}>
-                        {LIFECYCLE_LABEL[plot.lifecycle] ?? plot.lifecycle}
+                      <Badge variant={lifecycleVariant(shown.lifecycle)}>
+                        {LIFECYCLE_LABEL[shown.lifecycle] ?? shown.lifecycle}
                       </Badge>
+                      {shown.because && (
+                        <span className="mt-1 block text-[11px] text-muted-foreground">
+                          {shown.because}
+                        </span>
+                      )}
                       {plot.isResale && (
                         <Badge variant="outline" className="ml-1">
                           RESALE
@@ -922,7 +943,8 @@ export default function PlotsClient({
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1314,56 +1336,74 @@ export function EditPlotDetailsDialog({
   const locked = !["AVAILABLE", "NOT_AVAILABLE"].includes(plot.lifecycle);
 
   return (
-    <Modal title={`Edit Plot Details — ${plot.plotNumber}`} onClose={onClose} wide>
+    <Modal title={`Edit Plot Details — ${plot.plotNumber}`} onClose={onClose}>
+      {/* Modal spaces its children by 16px. Every block here was a child, so
+          seven gaps cost more height than any single control on the form. One
+          wrapper makes them one child, spaced by this. */}
+      <div className="space-y-2">
       {locked && (
-        <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900">
-          This Plot is {LIFECYCLE_LABEL[plot.lifecycle] ?? plot.lifecycle}, so its details are locked
-          (PRD §8.7). An authorised correction is still allowed and is recorded in full. A Location
-          Charge already frozen against a Hold or Booking does not move with it — correct that
-          snapshot separately.
+        <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+          This Plot is {LIFECYCLE_LABEL[plot.lifecycle] ?? plot.lifecycle} (PRD §8.7). The
+          correction is allowed and recorded, but a Location Charge already frozen against a Hold
+          or Booking does not move with it.
         </p>
       )}
 
-      <p className="text-[11px] bg-primary/5 text-primary border border-primary/20 rounded-xl px-3 py-2 mb-2">
-        <strong>Tip:</strong> You can enter dimensions in feet and inches (e.g. <strong>25'6"</strong>, <strong>25-6</strong>, or <strong>25 6</strong>) and they will be converted automatically (e.g. 25'6" = 25.5 ft).
-      </p>
-
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-2">
         <Field label="Width ft">
           <Input
+            className="h-8"
             value={form.widthFt}
-            placeholder="e.g. 25'6&quot; or 25-6"
+            placeholder="25'6&quot; or 25-6"
             onChange={(e) => setForm({ ...form, widthFt: e.target.value })}
           />
         </Field>
         <Field label="Length ft">
           <Input
+            className="h-8"
             value={form.lengthFt}
-            placeholder="e.g. 50'"
+            placeholder="50'"
             onChange={(e) => setForm({ ...form, lengthFt: e.target.value })}
-          />
-        </Field>
-        <Field label="Area sq ft — irregular Plot only">
-          <Input
-            inputMode="decimal"
-            value={form.exactAreaSqFt}
-            onChange={(e) => setForm({ ...form, exactAreaSqFt: e.target.value })}
-          />
-        </Field>
-        <Field label="Reason for the area">
-          <Input
-            value={form.exactAreaReason}
-            onChange={(e) => setForm({ ...form, exactAreaReason: e.target.value })}
           />
         </Field>
       </div>
 
-      <p className="pt-2 text-xs font-medium text-muted-foreground">
+      {/* An irregular Plot is the exception, and its two fields were taking a
+          third of the form to say nothing on every ordinary Plot. <details> is
+          the native disclosure — no state, no handler, and the inputs stay
+          mounted so a value already stored is still submitted. It opens itself
+          when this Plot has one. */}
+      <details open={Boolean(plot.exactAreaSqFt)} className="group">
+        <summary className="cursor-pointer list-none text-[11px] text-muted-foreground hover:text-foreground">
+          <span className="underline underline-offset-2 decoration-dotted">
+            Irregular Plot — set the area by hand
+          </span>
+        </summary>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <Field label="Area sq ft">
+            <Input
+              className="h-8"
+              inputMode="decimal"
+              value={form.exactAreaSqFt}
+              onChange={(e) => setForm({ ...form, exactAreaSqFt: e.target.value })}
+            />
+          </Field>
+          <Field label="Reason for the area">
+            <Input
+              className="h-8"
+              value={form.exactAreaReason}
+              onChange={(e) => setForm({ ...form, exactAreaReason: e.target.value })}
+            />
+          </Field>
+        </div>
+      </details>
+
+      <p className="text-[11px] text-muted-foreground">
         Boundaries — the Location Charge is read from these
       </p>
-      {/* One side per line. Four of these side by side is what squeezed the
-          kind select down to its chevron; the dialog has the height to spare. */}
-      <div className="space-y-2">
+      {/* Two across at this width: four sides down one column spent four rows
+          on four short controls, and the dialog has more width than height. */}
+      <div className="grid gap-x-3 gap-y-1.5 sm:grid-cols-2">
         {boundaries.map((boundary, i) => (
           <SideControl
             key={boundary.side}
@@ -1376,22 +1416,27 @@ export function EditPlotDetailsDialog({
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/60 bg-secondary px-4 py-3">
+      {/* Derived, not entered — so it reads as a result beside the button that
+          commits it, rather than as another panel to scroll past. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-xl border border-border/60 bg-secondary px-3 py-1.5">
         <AreaReadout preview={preview} />
-        <div className="text-right">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Location Charge</p>
-          <p className="text-lg font-semibold tabular-nums text-foreground">{preview.plc}</p>
-        </div>
-        {preview.issue && (
-          <p className="w-full text-[11px] text-amber-800">{preview.issue}</p>
-        )}
+        <p className="text-xs text-muted-foreground">
+          Location Charge{" "}
+          <span className="text-sm font-semibold tabular-nums text-foreground">{preview.plc}</span>
+        </p>
+        {preview.issue && <p className="w-full text-[11px] text-amber-800">{preview.issue}</p>}
       </div>
 
       <Field label="Reason — compulsory, kept in History">
-        <Input value={reason} onChange={(e) => setReason(e.target.value)} minLength={3} />
+        <Input
+          className="h-8"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          minLength={3}
+        />
       </Field>
 
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" size="sm" onClick={onClose}>
           Back
         </Button>
@@ -1419,6 +1464,7 @@ export function EditPlotDetailsDialog({
         >
           {busy ? "Saving…" : "Save correction"}
         </Button>
+      </div>
       </div>
     </Modal>
   );

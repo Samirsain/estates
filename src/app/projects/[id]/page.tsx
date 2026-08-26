@@ -1,27 +1,27 @@
 // Project detail page — /projects/[id]
-// Full details: overview, plot breakdown, PLC version history with explanations.
+//
+// What this page is for: understanding one Project's state without opening
+// anything else. It used to answer "what is this Project called" at length and
+// "what state is its inventory in" not at all — a total Plot count, then the
+// page stopped, so two thirds of it was empty and the question worth opening a
+// Project for went unanswered.
+//
+// The lifecycle breakdown is that answer. It is a grouped count, not a list: a
+// Project with five hundred Plots must not cost five hundred rows to say how
+// many are available, which is the same reason listProjects counts by type.
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireStaff } from "@/lib/security/current-actor";
 import { listProjects } from "@/lib/services/project-service";
-import { formatIst, formatPercent } from "@/lib/tasks";
+import { db } from "@/lib/db";
+import { formatPercent } from "@/lib/tasks";
 import { plcDisplayComponents } from "@/lib/domain/inventory";
 import { plcRules } from "@/lib/services/plc-service";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import {
-  ArrowLeft,
-  Building2,
-  MapPin,
-  ScrollText,
-  Layers,
-  Info,
-  CheckCircle2,
-  Clock,
-  History,
-} from "lucide-react";
+import { ArrowLeft, ArrowUpRight, FolderOpen, MapPin } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,7 @@ const LIFECYCLE_LABEL: Record<string, string> = {
 const TYPE_LABEL: Record<string, string> = {
   RESIDENTIAL: "Residential",
   COMMERCIAL: "Commercial",
+  AGRICULTURAL: "Agricultural",
   MIXED: "Mixed",
 };
 
@@ -45,71 +46,78 @@ const PLOT_TYPE_LABEL: Record<string, string> = {
 };
 
 /**
- * PLC Status Explanations shown inline — answers the user's question:
- * "v1 · Superseded — what does this mean?"
- *
- * PUBLISHED  = Currently active. All new Holds and Bookings use this version's charges.
- * DRAFT      = Being prepared. Does not affect any plot price until published.
- * SUPERSEDED = Was published but replaced by a newer version. Holds and Bookings that
- *              were created while it was published still use this version's snapshot —
- *              it is kept for audit but no new deals use it.
+ * Eight Plot lifecycles is too many tiles to read at a glance, and the question
+ * is commercial rather than technical: how much is still sellable, how much is
+ * in play, how much is gone. Delivered sits under sold because a delivered Plot
+ * is finished, not a separate thing to chase.
  */
-const PLC_STATUS: Record<
-  string,
-  { label: string; variant: "success" | "warning" | "outline"; explanation: string }
-> = {
-  PUBLISHED: {
-    label: "Active",
-    variant: "success",
-    explanation: "Currently active — new Holds and Bookings use these charges.",
-  },
-  DRAFT: {
-    label: "Draft",
-    variant: "warning",
-    explanation: "Being prepared. Does not affect any deal until it is published.",
-  },
-  SUPERSEDED: {
-    label: "Superseded",
-    variant: "outline",
-    explanation:
-      "Was active but replaced by a newer version. Deals created while it was active keep their own frozen snapshot of these charges for audit purposes. No new deals use it.",
-  },
-};
-
-function Section({
-  title,
-  icon,
-  children,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-3">
-      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {icon}
-        {title}
-      </h2>
-      {children}
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex justify-between gap-4 border-b border-border/50 py-2 last:border-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-right text-xs font-medium">{value}</span>
-    </div>
-  );
-}
+const SELLABLE = ["AVAILABLE"];
+const IN_PLAY = ["HOLD", "WAITING_FOR_BOOKING_APPROVAL"];
+const SOLD = ["BOOKED", "PAYMENT_COMPLETED", "DELIVERED"];
 
 function amenityList(amenities: string | null): string[] {
   return (amenities ?? "")
     .split("\n")
     .map((a) => a.replace(/^[•\-*]\s*/, "").trim())
     .filter(Boolean);
+}
+
+/**
+ * A heading and its content. Sentence case, not the uppercase tracking every
+ * panel used to carry — six shouted labels on one page is six things competing
+ * to be read first.
+ */
+function Section({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-xs font-semibold text-foreground">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** A number and what it counts. The number is the point, so it carries the weight. */
+function Stat({ value, label, muted }: { value: number; label: string; muted?: boolean }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-secondary px-3 py-2">
+      <p
+        className={`text-lg font-semibold leading-none tabular-nums ${
+          muted ? "text-muted-foreground" : "text-foreground"
+        }`}
+      >
+        {value}
+      </p>
+      <p className="mt-1 text-[11px] leading-tight text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-border/40 py-1.5 last:border-0">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="text-right text-xs font-medium tabular-nums text-foreground">{value}</dd>
+    </div>
+  );
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-xl border border-dashed border-border/70 px-3 py-4 text-center text-xs text-muted-foreground">
+      {children}
+    </p>
+  );
 }
 
 export default async function ProjectDetailPage({
@@ -120,121 +128,165 @@ export default async function ProjectDetailPage({
   const actor = await requireStaff("REPORT_VIEW");
   const { id } = await params;
 
-  // Reuse listProjects — it already includes all PLC versions, plot counts, etc.
-  const projects = await listProjects();
+  const [projects, byLifecycle] = await Promise.all([
+    listProjects(),
+    db.plot.groupBy({ by: ["lifecycle"], where: { projectId: id }, _count: { _all: true } }),
+  ]);
   const project = projects.find((p) => p.id === id);
-
   if (!project) notFound();
 
+  const countOf = (states: readonly string[]) =>
+    byLifecycle.filter((r) => states.includes(r.lifecycle)).reduce((n, r) => n + r._count._all, 0);
+
+  const total = project._count.plots;
+  const available = countOf(SELLABLE);
+  const inPlay = countOf(IN_PLAY);
+  const sold = countOf(SOLD);
+  // Whatever is left is unavailable for a reason of its own — a restriction, or
+  // a Project not yet activated. Derived rather than listed, so a lifecycle
+  // added later can never quietly go uncounted.
+  const unavailable = total - available - inPlay - sold;
+
   const publishedVersion = project.plcRuleVersions.find((v) => v.status === "PUBLISHED");
+  const charges = publishedVersion
+    ? plcDisplayComponents(plcRules(publishedVersion.components))
+    : [];
   const amenities = amenityList(project.amenities);
+
+  const facts = [
+    [project.location, project.city].filter(Boolean).join(", "),
+    project.isExternalResaleGroup
+      ? "External Resale Property Group"
+      : (TYPE_LABEL[project.type] ?? project.type),
+    project.developer,
+    project.reraNumber ? `RERA ${project.reraNumber}` : null,
+  ].filter(Boolean);
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
-      <div className="mx-auto max-w-4xl space-y-4">
-        {/* Back */}
+      <main className="mx-auto max-w-5xl space-y-3">
         <Link
           href="/projects"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to Projects
         </Link>
 
-        {/* Hero */}
-        <Card className="p-4 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold tracking-tight">{project.name}</h1>
-                <Badge variant={project.lifecycle === "ACTIVE" ? "success" : "outline"}>
-                  {LIFECYCLE_LABEL[project.lifecycle] ?? project.lifecycle}
-                </Badge>
-              </div>
-              <p className="mt-1 font-mono text-sm text-muted-foreground">{project.projectCode}</p>
-              <p className="text-xs text-muted-foreground">
-                {project.isExternalResaleGroup
-                  ? "External Resale Property Group"
-                  : (TYPE_LABEL[project.type] ?? project.type)}
-              </p>
+        {/* Identity. Four short facts that were four stacked rows, now one line
+            of name and one of everything else. */}
+        <header>
+          <Card className="space-y-2 p-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h1 className="text-xl font-bold tracking-tight">{project.name}</h1>
+              <Badge variant={project.lifecycle === "ACTIVE" ? "success" : "outline"}>
+                {LIFECYCLE_LABEL[project.lifecycle] ?? project.lifecycle}
+              </Badge>
+              <span className="font-mono text-xs text-muted-foreground">{project.projectCode}</span>
             </div>
-          </div>
 
-          {/* Location / Developer / RERA */}
-          {(project.city || project.location || project.developer || project.reraNumber) && (
-            <div className="grid gap-2 sm:grid-cols-2 text-xs text-muted-foreground">
-              {(project.city || project.location) && (
-                <p className="flex items-center gap-2">
-                  <MapPin className="h-3.5 w-3.5 shrink-0" />
-                  {[project.location, project.city].filter(Boolean).join(", ")}
-                </p>
-              )}
-              {project.developer && (
-                <p className="flex items-center gap-2">
-                  <Building2 className="h-3.5 w-3.5 shrink-0" />
-                  {project.developer}
-                </p>
-              )}
-              {project.reraNumber && (
-                <p className="flex items-center gap-2">
-                  <ScrollText className="h-3.5 w-3.5 shrink-0" />
-                  RERA {project.reraNumber}
-                </p>
-              )}
-            </div>
-          )}
-        </Card>
+            {facts.length > 0 && <p className="text-xs text-foreground">{facts.join(" · ")}</p>}
+
+            {(project.locationUrl || project.driveUrl) && (
+              // noreferrer carries noopener; without it the opened tab can reach
+              // back through window.opener and navigate this one.
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                {project.locationUrl && (
+                  <a
+                    href={project.locationUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-primary hover:underline"
+                  >
+                    <MapPin className="h-3.5 w-3.5" /> Map
+                  </a>
+                )}
+                {project.driveUrl && (
+                  <a
+                    href={project.driveUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-primary hover:underline"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" /> Structure &amp; layout
+                  </a>
+                )}
+              </div>
+            )}
+          </Card>
+        </header>
 
         {!project.isExternalResaleGroup && (
-          <div className="grid gap-4 md:grid-cols-2">
-            {/* Plot Inventory */}
-            <Card className="p-4 space-y-4">
-              <Section title="Plot Inventory" icon={<Layers className="h-3.5 w-3.5" />}>
-                <Row label="Total Plots" value={String(project._count.plots)} />
-                {project.plotTypeCounts.map(({ plotType, count }) => (
-                  <Row
-                    key={plotType}
-                    label={PLOT_TYPE_LABEL[plotType] ?? plotType}
-                    value={String(count)}
-                  />
-                ))}
+          <div className="grid items-start gap-3 lg:grid-cols-2">
+            <Card className="p-3">
+              <Section
+                title="Inventory"
+                action={
+                  total > 0 ? (
+                    <Link
+                      href={`/plots?project=${project.id}`}
+                      className="inline-flex items-center gap-0.5 text-xs text-primary hover:underline"
+                    >
+                      Open in Plot Inventory <ArrowUpRight className="h-3 w-3" />
+                    </Link>
+                  ) : null
+                }
+              >
+                {total === 0 ? (
+                  <Empty>No Plots yet. Prepare inventory to add them.</Empty>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <Stat value={available} label="Available" />
+                      <Stat value={inPlay} label="On hold" />
+                      <Stat value={sold} label="Sold" />
+                      <Stat value={unavailable} label="Not available" muted />
+                    </div>
+                    <dl className="mt-3">
+                      <Fact label="Total Plots" value={total} />
+                      {project.plotTypeCounts.map(({ plotType, count }) => (
+                        <Fact
+                          key={plotType}
+                          label={PLOT_TYPE_LABEL[plotType] ?? plotType}
+                          value={count}
+                        />
+                      ))}
+                    </dl>
+                  </>
+                )}
               </Section>
             </Card>
 
-            {/* Current PLC Summary */}
-            <Card className="p-4 space-y-4">
+            <Card className="p-3">
               <Section
                 title={`Plot Location Charge${publishedVersion ? ` · v${publishedVersion.version}` : ""}`}
-                icon={<Info className="h-3.5 w-3.5" />}
               >
-                {publishedVersion ? (
-                  <ul className="space-y-1 text-xs">
-                    {plcDisplayComponents(plcRules(publishedVersion.components)).map((c, i) => (
-                      <li key={i} className="flex justify-between gap-3">
-                        <span className="text-muted-foreground">{c.label}</span>
-                        <span className="tabular-nums font-medium">
-                          {formatPercent(c.percent)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                {charges.length === 0 ? (
+                  <Empty>
+                    {publishedVersion
+                      ? "This version configures no charge."
+                      : "No published PLC version — every Plot here charges zero."}
+                  </Empty>
                 ) : (
-                  <p className="text-xs text-muted-foreground">No published PLC version.</p>
+                  <dl>
+                    {charges.map((c, i) => (
+                      <Fact key={i} label={c.label} value={formatPercent(c.percent)} />
+                    ))}
+                  </dl>
                 )}
               </Section>
             </Card>
           </div>
         )}
 
-        {/* Amenities */}
         {amenities.length > 0 && (
-          <Card className="p-4 space-y-3">
-            <Section title="Amenities" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
+          <Card className="p-3">
+            <Section title="Amenities">
               <ul className="flex flex-wrap gap-1.5">
                 {amenities.map((a) => (
                   <li
                     key={a}
-                    className="rounded-full bg-secondary/80 px-2.5 py-0.5 text-xs font-medium text-secondary-foreground"
+                    className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground"
                   >
                     {a}
                   </li>
@@ -243,83 +295,7 @@ export default async function ProjectDetailPage({
             </Section>
           </Card>
         )}
-
-        {/* PLC Version History */}
-        {!project.isExternalResaleGroup && project.plcRuleVersions.length > 0 && (
-          <Card className="p-4 space-y-4">
-            <Section title="PLC Version History" icon={<History className="h-3.5 w-3.5" />}>
-              {/* Explanation box — answers "v1 · Superseded" question */}
-              <div className="rounded-xl border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
-                <p className="font-semibold text-foreground flex items-center gap-1.5">
-                  <Info className="h-3.5 w-3.5" /> What do these statuses mean?
-                </p>
-                <ul className="space-y-1 mt-1">
-                  {Object.entries(PLC_STATUS).map(([, s]) => (
-                    <li key={s.label}>
-                      <Badge variant={s.variant} className="mr-2">{s.label}</Badge>
-                      {s.explanation}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <ul className="space-y-3">
-                {project.plcRuleVersions.map((v) => {
-                  const statusInfo = PLC_STATUS[v.status] ?? {
-                    label: v.status,
-                    variant: "outline" as const,
-                    explanation: "",
-                  };
-                  return (
-                    <li
-                      key={v.id}
-                      className="rounded-xl border border-border/50 bg-muted/20 p-4 space-y-2"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold">v{v.version}</span>
-                          <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                        </div>
-                        <div className="text-[11px] text-muted-foreground text-right">
-                          {v.effectiveFrom && (
-                            <p>Active from {formatIst(v.effectiveFrom)}</p>
-                          )}
-                          {v.effectiveTo && (
-                            <p>Replaced {formatIst(v.effectiveTo)}</p>
-                          )}
-                          {v.publishedBy && <p>Published by {v.publishedBy}</p>}
-                          {v.createdBy && !v.publishedBy && <p>Created by {v.createdBy}</p>}
-                          <p className="text-[10px]">Created {formatIst(v.createdAt)}</p>
-                        </div>
-                      </div>
-
-                      {v.reason && (
-                        <p className="text-xs text-muted-foreground">
-                          <span className="font-medium text-foreground">Reason: </span>
-                          {v.reason}
-                        </p>
-                      )}
-
-                      {v.components.length > 0 && (
-                        <ul className="space-y-1 text-xs border-t border-border/40 pt-2">
-                          {plcDisplayComponents(plcRules(v.components)).map((c, i) => (
-                            <li key={i} className="flex justify-between gap-3">
-                              <span className="text-muted-foreground">{c.label}</span>
-                              <span className="tabular-nums font-medium">
-                                {formatPercent(c.percent)}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </Section>
-          </Card>
-        )}
-      </div>
+      </main>
     </AppShell>
   );
 }

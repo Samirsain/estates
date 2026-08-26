@@ -11,8 +11,16 @@ import PlotsClient, { type HoldRequestView, type PlotRowView } from "./plots-cli
 
 export const dynamic = "force-dynamic";
 
-export default async function PlotsPage() {
+export default async function PlotsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string }>;
+}) {
   const actor = await requireStaff();
+  // A Project detail page links here for its own Plots. Without this the link
+  // would land on every Plot in the company and leave the filtering to whoever
+  // followed it.
+  const { project: initialProject } = await searchParams;
 
   const [plots, projects, people, requests] = await Promise.all([
     listPlots(),
@@ -128,6 +136,7 @@ export default async function PlotsPage() {
       staffAccountId={actor.staffAccountId}
       rows={rows}
       holdRequests={holdRequests}
+      initialProject={initialProject ?? "ALL"}
       projects={projects.map((p) => ({
         id: p.id,
         name: p.name,
