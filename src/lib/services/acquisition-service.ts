@@ -108,7 +108,7 @@ export async function createAcquisition(args: {
     propertyName: string;
     location: string;
     propertyNumber: string;
-    projectType?: "RESIDENTIAL" | "COMMERCIAL" | "MIXED" | null;
+    projectType?: "RESIDENTIAL" | "COMMERCIAL" | "AGRICULTURAL" | "MIXED" | null;
     areaSqFt?: string | null;
     plcPercent?: string | null;
     resaleGroupId?: string | null;

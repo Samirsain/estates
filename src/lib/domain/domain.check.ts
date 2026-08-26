@@ -14,6 +14,10 @@ import {
   buildPlcSnapshot,
   calculateAreas,
   canAllocate,
+  displayLifecycle,
+  greenAreaLabel,
+  normaliseLink,
+  releaseOnActivation,
   derivedFacing,
   plcComponentLabel,
   plcComponentLabels,
@@ -347,7 +351,10 @@ assert.throws(
 assert.equal(plcComponentLabel("ROAD_WIDTH", "60"), "Road 60 ft");
 assert.equal(plcComponentLabel("ROAD_WIDTH", "40"), "Road 40 ft");
 assert.equal(plcComponentLabel("OPEN_SIDES", "4"), "Four side open");
-assert.equal(plcComponentLabel("PARK_FACING"), "Park / Playground facing");
+// The two green-area rows are named apart now. They still charge once; the
+// names exist so a Plot facing a park, a playground, or both can be told apart.
+assert.equal(plcComponentLabel("PARK_FACING"), "Park facing");
+assert.equal(plcComponentLabel("PLAYGROUND_FACING"), "Playground facing");
 
 // A band being typed is empty, then half-typed, before it is ever a number.
 // Labelling is display, not validation: it must describe an incomplete row, not
@@ -369,8 +376,8 @@ assert.deepEqual(plcComponentLabels(rules), [
   "Four side open",
   "Three side open",
   "Two side open",
-  "Park / Playground facing",
-  "Park / Playground facing",
+  "Park facing",
+  "Playground facing",
 ]);
 
 // plcComponentLabels maps one label per configured row, which is what an editor
@@ -383,7 +390,9 @@ assert.deepEqual(plcDisplayComponents(rules), [
   { label: "Four side open", percent: "6" },
   { label: "Three side open", percent: "4" },
   { label: "Two side open", percent: "2" },
-  { label: "Park / Playground facing", percent: "2" },
+  // One line, at the price the snapshot would use — and named for both,
+  // because this version configures both.
+  { label: "Park and Playground facing", percent: "2" },
 ]);
 
 /* ------------------------------------------------------ terms and privacy */
@@ -1606,5 +1615,140 @@ assert.equal(
 // year, the same day their annual counter rolls. Not a day later.
 assert.equal(experienceSince(new Date("2024-02-29"), new Date("2025-02-28"))?.years, 1);
 assert.equal(experienceSince(new Date("2024-02-29"), new Date("2025-02-27"))?.years, 0);
+
+// PRD §16.1 — activating a Project releases the inventory that was waiting on
+// it, and nothing else. The two filters are the whole rule, so both directions
+// are worth pinning: what must move, and what must be left exactly as it is.
+assert.equal(releaseOnActivation("NOT_AVAILABLE", "NOT_YET_RELEASED"), "RELEASE");
+assert.equal(
+  releaseOnActivation("NOT_AVAILABLE", "NONE"),
+  "RELEASE",
+  "a Plot released and put back Not Available goes out again"
+);
+
+// Somebody decided these about one Plot. A Project-wide action does not undo them.
+assert.equal(releaseOnActivation("NOT_AVAILABLE", "NOT_FOR_SALE"), "RESTRICTED");
+assert.equal(releaseOnActivation("NOT_AVAILABLE", "PLEDGE"), "RESTRICTED");
+
+// Anything already in play is untouched, whatever its restriction says.
+for (const lifecycle of [
+  "AVAILABLE",
+  "HOLD",
+  "WAITING_FOR_BOOKING_APPROVAL",
+  "BOOKED",
+  "PAYMENT_COMPLETED",
+  "REFUND_PENDING",
+  "DELIVERED",
+] as const) {
+  assert.equal(
+    releaseOnActivation(lifecycle, "NONE"),
+    "ALLOCATED",
+    `${lifecycle} is never rewritten by a Project activation`
+  );
+}
+
+// The release and the sale gate must agree: every Plot activation makes
+// Available has to be one canAllocate then accepts, or the screen offers a Plot
+// the next click refuses.
+assert.equal(releaseOnActivation("NOT_AVAILABLE", "NOT_YET_RELEASED"), "RELEASE");
+assert.deepEqual(canAllocate("AVAILABLE", "NONE", "ACTIVE"), { ok: true });
+
+// The row must not offer what the next click refuses. An Unreleased Project
+// blocks every Hold and Booking (canAllocate), so an Available badge inside one
+// would be a promise nothing can keep.
+assert.deepEqual(displayLifecycle("AVAILABLE", "SETUP_NOT_ACTIVE"), {
+  lifecycle: "NOT_AVAILABLE",
+  because: "Project is Unreleased",
+});
+assert.deepEqual(displayLifecycle("AVAILABLE", "ACTIVE"), {
+  lifecycle: "AVAILABLE",
+  because: null,
+});
+
+// Everything else keeps its own word, Unreleased Project or not — those states
+// are more specific than "not available" and stay true regardless.
+for (const lifecycle of ["HOLD", "BOOKED", "DELIVERED", "NOT_AVAILABLE"] as const) {
+  assert.equal(
+    displayLifecycle(lifecycle, "SETUP_NOT_ACTIVE").lifecycle,
+    lifecycle,
+    `${lifecycle} is not rewritten by an Unreleased Project`
+  );
+}
+
+// And the tie between the two: wherever the row still says Available, the sale
+// gate must actually agree. This is the pair that would drift apart silently.
+for (const projectLifecycle of ["SETUP_NOT_ACTIVE", "ACTIVE", "SOLD_OUT", "COMPLETED"] as const) {
+  const shown = displayLifecycle("AVAILABLE", projectLifecycle);
+  if (shown.lifecycle === "AVAILABLE") {
+    assert.equal(
+      canAllocate("AVAILABLE", "NONE", projectLifecycle).ok,
+      true,
+      `a row reading Available under ${projectLifecycle} must really be allocatable`
+    );
+  }
+}
+
+// A Project link becomes an href on a page other people open, so the scheme is
+// the whole check: javascript: runs on click and data: can carry a document.
+assert.equal(normaliseLink("", "Location link"), null, "empty is not a link, it is no link");
+assert.equal(normaliseLink(null, "Location link"), null);
+assert.equal(normaliseLink("  https://maps.app.goo.gl/x  ", "Location link"), "https://maps.app.goo.gl/x");
+assert.equal(normaliseLink("http://example.com/a", "Drive link"), "http://example.com/a");
+
+for (const bad of [
+  "javascript:alert(1)",
+  "JavaScript:alert(1)",
+  "data:text/html,<script>alert(1)</script>",
+  "file:///etc/passwd",
+]) {
+  assert.throws(() => normaliseLink(bad, "Drive link"), /Drive link/, `${bad} is refused`);
+}
+// Not a URL at all, which is what a pasted place name looks like.
+assert.throws(() => normaliseLink("Ajmer Road, Jaipur", "Location link"), /full link/);
+
+// Park and Playground are one charge with two rows. The rows exist so a Plot's
+// own facing can be told apart afterwards; the charge must not double.
+assert.equal(greenAreaLabel(true, false), "Park facing");
+assert.equal(greenAreaLabel(false, true), "Playground facing");
+assert.equal(greenAreaLabel(true, true), "Park and Playground facing");
+
+const greenPair = [
+  { category: "PARK_FACING" as const, threshold: null, percent: "5" },
+  { category: "PLAYGROUND_FACING" as const, threshold: null, percent: "5" },
+];
+
+// One side each, and greenBoth configured: still one charge, named for greenBoth.
+const greenBoth = buildPlcSnapshot(
+  [
+    { side: "NORTH", kind: "PARK" },
+    { side: "EAST", kind: "PLAYGROUND" },
+  ] as never,
+  greenPair
+);
+assert.equal(greenBoth.components.length, 1, "a Plot facing greenBoth is charged once, not twice");
+assert.equal(greenBoth.totalPercent.toString(), "5");
+assert.equal(greenBoth.components[0].label, "Park and Playground facing");
+
+// Park only.
+const greenParkOnly = buildPlcSnapshot([{ side: "NORTH", kind: "PARK" }] as never, greenPair);
+assert.equal(greenParkOnly.components[0].label, "Park facing");
+assert.equal(greenParkOnly.totalPercent.toString(), "5");
+
+// Playground only — this could not even be configured before, because
+// PLAYGROUND_FACING was missing from PLC_CATEGORY_ORDER and a category absent
+// from it is dropped from the snapshot without a word.
+const greenPlayOnly = buildPlcSnapshot([{ side: "SOUTH", kind: "PLAYGROUND" }] as never, greenPair);
+assert.equal(greenPlayOnly.components[0].label, "Playground facing");
+assert.equal(greenPlayOnly.totalPercent.toString(), "5");
+
+// Two park sides are still one charge (plc.md §2.3).
+const greenTwoParks = buildPlcSnapshot(
+  [
+    { side: "NORTH", kind: "PARK" },
+    { side: "SOUTH", kind: "PARK" },
+  ] as never,
+  greenPair
+);
+assert.equal(greenTwoParks.totalPercent.toString(), "5", "the same category on two sides charges once");
 
 console.log("domain.check.ts OK");

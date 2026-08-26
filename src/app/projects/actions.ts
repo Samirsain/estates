@@ -30,9 +30,11 @@ function refresh() {
 
 export type ProjectFields = {
   name: string;
-  type: "RESIDENTIAL" | "COMMERCIAL" | "MIXED";
+  type: "RESIDENTIAL" | "COMMERCIAL" | "AGRICULTURAL" | "MIXED";
   developer: string;
   location: string;
+  locationUrl: string;
+  driveUrl: string;
   city: string;
   amenities: string;
   reraNumber: string;
@@ -46,9 +48,11 @@ export async function createProjectAction(
   key: string
 ): Promise<ActionResult> {
   const actor = await requireStaff("PROJECT_SETUP");
-  // The form offers Residential and Commercial only. Refusing rather than
-  // quietly rewriting keeps a surprising value from becoming a stored one.
-  if (input.type === "MIXED") return { ok: false, error: "Choose Residential or Commercial." };
+  // The form does not offer Mixed. Refusing rather than quietly rewriting
+  // keeps a surprising value from becoming a stored one.
+  if (input.type === "MIXED") {
+    return { ok: false, error: "Choose Residential, Commercial or Agricultural." };
+  }
   try {
     const result = await createProject({
       idempotencyKey: key,
@@ -58,6 +62,8 @@ export async function createProjectAction(
       type: input.type,
       developer: input.developer || null,
       location: input.location || null,
+      locationUrl: input.locationUrl || null,
+      driveUrl: input.driveUrl || null,
       city: input.city || null,
       amenities: input.amenities || null,
       reraNumber: input.reraNumber || null,
@@ -82,7 +88,7 @@ export async function setProjectLifecycleAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("PROJECT_SETUP");
   try {
-    await setProjectLifecycle({
+    const result = await setProjectLifecycle({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
@@ -91,7 +97,28 @@ export async function setProjectLifecycleAction(
       reason,
     });
     refresh();
-    return { ok: true, message: `Project is now ${lifecycle.replaceAll("_", " ").toLowerCase()}.` };
+
+    // What the activation did to the inventory, said plainly. A Plot that did
+    // not move is more interesting than one that did — it means something is
+    // holding it, and the count is where anyone would notice.
+    const kept = [
+      result.heldBack > 0 ? `${result.heldBack} left on Hold or Booked` : null,
+      result.restricted > 0 ? `${result.restricted} kept restricted` : null,
+    ].filter(Boolean);
+
+    const released =
+      lifecycle !== "ACTIVE"
+        ? ""
+        : result.released > 0
+          ? ` ${result.released} Plot(s) released.`
+          : " No Plot was waiting to be released.";
+
+    return {
+      ok: true,
+      message:
+        `Project is now ${lifecycle.replaceAll("_", " ").toLowerCase()}.${released}` +
+        (kept.length > 0 ? ` ${kept.join(", ")}.` : ""),
+    };
   } catch (error) {
     return toResult(error);
   }
@@ -195,6 +222,8 @@ export async function updateProjectAction(
       type: input.type,
       developer: input.developer || null,
       location: input.location || null,
+      locationUrl: input.locationUrl || null,
+      driveUrl: input.driveUrl || null,
       city: input.city || null,
       amenities: input.amenities || null,
       reraNumber: input.reraNumber || null,

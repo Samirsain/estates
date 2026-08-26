@@ -48,6 +48,8 @@ export type ProjectRowView = {
   lifecycle: string;
   developer: string | null;
   location: string | null;
+  locationUrl: string | null;
+  driveUrl: string | null;
   city: string | null;
   amenities: string | null;
   reraNumber: string | null;
@@ -80,6 +82,7 @@ const PLC_STATUS_LABEL: Record<string, string> = {
 const TYPE_LABEL: Record<string, string> = {
   RESIDENTIAL: "Residential",
   COMMERCIAL: "Commercial",
+  AGRICULTURAL: "Agricultural",
   MIXED: "Mixed",
 };
 
@@ -409,15 +412,15 @@ function ComponentEditor({
 
   return (
     <div className="space-y-2">
-      <p className="text-xs font-medium text-muted-foreground">
-        Location Charge — each category is charged once, however many sides qualify, and a banded
-        category charges only the highest band the Plot reaches
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        Each category is charged once however many sides qualify, and a banded category charges only
+        the highest band the Plot reaches.
       </p>
       {rows.map((row, index) => {
         const meta = PLC_CATEGORIES[row.category];
 
         return (
-          <div key={index} className="rounded-xl border border-border/70 bg-muted/20 p-3 space-y-2 transition-all">
+          <div key={index} className="rounded-xl border border-border/70 bg-muted/20 p-2.5 space-y-1.5 transition-all">
             <div className="grid gap-2 md:grid-cols-[1fr_1fr_0.6fr_0.6fr_auto] items-end">
               <Field label="Category">
                 <select
@@ -457,20 +460,22 @@ function ComponentEditor({
                   </Field>
                 </div>
               ) : !meta.banded ? (
-                <div className="md:col-span-2">
-                  <Field label="Charge Rule">
-                    <div className="flex h-9 items-center rounded-lg border border-border/70 bg-card px-3 text-xs font-medium text-muted-foreground">
-                      Flat Single Charge — Applies once if plot faces a park or playground
-                    </div>
-                  </Field>
-                </div>
+                // Not a field. It was drawn as one — border, card background,
+                // input height — so it read as something to fill in, sitting in
+                // a row of things that were. It is a sentence about the category
+                // above it, so it looks like a sentence.
+                <p className="md:col-span-2 self-center text-[11px] leading-relaxed text-muted-foreground">
+                  Charged once. Park and Playground share the one charge, so a Plot facing both
+                  still pays it once — the rows are separate so the Plot&apos;s own facing is
+                  named on its snapshot.
+                </p>
               ) : (
                 <>
                   <Field label="Remark / Road Name">
                     <Input
                       value={row.remark ?? ""}
                       onChange={(e) => update(index, { remark: e.target.value })}
-                      placeholder="e.g. Expressway, Highway, 60ft Main Road"
+                      placeholder="60ft Main Road"
                     />
                   </Field>
                   <Field label={`From (${meta.unit})`}>
@@ -561,6 +566,7 @@ function ProjectFieldset({ row }: { row?: ProjectRowView }) {
         <select name="type" className={inputClass} defaultValue={row?.type ?? "RESIDENTIAL"}>
           <option value="RESIDENTIAL">Residential</option>
           <option value="COMMERCIAL">Commercial</option>
+          <option value="AGRICULTURAL">Agricultural</option>
           {/* Mixed is no longer offered for a new Project, but a Project that
               already carries it keeps the option — without it the select would
               fall back to Residential and change the type on save. */}
@@ -572,6 +578,24 @@ function ProjectFieldset({ row }: { row?: ProjectRowView }) {
       </Field>
       <Field label="Location">
         <Input name="location" defaultValue={row?.location ?? ""} />
+      </Field>
+      <Field label="Location link">
+        <Input
+          name="locationUrl"
+          type="url"
+          inputMode="url"
+          placeholder="Google Maps link — optional"
+          defaultValue={row?.locationUrl ?? ""}
+        />
+      </Field>
+      <Field label="Structure & Layout (Drive link)">
+        <Input
+          name="driveUrl"
+          type="url"
+          inputMode="url"
+          placeholder="Google Drive folder — optional"
+          defaultValue={row?.driveUrl ?? ""}
+        />
       </Field>
       <Field label="Developer / Company">
         <Input name="developer" defaultValue={row?.developer ?? ""} />
@@ -639,6 +663,8 @@ function readProjectFields(f: FormData): ProjectFields {
     type: String(f.get("type")) as ProjectFields["type"],
     developer: String(f.get("developer") ?? ""),
     location: String(f.get("location") ?? ""),
+    locationUrl: String(f.get("locationUrl") ?? ""),
+    driveUrl: String(f.get("driveUrl") ?? ""),
     city: String(f.get("city") ?? ""),
     // The bullets are the field's, not the data's.
     amenities: amenityList(String(f.get("amenities") ?? "")).join("\n"),
@@ -662,7 +688,7 @@ function ProjectDialog({
       onClose={onClose}
     >
       <form
-        className="space-y-4"
+        className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
           onSubmit({
@@ -814,7 +840,7 @@ function PlcDialog({
       </form>
 
       {drafts.length > 0 && (
-        <div className="mt-5 border-t border-border/50 pt-4">
+        <div className="mt-4 border-t border-border/50 pt-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Drafts waiting to be published
           </h3>
@@ -843,7 +869,7 @@ function PlcDialog({
 
       {/* PLC spec §15.1 — the version history, so what changed and when is
           answerable without opening the database. */}
-      <div className="mt-5 border-t border-border/50 pt-4">
+      <div className="mt-4 border-t border-border/50 pt-3">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Version history
         </h3>

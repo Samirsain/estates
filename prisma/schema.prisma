@@ -338,6 +338,9 @@ enum ProjectLifecycle {
 enum ProjectType {
   RESIDENTIAL
   COMMERCIAL
+  AGRICULTURAL
+  /// No longer offered on the form, and refused by createProjectAction. Kept
+  /// because Projects created before that still carry it.
   MIXED
 }
 
@@ -457,6 +460,10 @@ model Project {
   name        String
   developer   String?
   location    String?
+  /// A map link. Prose lives in `location`; this is the URL, http(s) only.
+  locationUrl String?
+  /// Where the structure and layout documents live, http(s) only.
+  driveUrl    String?
   city        String?
   /// One amenity per line. Rendered as bullets on the Project card.
   amenities   String?

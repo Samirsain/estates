@@ -108,8 +108,8 @@ export type PlcCategory = "ROAD_WIDTH" | "OPEN_SIDES" | "PARK_FACING" | "PLAYGRO
 export const PLC_CATEGORIES: Record<PlcCategory, { label: string; banded: boolean; unit: string | null }> = {
   ROAD_WIDTH: { label: "Road width", banded: true, unit: "ft" },
   OPEN_SIDES: { label: "Open sides", banded: true, unit: "sides" },
-  PARK_FACING: { label: "Park / Playground facing", banded: false, unit: null },
-  PLAYGROUND_FACING: { label: "Park / Playground facing", banded: false, unit: null },
+  PARK_FACING: { label: "Park facing", banded: false, unit: null },
+  PLAYGROUND_FACING: { label: "Playground facing", banded: false, unit: null },
 };
 
 /** Display order, so a breakdown reads the same way on every screen. */
@@ -117,6 +117,7 @@ export const PLC_CATEGORY_ORDER: PlcCategory[] = [
   "ROAD_WIDTH",
   "OPEN_SIDES",
   "PARK_FACING",
+  "PLAYGROUND_FACING",
 ];
 
 /** One configured row of a PLC version: a category, its band, its percentage. */
@@ -208,6 +209,24 @@ export function plcComponentLabels(rules: readonly PlcComponentRule[]): string[]
  */
 export const GREEN_AREA_CATEGORY = "PARK_FACING" as const;
 
+/**
+ * The one green-area charge, named for what it is actually charging.
+ *
+ * The charge stays single — a Plot facing both a park and a playground pays it
+ * once, and the two configured rows carry the same percentage. What the two
+ * rows buy is the ability to tell those Plots apart afterwards: "Park facing"
+ * and "Playground facing" and "Park and Playground facing" are three different
+ * facts about a Plot, and the old label said the same thing for all three.
+ *
+ * The label is frozen into a Hold or Booking snapshot, so this reads correctly
+ * on every snapshot taken from now on and rewrites none that already exist.
+ */
+export function greenAreaLabel(hasPark: boolean, hasPlayground: boolean): string {
+  if (hasPark && hasPlayground) return "Park and Playground facing";
+  if (hasPlayground) return "Playground facing";
+  return "Park facing";
+}
+
 export function isGreenArea(category: PlcCategory): boolean {
   return category === "PARK_FACING" || category === "PLAYGROUND_FACING";
 }
@@ -244,7 +263,12 @@ export function plcDisplayComponents(
       if (greenDone || !green) return;
       greenDone = true;
       out.push({
-        label: plcComponentLabel(GREEN_AREA_CATEGORY),
+        // Named for what the version configures, the way the snapshot is named
+        // for what the Plot faces.
+        label: greenAreaLabel(
+          rules.some((r) => r.category === "PARK_FACING"),
+          rules.some((r) => r.category === "PLAYGROUND_FACING")
+        ),
         percent: String(green.percent),
       });
       return;
@@ -378,7 +402,7 @@ export function buildPlcSnapshot(
     if (greenRule) {
       matched.set(GREEN_AREA_CATEGORY, {
         rule: greenRule,
-        label: plcComponentLabel(GREEN_AREA_CATEGORY),
+        label: greenAreaLabel(parks.length > 0, playgrounds.length > 0),
         evidence: `${sides(greenAreas)} facing`,
       });
     }
@@ -404,6 +428,30 @@ const BLOCKING_RESTRICTIONS: PlotRestriction[] = ["NOT_FOR_SALE", "PLEDGE"];
 
 export function restrictionBlocksSale(restriction: PlotRestriction): boolean {
   return BLOCKING_RESTRICTIONS.includes(restriction);
+}
+
+export type ActivationRelease = "RELEASE" | "ALLOCATED" | "RESTRICTED";
+
+/**
+ * What activating a Project does to one of its Plots (PRD §16.1).
+ *
+ * A Plot is created Not Available / Not Yet Released and waits for exactly this
+ * moment, so activation releases it rather than making someone click through a
+ * hundred Plots to repeat what the activation already said.
+ *
+ * ALLOCATED is anything already in play — a Hold, a Booking under review, a
+ * Booked or Delivered Plot. RESTRICTED is Not for Sale or Pledge, which are
+ * decisions someone made about that one Plot; a Project-wide action must not
+ * overrule them. Not Yet Released is neither: it is not a restriction anyone
+ * chose, it is the absence of this release.
+ */
+export function releaseOnActivation(
+  lifecycle: PlotLifecycle,
+  restriction: PlotRestriction
+): ActivationRelease {
+  if (lifecycle !== "NOT_AVAILABLE") return "ALLOCATED";
+  if (restrictionBlocksSale(restriction)) return "RESTRICTED";
+  return "RELEASE";
 }
 
 export type PlotReturn = { lifecycle: PlotLifecycle; message: string | null };
@@ -471,6 +519,57 @@ export function canAllocate(
     return { ok: false, reason: `Plot is ${lifecycle.replaceAll("_", " ").toLowerCase()}, not Available.` };
   }
   return { ok: true };
+}
+
+/**
+ * What a Plot row should say, which is not always what the Plot column says.
+ *
+ * canAllocate refuses a Hold or Booking outright while the Project is still
+ * Unreleased, so an Available badge on a Plot in such a Project is a promise
+ * the system will not keep — nothing can be done with it. The stored lifecycle
+ * is left exactly as it is; only the reading changes, and it changes back the
+ * moment the Project is activated.
+ *
+ * Every other state is left alone on purpose. Hold, Booked and the rest are
+ * more specific facts than "not available", they stay true whatever the Project
+ * is doing, and overwriting them would lose the one thing the row is for.
+ */
+export function displayLifecycle(
+  plotLifecycle: PlotLifecycle,
+  projectLifecycle: ProjectLifecycle | undefined
+): { lifecycle: PlotLifecycle; because: string | null } {
+  if (plotLifecycle === "AVAILABLE" && projectLifecycle === "SETUP_NOT_ACTIVE") {
+    return { lifecycle: "NOT_AVAILABLE", because: "Project is Unreleased" };
+  }
+  return { lifecycle: plotLifecycle, because: null };
+}
+
+/**
+ * A link somebody typed, on its way to becoming an anchor on the Project page.
+ *
+ * Only http and https come back. A `javascript:` URL in an href runs as soon as
+ * it is clicked, and `data:` can carry a whole document — both would turn a
+ * text field two people can edit into script execution for everyone who opens
+ * the Project. Anything else is refused rather than sanitised, because a link
+ * that has to be repaired is a link nobody checked.
+ *
+ * Returns the trimmed URL, or null for empty input. Throws for a bad one, so
+ * the caller cannot store it by forgetting to look.
+ */
+export function normaliseLink(value: string | null | undefined, label: string): string | null {
+  const raw = (value ?? "").trim();
+  if (!raw) return null;
+
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`${label} must be a full link starting with https://`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${label} must start with https:// — ${url.protocol} links are not accepted.`);
+  }
+  return url.toString();
 }
 
 /* ----------------------------------------------------------- derived facing */

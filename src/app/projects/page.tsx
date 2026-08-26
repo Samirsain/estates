@@ -25,6 +25,8 @@ export default async function ProjectsPage() {
         lifecycle: project.lifecycle,
         developer: project.developer,
         location: project.location,
+        locationUrl: project.locationUrl,
+        driveUrl: project.driveUrl,
         city: project.city,
         amenities: project.amenities,
         reraNumber: project.reraNumber,

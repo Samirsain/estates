@@ -8,7 +8,9 @@ import { db } from "@/lib/db";
 import {
   PLC_CATEGORIES,
   buildPlcSnapshot,
+  normaliseLink,
   plcComponentLabel,
+  releaseOnActivation,
   validatePlcComponents,
   type PlcCategory,
 } from "@/lib/domain/inventory";
@@ -49,9 +51,11 @@ export async function updateProject(args: {
   name: string;
   /** MIXED is no longer offered for a new Project, but one that already
    *  carries it must be able to save without silently changing type. */
-  type: "RESIDENTIAL" | "COMMERCIAL" | "MIXED";
+  type: "RESIDENTIAL" | "COMMERCIAL" | "AGRICULTURAL" | "MIXED";
   developer?: string | null;
   location?: string | null;
+  locationUrl?: string | null;
+  driveUrl?: string | null;
   city?: string | null;
   amenities?: string | null;
   reraNumber?: string | null;
@@ -74,6 +78,8 @@ export async function updateProject(args: {
         type: string;
         developer: string | null;
         location: string | null;
+        locationUrl: string | null;
+        driveUrl: string | null;
         city: string | null;
         amenities: string | null;
         reraNumber: string | null;
@@ -82,6 +88,8 @@ export async function updateProject(args: {
         type: project.type,
         developer: project.developer,
         location: project.location,
+        locationUrl: project.locationUrl,
+        driveUrl: project.driveUrl,
         city: project.city,
         amenities: project.amenities,
         reraNumber: project.reraNumber,
@@ -95,6 +103,8 @@ export async function updateProject(args: {
           type: args.type,
           developer: args.developer?.trim() || null,
           location: args.location?.trim() || null,
+          locationUrl: normaliseLink(args.locationUrl, "Location link"),
+          driveUrl: normaliseLink(args.driveUrl, "Structure and layout link"),
           city: args.city?.trim() || null,
           amenities: args.amenities?.trim() || null,
           reraNumber: args.reraNumber?.trim() || null,
@@ -147,9 +157,12 @@ export async function createProject(args: {
   actorRef: string;
   actorRole: string;
   name: string;
-  type: "RESIDENTIAL" | "COMMERCIAL";
+  /** MIXED is absent on purpose: it cannot be created, only carried forward. */
+  type: "RESIDENTIAL" | "COMMERCIAL" | "AGRICULTURAL";
   developer?: string | null;
   location?: string | null;
+  locationUrl?: string | null;
+  driveUrl?: string | null;
   city?: string | null;
   /** One amenity per line. */
   amenities?: string | null;
@@ -180,6 +193,8 @@ export async function createProject(args: {
           type: args.type,
           developer: args.developer?.trim() || null,
           location: args.location?.trim() || null,
+          locationUrl: normaliseLink(args.locationUrl, "Location link"),
+          driveUrl: normaliseLink(args.driveUrl, "Structure and layout link"),
           city: args.city?.trim() || null,
           amenities: args.amenities?.trim() || null,
           reraNumber: args.reraNumber?.trim() || null,
@@ -264,14 +279,77 @@ export async function setProjectLifecycle(args: {
         data: { lifecycle: args.lifecycle },
       });
 
+      // Activating a Project releases the inventory that was only waiting on it.
+      //
+      // A Plot is created Not Available / Not Yet Released, and until now every
+      // one of them had to be released by hand afterwards — a hundred Plots was
+      // a hundred clicks to say the one thing the activation already said.
+      //
+      // Two filters decide what moves, and between them they protect everything
+      // that matters. The lifecycle filter takes only NOT_AVAILABLE, so a Hold,
+      // a Booking under review, a Booked or Delivered Plot is never touched.
+      // The restriction filter takes only NONE and NOT_YET_RELEASED, so Not for
+      // Sale and Pledge survive — those are decisions somebody made about that
+      // Plot, and a Project-wide action must not overrule them. NOT_YET_RELEASED
+      // is cleared on purpose: it is not a restriction anyone chose, it is the
+      // absence of this very release.
+      let released = 0;
+      let heldBack = 0;
+      let restricted = 0;
+
+      if (args.lifecycle === "ACTIVE") {
+        const plots = await tx.plot.findMany({
+          where: { projectId: args.projectId },
+          select: { id: true, lifecycle: true, restriction: true },
+        });
+
+        for (const plot of plots) {
+          const outcome = releaseOnActivation(plot.lifecycle, plot.restriction);
+          if (outcome === "ALLOCATED") {
+            heldBack++;
+            continue;
+          }
+          if (outcome === "RESTRICTED") {
+            restricted++;
+            continue;
+          }
+
+          await tx.plot.update({
+            where: { id: plot.id },
+            data: { lifecycle: "AVAILABLE", restriction: "NONE", restrictionReason: null },
+          });
+          // ARCHITECTURE §3.2 — the Plot's history is append-only, and a release
+          // that left no event would be a state change nobody could trace.
+          await tx.plotEvent.create({
+            data: {
+              plotId: plot.id,
+              actorRef: args.actorRef,
+              action: "PLOT_MADE_AVAILABLE",
+              fromLifecycle: plot.lifecycle,
+              toLifecycle: "AVAILABLE",
+              fromRestriction: plot.restriction,
+              toRestriction: "NONE",
+              reason: `Project activated — ${args.reason}`,
+            },
+          });
+          released++;
+        }
+      }
+
       return {
-        result: { projectId: args.projectId, lifecycle: args.lifecycle },
+        result: {
+          projectId: args.projectId,
+          lifecycle: args.lifecycle,
+          released,
+          heldBack,
+          restricted,
+        },
         audit: {
           entity: "Project",
           entityId: args.projectId,
           action: "PROJECT_LIFECYCLE_CHANGED",
           before: { lifecycle: project.lifecycle },
-          after: { lifecycle: args.lifecycle },
+          after: { lifecycle: args.lifecycle, plotsReleased: released },
           reason: args.reason,
         },
       };
