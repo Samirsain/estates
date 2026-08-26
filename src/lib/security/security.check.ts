@@ -112,6 +112,13 @@ assert.ok(!isLocked(attempts, now));
 for (let i = 0; i < MAX_FAILED_ATTEMPTS; i++) attempts = registerFailure(attempts, now);
 assert.ok(isLocked(attempts, now), "account locks after 5 failures");
 assert.ok(!isLocked(attempts, new Date(now.getTime() + 16 * 60_000)), "lock expires");
+
+// An expired lockout starts the count over: the first failure afterwards must
+// not re-lock the account, or a locked-out user gets one attempt instead of five.
+const after = new Date(now.getTime() + 16 * 60_000);
+const firstRetry = registerFailure(attempts, after);
+assert.equal(firstRetry.failedAttempts, 1, "expired lockout resets the counter");
+assert.ok(!isLocked(firstRetry, after), "one failure after the window does not re-lock");
 assert.ok(!isLocked(registerSuccess(), now));
 assert.equal(GENERIC_LOGIN_ERROR, "Invalid login details.");
 

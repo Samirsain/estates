@@ -70,13 +70,17 @@ export function isLocked(state: AttemptState, now: Date = new Date()): boolean {
 }
 
 export function registerFailure(state: AttemptState, now: Date = new Date()): AttemptState {
-  const failedAttempts = state.failedAttempts + 1;
+  // A lockout that has run out starts the count over. Without this the counter
+  // stays at MAX_FAILED_ATTEMPTS after the window closes, so the first failure
+  // afterwards re-locks immediately and the user gets one attempt, not five.
+  const from = state.lockedUntil !== null && !isLocked(state, now) ? registerSuccess() : state;
+  const failedAttempts = from.failedAttempts + 1;
   return {
     failedAttempts,
     lockedUntil:
       failedAttempts >= MAX_FAILED_ATTEMPTS
         ? new Date(now.getTime() + LOCKOUT_MINUTES * 60_000)
-        : state.lockedUntil,
+        : from.lockedUntil,
   };
 }
 
