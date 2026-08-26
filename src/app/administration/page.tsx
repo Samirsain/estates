@@ -10,6 +10,12 @@ export const dynamic = "force-dynamic";
 
 export default async function AdministrationPage() {
   const actor = await requireStaff("STAFF_MANAGE");
+  // A staff mobile is the company's own employee contact, and nothing in
+  // main-PRD.md's Visibility rule masks it — that rule names Aadhaar and PAN.
+  // Whoever administers staff has to be able to phone them: "verified by
+  // phone" is the reason a password reset asks for. Customers and Members are
+  // outside people and stay masked wherever they appear.
+  const canSeeStaffContact = can(actor.role, "STAFF_MANAGE", actor.extraPermissions);
 
   const [staff, queuedTasks, queuedEnquiries, merges, recentAudit, securityEvents] = await Promise.all([
     db.staffAccount.findMany({
@@ -48,13 +54,19 @@ export default async function AdministrationPage() {
       canEmergencyDisable={can(actor.role, "STAFF_EMERGENCY_DISABLE", actor.extraPermissions)}
       canReassign={can(actor.role, "WORK_REASSIGN", actor.extraPermissions)}
       canMerge={can(actor.role, "PERSON_MERGE", actor.extraPermissions)}
+      canManagePermissions={can(actor.role, "ROLE_PERMISSION_MANAGE", actor.extraPermissions)}
       canRevealIdentity={canViewField(actor.role, "AADHAAR_FULL")}
       staff={staff.map((account) => ({
         id: account.id,
         staffAccountId: account.staffAccountId,
         name: account.person.fullName,
-        mobileMasked: maskMobile(account.person.primaryMobile),
+        mobileMasked: canSeeStaffContact
+          ? account.person.primaryMobile
+          : maskMobile(account.person.primaryMobile),
+        city: account.person.city,
+        createdAt: account.createdAt.toISOString(),
         role: account.role,
+        extraPermissions: account.extraPermissions,
         status: account.status,
         emergencyDisabled: account.emergencyDisabled,
         disabledAt: account.disabledAt?.toISOString() ?? null,

@@ -4,15 +4,32 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Eye, History, Merge, Plus, ShieldOff, UserCheck, UserPlus } from "lucide-react";
+import { AlertTriangle, Eye, History, KeyRound, Merge, MoreHorizontal, Plus, ShieldCheck, ShieldOff, UserCheck, UserPlus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatIst, type StaffRole } from "@/lib/tasks";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { formatIst } from "@/lib/tasks";
+import {
+  ACTION_GROUPS,
+  SENSITIVE_FIELDS,
+  STAFF_ROLES,
+  can,
+  rolesHolding,
+  type Action,
+  type StaffRole,
+} from "@/lib/security/permissions";
 
 type IdentityRow = Awaited<ReturnType<typeof identityDirectoryAction>>[number];
 import {
@@ -23,7 +40,11 @@ import {
   searchPersonsAction,
   createStaffAccountAction,
   resetStaffPasswordAction,
-  staffCandidatesAction,
+  changeStaffRoleAction,
+  setStaffPermissionsAction,
+  staffDetailAction,
+  updateStaffDetailsAction,
+  type StaffDetail,
   identityDirectoryAction,
   revealIdentityAction,
   type IdentityReveal,
@@ -35,8 +56,12 @@ export type StaffRowView = {
   id: string;
   staffAccountId: string;
   name: string;
+  /** Full for whoever administers staff, masked otherwise — the server decides. */
   mobileMasked: string;
-  role: string;
+  city: string | null;
+  createdAt: string;
+  role: StaffRole;
+  extraPermissions: string[];
   status: string;
   emergencyDisabled: boolean;
   disabledAt: string | null;
@@ -101,6 +126,7 @@ export default function AdministrationClient(props: {
   canEmergencyDisable: boolean;
   canReassign: boolean;
   canMerge: boolean;
+  canManagePermissions: boolean;
   canRevealIdentity: boolean;
   staff: StaffRowView[];
   queuedTasks: QueuedTaskView[];
@@ -161,6 +187,9 @@ export default function AdministrationClient(props: {
           <StaffTab
             rows={props.staff}
             canEmergencyDisable={props.canEmergencyDisable}
+            canManagePermissions={props.canManagePermissions}
+            canReveal={props.canRevealIdentity}
+            actorAccountId={props.staff.find((s) => s.staffAccountId === props.staffAccountId)?.id ?? ""}
             onResult={done}
           />
         )}
@@ -196,19 +225,29 @@ export default function AdministrationClient(props: {
 function StaffTab({
   rows,
   canEmergencyDisable,
+  canManagePermissions,
+  canReveal,
+  actorAccountId,
   onResult,
 }: {
   rows: StaffRowView[];
   canEmergencyDisable: boolean;
+  canManagePermissions: boolean;
+  canReveal: boolean;
+  /** The signed-in account's own row id, so its own controls can be withheld. */
+  actorAccountId: string;
   onResult: (result: ActionResult) => void;
 }) {
   const router = useRouter();
   const [target, setTarget] = React.useState<StaffRowView | null>(null);
   const [resetting, setResetting] = React.useState<StaffRowView | null>(null);
+  const [reroling, setReroling] = React.useState<StaffRowView | null>(null);
+  const [permitting, setPermitting] = React.useState<StaffRowView | null>(null);
+  const [viewing, setViewing] = React.useState<StaffRowView | null>(null);
   const [creating, setCreating] = React.useState(false);
 
   return (
-    <Card className="space-y-3 p-4">
+    <Card className="space-y-2 p-3">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">Staff accounts</h2>
         <Button size="sm" onClick={() => setCreating(true)}>
@@ -219,25 +258,32 @@ function StaffTab({
         <table className="w-full text-left text-xs">
           <thead className="text-muted-foreground">
             <tr>
-              <th className="py-2 pr-4 font-medium">Account</th>
-              <th className="py-2 pr-4 font-medium">Role</th>
-              <th className="py-2 pr-4 font-medium">Status</th>
-              <th className="py-2 pr-4 font-medium">Open work</th>
-              <th className="py-2 pr-4 font-medium">Last login</th>
-              <th className="py-2 pr-4 font-medium"></th>
+              <th className="py-1.5 pr-3 font-medium">Account</th>
+              <th className="py-1.5 pr-3 font-medium">Role</th>
+              <th className="py-1.5 pr-3 font-medium">Status</th>
+              <th className="py-1.5 pr-3 font-medium">Open work</th>
+              <th className="py-1.5 pr-3 font-medium">Last login</th>
+              <th className="py-1.5 pl-2"></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr key={row.id} className="border-t border-border/40">
-                <td className="py-2 pr-4">
-                  <div className="font-medium text-foreground">{row.name}</div>
+                <td className="py-1.5 pr-3">
+                  <button
+                    type="button"
+                    onClick={() => setViewing(row)}
+                    className="font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  >
+                    {row.name}
+                  </button>
                   <div className="text-muted-foreground">
                     {row.staffAccountId} · {row.mobileMasked}
+                    {row.city && ` · ${row.city}`}
                   </div>
                 </td>
-                <td className="py-2 pr-4">{row.role}</td>
-                <td className="py-2 pr-4">
+                <td className="py-1.5 pr-3">{row.role}</td>
+                <td className="py-1.5 pr-3">
                   {row.status === "ACTIVE" ? (
                     <Badge variant="secondary">Active</Badge>
                   ) : (
@@ -251,20 +297,49 @@ function StaffTab({
                     </div>
                   )}
                 </td>
-                <td className="py-2 pr-4">
+                <td className="py-1.5 pr-3">
                   {row.openTasks} task(s), {row.openEnquiries} enquiry(ies)
                 </td>
-                <td className="py-2 pr-4">{row.lastLoginAt ? formatIst(row.lastLoginAt) : "Never"}</td>
-                <td className="py-2 pr-4">
+                <td className="py-1.5 pr-3">
+                  {row.lastLoginAt ? formatIst(row.lastLoginAt) : "Never"}
+                  <div className="text-muted-foreground">Added {formatIst(row.createdAt)}</div>
+                </td>
+                <td className="py-1.5 pl-2 text-right">
                   {row.status === "ACTIVE" && (
-                    <div className="flex flex-wrap gap-1.5">
-                      <Button size="sm" variant="outline" onClick={() => setResetting(row)}>
-                        Reset password
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => setTarget(row)}>
-                        <ShieldOff className="mr-2 h-3.5 w-3.5" /> Disable
-                      </Button>
-                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" aria-label={`Actions for ${row.name}`}>
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => setViewing(row)}>
+                          <Eye className="h-3.5 w-3.5" /> View details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setResetting(row)}>
+                          <KeyRound className="h-3.5 w-3.5" /> Reset password
+                        </DropdownMenuItem>
+                        {/* Every one of these ends in a refusal on your own row
+                            (the server checks too) — so they are not offered. */}
+                        {canManagePermissions && row.id !== actorAccountId && (
+                          <>
+                            <DropdownMenuItem onSelect={() => setReroling(row)}>
+                              <UserCheck className="h-3.5 w-3.5" /> Change role
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setPermitting(row)}>
+                              <ShieldCheck className="h-3.5 w-3.5" /> Permissions
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onSelect={() => setTarget(row)}
+                          className="text-red-700 focus:text-red-700"
+                        >
+                          <ShieldOff className="h-3.5 w-3.5" /> Disable account
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </td>
               </tr>
@@ -291,6 +366,23 @@ function StaffTab({
           target={resetting}
           onClose={() => setResetting(null)}
           onRefresh={() => router.refresh()}
+        />
+      )}
+
+      {reroling && (
+        <ChangeRoleModal target={reroling} onClose={() => setReroling(null)} onResult={onResult} />
+      )}
+
+      {permitting && (
+        <PermissionsModal target={permitting} onClose={() => setPermitting(null)} onResult={onResult} />
+      )}
+
+      {viewing && (
+        <StaffDetailModal
+          target={viewing}
+          canReveal={canReveal}
+          onClose={() => setViewing(null)}
+          onResult={onResult}
         />
       )}
     </Card>
@@ -512,18 +604,18 @@ function MergeTab({
           <table className="w-full text-left text-xs">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 pr-4 font-medium">Survivor</th>
-                <th className="py-2 pr-4 font-medium">Merged away</th>
-                <th className="py-2 pr-4 font-medium">Reason</th>
-                <th className="py-2 pr-4 font-medium">Raised</th>
-                <th className="py-2 pr-4 font-medium"></th>
+                <th className="py-1.5 pr-3 font-medium">Status</th>
+                <th className="py-1.5 pr-3 font-medium">Survivor</th>
+                <th className="py-1.5 pr-3 font-medium">Merged away</th>
+                <th className="py-1.5 pr-3 font-medium">Reason</th>
+                <th className="py-1.5 pr-3 font-medium">Raised</th>
+                <th className="py-1.5 pr-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
               {merges.map((merge) => (
                 <tr key={merge.id} className="border-t border-border/40">
-                  <td className="py-2 pr-4">
+                  <td className="py-1.5 pr-3">
                     <Badge variant={merge.status === "PENDING" ? "secondary" : "outline"}>
                       {merge.status}
                     </Badge>
@@ -533,14 +625,14 @@ function MergeTab({
                       </div>
                     )}
                   </td>
-                  <td className="py-2 pr-4">{merge.survivor}</td>
-                  <td className="py-2 pr-4">{merge.merged}</td>
-                  <td className="py-2 pr-4">{merge.reason}</td>
-                  <td className="py-2 pr-4">
+                  <td className="py-1.5 pr-3">{merge.survivor}</td>
+                  <td className="py-1.5 pr-3">{merge.merged}</td>
+                  <td className="py-1.5 pr-3">{merge.reason}</td>
+                  <td className="py-1.5 pr-3">
                     {merge.requestedByRef}
                     <div className="text-muted-foreground">{formatIst(merge.requestedAt)}</div>
                   </td>
-                  <td className="py-2 pr-4">
+                  <td className="py-1.5 pr-3">
                     {merge.status === "PENDING" && isMd && (
                       <Button size="sm" variant="outline" onClick={() => setDeciding(merge)}>
                         Decide
@@ -736,27 +828,27 @@ function AuditTab({ rows }: { rows: AuditView[] }) {
         <table className="w-full text-left text-xs">
           <thead className="sticky top-0 bg-card text-muted-foreground">
             <tr>
-              <th className="py-2 pr-4 font-medium">When</th>
-              <th className="py-2 pr-4 font-medium">Actor</th>
-              <th className="py-2 pr-4 font-medium">Record</th>
-              <th className="py-2 pr-4 font-medium">Action</th>
-              <th className="py-2 pr-4 font-medium">Reason</th>
+              <th className="py-1.5 pr-3 font-medium">When</th>
+              <th className="py-1.5 pr-3 font-medium">Actor</th>
+              <th className="py-1.5 pr-3 font-medium">Record</th>
+              <th className="py-1.5 pr-3 font-medium">Action</th>
+              <th className="py-1.5 pr-3 font-medium">Reason</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr key={row.id} className="border-t border-border/40">
                 <td className="whitespace-nowrap py-2 pr-4">{formatIst(row.at)}</td>
-                <td className="py-2 pr-4">
+                <td className="py-1.5 pr-3">
                   {row.actorRef}
                   {row.actorRole && <span className="text-muted-foreground"> · {row.actorRole}</span>}
                 </td>
-                <td className="py-2 pr-4">
+                <td className="py-1.5 pr-3">
                   {row.entity}
                   <div className="text-muted-foreground">{row.entityId.slice(0, 8)}</div>
                 </td>
-                <td className="py-2 pr-4">{row.action}</td>
-                <td className="py-2 pr-4">{row.reason ?? "—"}</td>
+                <td className="py-1.5 pr-3">{row.action}</td>
+                <td className="py-1.5 pr-3">{row.reason ?? "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -785,18 +877,18 @@ function SecurityTab({ rows }: { rows: SecurityLogView[] }) {
         <table className="w-full text-left text-xs">
           <thead className="sticky top-0 bg-card text-muted-foreground">
             <tr>
-              <th className="py-2 pr-4 font-medium">When</th>
-              <th className="py-2 pr-4 font-medium">Event Type</th>
-              <th className="py-2 pr-4 font-medium">Target Identity</th>
-              <th className="py-2 pr-4 font-medium">IP Address</th>
-              <th className="py-2 pr-4 font-medium">Details</th>
+              <th className="py-1.5 pr-3 font-medium">When</th>
+              <th className="py-1.5 pr-3 font-medium">Event Type</th>
+              <th className="py-1.5 pr-3 font-medium">Target Identity</th>
+              <th className="py-1.5 pr-3 font-medium">IP Address</th>
+              <th className="py-1.5 pr-3 font-medium">Details</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr key={row.id} className="border-t border-border/40 hover:bg-muted/10">
                 <td className="whitespace-nowrap py-2 pr-4">{formatIst(row.at)}</td>
-                <td className="py-2 pr-4">
+                <td className="py-1.5 pr-3">
                   <Badge variant={row.type.includes("FAILURE") || row.type.includes("LOCKED") || row.type.includes("DENIED") ? "destructive" : "secondary"}>
                     {row.type.replaceAll("_", " ")}
                   </Badge>
@@ -841,20 +933,9 @@ function CreateStaffModal({
   onClose: () => void;
   onRefresh: () => void;
 }) {
-  const [candidates, setCandidates] = React.useState<PersonOption[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [issued, setIssued] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    staffCandidatesAction().then((found) => {
-      if (!cancelled) setCandidates(found);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -863,7 +944,9 @@ function CreateStaffModal({
     setError(null);
     const outcome = await createStaffAccountAction(
       {
-        personId: String(f.get("personId")),
+        fullName: String(f.get("fullName") ?? ""),
+        mobile: String(f.get("mobile") ?? ""),
+        city: String(f.get("city") ?? ""),
         role: String(f.get("role")) as StaffRole,
         staffAccountId: String(f.get("staffAccountId")),
       },
@@ -881,7 +964,7 @@ function CreateStaffModal({
   return (
     <Modal
       title="Create a staff account"
-      description="One Person holds one staff login."
+      description="Staff are the company's own employees. Members and Customers are not given staff logins."
       onClose={onClose}
     >
       {issued ? (
@@ -894,17 +977,21 @@ function CreateStaffModal({
         />
       ) : (
         <form className="space-y-3" onSubmit={submit}>
-          <Field label="Person">
-            <select name="personId" className={inputClass} required defaultValue="">
-              <option value="" disabled>
-                {candidates.length === 0 ? "Everyone already has an account" : "Select a Person"}
-              </option>
-              {candidates.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+          <Field label="Full name">
+            <Input name="fullName" required placeholder="Ramesh Kumar" />
+          </Field>
+          <Field label="Mobile">
+            <Input
+              name="mobile"
+              required
+              type="tel"
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="9812345678"
+            />
+          </Field>
+          <Field label="City (optional)">
+            <Input name="city" placeholder="Indore" />
           </Field>
           <Field label="Staff Account ID">
             <Input name="staffAccountId" required placeholder="STF-0009" />
@@ -950,10 +1037,12 @@ function ResetPasswordModal({
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const reason = String(new FormData(event.currentTarget).get("reason") ?? "");
+    const data = new FormData(event.currentTarget);
+    const reason = String(data.get("reason") ?? "");
+    const chosen = String(data.get("newPassword") ?? "");
     setBusy(true);
     setError(null);
-    const outcome = await resetStaffPasswordAction(target.id, reason, newKey());
+    const outcome = await resetStaffPasswordAction(target.id, reason, newKey(), chosen);
     setBusy(false);
     if (outcome.ok) {
       setIssued(outcome.oneTimePassword);
@@ -982,17 +1071,424 @@ function ResetPasswordModal({
           <Field label="Compulsory reason">
             <Input name="reason" required minLength={3} placeholder="Forgot password, verified by phone" />
           </Field>
+          <Field label="New password (optional)">
+            <PasswordInput
+              name="newPassword"
+              autoComplete="new-password"
+              minLength={10}
+              placeholder="Leave empty to generate one — min 10 characters"
+            />
+          </Field>
           {error && <p className="text-xs text-red-700">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? "Resetting…" : "Issue one-time password"}
+              {busy ? "Resetting…" : "Reset password"}
             </Button>
           </div>
         </form>
       )}
+    </Modal>
+  );
+}
+
+/**
+ * Everything held about one employee. The details taken down when the account
+ * was created live here, and are corrected here — until now they were written
+ * once and never seen again.
+ */
+function StaffDetailModal({
+  target,
+  canReveal,
+  onClose,
+  onResult,
+}: {
+  target: StaffRowView;
+  canReveal: boolean;
+  onClose: () => void;
+  onResult: (result: ActionResult) => void;
+}) {
+  const router = useRouter();
+  const [detail, setDetail] = React.useState<StaffDetail | null>(null);
+  const [editing, setEditing] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [reveal, setReveal] = React.useState<IdentityReveal | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    staffDetailAction(target.id).then((outcome) => {
+      if (cancelled) return;
+      if (outcome.ok) setDetail(outcome.detail);
+      else setError(outcome.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [target.id]);
+
+  async function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const f = new FormData(event.currentTarget);
+    setBusy(true);
+    setError(null);
+    const outcome = await updateStaffDetailsAction(
+      target.id,
+      {
+        fullName: String(f.get("fullName") ?? ""),
+        mobile: String(f.get("mobile") ?? ""),
+        altMobile: String(f.get("altMobile") ?? ""),
+        email: String(f.get("email") ?? ""),
+        city: String(f.get("city") ?? ""),
+      },
+      String(f.get("reason") ?? ""),
+      newKey()
+    );
+    setBusy(false);
+    if (outcome.ok) {
+      onResult(outcome);
+      onClose();
+      router.refresh();
+    } else {
+      setError(outcome.error);
+    }
+  }
+
+  async function doReveal() {
+    if (!detail) return;
+    setBusy(true);
+    setError(null);
+    const outcome = await revealIdentityAction(detail.personId);
+    setBusy(false);
+    if (outcome.ok) setReveal(outcome.reveal);
+    else setError(outcome.error);
+  }
+
+  return (
+    <Modal
+      title={detail?.fullName ?? target.name}
+      description={`${target.staffAccountId} · ${target.role}`}
+      onClose={onClose}
+      wide
+    >
+      {!detail ? (
+        <p className="text-xs text-muted-foreground">{error ?? "Loading…"}</p>
+      ) : editing ? (
+        <form className="space-y-3" onSubmit={save}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Full name">
+              <Input name="fullName" required defaultValue={detail.fullName} />
+            </Field>
+            <Field label="Mobile">
+              <Input name="mobile" required type="tel" inputMode="numeric" defaultValue={detail.primaryMobile} />
+            </Field>
+            <Field label="Alternate mobile">
+              <Input name="altMobile" type="tel" inputMode="numeric" defaultValue={detail.altMobile ?? ""} />
+            </Field>
+            <Field label="Email">
+              <Input name="email" type="email" defaultValue={detail.email ?? ""} />
+            </Field>
+            <Field label="City">
+              <Input name="city" defaultValue={detail.city ?? ""} />
+            </Field>
+          </div>
+          <Field label="Compulsory reason">
+            <Input name="reason" required minLength={3} placeholder="Mobile number corrected" />
+          </Field>
+          {error && <p className="text-xs text-red-700">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? "Saving…" : "Save details"}
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <div className="space-y-4">
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold">Employee</h3>
+              <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                Edit details
+              </Button>
+            </div>
+            <DetailGrid
+              rows={[
+                ["Full name", detail.fullName],
+                ["Mobile", detail.primaryMobile],
+                ["Alternate mobile", detail.altMobile ?? "—"],
+                ["Email", detail.email ?? "—"],
+                ["City", detail.city ?? "—"],
+              ]}
+            />
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="text-xs font-semibold">Account</h3>
+            <DetailGrid
+              rows={[
+                ["Staff Account ID", detail.staffAccountId],
+                ["Role", detail.role],
+                [
+                  "Status",
+                  detail.status === "ACTIVE"
+                    ? "Active"
+                    : `${detail.emergencyDisabled ? "Emergency disabled" : "Disabled"}${
+                        detail.disabledReason ? ` — ${detail.disabledReason}` : ""
+                      }`,
+                ],
+                ["Extra permissions", detail.extraPermissions.join(", ") || "None — role baseline only"],
+                ["Added", formatIst(detail.createdAt)],
+                ["Last login", detail.lastLoginAt ? formatIst(detail.lastLoginAt) : "Never"],
+                ["Open work", `${detail.openTasks} task(s), ${detail.openEnquiries} enquiry(ies)`],
+              ]}
+            />
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="text-xs font-semibold">Protected identity</h3>
+            <DetailGrid
+              rows={[
+                [
+                  "Aadhaar",
+                  reveal?.aadhaar ??
+                    `${detail.aadhaarStatus}${detail.aadhaarLastFour ? ` · XXXX${detail.aadhaarLastFour}` : ""}`,
+                ],
+                ["PAN", reveal?.pan ?? `${detail.panStatus}${detail.panMasked ? ` · ${detail.panMasked}` : ""}`],
+              ]}
+            />
+            {canReveal && !reveal && (
+              <Button size="sm" variant="outline" onClick={doReveal} disabled={busy}>
+                <Eye className="mr-2 h-3.5 w-3.5" />
+                {busy ? "Revealing…" : "Reveal in full"}
+              </Button>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Every reveal is written to the security log against this Person, with who read it and
+              when (PRD RD-05).
+            </p>
+          </section>
+
+          {error && <p className="text-xs text-red-700">{error}</p>}
+          <div className="flex justify-end">
+            <Button variant="ghost" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function DetailGrid({ rows }: { rows: [string, string][] }) {
+  return (
+    <dl className="grid gap-x-4 gap-y-1.5 rounded-xl border border-border/60 bg-secondary px-3 py-2.5 text-[11px] sm:grid-cols-2">
+      {rows.map(([label, value]) => (
+        <div key={label} className="flex items-baseline justify-between gap-3">
+          <dt className="text-muted-foreground">{label}</dt>
+          <dd className="text-right font-medium text-foreground">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function ChangeRoleModal({
+  target,
+  onClose,
+  onResult,
+}: {
+  target: StaffRowView;
+  onClose: () => void;
+  onResult: (result: ActionResult) => void;
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const f = new FormData(event.currentTarget);
+    setBusy(true);
+    setError(null);
+    const outcome = await changeStaffRoleAction(
+      target.id,
+      String(f.get("role")) as StaffRole,
+      String(f.get("reason") ?? ""),
+      newKey()
+    );
+    setBusy(false);
+    if (outcome.ok) {
+      onResult(outcome);
+      onClose();
+    } else {
+      setError(outcome.error);
+    }
+  }
+
+  return (
+    <Modal
+      title={`Change role — ${target.name}`}
+      description={`${target.staffAccountId} is ${target.role}. The new role applies on their next action; they are not signed out.`}
+      onClose={onClose}
+    >
+      <form className="space-y-3" onSubmit={submit}>
+        <Field label="New role">
+          <select name="role" className={inputClass} required defaultValue={target.role}>
+            {STAFF_ROLES.map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Compulsory reason">
+          <Input name="reason" required minLength={3} placeholder="Moved to the accounts desk" />
+        </Field>
+        <p className="rounded-lg border border-border/60 bg-secondary px-3 py-2 text-[11px] text-muted-foreground">
+          Any extra permissions on this account are cleared — they were granted for the job this
+          person is leaving. Grant them again under Permissions if the new role still needs them.
+        </p>
+        {error && <p className="text-xs text-red-700">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? "Changing…" : "Change role"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * DESIGN §17.4 — extra grants on top of the role. Two halves, and the
+ * difference between them is the point: actions can be granted here, protected
+ * values cannot. `canViewField` never reads this column (PRD RD-05), so Aadhaar,
+ * PAN and bank are shown as a locked statement of what the role already gives.
+ */
+function PermissionsModal({
+  target,
+  onClose,
+  onResult,
+}: {
+  target: StaffRowView;
+  onClose: () => void;
+  onResult: (result: ActionResult) => void;
+}) {
+  const [granted, setGranted] = React.useState<Set<string>>(new Set(target.extraPermissions));
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const fromRole = (action: Action) => can(target.role, action);
+
+  function toggle(action: string) {
+    setGranted((current) => {
+      const next = new Set(current);
+      if (next.has(action)) next.delete(action);
+      else next.add(action);
+      return next;
+    });
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const reason = String(new FormData(event.currentTarget).get("reason") ?? "");
+    setBusy(true);
+    setError(null);
+    const outcome = await setStaffPermissionsAction(target.id, [...granted], reason, newKey());
+    setBusy(false);
+    if (outcome.ok) {
+      onResult(outcome);
+      onClose();
+    } else {
+      setError(outcome.error);
+    }
+  }
+
+  return (
+    <Modal
+      title={`Permissions — ${target.name}`}
+      description={`${target.staffAccountId} · ${target.role}. Changes apply on their next action.`}
+      onClose={onClose}
+      wide
+    >
+      <form className="space-y-4" onSubmit={submit}>
+        <section className="space-y-2">
+          <h3 className="text-xs font-semibold">Protected data — set by the role</h3>
+          <ul className="space-y-1 rounded-xl border border-border/60 bg-secondary px-3 py-2.5">
+            {SENSITIVE_FIELDS.map(({ field, label }) => {
+              const holders = rolesHolding(field);
+              const held = holders.includes(target.role);
+              return (
+                <li key={field} className="flex items-baseline justify-between gap-3 text-[11px]">
+                  <span className="text-foreground">🔒 {label}</span>
+                  <span className="text-muted-foreground">
+                    {held ? "In full" : "Masked"} · {holders.join(", ")}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-[11px] text-muted-foreground">
+            These cannot be granted here. Only a role change moves them, and every reveal is written
+            to the security log.
+          </p>
+        </section>
+
+        <section className="space-y-3">
+          <h3 className="text-xs font-semibold">Actions</h3>
+          {ACTION_GROUPS.map(({ group, actions }) => (
+            <div key={group} className="space-y-1">
+              <p className="text-[11px] font-medium text-muted-foreground">{group}</p>
+              <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
+                {actions.map((action) => {
+                  const base = fromRole(action);
+                  return (
+                    <label
+                      key={action}
+                      className={`flex items-start gap-2 text-[11px] ${
+                        base ? "text-muted-foreground" : "text-foreground"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                        checked={base || granted.has(action)}
+                        disabled={base}
+                        onChange={() => toggle(action)}
+                      />
+                      <span>
+                        {action}
+                        {base && <span className="block text-[10px]">from role</span>}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </section>
+
+        <Field label="Compulsory reason">
+          <Input name="reason" required minLength={3} placeholder="Needs to export the monthly report" />
+        </Field>
+        {error && <p className="text-xs text-red-700">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? "Saving…" : "Save permissions"}
+          </Button>
+        </div>
+      </form>
     </Modal>
   );
 }
@@ -1068,10 +1564,10 @@ function IdentityTab({ canReveal }: { canReveal: boolean }) {
           <table className="w-full text-left text-xs">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-2 pr-4 font-medium">Person</th>
-                <th className="py-2 pr-4 font-medium">Aadhaar</th>
-                <th className="py-2 pr-4 font-medium">PAN</th>
-                <th className="py-2 pr-4 font-medium"></th>
+                <th className="py-1.5 pr-3 font-medium">Person</th>
+                <th className="py-1.5 pr-3 font-medium">Aadhaar</th>
+                <th className="py-1.5 pr-3 font-medium">PAN</th>
+                <th className="py-1.5 pr-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
@@ -1079,7 +1575,7 @@ function IdentityTab({ canReveal }: { canReveal: boolean }) {
                 const open = revealed[row.id];
                 return (
                   <tr key={row.id} className="border-t border-border/40">
-                    <td className="py-2 pr-4">
+                    <td className="py-1.5 pr-3">
                       <div className="font-medium text-foreground">{row.fullName}</div>
                       <div className="text-muted-foreground">
                         {row.reference} · {row.mobileMasked}
@@ -1093,7 +1589,7 @@ function IdentityTab({ canReveal }: { canReveal: boolean }) {
                       {open ? (open.pan ?? "Not recorded") : row.panMasked}
                       <div className="font-sans text-muted-foreground">{row.panStatus}</div>
                     </td>
-                    <td className="py-2 pr-4">
+                    <td className="py-1.5 pr-3">
                       {canReveal && !open && (
                         <Button size="sm" variant="outline" onClick={() => reveal(row.id)}>
                           Reveal

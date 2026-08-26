@@ -4,6 +4,7 @@
 import { ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { GENERIC_LOGIN_ERROR } from "@/lib/security/auth";
 import { memberLogin } from "@/app/login/actions";
 import { MEMBER_TERMS_VERSION, readTerms } from "@/lib/terms";
@@ -62,19 +63,18 @@ export default async function MemberLoginPage({
                 autoComplete="username"
                 defaultValue={loginId}
                 placeholder="MEM-0217"
-                className="h-11 rounded-xl border-border bg-muted text-sm text-foreground placeholder:text-muted-foreground focus-visible:ring-primary"
+                className="h-11 rounded-xl border-border bg-muted text-sm text-foreground focus-visible:ring-primary"
               />
             </label>
 
             <label className="block space-y-1 text-xs font-medium text-foreground">
               <span>Password</span>
-              <Input
+              <PasswordInput
                 name="password"
-                type="password"
                 required
                 autoComplete="current-password"
                 minLength={10}
-                className="h-11 rounded-xl border-border bg-muted text-sm text-foreground placeholder:text-muted-foreground focus-visible:ring-primary"
+                className="h-11 rounded-xl border-border bg-muted text-sm text-foreground focus-visible:ring-primary"
               />
             </label>
 

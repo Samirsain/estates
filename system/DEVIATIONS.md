@@ -308,3 +308,55 @@ display still normalising to two unless the value carries more.
 dialog in `src/app/plots/plots-client.tsx`; the category picker in
 `src/app/projects/projects-client.tsx`; migration
 `prisma/migrations/20260824090000_plc_categories`.
+
+---
+
+## D-06 · A Member or Customer cannot hold a staff account
+
+**Date:** 26 August 2026
+**Approved by:** Product Owner (during the build session)
+**Governed area touched:** identity and permissions — a change request is required
+
+### What changed (D-06)
+
+`ARCHITECTURE.md` §3.1 says one immutable `Person` may hold several
+capabilities, and lists **Staff** beside **Customer** and **Member** as three of
+them. Create a staff account therefore offered every Person who did not already
+have one, which meant the dropdown listed the company's Members and Customers.
+
+The business rule is the opposite: staff are the company's own employees, and
+Members and Customers are the people the company sells to. The two sides do not
+cross.
+
+Two things follow.
+
+**A staff account is refused to a Member or a Customer.** The name and mobile
+entered are matched the same way the Member and Enquiry paths match — mobile
+plus name, case-insensitive — and if that Person already holds a Member or
+Customer profile the command is blocked, naming the ID it clashes with. Nothing
+is created.
+
+**The employee's details are entered on the form.** Picking from the Person
+table is gone, and could not have survived the rule anyway: nothing else in the
+application creates an employee. A `Person` otherwise appears only by activating
+a Member (`src/app/members/actions.ts`) or through a Member-submitted Enquiry
+(`linkOrCreatePerson`, reached from `src/app/portal/actions.ts`) — both of them
+the selling side. Filtering those out would have left the list permanently
+empty.
+
+### What this does not change (D-06)
+
+The `Person` model is untouched: it still carries `staffAccount`,
+`memberProfile` and `customerProfile` as optional relations, and the database
+still permits all three on one row. This is an application rule at the one place
+that creates staff accounts, not a schema constraint. Historical rows that
+already hold two capabilities keep them, and Person Merge is unaffected.
+
+### Where it lives (D-06)
+
+`createStaffAccountAction` in `src/app/administration/actions.ts` — which now
+takes the employee's `fullName`, `mobile` and optional `city` instead of a
+`personId`, and creates or reuses the `Person` itself; `CreateStaffModal` in
+`src/app/administration/administration-client.tsx`. `staffCandidatesAction` is
+deleted. The refusal itself is `refuseStaffAccountFor` in
+`src/lib/security/permissions.ts`, checked in `src/lib/security/security.check.ts`.

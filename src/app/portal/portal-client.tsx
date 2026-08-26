@@ -131,7 +131,7 @@ export type PortalData = {
 const TABS = ["Available Plots", "Hold Requests", "Enquiries", "Network", "Profile"] as const;
 
 const inputClass =
-  "h-10 w-full rounded-xl border border-border bg-muted px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
+  "h-10 w-full rounded-xl border border-border bg-muted px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
 
 const humanise = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
 

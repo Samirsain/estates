@@ -14,7 +14,9 @@ import {
   rateLimit,
   registerFailure,
   registerSuccess,
+  validatePassword,
   verifyPassword,
+  verifyRecoveryKey,
 } from "@/lib/security/auth";
 import { decryptSensitive } from "@/lib/security/identity";
 import { MEMBER_TERMS_VERSION } from "@/lib/terms";
@@ -243,6 +245,70 @@ export async function memberLogin(form: FormData): Promise<void> {
       ? `&loginId=${encodeURIComponent(String(form.get("loginId") ?? "").trim())}`
       : "";
   redirect(`/portal/login?error=${result.reason}${loginId}`);
+}
+
+/* ------------------------------------------------------- forgot password */
+
+/**
+ * PRD §17.1 — self-service recovery for a forgotten staff password, so a
+ * lockout no longer needs another Admin at the keyboard.
+ *
+ * The shared recovery phrase stands in for the identity check. A wrong phrase
+ * and an unknown Staff Account ID answer identically, or the page becomes an
+ * account-name oracle. Same rate-limit buckets as login, and the reset is
+ * written to the security log like any other session invalidation.
+ */
+export async function forgotStaffPassword(form: FormData): Promise<void> {
+  const loginId = String(form.get("loginId") ?? "").trim();
+  const recoveryKey = String(form.get("recoveryKey") ?? "");
+  const newPassword = String(form.get("newPassword") ?? "");
+  const confirmPassword = String(form.get("confirmPassword") ?? "");
+  const ip = await clientIp();
+  const now = new Date();
+
+  const back: (reason: string) => never = (reason) =>
+    redirect(`/login/forgot?error=${reason}&loginId=${encodeURIComponent(loginId)}`);
+
+  if ((ip && !rateLimit(`ip:${ip}`, now)) || !rateLimit(`forgot:${loginId}`, now)) {
+    await recordSecurityEvent({ type: "LOGIN_FAILURE", identifier: loginId, ip, detail: "Recovery rate limited" });
+    back("RATE");
+  }
+  if (newPassword !== confirmPassword) back("MATCH");
+  const weak = validatePassword(newPassword);
+  if (weak) back("WEAK");
+
+  const account = await db.staffAccount.findUnique({ where: { staffAccountId: loginId } });
+
+  // The phrase is always checked, even for an account that does not exist, so
+  // the two failures cannot be told apart by how long the answer takes.
+  const keyOk = verifyRecoveryKey(recoveryKey);
+  if (!keyOk || !account || account.status !== "ACTIVE") {
+    await recordSecurityEvent({
+      type: "LOGIN_FAILURE",
+      identifier: loginId,
+      ip,
+      detail: keyOk ? "Recovery refused — unknown or disabled account" : "Recovery refused — wrong recovery key",
+    });
+    back("GENERIC");
+  }
+
+  await db.staffAccount.update({
+    where: { id: account.id },
+    data: {
+      passwordHash: hashPassword(newPassword),
+      // Every existing session dies, exactly as with an admin reset (PRD §17.1).
+      sessionVersion: account.sessionVersion + 1,
+      ...registerSuccess(),
+    },
+  });
+  await recordSecurityEvent({
+    type: "SESSION_INVALIDATED",
+    identifier: account.staffAccountId,
+    ip,
+    detail: "Password set from Forgot password using the recovery key",
+  });
+
+  redirect(`/login?notice=RESET&loginId=${encodeURIComponent(loginId)}`);
 }
 
 /* ---------------------------------------------------------------- sign out */

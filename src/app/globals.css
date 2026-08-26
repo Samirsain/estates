@@ -51,6 +51,16 @@
     --input: 0 0% 88%;
     --ring: 16 76% 48%; /* primary-focus #d74f1d */
 
+    /*
+     * Hint text inside a field, and nothing else. It cannot share
+     * --muted-foreground: that grey is the label and helper-text ink, and at
+     * 4.9:1 on white a placeholder wearing it reads as a value somebody already
+     * typed — the login field offered "STF-0001" and looked answered. Every
+     * field here carries a real <label>, so the placeholder is an example
+     * rather than the only naming, and it can sit lighter than body copy.
+     */
+    --placeholder: 0 0% 64%; /* #a3a3a3 */
+
     /* rounded.md 11px is the working default; sm 8px, lg 18px */
     --radius: 0.6875rem;
   }
@@ -104,6 +114,35 @@
     font-weight: 600;
     line-height: 1.19;
     letter-spacing: -0.2px;
+  }
+
+  /*
+   * Form controls, stated once for the whole application. There is no shared
+   * Select or Textarea component — 66 <select> elements are written inline —
+   * so the base layer is the only place a rule reaches all of them.
+   */
+  input,
+  select,
+  textarea {
+    color: hsl(var(--foreground));
+  }
+
+  ::placeholder {
+    color: hsl(var(--placeholder));
+    opacity: 1; /* Firefox dims placeholders again on top of the colour. */
+  }
+
+  /*
+   * Chrome paints its own pale wash over an autofilled field and overrides the
+   * text colour with it, which is the other way a field ends up looking
+   * pre-filled in a colour nobody chose. The inset shadow is the only way to
+   * repaint that background — `background-color` is ignored here.
+   */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: hsl(var(--foreground));
+    box-shadow: 0 0 0 1000px hsl(var(--card)) inset;
   }
 
   /* Dense operational tables read better a step down from the marketing body. */

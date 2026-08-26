@@ -25,6 +25,7 @@
     "acquisition:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/acquisition.check.ts",
     "reconcile": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reconcile.ts",
     "rotate:key": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/rotate-key.ts",
+    "reset:password": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reset-password.ts",
     "jobs:run": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/run-jobs.ts"
   },
   "dependencies": {

@@ -16,7 +16,7 @@ import { calculateAreas } from "../src/lib/domain/inventory.ts";
 
 const db = new PrismaClient();
 
-const INITIAL_PASSWORD = "ChangeMe#2026";
+const INITIAL_PASSWORD = "3preclub26";
 
 const STAFF: Array<{ staffAccountId: string; name: string; role: StaffRole; mobile: string }> = [
   { staffAccountId: "STF-0001", name: "Managing Director", role: "MD", mobile: "9800000001" },

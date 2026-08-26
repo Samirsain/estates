@@ -481,7 +481,7 @@ function SideControl({
           )}
           {(!hasPreconfiguredRoads || isCustomRoad) && (
             <input
-              className="h-7 w-full rounded-md border border-border bg-card px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
+              className="h-7 w-full rounded-md border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
               inputMode={isRoad ? "decimal" : undefined}
               placeholder={isRoad ? "Width ft" : "Ref # (opt.)"}
               value={isRoad ? (boundary.roadWidthFt ?? "") : (boundary.reference ?? "")}
@@ -1539,7 +1539,7 @@ function PrepareInventoryDialog({
 
                 {/* Plot No. */}
                 <input
-                  className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs font-mono font-bold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
+                  className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs font-mono font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
                   placeholder="Plot no."
                   value={row.plotNumber}
                   onChange={(e) => update(i, { plotNumber: e.target.value })}
@@ -1559,7 +1559,7 @@ function PrepareInventoryDialog({
                 {/* Dimensions */}
                 {row.irregular ? (
                   <input
-                    className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
+                    className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
                     placeholder="Area sq ft"
                     inputMode="decimal"
                     value={row.exactAreaSqFt}
@@ -1568,14 +1568,14 @@ function PrepareInventoryDialog({
                 ) : (
                   <div className="flex items-center gap-2">
                     <input
-                      className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
+                      className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
                       placeholder="Width"
                       value={row.widthFt}
                       onChange={(e) => update(i, { widthFt: e.target.value })}
                     />
                     <span className="text-muted-foreground font-bold select-none">×</span>
                     <input
-                      className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
+                      className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
                       placeholder="Length"
                       value={row.lengthFt}
                       onChange={(e) => update(i, { lengthFt: e.target.value })}

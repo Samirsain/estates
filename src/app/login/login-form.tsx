@@ -24,6 +24,23 @@ export function SubmitButton() {
   );
 }
 
+export function RecoverButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button type="submit" className="w-full transition-all" disabled={pending}>
+      {pending ? (
+        <span className="flex items-center justify-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin text-primary-foreground" />
+          Setting password…
+        </span>
+      ) : (
+        "Set new password"
+      )}
+    </Button>
+  );
+}
+
 /**
  * Terms §2.1 — the Member accepts the Terms and Privacy Notice.
  *

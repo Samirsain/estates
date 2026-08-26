@@ -8,7 +8,7 @@ import { KeyRound, ShieldCheck } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Field } from "@/components/ui/modal";
 import type { StaffRole } from "@/lib/tasks";
 import { changeOwnPasswordAction, type ActionResult } from "./actions";
@@ -82,8 +82,7 @@ function PasswordCard({ loginId, name }: { loginId: string; name: string }) {
 
       <form className="space-y-3" onSubmit={submit}>
         <Field label="Current password">
-          <Input
-            type="password"
+          <PasswordInput
             autoComplete="current-password"
             value={current}
             onChange={(e) => setCurrent(e.target.value)}
@@ -91,8 +90,7 @@ function PasswordCard({ loginId, name }: { loginId: string; name: string }) {
           />
         </Field>
         <Field label="New password (at least 10 characters)">
-          <Input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             value={next}
             onChange={(e) => setNext(e.target.value)}
@@ -100,8 +98,7 @@ function PasswordCard({ loginId, name }: { loginId: string; name: string }) {
           />
         </Field>
         <Field label="Confirm new password">
-          <Input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}

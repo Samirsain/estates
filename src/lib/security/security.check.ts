@@ -28,6 +28,7 @@ import {
   resetRateLimit,
   validatePassword,
   verifyPassword,
+  verifyRecoveryKey,
 } from "./auth.ts";
 import {
   PermissionError,
@@ -35,6 +36,11 @@ import {
   assertPermission,
   can,
   canViewField,
+  refuseStaffAccountFor,
+  ACTION_GROUPS,
+  ALL_ACTIONS,
+  isAction,
+  rolesHolding,
   STAFF_ROLES,
   type Role,
 } from "./permissions.ts";
@@ -284,5 +290,77 @@ assert.ok(
   !portalSource.includes("introducedCustomers: { include:"),
   "introduced Customers are not joined to Person in the portal query (PRD §23.1)"
 );
+
+// Forgot password — the recovery key is case-insensitive by request, and it is
+// the only thing standing between a Staff Account ID and a new password. Both
+// halves are worth a check: that case really is ignored, and that a wrong key,
+// a prefix and a longer string are all still refused.
+assert.ok(verifyRecoveryKey("3preclub@2026fgpass"), "recovery key matches");
+assert.ok(verifyRecoveryKey("3PRECLUB@2026FGPASS"), "recovery key ignores case");
+assert.ok(verifyRecoveryKey("  3PreClub@2026FgPass  "), "recovery key ignores surrounding space");
+assert.ok(!verifyRecoveryKey("3preclub@2026"), "a prefix of the recovery key is refused");
+assert.ok(!verifyRecoveryKey("3preclub@2026fgpassX"), "a longer string is refused");
+assert.ok(!verifyRecoveryKey(""), "an empty recovery key is refused");
+
+// DEVIATIONS.md D-06 — staff are employees; the selling side never gets a
+// login. ARCHITECTURE §3.1 permits one Person to hold all three capabilities,
+// so nothing but this rule stops a Member being handed a staff account.
+const member = { memberProfile: { memberId: "MEM-0217" }, customerProfile: null, staffAccount: null };
+const customer = { memberProfile: null, customerProfile: { customerId: "CUS-3390" }, staffAccount: null };
+const employee = { memberProfile: null, customerProfile: null, staffAccount: null };
+
+assert.equal(refuseStaffAccountFor(null, "9812345678"), null, "an unknown mobile is a new employee");
+assert.equal(
+  refuseStaffAccountFor({ fullName: "Ramesh Kumar", ...employee }, "9812345678"),
+  null,
+  "a Person with no selling-side profile may be given a staff account"
+);
+assert.match(
+  refuseStaffAccountFor({ fullName: "Kavita Joshi", ...member }, "9811111111") ?? "",
+  /MEM-0217 \(Member\)/,
+  "a Member is refused, and the refusal names the Member ID"
+);
+assert.match(
+  refuseStaffAccountFor({ fullName: "Vikram Shah", ...customer }, "9822222222") ?? "",
+  /CUS-3390 \(Customer\)/,
+  "a Customer is refused, and the refusal names the Customer ID"
+);
+// The existing "one Person, one staff login" rule still has to hold.
+assert.match(
+  refuseStaffAccountFor(
+    { fullName: "Deepak Sharma", memberProfile: null, customerProfile: null, staffAccount: { staffAccountId: "STF-0002" } },
+    "9800000002"
+  ) ?? "",
+  /STF-0002/,
+  "a Person who already has a staff account is refused a second one"
+);
+
+// The permission screen renders ACTION_GROUPS, so an Action added to the union
+// and forgotten there is a permission nobody can grant — invisible, and only
+// noticed when someone asks why the checkbox is missing. Both directions are
+// checked: nothing missing, and nothing invented that `can()` would never match.
+const grouped = ACTION_GROUPS.flatMap((entry) => entry.actions);
+assert.equal(new Set(grouped).size, grouped.length, "no Action is listed in two groups");
+for (const action of ALL_ACTIONS) {
+  assert.ok(isAction(action), `${action} is recognised by isAction`);
+}
+// Completeness in the other direction is proved by tsc in permissions.ts, so
+// there is nothing to assert here — a missing Action fails the build instead.
+assert.ok(!isAction("NOT_A_REAL_ACTION"), "an invented permission string is refused");
+
+// Extra grants add and never subtract — the screen promises exactly this.
+assert.ok(!can("MIS", "AUDIT_VIEW"), "MIS has no audit access from its role");
+assert.ok(can("MIS", "AUDIT_VIEW", ["AUDIT_VIEW"]), "an extra grant adds the action");
+assert.ok(
+  can("ACCOUNTS", "BANK_VERIFY", []),
+  "an empty extra list leaves the role baseline intact"
+);
+
+// PRD RD-05 — a grant must never open a protected value. canViewField takes no
+// extra permissions at all, and that is the guarantee the modal states.
+assert.equal(canViewField.length, 2, "canViewField reads role and field only, never extra grants");
+assert.ok(!canViewField("ACCOUNTS", "AADHAAR_FULL"), "Accounts never sees Aadhaar in full");
+assert.ok(canViewField("ACCOUNTS", "BANK_FULL"), "Accounts does see bank details in full");
+assert.deepEqual(rolesHolding("AADHAAR_FULL"), ["MD", "ADMIN"], "Aadhaar is MD and Admin only");
 
 console.log("security.check.ts OK");

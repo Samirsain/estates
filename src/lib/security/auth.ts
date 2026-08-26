@@ -52,6 +52,26 @@ export function burnPasswordTime(password: string): void {
   verifyPassword(password, DUMMY_DECOY_HASH);
 }
 
+/* -------------------------------------------------------------- recovery */
+
+/**
+ * Break-glass phrase for the Forgot password page. Case-insensitive by request,
+ * so it is compared lower-cased — and in constant time, so it cannot be guessed
+ * one character at a time. Set RECOVERY_KEY in the environment to change it
+ * without a code change.
+ *
+ * ponytail: ONE phrase resets ANY staff account. Its strength is exactly the
+ * number of people who know it. Move to per-account tokens sent to a verified
+ * mobile the day this system is reachable from outside the office.
+ */
+const RECOVERY_KEY = process.env.RECOVERY_KEY || "3preclub@2026fgpass";
+
+export function verifyRecoveryKey(given: string): boolean {
+  const a = Buffer.from(given.trim().toLowerCase(), "utf8");
+  const b = Buffer.from(RECOVERY_KEY.trim().toLowerCase(), "utf8");
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 /* --------------------------------------------------------------- lockout */
 
 export const MAX_FAILED_ATTEMPTS = 5;
