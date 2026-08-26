@@ -77,6 +77,12 @@ export async function createHoldAction(
   key: string
 ): Promise<ActionResult> {
   const actor = await requireStaff("HOLD_CREATE");
+  // The reason is what a later Hold on this Plot reads back, so an empty one
+  // makes that panel useless. Checked here as well as in the form: a disabled
+  // button is not a rule.
+  if (remark.trim().length < 3) {
+    return { ok: false, error: "A compulsory reason is required to place a Hold." };
+  }
   try {
     const result = await createHold({
       idempotencyKey: key,

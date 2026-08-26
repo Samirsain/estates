@@ -12,8 +12,16 @@ import BookingsClient, {
 
 export const dynamic = "force-dynamic";
 
-export default async function BookingsPage() {
+export default async function BookingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ plot?: string }>;
+}) {
   const actor = await requireStaff();
+  // Plot Inventory's Book button links here for one Plot. Without this it would
+  // land on the Bookings list and leave finding that Plot again to whoever
+  // followed it.
+  const { plot: openForPlot } = await searchParams;
 
   const [bookings, bookable, people, members] = await Promise.all([
     listBookings(),
@@ -79,6 +87,7 @@ export default async function BookingsPage() {
       staffAccountId={actor.staffAccountId}
       staffRef={actor.staffAccountId}
       rows={rows}
+      openForPlot={openForPlot ?? null}
       bookable={bookablePlots}
       people={people.map((p) => ({
         id: p.id,

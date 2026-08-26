@@ -84,6 +84,11 @@ export default async function PlotsPage({
       areaSqFt: plot.areaSqFt.toDecimalPlaces(2).toString(),
       areaSqM: plot.areaSqM.toDecimalPlaces(2).toString(),
       lifecycle: plot.lifecycle,
+      pastHolds: plot.events.map((e) => ({
+        at: e.at.toISOString(),
+        actorRef: e.actorRef,
+        reason: e.reason,
+      })),
       restriction: plot.restriction,
       restrictionReason: plot.restrictionReason,
       isResale: plot.isResale,
@@ -155,12 +160,10 @@ export default async function PlotsPage({
       people={people}
       permissions={{
         makeAvailable: can(actor.role, "PLOT_MAKE_AVAILABLE"),
-        restriction: can(actor.role, "PLOT_RESTRICTION_MANAGE"),
         hold: can(actor.role, "HOLD_CREATE"),
         extend: can(actor.role, "HOLD_EXTEND_FIRST"),
         decideExtension: can(actor.role, "HOLD_EXTEND_FURTHER"),
         setup: can(actor.role, "PLOT_SETUP"),
-        editDetails: can(actor.role, "PLOT_SETUP"),
         reviewRequests: can(actor.role, "HOLD_REQUEST_REVIEW"),
       }}
     />

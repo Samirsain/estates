@@ -41,9 +41,7 @@ import {
   decideHoldRequestAction,
   makeAvailableAction,
   prepareInventoryAction,
-  updatePlotDetailsAction,
   requestExtensionAction,
-  setRestrictionAction,
   type ActionResult,
 } from "./actions";
 
@@ -57,6 +55,8 @@ export type PlotRowView = {
   areaSqFt: string;
   areaSqM: string;
   lifecycle: string;
+  /** Most recent HOLD_CREATED reasons on this Plot, newest first. */
+  pastHolds: Array<{ at: string; actorRef: string; reason: string | null }>;
   restriction: string;
   restrictionReason: string | null;
   isResale: boolean;
@@ -131,13 +131,6 @@ const LIFECYCLE_LABEL: Record<string, string> = {
   PAYMENT_COMPLETED: "Payment Completed",
   REFUND_PENDING: "Refund Pending",
   DELIVERED: "Delivered",
-};
-
-const RESTRICTION_LABEL: Record<string, string> = {
-  NONE: "—",
-  NOT_YET_RELEASED: "Not Yet Released",
-  NOT_FOR_SALE: "Not for Sale",
-  PLEDGE: "Pledge",
 };
 
 const inputClass =
@@ -514,6 +507,33 @@ function SideControl({
   );
 }
 
+/**
+ * What this Plot was held for before, beside the field asking why it is being
+ * held now. A Plot held and let go three times is worth knowing about before
+ * holding it a fourth, and the reason was already being recorded — it just had
+ * nowhere to be read.
+ */
+function PastHolds({ rows }: { rows: PlotRowView["pastHolds"] }) {
+  const withReason = rows.filter((r) => r.reason?.trim());
+  if (withReason.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-secondary px-3 py-2">
+      <p className="text-[11px] font-medium text-muted-foreground">Held before on this Plot</p>
+      <ul className="mt-1 space-y-0.5">
+        {withReason.map((r, i) => (
+          <li key={i} className="text-[11px] text-foreground">
+            <span className="text-muted-foreground">
+              {formatIst(r.at)} · {r.actorRef} ·{" "}
+            </span>
+            {r.reason}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** The three derived areas, shown together because they are one measurement. */
 function AreaReadout({ preview }: { preview: Preview }) {
   return (
@@ -559,12 +579,10 @@ export default function PlotsClient({
   people: Array<{ id: string; fullName: string; primaryMobile: string }>;
   permissions: {
     makeAvailable: boolean;
-    restriction: boolean;
     hold: boolean;
     extend: boolean;
     decideExtension: boolean;
     setup: boolean;
-    editDetails: boolean;
     reviewRequests: boolean;
   };
 }) {
@@ -577,11 +595,9 @@ export default function PlotsClient({
   const [dialog, setDialog] = React.useState<
     | { kind: "HOLD"; plot: PlotRowView }
     | { kind: "AVAILABLE"; plot: PlotRowView }
-    | { kind: "RESTRICT"; plot: PlotRowView }
     | { kind: "CANCEL_HOLD"; plot: PlotRowView }
     | { kind: "EXTEND"; plot: PlotRowView }
     | { kind: "PREPARE" }
-    | { kind: "EDIT_DETAILS"; plot: PlotRowView }
     | { kind: "DECIDE_REQUEST"; request: HoldRequestView; approve: boolean }
     | { kind: "DECIDE_EXTENSION"; plot: PlotRowView; approve: boolean }
     | null
@@ -772,13 +788,54 @@ export default function PlotsClient({
                   <th className="px-3 py-1">Area</th>
                   <th className="px-3 py-1">Status</th>
                   <th className="px-3 py-1">Plot Location Charge (PLC %)</th>
-                  <th className="px-3 py-1">Restriction</th>
-                  <th className="px-3 py-1">Customer</th>
                   <th className="px-3 py-1">Next action</th>
                 </tr>
               </thead>
               <tbody>
                 {visible.map((plot) => {
+                  // What a held Plot can have done to it, in the order it would
+                  // be wanted. `ends` is what makes the item read as the one
+                  // that stops something, wherever it lands in the list.
+                  const holdActions: Array<{ label: string; ends?: boolean; run: () => void }> =
+                    plot.lifecycle !== "HOLD" || !plot.hold
+                      ? []
+                      : [
+                          ...(permissions.extend && !plot.hold.pendingExtension
+                            ? [
+                                {
+                                  label: "Extend Hold",
+                                  run: () => setDialog({ kind: "EXTEND", plot }),
+                                },
+                              ]
+                            : []),
+                          // PRD §8.5 — a further extension is Admin's decision,
+                          // and reviewing it never pauses the Hold expiry.
+                          ...(plot.hold.pendingExtension && permissions.decideExtension
+                            ? [
+                                {
+                                  label: "Approve extension",
+                                  run: () =>
+                                    setDialog({ kind: "DECIDE_EXTENSION", plot, approve: true }),
+                                },
+                                {
+                                  label: "Reject extension",
+                                  ends: true,
+                                  run: () =>
+                                    setDialog({ kind: "DECIDE_EXTENSION", plot, approve: false }),
+                                },
+                              ]
+                            : []),
+                          ...(permissions.hold
+                            ? [
+                                {
+                                  label: "Cancel Hold",
+                                  ends: true,
+                                  run: () => setDialog({ kind: "CANCEL_HOLD", plot }),
+                                },
+                              ]
+                            : []),
+                        ];
+
                   // The row payload carries these as plain strings; the values
                   // are Prisma enums either way, so this is the boundary cast
                   // rather than a widening.
@@ -852,92 +909,71 @@ export default function PlotsClient({
                       )}
                       <span className="block text-[11px]">{plot.facing}</span>
                     </td>
-                    <td className="px-3 py-3 text-xs">
-                      {RESTRICTION_LABEL[plot.restriction] ?? plot.restriction}
-                      {plot.restrictionReason && (
-                        <span className="block text-[11px] text-muted-foreground">
-                          {plot.restrictionReason}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-xs">
-                      {plot.hold ? (
-                        <>
-                          {plot.hold.heldForName}
-                          <span className="block text-[11px] text-muted-foreground">
-                            Extensions: {plot.hold.extensionCount}
-                            {plot.hold.pendingExtension ? " · request pending" : ""}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </td>
                     <td className="rounded-r-xl px-3 py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {plot.lifecycle === "NOT_AVAILABLE" && permissions.makeAvailable && (
-                          <Button size="sm" variant="outline" onClick={() => setDialog({ kind: "AVAILABLE", plot })}>
-                            Make Available
-                          </Button>
-                        )}
-                        {plot.lifecycle === "AVAILABLE" && permissions.hold && (
-                          <Button size="sm" onClick={() => setDialog({ kind: "HOLD", plot })}>
-                            Hold
-                          </Button>
-                        )}
-                        {["AVAILABLE", "NOT_AVAILABLE"].includes(plot.lifecycle) && permissions.restriction && (
-                          <Button size="sm" variant="outline" onClick={() => setDialog({ kind: "RESTRICT", plot })}>
-                            Restriction
-                          </Button>
-                        )}
-                        {permissions.editDetails && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setDialog({ kind: "EDIT_DETAILS", plot })}
-                          >
-                            Edit Plot Details
-                          </Button>
-                        )}
-                        {plot.lifecycle === "HOLD" &&
-                          plot.hold &&
-                          permissions.extend &&
-                          !plot.hold.pendingExtension && (
+                      {/* Two slots, always. The left one is the thing to do to
+                          this Plot now — or a menu, once there is more than one
+                          thing. The right one is Book, in the same place on
+                          every row, so the eye can run down the column.
+                          Colour says what a button does rather than how loud it
+                          is: filled is the way forward, outline is the other
+                          path, red is the one that ends something. */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {plot.lifecycle === "NOT_AVAILABLE" && permissions.makeAvailable && (
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => setDialog({ kind: "EXTEND", plot })}
+                              onClick={() => setDialog({ kind: "AVAILABLE", plot })}
                             >
-                              Extend Hold
+                              Make Available
                             </Button>
                           )}
-                        {/* PRD §8.5 — a further extension is Admin's decision, and
-                            reviewing it never pauses the Hold expiry. */}
-                        {plot.hold?.pendingExtension && permissions.decideExtension && (
-                          <>
-                            <Button
-                              size="sm"
-                              onClick={() => setDialog({ kind: "DECIDE_EXTENSION", plot, approve: true })}
-                            >
-                              Approve extension
+
+                          {/* One other action, so no menu: a menu wrapping a
+                              single item is worse than the item. */}
+                          {plot.lifecycle === "AVAILABLE" && permissions.hold && (
+                            <Button size="sm" onClick={() => setDialog({ kind: "HOLD", plot })}>
+                              Hold
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setDialog({ kind: "DECIDE_EXTENSION", plot, approve: false })}
-                            >
-                              Reject extension
-                            </Button>
-                          </>
-                        )}
-                        {plot.lifecycle === "HOLD" && plot.hold && permissions.hold && (
-                          <Button size="sm" variant="outline" onClick={() => setDialog({ kind: "CANCEL_HOLD", plot })}>
-                            Cancel Hold
-                          </Button>
-                        )}
-                        {plot.lifecycle === "AVAILABLE" && (
-                          <Button size="sm" variant="ghost" disabled title="Booking Requests arrive in Phase 3.">
-                            Start Booking
+                          )}
+
+                          {plot.lifecycle === "HOLD" && plot.hold && holdActions.length > 0 && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  aria-label={`Hold actions for ${plot.plotNumber}`}
+                                >
+                                  <MoreHorizontal className="h-3.5 w-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start">
+                                {holdActions.map((action) => (
+                                  <DropdownMenuItem
+                                    key={action.label}
+                                    onSelect={action.run}
+                                    className={action.ends ? "text-red-700 focus:text-red-700" : ""}
+                                  >
+                                    {action.label}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
+
+                        {/* A Booking may start from an Available Plot or from a
+                            Hold — submitBookingRequest takes holdId as optional
+                            and falls back to canAllocate. This was a disabled
+                            button with a note about Phase 3, which shipped. */}
+                        {["AVAILABLE", "HOLD"].includes(plot.lifecycle) && permissions.hold && (
+                          <Button
+                            size="sm"
+                            variant={plot.lifecycle === "HOLD" ? "default" : "outline"}
+                            asChild
+                          >
+                            <Link href={`/bookings?plot=${plot.id}`}>Book</Link>
                           </Button>
                         )}
                       </div>
@@ -972,9 +1008,10 @@ export default function PlotsClient({
                   ))}
                 </select>
               </Field>
-              <Field label="Remark (optional)">
-                <Input name="remark" />
+              <Field label="Reason — compulsory, kept in History">
+                <Input name="remark" required minLength={3} />
               </Field>
+              <PastHolds rows={dialog.plot.pastHolds} />
             </>
           }
           onSubmit={(f) =>
@@ -1003,42 +1040,6 @@ export default function PlotsClient({
             </Field>
           }
           onSubmit={(f) => run(() => makeAvailableAction(dialog.plot.id, String(f.get("reason")), newKey()))}
-        />
-      )}
-
-      {dialog?.kind === "RESTRICT" && (
-        <ConfirmDialog
-          title="Change restriction"
-          plot={dialog.plot}
-          consequence="Not for Sale and Pledge keep the Plot Not Available, including whenever it returns from a Hold or a cancelled Booking."
-          busy={busy}
-          onClose={() => setDialog(null)}
-          fields={
-            <>
-              <Field label="Restriction">
-                <select name="restriction" className={inputClass} defaultValue={dialog.plot.restriction}>
-                  {Object.entries(RESTRICTION_LABEL).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {value === "NONE" ? "No restriction" : label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Reason — compulsory">
-                <Input name="reason" required minLength={3} />
-              </Field>
-            </>
-          }
-          onSubmit={(f) =>
-            run(() =>
-              setRestrictionAction(
-                dialog.plot.id,
-                f.get("restriction") as "NONE",
-                String(f.get("reason")),
-                newKey()
-              )
-            )
-          }
         />
       )}
 
@@ -1167,18 +1168,6 @@ export default function PlotsClient({
             </div>
           </form>
         </Modal>
-      )}
-
-      {dialog?.kind === "EDIT_DETAILS" && (
-        <EditPlotDetailsDialog
-          plot={dialog.plot}
-          components={projects.find((p) => p.id === dialog.plot.projectId)?.plcComponents ?? []}
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(details, reason) =>
-            run(() => updatePlotDetailsAction(dialog.plot.id, details, reason, newKey()))
-          }
-        />
       )}
 
       {dialog?.kind === "PREPARE" && (

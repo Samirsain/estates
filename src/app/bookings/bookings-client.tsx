@@ -174,7 +174,7 @@ function statusVariant(status: string) {
 }
 
 type Dialog =
-  | { kind: "NEW" }
+  | { kind: "NEW"; plotId?: string }
   | { kind: "REVISE"; row: BookingRowView }
   | { kind: "DECIDE"; row: BookingRowView; approve: boolean }
   | { kind: "CANCEL"; row: BookingRowView }
@@ -203,6 +203,7 @@ export default function BookingsClient({
   staffRef,
   rows,
   bookable,
+  openForPlot,
   people,
   members,
   permissions,
@@ -213,6 +214,8 @@ export default function BookingsClient({
   staffRef: string;
   rows: BookingRowView[];
   bookable: BookableView[];
+  /** A Plot id from ?plot=, so Plot Inventory's Book button lands on the form. */
+  openForPlot: string | null;
   people: PersonView[];
   members: MemberView[];
   permissions: Permissions;
@@ -222,7 +225,14 @@ export default function BookingsClient({
   const [notice, setNotice] = React.useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [statusFilter, setStatusFilter] = React.useState("ALL");
   const [search, setSearch] = React.useState("");
-  const [dialog, setDialog] = React.useState<Dialog>(null);
+  // Arriving from Plot Inventory's Book button opens the form on that Plot.
+  // Initial state, not an effect: the dialog is right on the first render and
+  // never flickers shut and open again.
+  const [dialog, setDialog] = React.useState<Dialog>(
+    openForPlot && bookable.some((p) => p.id === openForPlot)
+      ? { kind: "NEW", plotId: openForPlot }
+      : null
+  );
   const [openId, setOpenId] = React.useState<string | null>(null);
   const [detail, setDetail] = React.useState<BookingDetail | null>(null);
 
@@ -444,6 +454,7 @@ export default function BookingsClient({
       {dialog?.kind === "NEW" && (
         <BookingFormDialog
           title="Start Booking Request"
+          initialPlotId={dialog.plotId}
           bookable={bookable}
           people={people}
           members={members}
@@ -1666,6 +1677,7 @@ type FormOut = {
 
 function BookingFormDialog({
   title,
+  initialPlotId,
   bookable,
   people,
   members,
@@ -1684,9 +1696,10 @@ function BookingFormDialog({
   requireReason?: boolean;
   onClose: () => void;
   onSubmit: (form: FormOut) => void;
+  initialPlotId?: string;
 }) {
   const today = istDay(new Date());
-  const [plotId, setPlotId] = React.useState("");
+  const [plotId, setPlotId] = React.useState(initialPlotId ?? "");
   const [soldByType, setSoldByType] = React.useState<FormOut["soldByType"]>("THREE_PERCENT_CLUB");
   const [parties, setParties] = React.useState<PartyInput[]>([
     { personId: "", role: "PRIMARY", sharePercent: "" },

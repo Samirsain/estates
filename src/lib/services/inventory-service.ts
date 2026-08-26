@@ -477,6 +477,15 @@ export function listPlots(projectId?: string) {
         include: { person: true, extensionRequests: { where: { status: "PENDING" } } },
         take: 1,
       },
+      // Why this Plot was held before, for the Hold dialog to show. A Plot that
+      // has been held and let go three times is worth knowing about before
+      // holding it a fourth, and the reason was already being written here.
+      // Three, not all of them: this is context beside a form, not a history.
+      events: {
+        where: { action: "HOLD_CREATED" },
+        orderBy: { at: "desc" },
+        take: 3,
+      },
     },
     orderBy: [{ project: { name: "asc" } }, { plotType: "asc" }, { plotNumber: "asc" }],
     take: 500,
