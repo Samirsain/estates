@@ -62,17 +62,49 @@ jobs:
             JOBS="HOLD_EXPIRY MEMBER_HOLD_REQUEST_EXPIRY"
           fi
 
+          # Wake the service before asking it to do any work.
+          #
+          # On the free plan it sleeps after 15 minutes, so at */30 it is asleep
+          # every single time this runs, and until now the first job in the list
+          # was the one paying for the wake. On 2026-08-26 that call died at its
+          # 300s limit without ever reaching the app — HOLD_EXPIRY recorded no
+          # run at all — while the second job, by then talking to a service that
+          # was awake, finished in 0.7s. The workflow went red for a cold start,
+          # not for a broken job.
+          #
+          # /api/health is unauthenticated and touches no job state, so it is the
+          # right thing to spend the wait on. Its failure is deliberately not
+          # this workflow's failure: the jobs below still run and still decide
+          # the verdict. This adds no billed minutes either — the wake was
+          # already being paid for inside that first job call.
+          echo "--- waking the service"
+          for ATTEMPT in 1 2 3; do
+            CODE=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 120 \
+              "$APP_URL/api/health") || CODE=000
+            echo "wake attempt $ATTEMPT -> HTTP $CODE"
+            if [ "$CODE" = "200" ]; then break; fi
+            sleep 10
+          done
+
           FAILED=0
           for JOB in $JOBS; do
             echo "--- $JOB"
-            # A free service may be asleep; the first call can take ~60s to wake it.
-            CODE=$(curl -sS -o /tmp/out.json -w "%{http_code}" --max-time 300 \
-              -H "Authorization: Bearer $JOBS_SECRET" \
-              "$APP_URL/api/jobs?job=$JOB") || CODE=000
-            cat /tmp/out.json || true
-            echo
+            CODE=000
+            # Every job is idempotent (PRD §18), which is what makes a retry
+            # safe: a second call after an unclear failure either does the work
+            # that never happened, or repeats one that did and changes nothing.
+            for ATTEMPT in 1 2; do
+              CODE=$(curl -sS -o /tmp/out.json -w "%{http_code}" --max-time 300 \
+                -H "Authorization: Bearer $JOBS_SECRET" \
+                "$APP_URL/api/jobs?job=$JOB") || CODE=000
+              cat /tmp/out.json || true
+              echo
+              if [ "$CODE" = "200" ]; then break; fi
+              echo "attempt $ATTEMPT returned HTTP $CODE"
+              sleep 5
+            done
             if [ "$CODE" != "200" ]; then
-              echo "::error::$JOB returned HTTP $CODE"
+              echo "::error::$JOB returned HTTP $CODE after 2 attempts"
               FAILED=1
             fi
           done
