@@ -175,47 +175,74 @@ export default function EnquiriesClient({
             </p>
           </Card>
         ) : (
-          <ul className="space-y-3">
-            {visible.map((e) => (
-              <li key={e.id}>
-                <Card className="p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-sm font-semibold text-primary">{e.enquiryNo}</span>
+          // Two lines, not four. The four were stacked down the left while the
+          // middle of the card stayed empty — an Enquiry is a handful of short
+          // facts, and they read across.
+          <ul className="space-y-2">
+            {visible.map((e) => {
+              const where = [e.mobileMasked, e.city, e.project, e.plot].filter(Boolean).join(" · ");
+              const who = [
+                e.assignedTo ? `Assigned to ${e.assignedTo}` : null,
+                e.sourceMember ? `Sourced by ${e.sourceMember}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              const progress = [
+                e.lastOutcome ? humanise(e.lastOutcome) : "No follow-up yet",
+                e.nextFollowUpAt ? `next ${formatIst(e.nextFollowUpAt)}` : null,
+                e.closeReason ? `closed: ${e.closeReason}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+
+              return (
+                <li key={e.id}>
+                  <Card className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3">
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="font-mono text-sm font-semibold text-primary">
+                          {e.enquiryNo}
+                        </span>
                         <h2 className="text-sm font-semibold">{e.name}</h2>
-                        <Badge variant={e.status === "ACTIVE" ? "info" : e.status === "BOOKED" ? "success" : "outline"}>
+                        <Badge
+                          variant={
+                            e.status === "ACTIVE"
+                              ? "info"
+                              : e.status === "BOOKED"
+                                ? "success"
+                                : "outline"
+                          }
+                        >
                           {humanise(e.status)}
                         </Badge>
                         <Badge variant="outline">{humanise(e.source)}</Badge>
+                        <span className="text-xs text-muted-foreground">{where}</span>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {e.mobileMasked} · {e.city} · {e.project} · {e.plot}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Assigned to {e.assignedTo}
-                        {e.sourceMember ? ` · Sourced by ${e.sourceMember}` : ""}
-                      </p>
-                      <p className="text-xs text-muted-foreground/90">
-                        {e.lastOutcome ? `Last result: ${humanise(e.lastOutcome)}` : "No follow-up recorded yet"}
-                        {e.nextFollowUpAt ? ` · Next ${formatIst(e.nextFollowUpAt)}` : ""}
-                        {e.closeReason ? ` · Closed: ${e.closeReason}` : ""}
+                        {who}
+                        {who && progress ? " · " : ""}
+                        {progress}
                       </p>
                     </div>
                     {canManage && e.status === "ACTIVE" && (
                       <div className="flex shrink-0 gap-2">
-                        <Button size="sm" variant="outline" disabled={busy} onClick={() => setFollowUp(e)}>
+                        <Button size="sm" disabled={busy} onClick={() => setFollowUp(e)}>
                           Follow-up
                         </Button>
-                        <Button size="sm" variant="ghost" disabled={busy} onClick={() => setClosing(e)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => setClosing(e)}
+                        >
                           Close
                         </Button>
                       </div>
                     )}
-                  </div>
-                </Card>
-              </li>
-            ))}
+                  </Card>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
