@@ -41,14 +41,18 @@ const VIEWS: { id: TaskView; label: string }[] = [
   { id: "RANGE", label: "Date Range" },
 ];
 
-const RECORD_KINDS: RecordKind[] = [
-  "Plot",
-  "Enquiry",
-  "Booking",
-  "Booking Request",
-  "Customer",
-  "Member",
-  "Acquisition",
+// The kind is what gets stored, the label is what gets read. They were the same
+// string until "Acquisition" needed to read as the two deals it actually means,
+// and an <option> without an explicit value posts its own text — so the label
+// alone would have written "Buyback / Resale" into recordKind.
+const RECORD_KINDS: { kind: RecordKind; label: string }[] = [
+  { kind: "Plot", label: "Plot" },
+  { kind: "Enquiry", label: "Enquiry" },
+  { kind: "Booking", label: "Booking" },
+  { kind: "Booking Request", label: "Booking Request" },
+  { kind: "Customer", label: "Customer" },
+  { kind: "Member", label: "Member" },
+  { kind: "Acquisition", label: "Buyback / Resale" },
 ];
 
 const EMPHASIS_STYLE: Record<Emphasis, { row: string; label: string | null }> = {
@@ -496,8 +500,10 @@ function AddTaskDialog({
         <div className="grid grid-cols-3 gap-3">
           <Field label="Link to">
             <select name="kind" defaultValue="Customer" className={inputClass}>
-              {RECORD_KINDS.map((k) => (
-                <option key={k}>{k}</option>
+              {RECORD_KINDS.map(({ kind, label }) => (
+                <option key={kind} value={kind}>
+                  {label}
+                </option>
               ))}
             </select>
           </Field>

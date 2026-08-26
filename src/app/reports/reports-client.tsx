@@ -19,7 +19,7 @@ import { exportReportAction, runReportAction, type ReportResult, type ReportRow 
 const REPORTS: Array<{ name: ReportName; label: string; note: string }> = [
   { name: "BOOKINGS", label: "Bookings", note: "Every Booking with its Plot, Customer and payment progress." },
   { name: "PAYMENTS_RECEIVED", label: "Payment Received", note: "Sale-side receipts. Its own dataset (PRD §1.2)." },
-  { name: "PAYMENTS_GIVEN", label: "Payment Given", note: "Acquisition-side payments. Never merged with the sale side." },
+  { name: "PAYMENTS_GIVEN", label: "Payment Given", note: "Money we pay out on Buyback and Resale. Never merged with the sale side." },
   { name: "COMMISSION", label: "Commission", note: "Current records only — superseded rows are excluded (PRD §21)." },
   { name: "INVENTORY", label: "Plot Inventory", note: "Every Plot with lifecycle, restriction and resale flag." },
   { name: "COMPLETIONS", label: "Allotment / Registry", note: "Delivered Bookings and the route that completed them." },

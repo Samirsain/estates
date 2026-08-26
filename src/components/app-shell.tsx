@@ -31,7 +31,7 @@ const NAV = [
       { label: "Plot Inventory", href: "/plots", phase: null },
       { label: "Enquiries", href: "/enquiries", phase: null },
       { label: "Bookings", href: "/bookings", phase: null },
-      { label: "Acquisitions", href: "/acquisitions", phase: null },
+      { label: "Buyback / Resale", href: "/acquisitions", phase: null },
     ],
   },
   { label: "Customers", icon: Users, href: "/customers", phase: null },

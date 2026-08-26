@@ -130,7 +130,7 @@ export default function AcquisitionsClient({
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">Acquisitions</h1>
+            <h1 className="text-xl font-semibold">Buyback / Resale</h1>
             <p className="text-xs text-muted-foreground">
               Buyback and Purchase for Resale. Accounts approves at 20% Payment Given; the property
               shows Payment Pending until 100%.
@@ -138,7 +138,7 @@ export default function AcquisitionsClient({
           </div>
           {permissions.create && (
             <Button size="sm" variant="gradient" onClick={() => setDialog({ kind: "NEW" })}>
-              <Plus className="mr-2 h-3.5 w-3.5" /> New acquisition
+              <Plus className="mr-2 h-3.5 w-3.5" /> New deal
             </Button>
           )}
         </div>
@@ -155,7 +155,7 @@ export default function AcquisitionsClient({
 
         {rows.length === 0 ? (
           <Card className="p-4 text-sm text-muted-foreground">
-            No acquisitions yet. A Buyback takes back a Booking we sold; a Purchase for Resale brings
+            Nothing here yet. A Buyback takes back a Booking we sold; a Purchase for Resale brings
             an outside property into inventory.
           </Card>
         ) : (
@@ -163,7 +163,7 @@ export default function AcquisitionsClient({
             <table className="w-full text-left text-xs">
               <thead className="bg-secondary text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Acquisition</th>
+                  <th className="px-4 py-3 font-medium">Deal</th>
                   <th className="px-4 py-3 font-medium">Property</th>
                   <th className="px-4 py-3 font-medium">Seller / Arranged by</th>
                   <th className="px-4 py-3 font-medium">Payment Given</th>
@@ -324,7 +324,7 @@ export default function AcquisitionsClient({
 
       {dialog?.kind === "DECIDE" && (
         <FormDialog
-          title={dialog.approve ? "Approve acquisition" : "Reject acquisition"}
+          title={dialog.approve ? "Approve deal" : "Reject deal"}
           subtitle={`${dialog.row.acquisitionNo} · ${dialog.row.property}`}
           consequence={
             dialog.approve
@@ -366,7 +366,7 @@ export default function AcquisitionsClient({
         <FormDialog
           title="Record Buying Commission"
           subtitle={`${dialog.row.acquisitionNo} · arranged by ${dialog.row.arrangedBy}`}
-          consequence="One beneficiary per acquisition, outside the 4% sale cap, payable only at 100% Payment Given. The seller cannot be the beneficiary."
+          consequence="One beneficiary per deal, outside the 4% sale cap, payable only at 100% Payment Given. The seller cannot be the beneficiary."
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -492,7 +492,7 @@ function Detail({
         ) : (
           <p className="text-xs text-muted-foreground">
             {row.arrangedByType === "THREE_PERCENT_CLUB"
-              ? "A 3% Club acquisition earns no Buying Commission."
+              ? "A 3% Club deal earns no Buying Commission."
               : "Not recorded yet."}
           </p>
         )}
