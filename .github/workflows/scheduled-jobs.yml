@@ -45,6 +45,12 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+    # A hard cap on what a dead service can cost. The wake and the retries turn
+    # a normal run's ~1 minute into ~27 in the worst case, and at */30 that is
+    # most of the monthly free allowance burnt in a single day of downtime —
+    # which is the opposite of what 94bd7b6 set the rate for. This never bites a
+    # healthy run; it only bites the runs that ought to be red anyway.
+    timeout-minutes: 12
     steps:
       - name: Call the jobs endpoint
         env:
