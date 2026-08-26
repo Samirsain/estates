@@ -61,6 +61,17 @@
      */
     --placeholder: 0 0% 64%; /* #a3a3a3 */
 
+    /*
+     * A second interactive colour, for Book and nothing else.
+     *
+     * apple.md sets one interactive colour and means it. This is a deliberate
+     * exception: Book is the one row action that leaves the screen, and telling
+     * it apart from Hold at a glance is worth the second hue. It carries the
+     * primary's own weight — same saturation and lightness — so it reads as a
+     * peer rather than as a louder button.
+     */
+    --accent-book: 212 76% 43%;
+
     /* rounded.md 11px is the working default; sm 8px, lg 18px */
     --radius: 0.6875rem;
   }

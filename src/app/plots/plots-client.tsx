@@ -6,7 +6,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Clock, Plus, X, Trash2, MoreHorizontal, Pencil, Lock, Pause, Calendar, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Clock, Plus, X, Trash2, Pencil, Lock, Pause, Calendar, XCircle } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,11 +69,11 @@ export type PlotRowView = {
   plc: {
     version: number;
     totalPercent: string;
-    /** `evidence` names the sides that qualified (PLC spec §7.1). Older frozen
-     *  snapshots predate it, so it is optional rather than assumed. */
-    components: Array<{ label: string; percent: string; evidence?: string }>;
+    /** What the charge is for, already shortened for display. */
+    components: Array<{ label: string; evidence: string }>;
   } | null;
   plcIssue: string | null;
+  /** "N road facing · 2 open sides", derived and shortened on the server. */
   facing: string;
   hold: {
     id: string;
@@ -83,6 +83,15 @@ export type PlotRowView = {
     pendingExtension: boolean;
     pendingExtensionId: string | null;
     pendingExtensionReason: string | null;
+    extensions: Array<{
+      at: string;
+      byRef: string;
+      reason: string;
+      hours: number;
+      status: string;
+      decidedByRef: string | null;
+      decisionNote: string | null;
+    }>;
     /** Frozen behind a Booking Request — the timer is not running (PRD §10.5). */
     frozen: boolean;
   } | null;
@@ -107,7 +116,7 @@ export type BoundaryRow = {
   reference: string;
 };
 
-type ProjectView = {
+export type ProjectView = {
   id: string;
   name: string;
   city?: string | null;
@@ -132,6 +141,63 @@ const LIFECYCLE_LABEL: Record<string, string> = {
   REFUND_PENDING: "Refund Pending",
   DELIVERED: "Delivered",
 };
+
+/**
+ * The row's own buttons. `sm` (h-8, text-xs) reads as a footnote next to the
+ * data; the default (h-10) is a page-level button and makes every row as tall
+ * as itself. This sits between the two — one class, so the four of them cannot
+ * drift apart.
+ */
+/**
+ * Why this Plot is in this state, for the status badge to carry on hover.
+ *
+ * The row shows what the state is; the reason lives on the Plot's page. This is
+ * the middle ground — the answer without the trip, on the word that raised the
+ * question. A native title rather than a tooltip component: it needs no script,
+ * and a screen reader reads it out where a styled div would not.
+ */
+function statusReason(plot: PlotRowView, because: string | null): string | null {
+  const parts: string[] = [];
+
+  if (because) parts.push(because);
+
+  if (plot.hold) {
+    parts.push(`Held for ${plot.hold.heldForName}`);
+    parts.push(
+      plot.hold.frozen
+        ? "Timer frozen — a Booking Request is under review"
+        : `Expires ${formatIst(plot.hold.expiresAt)}`
+    );
+    if (plot.hold.extensionCount > 0) {
+      parts.push(`${plot.hold.extensionCount} extension(s) so far`);
+    }
+    // The newest HOLD_CREATED reason on this Plot is this Hold's own.
+    const held = plot.pastHolds.find((h) => h.reason?.trim());
+    if (held?.reason) parts.push(`Reason: ${held.reason}`);
+  }
+
+  if (plot.restriction === "NOT_YET_RELEASED") {
+    parts.push("Not yet released — prepared but never made Available");
+  } else if (plot.restriction !== "NONE") {
+    const label = RESTRICTION_REASON_LABEL[plot.restriction] ?? plot.restriction;
+    parts.push(plot.restrictionReason ? `${label}: ${plot.restrictionReason}` : label);
+  }
+
+  return parts.length > 0 ? parts.join("\n") : null;
+}
+
+const RESTRICTION_REASON_LABEL: Record<string, string> = {
+  NOT_FOR_SALE: "Not for Sale",
+  PLEDGE: "Pledge",
+};
+
+const EXTENSION_STATUS_LABEL: Record<string, string> = {
+  PENDING: "awaiting a decision",
+  APPROVED: "approved",
+  REJECTED: "rejected",
+};
+
+const rowButton = "h-9 px-4 text-sm";
 
 const inputClass =
   "h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
@@ -274,6 +340,15 @@ function derivePreview(
 
   if (components.length === 0) {
     return { ...measured, plc: "—", issue: "No published PLC version" };
+  }
+
+  // A Road whose width has not been typed yet is unfinished, not wrong. The
+  // snapshot refuses it — correctly, because a band cannot be decided without a
+  // width — but showing that refusal the instant Custom is picked scolds the
+  // operator for not having typed something they are about to type. Save still
+  // validates: prepareInventory builds the same snapshot on the server.
+  if (boundaries.some((b) => b.kind === "ROAD" && !String(b.roadWidthFt ?? "").trim())) {
+    return { ...measured, plc: "—", issue: null };
   }
 
   try {
@@ -432,7 +507,7 @@ function SideControl({
         {/* Side letter badge - darker & bolder for clarity */}
         <span
           title={`${SIDE_NAME[boundary.side]} Boundary`}
-          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-foreground bg-secondary border border-border/60 select-none"
+          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-foreground bg-secondary border border-border select-none"
         >
           {boundary.side.charAt(0)}
         </span>
@@ -469,7 +544,7 @@ function SideControl({
                 }
               }}
             >
-              <option value="custom">Custom width</option>
+              <option value="custom">Custom</option>
               {roads.map((r, ri) => {
                 const pct = r.percent.includes(".") ? r.percent.replace(/0+$/, "").replace(/\.$/, "") : r.percent;
                 const nameStr = r.remark ? `${r.remark} (${r.threshold}ft, ${pct}%)` : `Road ${r.threshold}ft (${pct}%)`;
@@ -481,7 +556,7 @@ function SideControl({
             <input
               className="h-7 w-full rounded-md border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
               inputMode={isRoad ? "decimal" : undefined}
-              placeholder={isRoad ? "Width ft" : "Ref # (opt.)"}
+              placeholder={isRoad ? "Width ft" : detailLabel}
               value={isRoad ? (boundary.roadWidthFt ?? "") : (boundary.reference ?? "")}
               onChange={(e) =>
                 onChange(isRoad ? { roadWidthFt: e.target.value } : { reference: e.target.value })
@@ -529,6 +604,52 @@ function PastHolds({ rows }: { rows: PlotRowView["pastHolds"] }) {
             {r.reason}
           </li>
         ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Why this Hold exists and why it has been extended before, beside the field
+ * asking for one more reason.
+ *
+ * A further extension is Admin's decision (PRD §8.5), and deciding it against
+ * nothing is deciding it blind. Every reason here was already being recorded —
+ * on the Hold's own PlotEvent and on each HoldExtensionRequest — with nowhere
+ * to be read at the moment it mattered.
+ */
+function HoldHistory({ plot }: { plot: PlotRowView }) {
+  const extensions = plot.hold?.extensions ?? [];
+  // The newest HOLD_CREATED event on this Plot is this Hold's own reason.
+  const held = plot.pastHolds.find((h) => h.reason?.trim());
+  if (extensions.length === 0 && !held) return null;
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-secondary px-3 py-2">
+      <p className="text-[11px] font-medium text-muted-foreground">This Hold so far</p>
+      <ul className="mt-1 space-y-1">
+        {extensions.map((e, i) => (
+          <li key={i} className="text-[11px] text-foreground">
+            <span className="text-muted-foreground">
+              {formatIst(e.at)} · {e.byRef} · +{e.hours}h ·{" "}
+              {EXTENSION_STATUS_LABEL[e.status] ?? e.status} ·{" "}
+            </span>
+            {e.reason}
+            {e.decisionNote && (
+              <span className="block text-muted-foreground">
+                {e.decidedByRef}: {e.decisionNote}
+              </span>
+            )}
+          </li>
+        ))}
+        {held && (
+          <li className="text-[11px] text-foreground">
+            <span className="text-muted-foreground">
+              {formatIst(held.at)} · {held.actorRef} · held ·{" "}
+            </span>
+            {held.reason}
+          </li>
+        )}
       </ul>
     </div>
   );
@@ -597,7 +718,6 @@ export default function PlotsClient({
     | { kind: "AVAILABLE"; plot: PlotRowView }
     | { kind: "CANCEL_HOLD"; plot: PlotRowView }
     | { kind: "EXTEND"; plot: PlotRowView }
-    | { kind: "PREPARE" }
     | { kind: "DECIDE_REQUEST"; request: HoldRequestView; approve: boolean }
     | { kind: "DECIDE_EXTENSION"; plot: PlotRowView; approve: boolean }
     | null
@@ -645,8 +765,10 @@ export default function PlotsClient({
             </p>
           </div>
           {permissions.setup && (
-            <Button size="sm" variant="gradient" onClick={() => setDialog({ kind: "PREPARE" })}>
-              <Plus className="mr-1 h-4 w-4" /> Prepare Inventory
+            <Button size="sm" variant="gradient" asChild>
+              <Link href="/plots/prepare">
+                <Plus className="mr-1 h-4 w-4" /> Prepare Inventory
+              </Link>
             </Button>
           )}
         </header>
@@ -783,11 +905,10 @@ export default function PlotsClient({
             <table className="w-full min-w-[62rem] border-separate border-spacing-y-2 text-sm">
               <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-1">Project</th>
-                  <th className="px-3 py-1">Plot Type / Number</th>
-                  <th className="px-3 py-1">Area</th>
+                  <th className="px-3 py-1">Plot</th>
+                  <th className="px-3 py-1 text-right">Area</th>
                   <th className="px-3 py-1">Status</th>
-                  <th className="px-3 py-1">Plot Location Charge (PLC %)</th>
+                  <th className="px-3 py-1">Location Charge for</th>
                   <th className="px-3 py-1">Next action</th>
                 </tr>
               </thead>
@@ -845,10 +966,20 @@ export default function PlotsClient({
                       | ProjectLifecycle
                       | undefined
                   );
+                  const why = statusReason(plot, shown.because);
                   return (
-                  <tr key={plot.id} className="card-surface rounded-xl align-top">
-                    <td className="rounded-l-xl px-3 py-3">{plot.project}</td>
-                    <td className="px-3 py-3">
+                  // card-surface puts its border on the <tr>, and a table in
+                  // border-separate does not paint one there — the outline has
+                  // been written and invisible all along, which is why the rows
+                  // ran together. Cells can paint it, so they do.
+                  <tr
+                    key={plot.id}
+                    className="card-surface rounded-xl align-top [&>td]:border-y [&>td]:border-border"
+                  >
+                    {/* The Plot is the subject; the Project and type are what
+                        it belongs to, so they read under it rather than as a
+                        column repeating one name down the whole list. */}
+                    <td className="rounded-l-xl border-l px-3 py-2">
                       <Link
                         href={`/plots/${plot.id}`}
                         className="font-mono font-semibold text-primary hover:underline"
@@ -856,17 +987,34 @@ export default function PlotsClient({
                         {plot.plotNumber}
                       </Link>
                       <span className="block text-[11px] text-muted-foreground">
-                        {PLOT_TYPE_LABEL[plot.plotType] ?? plot.plotType}
+                        {plot.project} · {PLOT_TYPE_LABEL[plot.plotType] ?? plot.plotType}
                       </span>
                     </td>
-                    <td className="px-3 py-3 tabular-nums">
-                      {formatQuantity(plot.areaSqYd)} sq yd
-                      <span className="block text-[11px] text-muted-foreground">
-                        {formatQuantity(plot.areaSqFt)} sq ft · {formatQuantity(plot.areaSqM)} sq m
+                    {/* Area is what a Plot is bought by, so it carries weight.
+                        Square metres are dropped: nobody quotes a plot in them
+                        here, and the Plot's own page still has all three. */}
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {/* Both figures are quoted, so both are read at the same
+                          size. Only the unit steps back. */}
+                      <span className="block font-semibold text-foreground">
+                        {formatQuantity(plot.areaSqYd)}
+                        <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                          sq yd
+                        </span>
+                      </span>
+                      <span className="block font-semibold text-foreground">
+                        {formatQuantity(plot.areaSqFt)}
+                        <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                          sq ft
+                        </span>
                       </span>
                     </td>
                     <td className="px-3 py-3">
-                      <Badge variant={lifecycleVariant(shown.lifecycle)}>
+                      <Badge
+                        variant={lifecycleVariant(shown.lifecycle)}
+                        title={why ?? undefined}
+                        className={why ? "cursor-help decoration-dotted underline-offset-4 hover:underline" : undefined}
+                      >
                         {LIFECYCLE_LABEL[shown.lifecycle] ?? shown.lifecycle}
                       </Badge>
                       {shown.because && (
@@ -888,43 +1036,44 @@ export default function PlotsClient({
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-3 text-xs text-muted-foreground">
-                      {/* The total and what makes it up. The per-component
-                          percentages, the sides that qualified each one and the
-                          rule version are on the Plot's own page — a list this
-                          wide cannot carry them and still be scannable. */}
+                    {/* What the charge is for, not what it comes to. The
+                        percentage is on the Plot's own page — a column of them
+                        compares nothing useful, while "corner, park facing" is
+                        what a Plot is picked by. This column takes the width the
+                        action buttons were leaving empty.
+
+                        plcIssue stays: that is not a detail, it is the reason
+                        there is no charge at all. */}
+                    <td className="px-3 py-2 text-xs">
                       {plot.plc ? (
                         <>
-                          <span className="block text-sm font-semibold tabular-nums text-foreground">
-                            {formatPercent(plot.plc.totalPercent)}
-                          </span>
-                          <span className="block text-[11px]">
+                          <span className="block text-foreground">
                             {plot.plc.components.length === 0
                               ? "No component applies"
                               : plot.plc.components.map((c) => c.label).join(" · ")}
                           </span>
+                          <span className="block text-[11px] text-muted-foreground">
+                            {plot.facing}
+                          </span>
                         </>
                       ) : (
-                        <span className="block text-[11px] text-amber-800">{plot.plcIssue}</span>
+                        <span className="text-[11px] text-amber-800">{plot.plcIssue}</span>
                       )}
-                      <span className="block text-[11px]">{plot.facing}</span>
                     </td>
-                    <td className="rounded-r-xl px-3 py-3">
-                      {/* Two slots, always. The left one is the thing to do to
-                          this Plot now — or a menu, once there is more than one
-                          thing. The right one is Book, in the same place on
-                          every row, so the eye can run down the column.
-                          Colour says what a button does rather than how loud it
-                          is: filled is the way forward, outline is the other
-                          path, red is the one that ends something. */}
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-1.5">
+                    <td className="w-px whitespace-nowrap rounded-r-xl border-r px-3 py-2">
+                      {/* At most two: the thing to do to this Plot now — or a
+                          menu, once there is more than one — and then Book.
+                          Both solid: the row offers two things and neither is
+                          the lesser one. What ends something still reads as such
+                          — Cancel Hold is red inside the menu. */}
+                      {/* One row, no justify-between. That was pinning Book to
+                          the far edge back when this column stretched; now the
+                          column is content-width, so it only pushed two buttons
+                          apart inside a narrow box. */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
                           {plot.lifecycle === "NOT_AVAILABLE" && permissions.makeAvailable && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setDialog({ kind: "AVAILABLE", plot })}
-                            >
+                            <Button className={rowButton} onClick={() => setDialog({ kind: "AVAILABLE", plot })}>
                               Make Available
                             </Button>
                           )}
@@ -932,7 +1081,7 @@ export default function PlotsClient({
                           {/* One other action, so no menu: a menu wrapping a
                               single item is worse than the item. */}
                           {plot.lifecycle === "AVAILABLE" && permissions.hold && (
-                            <Button size="sm" onClick={() => setDialog({ kind: "HOLD", plot })}>
+                            <Button className={rowButton} onClick={() => setDialog({ kind: "HOLD", plot })}>
                               Hold
                             </Button>
                           )}
@@ -940,12 +1089,13 @@ export default function PlotsClient({
                           {plot.lifecycle === "HOLD" && plot.hold && holdActions.length > 0 && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  aria-label={`Hold actions for ${plot.plotNumber}`}
-                                >
-                                  <MoreHorizontal className="h-3.5 w-3.5" />
+                                {/* Named, not three dots. The Available row
+                                    shows what it can do; a bare ··· made the
+                                    held row the one place you had to open
+                                    something to find out. */}
+                                <Button className={rowButton}>
+                                  Manage Hold
+                                  <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="start">
@@ -967,10 +1117,11 @@ export default function PlotsClient({
                             Hold — submitBookingRequest takes holdId as optional
                             and falls back to canAllocate. This was a disabled
                             button with a note about Phase 3, which shipped. */}
+                        {/* The one row action that leaves this screen, and the
+                            only place in the app with a second accent. */}
                         {["AVAILABLE", "HOLD"].includes(plot.lifecycle) && permissions.hold && (
                           <Button
-                            size="sm"
-                            variant={plot.lifecycle === "HOLD" ? "default" : "outline"}
+                            className={`${rowButton} bg-[hsl(var(--accent-book))] text-white hover:bg-[hsl(var(--accent-book))]/90`}
                             asChild
                           >
                             <Link href={`/bookings?plot=${plot.id}`}>Book</Link>
@@ -1082,6 +1233,7 @@ export default function PlotsClient({
               <Field label="Reason — compulsory">
                 <Input name="reason" required minLength={3} />
               </Field>
+              <HoldHistory plot={dialog.plot} />
             </>
           }
           onSubmit={(f) =>
@@ -1170,14 +1322,6 @@ export default function PlotsClient({
         </Modal>
       )}
 
-      {dialog?.kind === "PREPARE" && (
-        <PrepareInventoryDialog
-          projects={projects}
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(projectId, rows) => run(() => prepareInventoryAction(projectId, rows, newKey()))}
-        />
-      )}
     </AppShell>
   );
 }
@@ -1460,15 +1604,21 @@ export function EditPlotDetailsDialog({
 }
 
 /** PRD §16.4 — controlled Excel-style grid inside the CRM; no CSV upload. */
-function PrepareInventoryDialog({
+/**
+ * Preparing inventory is a data-entry session, not a question. Twenty rows of
+ * plot number, dimensions and four boundaries each do not belong in a dialog
+ * floating over the list they are about — so this renders the form and the page
+ * around it supplies the chrome.
+ */
+export function PrepareInventoryForm({
   projects,
   busy,
-  onClose,
+  onCancel,
   onSubmit,
 }: {
   projects: ProjectView[];
   busy: boolean;
-  onClose: () => void;
+  onCancel: () => void;
   onSubmit: (projectId: string, rows: Parameters<typeof prepareInventoryAction>[1]) => void;
 }) {
   const [projectId, setProjectId] = React.useState(projects[0]?.id ?? "");
@@ -1506,7 +1656,7 @@ function PrepareInventoryDialog({
   const named = rows.filter((r) => r.plotNumber.trim()).length;
 
   return (
-    <Modal title="Prepare Inventory" onClose={onClose} wide>
+    <div className="space-y-4">
 
       {/* ── Project selector + PLC bands ── */}
       <div className="space-y-3 pb-3 border-b border-border">
@@ -1546,8 +1696,9 @@ function PrepareInventoryDialog({
         </div>
       </div>
 
-      {/* ── Column header ── */}
-      <div className="hidden lg:grid lg:grid-cols-[2rem_5rem_9rem_13rem_1fr] gap-3 px-1 pt-2 pb-1">
+      {/* ── Column header ──
+          Sticky, because at row fifteen the question is which column this is. */}
+      <div className="sticky top-0 z-10 hidden border-b border-border bg-background/95 px-1 pb-1 pt-2 backdrop-blur-sm lg:grid lg:grid-cols-[2rem_5rem_9rem_13rem_1fr] lg:gap-3">
         <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">#</span>
         {["Plot No.", "Type", "Dimensions (W × L ft)", "Boundaries"].map((h) => (
           <span key={h} className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -1556,14 +1707,25 @@ function PrepareInventoryDialog({
         ))}
       </div>
 
-      {/* ── Plot rows ── */}
-      <div className="max-h-[58vh] space-y-2 overflow-y-auto pb-1 pr-0.5">
+      {/* ── Plot rows ──
+          No inner scroll box. Capping these at 58vh was right inside a dialog
+          and wrong on a page: it left the rows in a letterbox while the page
+          behind it did not move, so twenty rows meant scrolling a window
+          instead of reading a list. */}
+      <div className="space-y-2">
         {rows.map((row, i) => {
           const preview = derivePreview(row, row.boundaries, project?.plcComponents ?? []);
           return (
           <div
               key={i}
-              className="rounded-xl border border-border bg-card transition-colors hover:border-border"
+              // Alternating ground: twenty identical cards are twenty places to
+              // lose your line. The serial alone was not enough to hold it.
+              // A stronger line than the hairline used elsewhere. This is a
+              // data-entry grid, not chrome: the row edge has to be findable at
+              // a glance when twenty of them are stacked.
+              className={`overflow-hidden rounded-xl border-2 border-muted-foreground/20 transition-colors hover:border-primary/50 ${
+                i % 2 === 0 ? "bg-card" : "bg-secondary/60"
+              }`}
             >
               {/* ── Top line: plot details ── */}
               <div className="grid grid-cols-1 lg:grid-cols-[2rem_5rem_9rem_13rem_1fr] gap-3 items-center px-3 py-2 border-b border-border">
@@ -1624,12 +1786,12 @@ function PrepareInventoryDialog({
                   <span className="tabular-nums text-xs font-bold text-foreground bg-secondary border border-border px-2 py-0.5 rounded">{preview.plc}</span>
                   <div className="flex items-center gap-1.5 ml-auto">
                     <label
-                      title="Irregular plot — specify area directly"
-                      className="flex items-center gap-1 cursor-pointer text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors select-none"
+                      title="Irregular plot — type the area instead of width × length"
+                      className="flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground has-[:checked]:border-primary/50 has-[:checked]:text-foreground"
                     >
                       <input
                         type="checkbox"
-                        className="h-3 w-3 rounded border-border accent-primary"
+                        className="h-3.5 w-3.5 rounded border-border accent-primary"
                         checked={row.irregular}
                         onChange={(e) =>
                           update(i, {
@@ -1640,7 +1802,7 @@ function PrepareInventoryDialog({
                           })
                         }
                       />
-                      Irreg.
+                      Irregular
                     </label>
                     {rows.length > 1 && (
                       <button
@@ -1725,7 +1887,7 @@ function PrepareInventoryDialog({
               type="button"
               variant="outline"
               size="sm"
-              onClick={onClose}
+              onClick={onCancel}
               className="rounded-lg border-border text-muted-foreground hover:bg-muted"
             >
               Cancel
@@ -1764,6 +1926,6 @@ function PrepareInventoryDialog({
       </div>
 
       <p className="text-[10px] text-muted-foreground text-right">Prepared {istDay(new Date())} (IST).</p>
-    </Modal>
+    </div>
   );
 }

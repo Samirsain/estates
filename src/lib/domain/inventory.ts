@@ -572,6 +572,19 @@ export function normaliseLink(value: string | null | undefined, label: string): 
   return url.toString();
 }
 
+/**
+ * "North, East facing" as "N, E facing" — the shorthand a plot is actually
+ * described in.
+ *
+ * Display only. The evidence string is frozen into a Hold or Booking snapshot
+ * (PLC spec §7.1), and a record read years later in a dispute is better off
+ * spelling the side out. Abbreviating here rather than at the source also means
+ * snapshots taken before this still read the same way on screen.
+ */
+export function shortSides(text: string): string {
+  return text.replace(/\b(North|South|East|West)\b/g, (word) => word[0]);
+}
+
 /* ----------------------------------------------------------- derived facing */
 
 /**

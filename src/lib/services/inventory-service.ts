@@ -474,7 +474,12 @@ export function listPlots(projectId?: string) {
       // who it is held for, instead of an empty panel.
       holds: {
         where: { status: { in: ["ACTIVE", "FROZEN"] } },
-        include: { person: true, extensionRequests: { where: { status: "PENDING" } } },
+        include: {
+          person: true,
+          // Decided requests as well as the pending one: an Admin deciding a
+          // further extension is deciding it against the ones before it.
+          extensionRequests: { orderBy: { createdAt: "desc" }, take: 5 },
+        },
         take: 1,
       },
       // Why this Plot was held before, for the Hold dialog to show. A Plot that

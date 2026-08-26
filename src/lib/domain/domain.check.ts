@@ -15,6 +15,7 @@ import {
   calculateAreas,
   canAllocate,
   displayLifecycle,
+  shortSides,
   greenAreaLabel,
   normaliseLink,
   releaseOnActivation,
@@ -1750,5 +1751,14 @@ const greenTwoParks = buildPlcSnapshot(
   greenPair
 );
 assert.equal(greenTwoParks.totalPercent.toString(), "5", "the same category on two sides charges once");
+
+// Compass shorthand is display only — the stored evidence keeps the full word,
+// so this has to work on any string the snapshot happens to hold.
+assert.equal(shortSides("North, East facing"), "N, E facing");
+assert.equal(shortSides("North, South, East, West open"), "N, S, E, W open");
+assert.equal(shortSides("2 open sides"), "2 open sides", "nothing to shorten is left alone");
+// Only the whole word, or "Northgate Road" would become "Ngate Road".
+assert.equal(shortSides("Northgate Road facing"), "Northgate Road facing");
+assert.equal(shortSides("Eastern Avenue"), "Eastern Avenue");
 
 console.log("domain.check.ts OK");

@@ -14,7 +14,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
-import { buildPlcSnapshot, derivedFacing, humaniseRestriction } from "@/lib/domain/inventory";
+import { buildPlcSnapshot, derivedFacing, humaniseRestriction, shortSides } from "@/lib/domain/inventory";
 import { getPlot } from "@/lib/services/inventory-service";
 import { plcRules } from "@/lib/services/plc-service";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -206,7 +206,7 @@ export default async function PlotDetailPage({
                     <div key={c.category} className="grid grid-cols-[1fr_auto] gap-x-4 text-xs">
                       <dt className="text-foreground">
                         {c.label}
-                        <span className="ml-2 text-muted-foreground">{c.evidence}</span>
+                        <span className="ml-2 text-muted-foreground">{shortSides(c.evidence)}</span>
                       </dt>
                       <dd className="font-medium tabular-nums">{formatPercent(c.percent)}</dd>
                     </div>
@@ -279,7 +279,7 @@ export default async function PlotDetailPage({
               };
             })}
           />
-          <p className="mt-3 text-xs text-muted-foreground">{derivedFacing(boundaries)}</p>
+          <p className="mt-3 text-xs text-muted-foreground">{shortSides(derivedFacing(boundaries))}</p>
         </Section>
 
         <Section title="Status">

@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
-import { buildPlcSnapshot, derivedFacing } from "@/lib/domain/inventory";
+import { buildPlcSnapshot, derivedFacing, shortSides } from "@/lib/domain/inventory";
 import { plcRules } from "@/lib/services/plc-service";
 import { listPendingHoldRequests } from "@/lib/services/hold-service";
 import { listPlots } from "@/lib/services/inventory-service";
@@ -60,10 +60,17 @@ export default async function PlotsPage({
           })),
           plcRules(version.components)
         );
+        // What the list shows is what the charge is FOR — corner, park facing,
+        // the sides that qualified. The total travels too, but only the Plot's
+        // own page prints it: a column of percentages is not what anyone scans
+        // a plot list for.
         plc = {
           version: version.version,
           totalPercent: effective.totalPercent.toFixed(4),
-          components: effective.components,
+          components: effective.components.map((c) => ({
+            label: c.label,
+            evidence: shortSides(c.evidence),
+          })),
         };
       } catch (error) {
         // PLC spec §5.3 — a configuration or a boundary that cannot be
@@ -96,24 +103,41 @@ export default async function PlotsPage({
       lengthFt: plot.lengthFt?.toString() ?? "",
       exactAreaSqFt: plot.exactAreaSqFt?.toString() ?? "",
       exactAreaReason: plot.exactAreaReason ?? "",
+      facing: shortSides(
+        derivedFacing(
+          plot.boundaries.map((b) => ({ side: b.side, kind: b.kind, roadWidthFt: b.roadWidthFt?.toString() }))
+        )
+      ),
       boundaries: plot.boundaries.map((b) => ({
         side: b.side,
         kind: b.kind,
         roadWidthFt: b.roadWidthFt?.toString() ?? "",
         reference: b.reference ?? "",
       })),
-      facing: derivedFacing(
-        plot.boundaries.map((b) => ({ side: b.side, kind: b.kind, roadWidthFt: b.roadWidthFt?.toString() }))
-      ),
       hold: hold
         ? {
             id: hold.id,
             heldForName: hold.person.fullName,
             expiresAt: hold.expiresAt.toISOString(),
             extensionCount: hold.extensionCount,
-            pendingExtension: hold.extensionRequests.length > 0,
-            pendingExtensionId: hold.extensionRequests[0]?.id ?? null,
-            pendingExtensionReason: hold.extensionRequests[0]?.reason ?? null,
+            // "There is a request" used to mean "there is a pending request",
+            // which was true only because the query filtered for it somewhere
+            // else. Now the status is read where the meaning is.
+            pendingExtension: hold.extensionRequests.some((r) => r.status === "PENDING"),
+            pendingExtensionId:
+              hold.extensionRequests.find((r) => r.status === "PENDING")?.id ?? null,
+            pendingExtensionReason:
+              hold.extensionRequests.find((r) => r.status === "PENDING")?.reason ?? null,
+            /** Every request on this Hold, newest first, for the extend dialog. */
+            extensions: hold.extensionRequests.map((r) => ({
+              at: r.createdAt.toISOString(),
+              byRef: r.requestedByRef,
+              reason: r.reason,
+              hours: r.requestedHours,
+              status: r.status,
+              decidedByRef: r.decidedByRef,
+              decisionNote: r.decisionNote,
+            })),
             // PRD §10.5 — a frozen Hold's timer is not running, so its stored
             // expiry must never be shown as a live countdown.
             frozen: hold.status === "FROZEN",
