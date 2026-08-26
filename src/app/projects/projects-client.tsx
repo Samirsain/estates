@@ -4,11 +4,18 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Building2, ChevronDown, ChevronRight, Info, Layers, MapPin, Pencil, Plus, ScrollText } from "lucide-react";
+import { Layers, MoreVertical, Pencil, Plus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import {
@@ -171,35 +178,40 @@ export default function ProjectsClient({
           </Card>
         )}
 
-        <div className="grid items-stretch gap-4 md:grid-cols-2">
+        {/* Three across, and short enough that six sit on one screen. Everything
+            a card dropped — the bands, the plot-type split, the amenities, the
+            RERA number — is a click away on the detail page. A list card is for
+            picking a Project, not for reading one. */}
+        <div className="grid items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {rows.map((project) => (
             <Card
               key={project.id}
-              className="group flex flex-col gap-4 rounded-xl border border-border/60 bg-card/70 p-4 transition-colors hover:border-border dark:bg-card/40"
+              className="flex flex-col gap-2 rounded-xl border border-border/60 bg-card/70 p-3 transition-colors hover:border-border dark:bg-card/40"
             >
-              {/* One status in the header, on the right. The Project type is
-                  not a status, so it reads as a quiet line under the name
-                  rather than a second pill competing with the badge. */}
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1.5 text-left group"
-                    onClick={() => router.push(`/projects/${project.id}`)}
-                    title="Click to view full details"
-                  >
-                    <Info className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
-                    <h2 className="truncate text-lg font-semibold leading-tight tracking-tight text-foreground group-hover:text-primary transition-colors">
-                      {project.name}
-                    </h2>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </button>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {project.isExternalResaleGroup
-                      ? "External Resale Property Group"
-                      : (TYPE_LABEL[project.type] ?? project.type)}
+              <div className="flex items-start justify-between gap-2">
+                <button
+                  type="button"
+                  className="min-w-0 text-left"
+                  onClick={() => router.push(`/projects/${project.id}`)}
+                  title="Click to view full details"
+                >
+                  <h2 className="truncate text-sm font-semibold leading-tight tracking-tight text-foreground transition-colors hover:text-primary">
+                    {project.name}
+                  </h2>
+                  {/* Type, place and developer read as one quiet line. At this
+                      size an icon per fact costs more height than the fact. */}
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {[
+                      project.isExternalResaleGroup
+                        ? "External Resale Property Group"
+                        : (TYPE_LABEL[project.type] ?? project.type),
+                      [project.location, project.city].filter(Boolean).join(", "),
+                      project.developer,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </p>
-                </div>
+                </button>
                 <Badge
                   variant={project.lifecycle === "ACTIVE" ? "success" : "outline"}
                   className="shrink-0"
@@ -208,129 +220,42 @@ export default function ProjectsClient({
                 </Badge>
               </div>
 
-              {/* Where it is, who builds it, what it is registered as. All
-                  metadata, all at one size — none of it should compete with the
-                  name above. A missing RERA number says nothing at all: the Edit
-                  button is where you add one. */}
-              {(project.city || project.location || project.developer || project.reraNumber) && (
-                <div className="space-y-1.5 text-xs text-muted-foreground">
-                  {(project.city || project.location) && (
-                    <p className="flex items-start gap-2">
-                      <MapPin className="mt-px h-3.5 w-3.5 shrink-0" />
-                      <span>{[project.location, project.city].filter(Boolean).join(", ")}</span>
-                    </p>
-                  )}
-                  {project.developer && (
-                    <p className="flex items-start gap-2">
-                      <Building2 className="mt-px h-3.5 w-3.5 shrink-0" />
-                      <span>{project.developer}</span>
-                    </p>
-                  )}
-                  {project.reraNumber && (
-                    <p className="flex items-start gap-2">
-                      <ScrollText className="mt-px h-3.5 w-3.5 shrink-0" />
-                      <span>RERA {project.reraNumber}</span>
-                    </p>
-                  )}
-                </div>
-              )}
-
               {/* An External Resale Property Group holds acquired properties, not
-                  developed inventory (PRD §11.6). Plots, PLC and amenities do not
-                  apply to it. */}
-              {!project.isExternalResaleGroup && (
-                <>
-                  <div className="grid gap-4 rounded-lg border border-border/50 bg-muted/30 p-3.5 sm:grid-cols-2">
-                    <div>
-                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                        Plots
-                      </p>
-                      <p className="mt-1 text-2xl font-semibold tabular-nums leading-none tracking-tight text-foreground">
-                        {project.plotCount}
-                      </p>
-                      {project.plotTypeCounts.length > 0 && (
-                        <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-                          {/* Only the types this Project holds — a residential
-                              layout should not read "0 Commercial". */}
-                          {project.plotTypeCounts.map(({ plotType, count }) => (
-                            <li key={plotType} className="tabular-nums">
-                              {count} {PLOT_TYPE_LABEL[plotType] ?? plotType}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-
-                    <div>
-                      {/* The version is a label, not a figure. It sits with the
-                          heading rather than in the position the plot count uses
-                          for a real number — a large "Version 1" beside a large
-                          "120" reads as though the two were the same kind of
-                          thing. The components are the content of this column. */}
-                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                        Plot Location Charge
-                        {project.plcVersion ? ` · v${project.plcVersion}` : ""}
-                      </p>
-                      {project.components.length > 0 ? (
-                        <ul className="mt-1.5 space-y-1 text-xs text-muted-foreground">
-                          {/* One line per category, not per band. A card that
-                              listed every band ran to eight rows in a narrow
-                              column and truncated each one; the bands themselves
-                              are a click away under PLC versions. */}
-                          {summariseComponents(project.components).map((row) => (
-                            <li key={row.category} className="flex justify-between gap-3">
-                              <span>{row.label}</span>
-                              <span className="shrink-0 font-medium tabular-nums text-foreground">
-                                {row.percent}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="mt-1.5 text-xs text-muted-foreground">
-                          No published version
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {amenityList(project.amenities).length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                        Amenities
-                      </p>
-                      <ul className="flex flex-wrap gap-1.5">
-                        {amenityList(project.amenities).map((amenity) => (
-                          <li
-                            key={amenity}
-                            className="rounded-full bg-secondary/80 px-2.5 py-0.5 text-xs font-medium text-secondary-foreground"
-                          >
-                            {amenity}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {canSetup && (
-                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-3.5">
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setEditing(project)}>
-                      <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
-                    </Button>
-                    {!project.isExternalResaleGroup && (
-                      <Button size="sm" variant="outline" onClick={() => setPlc(project)}>
-                        <Layers className="mr-2 h-3.5 w-3.5" /> PLC versions
+                  developed inventory, so it has neither plots nor PLC (PRD §11.6). */}
+              <div className="mt-auto flex items-center justify-between gap-2 border-t border-border/50 pt-2 text-xs text-muted-foreground">
+                <span className="truncate tabular-nums">
+                  {project.isExternalResaleGroup
+                    ? "Acquired properties"
+                    : `${project.plotCount} plots${project.plcVersion ? ` · PLC v${project.plcVersion}` : ""}`}
+                </span>
+                {canSetup && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={`Actions for ${project.name}`}
+                      >
+                        <MoreVertical className="h-4 w-4" />
                       </Button>
-                    )}
-                  </div>
-                  <Button size="sm" variant="ghost" onClick={() => setLifecycle(project)}>
-                    Change lifecycle
-                  </Button>
-                </div>
-              )}
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => setEditing(project)}>
+                        <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
+                      </DropdownMenuItem>
+                      {!project.isExternalResaleGroup && (
+                        <DropdownMenuItem onSelect={() => setPlc(project)}>
+                          <Layers className="mr-2 h-3.5 w-3.5" /> PLC versions
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => setLifecycle(project)}>
+                        Change lifecycle
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
             </Card>
           ))}
         </div>
@@ -454,30 +379,6 @@ function Row({ label, value }: { label: string; value: string }) {
       <dd className="text-right">{value}</dd>
     </div>
   );
-}
-
-/**
- * The Project card shows what a Project charges, not how it is banded. A banded
- * category collapses to its range and its band count; the exact bands live in
- * the PLC versions dialog, where they can be read and edited at full width.
- */
-function summariseComponents(components: readonly ComponentRow[]) {
-  return PLC_CATEGORY_ORDER.filter((category) =>
-    components.some((c) => c.category === category)
-  ).map((category) => {
-    const rows = components.filter((c) => c.category === category);
-    const percents = rows.map((r) => r.percent);
-    const low = percents.reduce((a, b) => (Number(a) <= Number(b) ? a : b));
-    const high = percents.reduce((a, b) => (Number(a) >= Number(b) ? a : b));
-    return {
-      category,
-      label:
-        rows.length > 1
-          ? `${PLC_CATEGORIES[category].label} · ${rows.length} bands`
-          : PLC_CATEGORIES[category].label,
-      percent: low === high ? formatPercent(low) : `${formatPercent(low)} – ${formatPercent(high)}`,
-    };
-  });
 }
 
 /**
