@@ -127,6 +127,11 @@ export function AppShell({
                       }
                     }}
                     className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors ${
+                      // Closed, the label is gone, so the icon and its pill
+                      // centre on the rail instead of sitting where the text
+                      // used to start.
+                      menuOpen ? "" : "md:justify-center md:gap-0 md:px-0"
+                    } ${
                       active
                         ? "bg-primary/15 font-semibold text-primary"
                         : item.href
@@ -137,13 +142,17 @@ export function AppShell({
                     <item.icon className="h-4 w-4 shrink-0" />
                     <span
                       className={`whitespace-nowrap transition-opacity ${
-                        menuOpen ? "md:opacity-100" : "md:opacity-0"
+                        menuOpen ? "md:opacity-100" : "md:w-0 md:overflow-hidden md:opacity-0"
                       }`}
                     >
                       {item.label}
                     </span>
                     {item.phase && (
-                      <span className="ml-auto hidden rounded-md border border-border/60 px-1.5 py-0.5 text-[9px] text-muted-foreground md:inline">
+                      <span
+                        className={`ml-auto hidden rounded-md border border-border/60 px-1.5 py-0.5 text-[9px] text-muted-foreground ${
+                          menuOpen ? "md:inline" : ""
+                        }`}
+                      >
                         {item.phase}
                       </span>
                     )}
