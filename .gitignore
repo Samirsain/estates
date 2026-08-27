@@ -38,3 +38,7 @@ system/dd.md
 .agents/
 .claude/
 .vscode/
+
+# Screenshots dropped at the root to show something on screen. Assets the
+# product ships live in public/.
+/*.png
