@@ -50,7 +50,7 @@ export default async function PrepareInventoryPage() {
             name: p.name,
             city: p.city,
             location: p.location,
-            lifecycle: p.lifecycle,
+            status: p.status,
             plcComponents: plcRules(p.plcRuleVersions[0]?.components ?? []).map((c) => ({
               category: c.category,
               threshold: c.threshold == null ? null : String(c.threshold),

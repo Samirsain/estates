@@ -146,15 +146,15 @@ async function bookingPlotPairs(): Promise<RuleResult> {
       requestNo: true,
       bookingNumber: true,
       status: true,
-      plot: { select: { plotNumber: true, lifecycle: true } },
+      plot: { select: { plotNumber: true, status: true } },
     },
   });
 
   const exceptions = bookings
-    .filter((b) => b.plot.lifecycle !== PAIR[b.status])
+    .filter((b) => b.plot.status !== PAIR[b.status])
     .map((b) => ({
       record: b.bookingNumber ?? b.requestNo,
-      detail: `Booking is ${b.status} but Plot ${b.plot.plotNumber} is ${b.plot.lifecycle}`,
+      detail: `Booking is ${b.status} but Plot ${b.plot.plotNumber} is ${b.plot.status}`,
     }));
 
   return {

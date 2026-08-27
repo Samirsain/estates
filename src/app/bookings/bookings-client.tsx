@@ -65,7 +65,7 @@ export type BookingRowView = {
 export type BookableView = {
   id: string;
   label: string;
-  lifecycle: string;
+  status: string;
   holdId: string | null;
   holdPersonId: string | null;
   holdPersonName: string | null;
@@ -2776,7 +2776,7 @@ function ChangePlotDialog({
   onSubmit: (toPlotId: string, remark: string) => void;
 }) {
   const [options, setOptions] = React.useState<
-    Array<{ id: string; label: string; lifecycle: string; heldBySameCustomer: boolean }>
+    Array<{ id: string; label: string; status: string; heldBySameCustomer: boolean }>
   >([]);
   const [toPlotId, setToPlotId] = React.useState("");
 

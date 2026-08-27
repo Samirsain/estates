@@ -28,9 +28,9 @@ export default async function PortalPage() {
       // PRD §16.1 — a Project still in Setup / Not Active accepts no Hold, so
       // its Plots are not offered here either.
       where: {
-        lifecycle: "AVAILABLE",
+        status: "AVAILABLE",
         restriction: "NONE",
-        project: { lifecycle: { not: "SETUP_NOT_ACTIVE" } },
+        project: { status: { not: "SETUP_NOT_ACTIVE" } },
       },
       include: { project: true },
       orderBy: [{ project: { name: "asc" } }, { plotNumber: "asc" }],

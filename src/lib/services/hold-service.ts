@@ -58,9 +58,9 @@ async function placeHold(
 
   const plot = await tx.plot.findUniqueOrThrow({
     where: { id: input.plotId },
-    include: { project: { select: { lifecycle: true } } },
+    include: { project: { select: { status: true } } },
   });
-  const allocatable = canAllocate(plot.lifecycle, plot.restriction, plot.project.lifecycle);
+  const allocatable = canAllocate(plot.status, plot.restriction, plot.project.status);
   if (!allocatable.ok) blocked(allocatable.reason);
 
   const positions = await countOpenPositions(tx, input.personId);
@@ -83,14 +83,14 @@ async function placeHold(
     },
   });
 
-  await tx.plot.update({ where: { id: input.plotId }, data: { lifecycle: "HOLD" } });
+  await tx.plot.update({ where: { id: input.plotId }, data: { status: "HOLD" } });
   await tx.plotEvent.create({
     data: {
       plotId: input.plotId,
       actorRef: input.actorRef,
       action: "HOLD_CREATED",
-      fromLifecycle: plot.lifecycle,
-      toLifecycle: "HOLD",
+      fromStatus: plot.status,
+      toStatus: "HOLD",
       reason: input.remark,
     },
   });
@@ -147,14 +147,14 @@ export async function releaseHold(
 
   if (status !== "CONVERTED_TO_BOOKING") {
     const next = plotReturnState(hold.plot.restriction, hold.plot.restrictionReason);
-    await tx.plot.update({ where: { id: hold.plotId }, data: { lifecycle: next.lifecycle } });
+    await tx.plot.update({ where: { id: hold.plotId }, data: { status: next.status } });
     await tx.plotEvent.create({
       data: {
         plotId: hold.plotId,
         actorRef,
         action: `HOLD_${status}`,
-        fromLifecycle: hold.plot.lifecycle,
-        toLifecycle: next.lifecycle,
+        fromStatus: hold.plot.status,
+        toStatus: next.status,
         reason: next.message ? `${reason} — ${next.message}` : reason,
       },
     });
@@ -403,9 +403,9 @@ export async function submitHoldRequest(args: {
 
       const plot = await tx.plot.findUniqueOrThrow({
         where: { id: args.plotId },
-        include: { project: { select: { lifecycle: true } } },
+        include: { project: { select: { status: true } } },
       });
-      const allocatable = canAllocate(plot.lifecycle, plot.restriction, plot.project.lifecycle);
+      const allocatable = canAllocate(plot.status, plot.restriction, plot.project.status);
       if (!allocatable.ok) blocked(allocatable.reason);
 
       const positions = await countOpenPositions(tx, args.personId);

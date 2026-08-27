@@ -11,7 +11,7 @@ export const SQ_FT_PER_SQ_YD = new D("9");
 export const SQ_M_PER_SQ_FT = new D("0.09290304");
 
 export type PlotRestriction = "NONE" | "NOT_YET_RELEASED" | "NOT_FOR_SALE" | "PLEDGE";
-export type PlotLifecycle =
+export type PlotStatus =
   | "NOT_AVAILABLE"
   | "AVAILABLE"
   | "HOLD"
@@ -446,15 +446,15 @@ export type ActivationRelease = "RELEASE" | "ALLOCATED" | "RESTRICTED";
  * chose, it is the absence of this release.
  */
 export function releaseOnActivation(
-  lifecycle: PlotLifecycle,
+  status: PlotStatus,
   restriction: PlotRestriction
 ): ActivationRelease {
-  if (lifecycle !== "NOT_AVAILABLE") return "ALLOCATED";
+  if (status !== "NOT_AVAILABLE") return "ALLOCATED";
   if (restrictionBlocksSale(restriction)) return "RESTRICTED";
   return "RELEASE";
 }
 
-export type PlotReturn = { lifecycle: PlotLifecycle; message: string | null };
+export type PlotReturn = { status: PlotStatus; message: string | null };
 
 /**
  * The single restriction-aware return used everywhere a Plot comes back —
@@ -465,7 +465,7 @@ export type PlotReturn = { lifecycle: PlotLifecycle; message: string | null };
 export function plotReturnState(restriction: PlotRestriction, restrictionReason?: string | null): PlotReturn {
   if (restrictionBlocksSale(restriction)) {
     return {
-      lifecycle: "NOT_AVAILABLE",
+      status: "NOT_AVAILABLE",
       message: restrictionReason
         ? `Not Available — ${humaniseRestriction(restriction)}: ${restrictionReason}`
         : `Not Available — ${humaniseRestriction(restriction)}`,
@@ -475,9 +475,9 @@ export function plotReturnState(restriction: PlotRestriction, restrictionReason?
     // A released Plot carries no NOT_YET_RELEASED restriction, so this only
     // happens if setup data is inconsistent. Fail visibly rather than silently
     // publishing unreleased inventory.
-    return { lifecycle: "NOT_AVAILABLE", message: "Not Available — Not Yet Released" };
+    return { status: "NOT_AVAILABLE", message: "Not Available — Not Yet Released" };
   }
-  return { lifecycle: "AVAILABLE", message: null };
+  return { status: "AVAILABLE", message: null };
 }
 
 export function humaniseRestriction(restriction: PlotRestriction): string {
@@ -489,7 +489,7 @@ export function humaniseRestriction(restriction: PlotRestriction): string {
   }[restriction];
 }
 
-export type ProjectLifecycle = "SETUP_NOT_ACTIVE" | "ACTIVE" | "SOLD_OUT" | "COMPLETED";
+export type ProjectStatus = "SETUP_NOT_ACTIVE" | "ACTIVE" | "SOLD_OUT" | "COMPLETED";
 
 /**
  * A Hold or Booking may only start from an Available, unrestricted Plot in a
@@ -500,11 +500,11 @@ export type ProjectLifecycle = "SETUP_NOT_ACTIVE" | "ACTIVE" | "SOLD_OUT" | "COM
  * display condition means (PRD §8.8, §16.1).
  */
 export function canAllocate(
-  lifecycle: PlotLifecycle,
+  status: PlotStatus,
   restriction: PlotRestriction,
-  projectLifecycle: ProjectLifecycle
+  projectStatus: ProjectStatus
 ): { ok: true } | { ok: false; reason: string } {
-  if (projectLifecycle === "SETUP_NOT_ACTIVE") {
+  if (projectStatus === "SETUP_NOT_ACTIVE") {
     return {
       ok: false,
       reason:
@@ -515,8 +515,8 @@ export function canAllocate(
   if (restrictionBlocksSale(restriction)) {
     return { ok: false, reason: `Plot carries an active ${humaniseRestriction(restriction)} restriction.` };
   }
-  if (lifecycle !== "AVAILABLE") {
-    return { ok: false, reason: `Plot is ${lifecycle.replaceAll("_", " ").toLowerCase()}, not Available.` };
+  if (status !== "AVAILABLE") {
+    return { ok: false, reason: `Plot is ${status.replaceAll("_", " ").toLowerCase()}, not Available.` };
   }
   return { ok: true };
 }
@@ -526,7 +526,7 @@ export function canAllocate(
  *
  * canAllocate refuses a Hold or Booking outright while the Project is still
  * Unreleased, so an Available badge on a Plot in such a Project is a promise
- * the system will not keep — nothing can be done with it. The stored lifecycle
+ * the system will not keep — nothing can be done with it. The stored status
  * is left exactly as it is; only the reading changes, and it changes back the
  * moment the Project is activated.
  *
@@ -534,14 +534,14 @@ export function canAllocate(
  * more specific facts than "not available", they stay true whatever the Project
  * is doing, and overwriting them would lose the one thing the row is for.
  */
-export function displayLifecycle(
-  plotLifecycle: PlotLifecycle,
-  projectLifecycle: ProjectLifecycle | undefined
-): { lifecycle: PlotLifecycle; because: string | null } {
-  if (plotLifecycle === "AVAILABLE" && projectLifecycle === "SETUP_NOT_ACTIVE") {
-    return { lifecycle: "NOT_AVAILABLE", because: "Project is Unreleased" };
+export function displayStatus(
+  plotStatus: PlotStatus,
+  projectStatus: ProjectStatus | undefined
+): { status: PlotStatus; because: string | null } {
+  if (plotStatus === "AVAILABLE" && projectStatus === "SETUP_NOT_ACTIVE") {
+    return { status: "NOT_AVAILABLE", because: "Project is Unreleased" };
   }
-  return { lifecycle: plotLifecycle, because: null };
+  return { status: plotStatus, because: null };
 }
 
 /**

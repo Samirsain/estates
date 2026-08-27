@@ -54,7 +54,7 @@ async function makePlot(projectId: string, suffix: string) {
       areaSqFt: "1350",
       areaSqYd: "150",
       areaSqM: "125.419",
-      lifecycle: "AVAILABLE",
+      status: "AVAILABLE",
       restriction: "NONE",
     },
   });
@@ -90,7 +90,7 @@ async function main() {
       projectCode: `${TAG}-SETUP`,
       name: `${TAG} Setup Project`,
       type: "RESIDENTIAL",
-      lifecycle: "SETUP_NOT_ACTIVE",
+      status: "SETUP_NOT_ACTIVE",
     },
   });
   const setupPlot = await db.plot.create({
@@ -101,7 +101,7 @@ async function main() {
       areaSqFt: "1350",
       areaSqYd: "150",
       areaSqM: "125.419",
-      lifecycle: "AVAILABLE",
+      status: "AVAILABLE",
       restriction: "NONE",
     },
   });
@@ -127,7 +127,7 @@ async function main() {
     })
   );
   assert.equal(
-    (await db.plot.findUniqueOrThrow({ where: { id: setupPlot.id } })).lifecycle,
+    (await db.plot.findUniqueOrThrow({ where: { id: setupPlot.id } })).status,
     "AVAILABLE",
     "a blocked attempt leaves the Plot untouched"
   );
@@ -156,7 +156,7 @@ async function main() {
   assert.ok(await db.customerProfile.findUnique({ where: { personId: buyer.id } }), "Customer ID created");
 
   let plot = await db.plot.findUniqueOrThrow({ where: { id: plotA.id } });
-  assert.equal(plot.lifecycle, "WAITING_FOR_BOOKING_APPROVAL");
+  assert.equal(plot.status, "WAITING_FOR_BOOKING_APPROVAL");
   assert.ok(
     await db.task.findFirst({
       where: { recordId: submitted.bookingId, purpose: "BOOKING_REVIEW", status: "PENDING" },
@@ -216,7 +216,7 @@ async function main() {
   );
 
   plot = await db.plot.findUniqueOrThrow({ where: { id: plotA.id } });
-  assert.equal(plot.lifecycle, "BOOKED");
+  assert.equal(plot.status, "BOOKED");
   assert.ok(
     await db.task.findFirst({
       where: { recordId: submitted.bookingId, purpose: "PAYMENT_FOLLOW_UP", status: "PENDING" },
@@ -292,7 +292,7 @@ async function main() {
   const drift = Math.abs(restored.expiresAt.getTime() - (Date.now() + (frozen.frozenRemainingMs ?? 0)));
   assert.ok(drift < 60_000, `the frozen remainder is restored exactly (drift ${drift}ms)`);
   assert.equal(
-    (await db.plot.findUniqueOrThrow({ where: { id: plotB.id } })).lifecycle,
+    (await db.plot.findUniqueOrThrow({ where: { id: plotB.id } })).status,
     "HOLD",
     "the Plot returns to Hold, not Available"
   );
@@ -319,7 +319,7 @@ async function main() {
     })
   );
   // A blocked submit leaves the Plot untouched.
-  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotC.id } })).lifecycle, "AVAILABLE");
+  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotC.id } })).status, "AVAILABLE");
 
   const shared = await submitBookingRequest({
     idempotencyKey: key(),
@@ -379,7 +379,7 @@ async function main() {
   });
   assert.equal(cancelledRequest.status, "REQUEST_CANCELLED");
   assert.equal(cancelledRequest.refundPending, false, "a pre-approval cancel does not enter Refund Pending");
-  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotC.id } })).lifecycle, "AVAILABLE");
+  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotC.id } })).status, "AVAILABLE");
 
   /* ------------------------------ Payment Received, 100%, and correction */
 
@@ -433,7 +433,7 @@ async function main() {
   });
   assert.equal(second.progressPercent, "100.0000");
   assert.equal(second.paymentCompleted, true);
-  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).lifecycle, "PAYMENT_COMPLETED");
+  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).status, "PAYMENT_COMPLETED");
   assert.equal(
     await db.task.count({ where: { recordId: bookingId, purpose: "PAYMENT_FOLLOW_UP", status: "PENDING" } }),
     0,
@@ -473,7 +473,7 @@ async function main() {
   // PRD §12.7 — a reversal below 100% returns Payment Completed to Booked.
   const afterCorrection = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
   assert.equal(afterCorrection.status, "BOOKED", "the completion workflow pauses below 100%");
-  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).lifecycle, "BOOKED");
+  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).status, "BOOKED");
   assert.ok(
     await db.task.findFirst({ where: { recordId: bookingId, purpose: "PAYMENT_FOLLOW_UP", status: "PENDING" } }),
     "the rolling follow-up reopens below 100%"
@@ -620,7 +620,7 @@ async function main() {
   });
   assert.equal(formal.status, "REFUND_PENDING");
   assert.equal(formal.refundPending, true, "a post-approval cancel takes the formal path");
-  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).lifecycle, "REFUND_PENDING");
+  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).status, "REFUND_PENDING");
   assert.ok(
     await db.task.findFirst({ where: { recordId: bookingId, purpose: "REFUND_REVIEW", status: "PENDING" } }),
     "Accounts Verification — Refund task created"

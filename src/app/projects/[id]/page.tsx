@@ -6,7 +6,7 @@
 // page stopped, so two thirds of it was empty and the question worth opening a
 // Project for went unanswered.
 //
-// The lifecycle breakdown is that answer. It is a grouped count, not a list: a
+// The status breakdown is that answer. It is a grouped count, not a list: a
 // Project with five hundred Plots must not cost five hundred rows to say how
 // many are available, which is the same reason listProjects counts by type.
 
@@ -25,7 +25,7 @@ import { ArrowLeft, ArrowUpRight, FolderOpen, MapPin } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-const LIFECYCLE_LABEL: Record<string, string> = {
+const STATUS_LABEL: Record<string, string> = {
   SETUP_NOT_ACTIVE: "Unreleased",
   ACTIVE: "Active",
   SOLD_OUT: "Sold Out",
@@ -46,7 +46,7 @@ const PLOT_TYPE_LABEL: Record<string, string> = {
 };
 
 /**
- * Eight Plot lifecycles is too many tiles to read at a glance, and the question
+ * Eight Plot statuss is too many tiles to read at a glance, and the question
  * is commercial rather than technical: how much is still sellable, how much is
  * in play, how much is gone. Delivered sits under sold because a delivered Plot
  * is finished, not a separate thing to chase.
@@ -128,22 +128,22 @@ export default async function ProjectDetailPage({
   const actor = await requireStaff("REPORT_VIEW");
   const { id } = await params;
 
-  const [projects, byLifecycle] = await Promise.all([
+  const [projects, byStatus] = await Promise.all([
     listProjects(),
-    db.plot.groupBy({ by: ["lifecycle"], where: { projectId: id }, _count: { _all: true } }),
+    db.plot.groupBy({ by: ["status"], where: { projectId: id }, _count: { _all: true } }),
   ]);
   const project = projects.find((p) => p.id === id);
   if (!project) notFound();
 
   const countOf = (states: readonly string[]) =>
-    byLifecycle.filter((r) => states.includes(r.lifecycle)).reduce((n, r) => n + r._count._all, 0);
+    byStatus.filter((r) => states.includes(r.status)).reduce((n, r) => n + r._count._all, 0);
 
   const total = project._count.plots;
   const available = countOf(SELLABLE);
   const inPlay = countOf(IN_PLAY);
   const sold = countOf(SOLD);
   // Whatever is left is unavailable for a reason of its own — a restriction, or
-  // a Project not yet activated. Derived rather than listed, so a lifecycle
+  // a Project not yet activated. Derived rather than listed, so a status
   // added later can never quietly go uncounted.
   const unavailable = total - available - inPlay - sold;
 
@@ -179,8 +179,8 @@ export default async function ProjectDetailPage({
           <Card className="space-y-2 p-3">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <h1 className="text-xl font-bold tracking-tight">{project.name}</h1>
-              <Badge variant={project.lifecycle === "ACTIVE" ? "success" : "outline"}>
-                {LIFECYCLE_LABEL[project.lifecycle] ?? project.lifecycle}
+              <Badge variant={project.status === "ACTIVE" ? "success" : "outline"}>
+                {STATUS_LABEL[project.status] ?? project.status}
               </Badge>
               <span className="font-mono text-xs text-muted-foreground">{project.projectCode}</span>
             </div>

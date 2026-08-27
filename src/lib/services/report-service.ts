@@ -128,7 +128,7 @@ export async function runReport(
         project: p.project.name,
         plotNumber: p.plotNumber,
         plotType: p.plotType,
-        lifecycle: p.lifecycle,
+        status: p.status,
         restriction: p.restriction,
         isResale: p.isResale,
         areaSqFt: p.areaSqFt.toFixed(3),

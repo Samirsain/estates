@@ -328,7 +328,7 @@ model SecurityEvent {
 // ===========================================================================
 
 /// PRD §16.1. "Available (Resale)" is a derived display condition, never a status.
-enum ProjectLifecycle {
+enum ProjectStatus {
   SETUP_NOT_ACTIVE
   ACTIVE
   SOLD_OUT
@@ -350,8 +350,8 @@ enum PlotType {
   INFORMAL_SECTOR
 }
 
-/// DESIGN §4.2 — the exact visible lifecycle. Process messages are separate.
-enum PlotLifecycle {
+/// DESIGN §4.2 — the exact visible status. Process messages are separate.
+enum PlotStatus {
   NOT_AVAILABLE
   AVAILABLE
   HOLD
@@ -468,7 +468,7 @@ model Project {
   /// One amenity per line. Rendered as bullets on the Project card.
   amenities   String?
   type        ProjectType
-  lifecycle   ProjectLifecycle @default(SETUP_NOT_ACTIVE)
+  status   ProjectStatus @default(SETUP_NOT_ACTIVE)
 
   /// External acquisition container (PRD §11.6). A normal development Project is false.
   isExternalResaleGroup Boolean @default(false)
@@ -596,7 +596,7 @@ model Plot {
   /// boundary corrects the PLC with it. Park Facing is one of those boundaries
   /// rather than a separate flag that could contradict them.
 
-  lifecycle         PlotLifecycle   @default(NOT_AVAILABLE)
+  status         PlotStatus   @default(NOT_AVAILABLE)
   restriction       PlotRestriction @default(NOT_YET_RELEASED)
   restrictionReason String?
   /// Buyback / Purchase for Resale tag. Independent of availability (PRD §15).
@@ -618,7 +618,7 @@ model Plot {
 
   /// PRD §16.2 — Plot uniqueness is Project + Plot Type + Plot Number.
   @@unique([projectId, plotType, plotNumber])
-  @@index([lifecycle])
+  @@index([status])
 }
 
 model PlotBoundary {
@@ -636,7 +636,7 @@ model PlotBoundary {
   @@unique([plotId, side])
 }
 
-/// Append-only Plot lifecycle and restriction history (ARCHITECTURE §3.2).
+/// Append-only Plot status and restriction history (ARCHITECTURE §3.2).
 model PlotEvent {
   id     String @id @default(uuid())
   plotId String
@@ -645,8 +645,8 @@ model PlotEvent {
   at              DateTime         @default(now())
   actorRef        String
   action          String
-  fromLifecycle   PlotLifecycle?
-  toLifecycle     PlotLifecycle?
+  fromStatus   PlotStatus?
+  toStatus     PlotStatus?
   fromRestriction PlotRestriction?
   toRestriction   PlotRestriction?
   reason          String?
@@ -895,7 +895,7 @@ enum PartyKind {
   FINAL_REGISTRATION
 }
 
-/// Shared review lifecycle for Booking Request versions, schedule revisions
+/// Shared review status for Booking Request versions, schedule revisions
 /// and Primary Customer changes.
 enum ReviewDecision {
   PENDING

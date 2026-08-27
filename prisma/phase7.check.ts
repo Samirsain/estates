@@ -46,7 +46,7 @@ async function makePlot(projectId: string, suffix: string) {
       areaSqFt: "1350",
       areaSqYd: "150",
       areaSqM: "125.419",
-      lifecycle: "AVAILABLE",
+      status: "AVAILABLE",
       // The schema defaults to NOT_YET_RELEASED, which returns a released Plot
       // to Not Available. These fixtures are released inventory.
       restriction: "NONE",
@@ -230,7 +230,7 @@ async function main() {
   const expired = await db.hold.findUniqueOrThrow({ where: { id: lateHold.holdId } });
   assert.equal(expired.status, "EXPIRED");
   assert.equal(
-    (await db.plot.findUniqueOrThrow({ where: { id: plotD.id } })).lifecycle,
+    (await db.plot.findUniqueOrThrow({ where: { id: plotD.id } })).status,
     "AVAILABLE",
     "the Plot returns through the one restriction-aware rule"
   );

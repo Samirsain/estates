@@ -1,4 +1,4 @@
-// PLC version lifecycle and snapshot correction evidence — system/plc.md §3,
+// PLC version status and snapshot correction evidence — system/plc.md §3,
 // §5, §7.2, §11 and the acceptance tests in §19 (1–5, 11, 14, 31–35, 38).
 // Run: npm run plc:check   (requires a seeded database)
 //
@@ -38,13 +38,13 @@ async function cleanup() {
 async function main() {
   await cleanup();
 
-  /* ================================================== 1–3. version lifecycle */
+  /* ================================================== 1–3. version status */
 
   const { projectId } = await createProject({
     idempotencyKey: key(),
     actorRef: PC,
     actorRole: "PC",
-    name: `${TAG} PLC Lifecycle`,
+    name: `${TAG} PLC Status`,
     type: "RESIDENTIAL",
     city: "Jaipur",
     amenities: "Clubhouse\n24x7 water",
@@ -70,7 +70,7 @@ async function main() {
     idempotencyKey: key(),
     actorRef: PC,
     actorRole: "PC",
-    name: `${TAG} PLC Lifecycle`,
+    name: `${TAG} PLC Status`,
     type: "RESIDENTIAL",
     components: [{ category: "OPEN_SIDES", threshold: "2", percent: "1.0000" }],
   });
@@ -87,14 +87,14 @@ async function main() {
     actorRef: ADMIN,
     actorRole: "ADMIN",
     projectId,
-    name: `${TAG} PLC Lifecycle Renamed`,
+    name: `${TAG} PLC Status Renamed`,
     type: "COMMERCIAL",
     city: "Udaipur",
     reason: "The developer renamed the launch.",
   });
 
   const edited = await db.project.findUniqueOrThrow({ where: { id: projectId } });
-  assert.equal(edited.name, `${TAG} PLC Lifecycle Renamed`);
+  assert.equal(edited.name, `${TAG} PLC Status Renamed`);
   assert.equal(edited.type, "COMMERCIAL", "type is a label over the inventory, so it may change");
   assert.equal(edited.city, "Udaipur");
   assert.equal(
@@ -286,7 +286,7 @@ async function main() {
     where: { projectId, status: "PUBLISHED" },
     include: { components: true },
   });
-  await db.project.update({ where: { id: projectId }, data: { lifecycle: "ACTIVE" } });
+  await db.project.update({ where: { id: projectId }, data: { status: "ACTIVE" } });
 
   const plot = await db.plot.create({
     data: {
@@ -296,7 +296,7 @@ async function main() {
       areaSqFt: "1350",
       areaSqYd: "150",
       areaSqM: "125.4191",
-      lifecycle: "AVAILABLE",
+      status: "AVAILABLE",
       restriction: "NONE",
       // Road qualifies on two sides. It is charged once, at the widest band,
       // and the distinct categories sum once each (§2.2, §2.3, §19.7, §19.8).

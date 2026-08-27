@@ -11,7 +11,7 @@ import {
   updateProject,
   revisePlcRules,
   savePlcDraft,
-  setProjectLifecycle,
+  setProjectStatus,
   type PlcComponentInput,
 } from "@/lib/services/project-service";
 
@@ -80,20 +80,20 @@ export async function createProjectAction(
   }
 }
 
-export async function setProjectLifecycleAction(
+export async function setProjectStatusAction(
   projectId: string,
-  lifecycle: "SETUP_NOT_ACTIVE" | "ACTIVE" | "SOLD_OUT" | "COMPLETED",
+  status: "SETUP_NOT_ACTIVE" | "ACTIVE" | "SOLD_OUT" | "COMPLETED",
   reason: string,
   key: string
 ): Promise<ActionResult> {
   const actor = await requireStaff("PROJECT_SETUP");
   try {
-    const result = await setProjectLifecycle({
+    const result = await setProjectStatus({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
       projectId,
-      lifecycle,
+      status,
       reason,
     });
     refresh();
@@ -107,7 +107,7 @@ export async function setProjectLifecycleAction(
     ].filter(Boolean);
 
     const released =
-      lifecycle !== "ACTIVE"
+      status !== "ACTIVE"
         ? ""
         : result.released > 0
           ? ` ${result.released} Plot(s) released.`
@@ -116,7 +116,7 @@ export async function setProjectLifecycleAction(
     return {
       ok: true,
       message:
-        `Project is now ${lifecycle.replaceAll("_", " ").toLowerCase()}.${released}` +
+        `Project is now ${status.replaceAll("_", " ").toLowerCase()}.${released}` +
         (kept.length > 0 ? ` ${kept.join(", ")}.` : ""),
     };
   } catch (error) {

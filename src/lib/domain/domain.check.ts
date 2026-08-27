@@ -14,7 +14,7 @@ import {
   buildPlcSnapshot,
   calculateAreas,
   canAllocate,
-  displayLifecycle,
+  displayStatus,
   shortSides,
   greenAreaLabel,
   normaliseLink,
@@ -441,18 +441,18 @@ assert.ok(
 
 /* ----------------------------------------------- restriction-aware return */
 
-assert.deepEqual(plotReturnState("NONE"), { lifecycle: "AVAILABLE", message: null });
-assert.equal(plotReturnState("NOT_FOR_SALE", "Owner instruction").lifecycle, "NOT_AVAILABLE");
+assert.deepEqual(plotReturnState("NONE"), { status: "AVAILABLE", message: null });
+assert.equal(plotReturnState("NOT_FOR_SALE", "Owner instruction").status, "NOT_AVAILABLE");
 assert.match(plotReturnState("PLEDGE", "Bank pledge").message!, /Pledge: Bank pledge/);
-assert.equal(plotReturnState("NOT_YET_RELEASED").lifecycle, "NOT_AVAILABLE");
+assert.equal(plotReturnState("NOT_YET_RELEASED").status, "NOT_AVAILABLE");
 assert.ok(restrictionBlocksSale("NOT_FOR_SALE") && restrictionBlocksSale("PLEDGE"));
 assert.ok(!restrictionBlocksSale("NONE"));
 
 // The same rule governs every return path, so cancellation and Change Plot
 // cannot drift apart.
 for (const path of ["HOLD_EXPIRY", "BOOKING_REJECTED", "BOOKING_CANCELLED", "CHANGE_PLOT"]) {
-  assert.equal(plotReturnState("NONE").lifecycle, "AVAILABLE", path);
-  assert.equal(plotReturnState("PLEDGE", "r").lifecycle, "NOT_AVAILABLE", path);
+  assert.equal(plotReturnState("NONE").status, "AVAILABLE", path);
+  assert.equal(plotReturnState("PLEDGE", "r").status, "NOT_AVAILABLE", path);
 }
 
 assert.deepEqual(canAllocate("AVAILABLE", "NONE", "ACTIVE"), { ok: true });
@@ -1272,7 +1272,7 @@ assert.deepEqual(
 
 // main-PRD §17.6 — Available + RESALE, and Payment Pending while below 100%.
 const acqApproved = plotStateAfterAcquisitionApproval("NONE", null, "40");
-assert.equal(acqApproved.lifecycle, "AVAILABLE");
+assert.equal(acqApproved.status, "AVAILABLE");
 assert.equal(acqApproved.isResale, true);
 assert.equal(acqApproved.message, PAYMENT_PENDING_MESSAGE);
 assert.equal(plotStateAfterAcquisitionApproval("NONE", null, "100").message, null, "no message at 100%");
@@ -1280,7 +1280,7 @@ assert.equal(plotStateAfterAcquisitionApproval("NONE", null, "100").message, nul
 // PRD §15 — an active restriction still keeps the Plot Not Available, and the
 // RESALE tag is independent of availability.
 const acqRestricted = plotStateAfterAcquisitionApproval("PLEDGE", "Bank pledge", "100");
-assert.equal(acqRestricted.lifecycle, "NOT_AVAILABLE");
+assert.equal(acqRestricted.status, "NOT_AVAILABLE");
 assert.equal(acqRestricted.isResale, true, "RESALE is independent of availability");
 assert.match(acqRestricted.message!, /Pledge: Bank pledge/);
 
@@ -1291,7 +1291,7 @@ assert.equal(blockedCancel.ok, false);
 assert.match(asReason(blockedCancel), /Complete the acquisition or unwind the buyer process/);
 
 const acqCancelled = plotStateAfterAcquisitionCancelled();
-assert.equal(acqCancelled.lifecycle, "NOT_AVAILABLE");
+assert.equal(acqCancelled.status, "NOT_AVAILABLE");
 assert.equal(acqCancelled.message, DEAL_CANCELLED_MESSAGE);
 
 /* --------------------------- PRD §11.3 Payment Given correction paths */
@@ -1302,7 +1302,7 @@ const belowNoBuyer = resolvePaymentGivenCorrection({
   newPercent: "10",
   hasBuyerProcess: false,
 });
-assert.equal(belowNoBuyer.plotLifecycle, "NOT_AVAILABLE");
+assert.equal(belowNoBuyer.plotStatus, "NOT_AVAILABLE");
 assert.equal(belowNoBuyer.managementActionRequired, false);
 assert.match(belowNoBuyer.note, /returns to 20% or the deal is cancelled/);
 
@@ -1312,7 +1312,7 @@ const belowWithBuyer = resolvePaymentGivenCorrection({
   newPercent: "10",
   hasBuyerProcess: true,
 });
-assert.equal(belowWithBuyer.plotLifecycle, null, "nothing is acqCancelled or released automatically");
+assert.equal(belowWithBuyer.plotStatus, null, "nothing is acqCancelled or released automatically");
 assert.equal(belowWithBuyer.managementActionRequired, true);
 assert.equal(belowWithBuyer.processMessage, "Management Action Required");
 
@@ -1322,7 +1322,7 @@ const fellFromFull = resolvePaymentGivenCorrection({
   newPercent: "80",
   hasBuyerProcess: false,
 });
-assert.equal(fellFromFull.plotLifecycle, null);
+assert.equal(fellFromFull.plotStatus, null);
 assert.equal(fellFromFull.processMessage, PAYMENT_PENDING_MESSAGE);
 assert.equal(fellFromFull.buyingCommissionMilestoneLost, true);
 assert.equal(fellFromFull.newSaleCommissionOnHold, true);
@@ -1333,7 +1333,7 @@ const ordinary = resolvePaymentGivenCorrection({
   newPercent: "45",
   hasBuyerProcess: false,
 });
-assert.equal(ordinary.plotLifecycle, null);
+assert.equal(ordinary.plotStatus, null);
 assert.equal(ordinary.buyingCommissionMilestoneLost, false);
 assert.equal(ordinary.newSaleCommissionOnHold, true, "new-sale commission waits for 100%");
 
@@ -1379,7 +1379,7 @@ const changePlot = {
   toProjectId: "PRJ-1",
   fromPlotId: "PLT-1",
   toPlotId: "PLT-2",
-  toPlotLifecycle: "AVAILABLE" as const,
+  toPlotStatus: "AVAILABLE" as const,
   toPlotRestriction: "NONE" as const,
   heldBySameCustomer: false,
   remark: "Buyer prefers the corner plot.",
@@ -1398,26 +1398,26 @@ assert.match(
   /active restriction/
 );
 assert.match(
-  asReason(validateChangePlot({ ...changePlot, toPlotLifecycle: "BOOKED" })),
+  asReason(validateChangePlot({ ...changePlot, toPlotStatus: "BOOKED" })),
   /not Available/
 );
 // The same Customer already holding the replacement may move onto it, and its
 // Hold PLC snapshot is the one that carries (PRD §5.3).
 assert.deepEqual(
-  validateChangePlot({ ...changePlot, toPlotLifecycle: "HOLD", heldBySameCustomer: true }),
+  validateChangePlot({ ...changePlot, toPlotStatus: "HOLD", heldBySameCustomer: true }),
   { ok: true }
 );
 assert.equal(
-  validateChangePlot({ ...changePlot, toPlotLifecycle: "HOLD", heldBySameCustomer: false }).ok,
+  validateChangePlot({ ...changePlot, toPlotStatus: "HOLD", heldBySameCustomer: false }).ok,
   false,
   "someone else's Hold still blocks it"
 );
 
 // PRD §5.3 — the old Plot returns underThreshold its restriction and never gets RESALE.
 const returnedPlot = plotStateAfterChangePlot("NONE", null);
-assert.equal(returnedPlot.lifecycle, "AVAILABLE");
+assert.equal(returnedPlot.status, "AVAILABLE");
 assert.equal(returnedPlot.isResale, false, "Change Plot adds no RESALE tag");
-assert.equal(plotStateAfterChangePlot("NOT_FOR_SALE", "Owner instruction").lifecycle, "NOT_AVAILABLE");
+assert.equal(plotStateAfterChangePlot("NOT_FOR_SALE", "Owner instruction").status, "NOT_AVAILABLE");
 
 /* =====================================================================
    Phase 6 — Allotment/Registry, Delivered, exports and Person Merge
@@ -1632,7 +1632,7 @@ assert.equal(releaseOnActivation("NOT_AVAILABLE", "NOT_FOR_SALE"), "RESTRICTED")
 assert.equal(releaseOnActivation("NOT_AVAILABLE", "PLEDGE"), "RESTRICTED");
 
 // Anything already in play is untouched, whatever its restriction says.
-for (const lifecycle of [
+for (const status of [
   "AVAILABLE",
   "HOLD",
   "WAITING_FOR_BOOKING_APPROVAL",
@@ -1642,9 +1642,9 @@ for (const lifecycle of [
   "DELIVERED",
 ] as const) {
   assert.equal(
-    releaseOnActivation(lifecycle, "NONE"),
+    releaseOnActivation(status, "NONE"),
     "ALLOCATED",
-    `${lifecycle} is never rewritten by a Project activation`
+    `${status} is never rewritten by a Project activation`
   );
 }
 
@@ -1657,34 +1657,34 @@ assert.deepEqual(canAllocate("AVAILABLE", "NONE", "ACTIVE"), { ok: true });
 // The row must not offer what the next click refuses. An Unreleased Project
 // blocks every Hold and Booking (canAllocate), so an Available badge inside one
 // would be a promise nothing can keep.
-assert.deepEqual(displayLifecycle("AVAILABLE", "SETUP_NOT_ACTIVE"), {
-  lifecycle: "NOT_AVAILABLE",
+assert.deepEqual(displayStatus("AVAILABLE", "SETUP_NOT_ACTIVE"), {
+  status: "NOT_AVAILABLE",
   because: "Project is Unreleased",
 });
-assert.deepEqual(displayLifecycle("AVAILABLE", "ACTIVE"), {
-  lifecycle: "AVAILABLE",
+assert.deepEqual(displayStatus("AVAILABLE", "ACTIVE"), {
+  status: "AVAILABLE",
   because: null,
 });
 
 // Everything else keeps its own word, Unreleased Project or not — those states
 // are more specific than "not available" and stay true regardless.
-for (const lifecycle of ["HOLD", "BOOKED", "DELIVERED", "NOT_AVAILABLE"] as const) {
+for (const status of ["HOLD", "BOOKED", "DELIVERED", "NOT_AVAILABLE"] as const) {
   assert.equal(
-    displayLifecycle(lifecycle, "SETUP_NOT_ACTIVE").lifecycle,
-    lifecycle,
-    `${lifecycle} is not rewritten by an Unreleased Project`
+    displayStatus(status, "SETUP_NOT_ACTIVE").status,
+    status,
+    `${status} is not rewritten by an Unreleased Project`
   );
 }
 
 // And the tie between the two: wherever the row still says Available, the sale
 // gate must actually agree. This is the pair that would drift apart silently.
-for (const projectLifecycle of ["SETUP_NOT_ACTIVE", "ACTIVE", "SOLD_OUT", "COMPLETED"] as const) {
-  const shown = displayLifecycle("AVAILABLE", projectLifecycle);
-  if (shown.lifecycle === "AVAILABLE") {
+for (const projectStatus of ["SETUP_NOT_ACTIVE", "ACTIVE", "SOLD_OUT", "COMPLETED"] as const) {
+  const shown = displayStatus("AVAILABLE", projectStatus);
+  if (shown.status === "AVAILABLE") {
     assert.equal(
-      canAllocate("AVAILABLE", "NONE", projectLifecycle).ok,
+      canAllocate("AVAILABLE", "NONE", projectStatus).ok,
       true,
-      `a row reading Available under ${projectLifecycle} must really be allocatable`
+      `a row reading Available under ${projectStatus} must really be allocatable`
     );
   }
 }

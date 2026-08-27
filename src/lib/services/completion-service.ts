@@ -252,15 +252,15 @@ export async function recordCompletion(args: {
       });
       await tx.plot.update({
         where: { id: booking.plotId },
-        data: { lifecycle: "DELIVERED" },
+        data: { status: "DELIVERED" },
       });
       await tx.plotEvent.create({
         data: {
           plotId: booking.plotId,
           actorRef: args.actorRef,
           action: "DELIVERED",
-          fromLifecycle: booking.plot.lifecycle,
-          toLifecycle: "DELIVERED",
+          fromStatus: booking.plot.status,
+          toStatus: "DELIVERED",
           reason: `${input.route === "ALLOTMENT" ? "Allotment" : "Registry"} completed.`,
         },
       });
@@ -342,15 +342,15 @@ export async function reopenDelivered(args: {
       });
       await tx.plot.update({
         where: { id: booking.plotId },
-        data: { lifecycle: "PAYMENT_COMPLETED" },
+        data: { status: "PAYMENT_COMPLETED" },
       });
       await tx.plotEvent.create({
         data: {
           plotId: booking.plotId,
           actorRef: args.actorRef,
           action: "DELIVERY_REOPENED",
-          fromLifecycle: "DELIVERED",
-          toLifecycle: "PAYMENT_COMPLETED",
+          fromStatus: "DELIVERED",
+          toStatus: "PAYMENT_COMPLETED",
           reason: args.reason,
         },
       });

@@ -313,14 +313,14 @@ export async function confirmPaymentReceived(args: {
         },
       });
       if (completed) {
-        await tx.plot.update({ where: { id: booking.plotId }, data: { lifecycle: "PAYMENT_COMPLETED" } });
+        await tx.plot.update({ where: { id: booking.plotId }, data: { status: "PAYMENT_COMPLETED" } });
         await tx.plotEvent.create({
           data: {
             plotId: booking.plotId,
             actorRef: args.actorRef,
             action: "PAYMENT_COMPLETED",
-            fromLifecycle: "BOOKED",
-            toLifecycle: "PAYMENT_COMPLETED",
+            fromStatus: "BOOKED",
+            toStatus: "PAYMENT_COMPLETED",
           },
         });
         // main-PRD §18.1 — 100% creates the final-buyer and Allotment/Registry
@@ -472,14 +472,14 @@ export async function correctPaymentReceived(args: {
             `Payment Received fell to ${progress.toFixed(2)}% — completion work paused.`
           );
         }
-        await tx.plot.update({ where: { id: booking.plotId }, data: { lifecycle: nextStatus } });
+        await tx.plot.update({ where: { id: booking.plotId }, data: { status: nextStatus } });
         await tx.plotEvent.create({
           data: {
             plotId: booking.plotId,
             actorRef: args.actorRef,
             action: "PAYMENT_PROGRESS_CORRECTED",
-            fromLifecycle: booking.status === "PAYMENT_COMPLETED" ? "PAYMENT_COMPLETED" : "BOOKED",
-            toLifecycle: nextStatus,
+            fromStatus: booking.status === "PAYMENT_COMPLETED" ? "PAYMENT_COMPLETED" : "BOOKED",
+            toStatus: nextStatus,
             reason: args.reason,
           },
         });

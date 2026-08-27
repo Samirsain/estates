@@ -24,7 +24,7 @@ import PlotActions from "./plot-actions";
 
 export const dynamic = "force-dynamic";
 
-const LIFECYCLE_LABEL: Record<string, string> = {
+const STATUS_LABEL: Record<string, string> = {
   NOT_AVAILABLE: "Not Available",
   AVAILABLE: "Available",
   HOLD: "Hold",
@@ -55,10 +55,10 @@ const BOUNDARY_KIND_LABEL: Record<string, string> = {
 
 const SIDES = ["NORTH", "EAST", "SOUTH", "WEST"] as const;
 
-function lifecycleVariant(lifecycle: string) {
-  if (lifecycle === "AVAILABLE") return "success" as const;
-  if (lifecycle === "HOLD") return "warning" as const;
-  if (lifecycle === "NOT_AVAILABLE") return "outline" as const;
+function statusVariant(status: string) {
+  if (status === "AVAILABLE") return "success" as const;
+  if (status === "HOLD") return "warning" as const;
+  if (status === "NOT_AVAILABLE") return "outline" as const;
   return "info" as const;
 }
 
@@ -145,15 +145,15 @@ export default async function PlotDetailPage({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={lifecycleVariant(plot.lifecycle)}>
-                {LIFECYCLE_LABEL[plot.lifecycle] ?? plot.lifecycle}
+              <Badge variant={statusVariant(plot.status)}>
+                {STATUS_LABEL[plot.status] ?? plot.status}
               </Badge>
               {plot.isResale && <Badge variant="outline">Resale</Badge>}
               <PlotActions
                 plot={{
                   id: plot.id,
                   plotNumber: plot.plotNumber,
-                  lifecycle: plot.lifecycle,
+                  status: plot.status,
                   widthFt: plot.widthFt?.toString() ?? "",
                   lengthFt: plot.lengthFt?.toString() ?? "",
                   exactAreaSqFt: plot.exactAreaSqFt?.toString() ?? "",
@@ -285,7 +285,7 @@ export default async function PlotDetailPage({
         <Section title="Status">
           <Facts
             rows={[
-              { label: "Lifecycle", value: LIFECYCLE_LABEL[plot.lifecycle] ?? plot.lifecycle },
+              { label: "Status", value: STATUS_LABEL[plot.status] ?? plot.status },
               {
                 label: "Restriction",
                 value:

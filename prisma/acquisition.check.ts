@@ -46,7 +46,7 @@ async function makePlot(projectId: string, suffix: string) {
       areaSqFt: "1350",
       areaSqYd: "150",
       areaSqM: "125.419",
-      lifecycle: "AVAILABLE",
+      status: "AVAILABLE",
       restriction: "NONE",
     },
   });
@@ -201,7 +201,7 @@ async function main() {
 
   // main-PRD §17.6 — back in inventory as RESALE, and Payment Pending below 100%.
   const returnedPlot = await db.plot.findUniqueOrThrow({ where: { id: plotA.id } });
-  assert.equal(returnedPlot.lifecycle, "AVAILABLE");
+  assert.equal(returnedPlot.status, "AVAILABLE");
   assert.equal(returnedPlot.isResale, true, "an acquisition adds the RESALE tag");
   assert.equal(approved.plotMessage, "Payment Pending");
 
@@ -327,7 +327,7 @@ async function main() {
     reason: "Seller withdrew.",
   });
   const cancelledPlot = await db.plot.findUniqueOrThrow({ where: { id: plotA.id } });
-  assert.equal(cancelledPlot.lifecycle, "NOT_AVAILABLE", "a cancelled deal is not sellable (PRD §11.4)");
+  assert.equal(cancelledPlot.status, "NOT_AVAILABLE", "a cancelled deal is not sellable (PRD §11.4)");
   assert.equal(
     (await db.booking.findUniqueOrThrow({ where: { id: bookingA.bookingId } })).activeProcess,
     "NONE",
@@ -341,7 +341,7 @@ async function main() {
       projectCode: `${TAG}-EXT`,
       name: `${TAG} External Resale Group`,
       type: "MIXED",
-      lifecycle: "ACTIVE",
+      status: "ACTIVE",
     },
   });
 

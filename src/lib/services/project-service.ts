@@ -33,14 +33,14 @@ export type PlcComponentInput = {
 
 /**
  * A Project could not be changed at all until now: the service offered
- * createProject and setProjectLifecycle and nothing else, so a name typed
+ * createProject and setProjectStatus and nothing else, so a name typed
  * wrongly at setup stayed wrong for the life of the Project.
  *
  * Two fields are missing on purpose. The Project Code is generated and is what
  * ties an issued export back to what it described. The External Resale Property
  * Group flag is what PRD §11.6 uses to tell a development Project from an
  * acquisition container, so flipping it would change the meaning of records
- * already attached to it. Lifecycle keeps its own command: moving a Project to
+ * already attached to it. Status keeps its own command: moving a Project to
  * Active is a release decision, not an edit.
  */
 export async function updateProject(args: {
@@ -199,7 +199,7 @@ export async function createProject(args: {
           amenities: args.amenities?.trim() || null,
           reraNumber: args.reraNumber?.trim() || null,
           isExternalResaleGroup: args.isExternalResaleGroup ?? false,
-          lifecycle: "SETUP_NOT_ACTIVE",
+          status: "SETUP_NOT_ACTIVE",
         },
       });
 
@@ -233,50 +233,50 @@ export async function createProject(args: {
   );
 }
 
-/** PRD §16.1 — the lifecycle gate on selling. */
-export async function setProjectLifecycle(args: {
+/** PRD §16.1 — the status gate on selling. */
+export async function setProjectStatus(args: {
   idempotencyKey: string;
   actorRef: string;
   actorRole: string;
   projectId: string;
-  lifecycle: "SETUP_NOT_ACTIVE" | "ACTIVE" | "SOLD_OUT" | "COMPLETED";
+  status: "SETUP_NOT_ACTIVE" | "ACTIVE" | "SOLD_OUT" | "COMPLETED";
   reason: string;
 }) {
-  if (!args.reason.trim()) blocked("A compulsory reason is required to change a Project lifecycle.");
+  if (!args.reason.trim()) blocked("A compulsory reason is required to change a Project status.");
 
   return runCommand(
     {
       idempotencyKey: args.idempotencyKey,
-      operation: "PROJECT_LIFECYCLE",
+      operation: "PROJECT_STATUS",
       actorRef: args.actorRef,
       actorRole: args.actorRole,
-      payload: { projectId: args.projectId, lifecycle: args.lifecycle },
+      payload: { projectId: args.projectId, status: args.status },
     },
     async (tx) => {
       const project = await tx.project.findUniqueOrThrow({ where: { id: args.projectId } });
-      if (project.lifecycle === args.lifecycle) {
-        blocked(`This Project is already ${args.lifecycle.replaceAll("_", " ").toLowerCase()}.`);
+      if (project.status === args.status) {
+        blocked(`This Project is already ${args.status.replaceAll("_", " ").toLowerCase()}.`);
       }
 
       // Closing a Project with live allocations would strand them.
-      if (args.lifecycle === "SOLD_OUT" || args.lifecycle === "COMPLETED") {
+      if (args.status === "SOLD_OUT" || args.status === "COMPLETED") {
         const live = await tx.plot.count({
           where: {
             projectId: args.projectId,
-            lifecycle: { in: ["HOLD", "WAITING_FOR_BOOKING_APPROVAL", "BOOKED", "PAYMENT_COMPLETED"] },
+            status: { in: ["HOLD", "WAITING_FOR_BOOKING_APPROVAL", "BOOKED", "PAYMENT_COMPLETED"] },
           },
         });
         if (live > 0) {
           blocked(
             `${live} Plot(s) still hold a live allocation. Complete or release them before marking ` +
-              `the Project ${args.lifecycle.replaceAll("_", " ").toLowerCase()}.`
+              `the Project ${args.status.replaceAll("_", " ").toLowerCase()}.`
           );
         }
       }
 
       await tx.project.update({
         where: { id: args.projectId },
-        data: { lifecycle: args.lifecycle },
+        data: { status: args.status },
       });
 
       // Activating a Project releases the inventory that was only waiting on it.
@@ -286,7 +286,7 @@ export async function setProjectLifecycle(args: {
       // a hundred clicks to say the one thing the activation already said.
       //
       // Two filters decide what moves, and between them they protect everything
-      // that matters. The lifecycle filter takes only NOT_AVAILABLE, so a Hold,
+      // that matters. The status filter takes only NOT_AVAILABLE, so a Hold,
       // a Booking under review, a Booked or Delivered Plot is never touched.
       // The restriction filter takes only NONE and NOT_YET_RELEASED, so Not for
       // Sale and Pledge survive — those are decisions somebody made about that
@@ -297,14 +297,14 @@ export async function setProjectLifecycle(args: {
       let heldBack = 0;
       let restricted = 0;
 
-      if (args.lifecycle === "ACTIVE") {
+      if (args.status === "ACTIVE") {
         const plots = await tx.plot.findMany({
           where: { projectId: args.projectId },
-          select: { id: true, lifecycle: true, restriction: true },
+          select: { id: true, status: true, restriction: true },
         });
 
         for (const plot of plots) {
-          const outcome = releaseOnActivation(plot.lifecycle, plot.restriction);
+          const outcome = releaseOnActivation(plot.status, plot.restriction);
           if (outcome === "ALLOCATED") {
             heldBack++;
             continue;
@@ -316,7 +316,7 @@ export async function setProjectLifecycle(args: {
 
           await tx.plot.update({
             where: { id: plot.id },
-            data: { lifecycle: "AVAILABLE", restriction: "NONE", restrictionReason: null },
+            data: { status: "AVAILABLE", restriction: "NONE", restrictionReason: null },
           });
           // ARCHITECTURE §3.2 — the Plot's history is append-only, and a release
           // that left no event would be a state change nobody could trace.
@@ -325,8 +325,8 @@ export async function setProjectLifecycle(args: {
               plotId: plot.id,
               actorRef: args.actorRef,
               action: "PLOT_MADE_AVAILABLE",
-              fromLifecycle: plot.lifecycle,
-              toLifecycle: "AVAILABLE",
+              fromStatus: plot.status,
+              toStatus: "AVAILABLE",
               fromRestriction: plot.restriction,
               toRestriction: "NONE",
               reason: `Project activated — ${args.reason}`,
@@ -339,7 +339,7 @@ export async function setProjectLifecycle(args: {
       return {
         result: {
           projectId: args.projectId,
-          lifecycle: args.lifecycle,
+          status: args.status,
           released,
           heldBack,
           restricted,
@@ -347,9 +347,9 @@ export async function setProjectLifecycle(args: {
         audit: {
           entity: "Project",
           entityId: args.projectId,
-          action: "PROJECT_LIFECYCLE_CHANGED",
-          before: { lifecycle: project.lifecycle },
-          after: { lifecycle: args.lifecycle, plotsReleased: released },
+          action: "PROJECT_STATUS_CHANGED",
+          before: { status: project.status },
+          after: { status: args.status, plotsReleased: released },
           reason: args.reason,
         },
       };

@@ -6,7 +6,7 @@
 // go back exactly as they were.
 
 import { Prisma } from "@prisma/client";
-import type { PlotLifecycle } from "@prisma/client";
+import type { PlotStatus } from "@prisma/client";
 import {
   plotStateAfterChangePlot,
   validateChangePlot,
@@ -22,8 +22,8 @@ const D = Prisma.Decimal;
 
 type RestoreSnapshot = {
   bookingStatus: string;
-  fromPlotLifecycle: PlotLifecycle;
-  toPlotLifecycle: PlotLifecycle;
+  fromPlotStatus: PlotStatus;
+  toPlotStatus: PlotStatus;
 };
 
 /** Freezes the replacement Plot's current PLC, or reuses this buyer's Hold snapshot. */
@@ -85,7 +85,7 @@ export async function submitChangePlot(args: {
         toProjectId: toPlot.projectId,
         fromPlotId: booking.plotId,
         toPlotId: args.toPlotId,
-        toPlotLifecycle: toPlot.lifecycle,
+        toPlotStatus: toPlot.status,
         toPlotRestriction: toPlot.restriction,
         heldBySameCustomer,
         remark: args.remark,
@@ -104,8 +104,8 @@ export async function submitChangePlot(args: {
           replacementPlcSnapshotId: snapshot.id,
           restoreSnapshot: {
             bookingStatus: booking.status,
-            fromPlotLifecycle: booking.plot.lifecycle,
-            toPlotLifecycle: toPlot.lifecycle,
+            fromPlotStatus: booking.plot.status,
+            toPlotStatus: toPlot.status,
           },
         },
       });
@@ -118,15 +118,15 @@ export async function submitChangePlot(args: {
       });
       await tx.plot.update({
         where: { id: args.toPlotId },
-        data: { lifecycle: "WAITING_FOR_BOOKING_APPROVAL" },
+        data: { status: "WAITING_FOR_BOOKING_APPROVAL" },
       });
       await tx.plotEvent.create({
         data: {
           plotId: args.toPlotId,
           actorRef: args.actorRef,
           action: "CHANGE_PLOT_RESERVED",
-          fromLifecycle: toPlot.lifecycle,
-          toLifecycle: "WAITING_FOR_BOOKING_APPROVAL",
+          fromStatus: toPlot.status,
+          toStatus: "WAITING_FOR_BOOKING_APPROVAL",
           reason: args.remark,
         },
       });
@@ -228,7 +228,16 @@ export async function decideChangePlot(args: {
       const booking = await tx.booking.findUniqueOrThrow({ where: { id: args.bookingId } });
       const fromPlot = await tx.plot.findUniqueOrThrow({ where: { id: request.fromPlotId } });
       const toPlot = await tx.plot.findUniqueOrThrow({ where: { id: request.toPlotId } });
-      const snapshot = request.restoreSnapshot as unknown as RestoreSnapshot;
+      // Requests raised before Lifecycle was renamed Status carry the old keys.
+      const raw = request.restoreSnapshot as unknown as RestoreSnapshot & {
+        fromPlotLifecycle?: PlotStatus;
+        toPlotLifecycle?: PlotStatus;
+      };
+      const snapshot: RestoreSnapshot = {
+        ...raw,
+        fromPlotStatus: raw.fromPlotStatus ?? raw.fromPlotLifecycle,
+        toPlotStatus: raw.toPlotStatus ?? raw.toPlotLifecycle,
+      };
       const decision = { decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: args.note };
 
       /* ----------------------------------------------------- rejection */
@@ -249,21 +258,21 @@ export async function decideChangePlot(args: {
 
         await tx.plot.update({
           where: { id: request.toPlotId },
-          data: { lifecycle: snapshot.toPlotLifecycle },
+          data: { status: snapshot.toPlotStatus },
         });
         await tx.plotEvent.create({
           data: {
             plotId: request.toPlotId,
             actorRef: args.actorRef,
             action: "CHANGE_PLOT_RELEASED",
-            fromLifecycle: toPlot.lifecycle,
-            toLifecycle: snapshot.toPlotLifecycle,
+            fromStatus: toPlot.status,
+            toStatus: snapshot.toPlotStatus,
             reason: args.note,
           },
         });
         await tx.plot.update({
           where: { id: request.fromPlotId },
-          data: { lifecycle: snapshot.fromPlotLifecycle },
+          data: { status: snapshot.fromPlotStatus },
         });
         await tx.booking.update({
           where: { id: args.bookingId },
@@ -373,30 +382,30 @@ export async function decideChangePlot(args: {
       const returned = plotStateAfterChangePlot(fromPlot.restriction, fromPlot.restrictionReason);
       await tx.plot.update({
         where: { id: request.fromPlotId },
-        data: { lifecycle: returned.lifecycle },
+        data: { status: returned.status },
       });
       await tx.plotEvent.create({
         data: {
           plotId: request.fromPlotId,
           actorRef: args.actorRef,
           action: "CHANGE_PLOT_RELEASED_ORIGINAL",
-          fromLifecycle: fromPlot.lifecycle,
-          toLifecycle: returned.lifecycle,
+          fromStatus: fromPlot.status,
+          toStatus: returned.status,
           reason: returned.message ? `${args.note} — ${returned.message}` : args.note,
         },
       });
 
       await tx.plot.update({
         where: { id: request.toPlotId },
-        data: { lifecycle: nextStatus },
+        data: { status: nextStatus },
       });
       await tx.plotEvent.create({
         data: {
           plotId: request.toPlotId,
           actorRef: args.actorRef,
           action: "CHANGE_PLOT_APPLIED",
-          fromLifecycle: "WAITING_FOR_BOOKING_APPROVAL",
-          toLifecycle: nextStatus,
+          fromStatus: "WAITING_FOR_BOOKING_APPROVAL",
+          toStatus: nextStatus,
           reason: args.note,
         },
       });

@@ -34,7 +34,7 @@ import {
   savePlcDraftAction,
   updateProjectAction,
   type ProjectFields,
-  setProjectLifecycleAction,
+  setProjectStatusAction,
   type ActionResult,
 } from "./actions";
 
@@ -45,7 +45,7 @@ export type ProjectRowView = {
   projectCode: string;
   name: string;
   type: string;
-  lifecycle: string;
+  status: string;
   developer: string | null;
   location: string | null;
   locationUrl: string | null;
@@ -107,7 +107,7 @@ function amenityList(amenities: string | null): string[] {
     .filter(Boolean);
 }
 
-const LIFECYCLE_LABEL: Record<string, string> = {
+const STATUS_LABEL: Record<string, string> = {
   // Screen wording only. The enum value stays SETUP_NOT_ACTIVE — DEVIATIONS D-03.
   SETUP_NOT_ACTIVE: "Unreleased",
   ACTIVE: "Active",
@@ -134,7 +134,7 @@ export default function ProjectsClient({
   const [creating, setCreating] = React.useState(false);
   const [plc, setPlc] = React.useState<ProjectRowView | null>(null);
   const [editing, setEditing] = React.useState<ProjectRowView | null>(null);
-  const [lifecycle, setLifecycle] = React.useState<ProjectRowView | null>(null);
+  const [status, setStatus] = React.useState<ProjectRowView | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
   const [detail, setDetail] = React.useState<ProjectRowView | null>(null);
@@ -148,7 +148,7 @@ export default function ProjectsClient({
       setCreating(false);
       setPlc(null);
       setEditing(null);
-      setLifecycle(null);
+      setStatus(null);
       router.refresh();
     }
   }
@@ -216,10 +216,10 @@ export default function ProjectsClient({
                   </p>
                 </button>
                 <Badge
-                  variant={project.lifecycle === "ACTIVE" ? "success" : "outline"}
+                  variant={project.status === "ACTIVE" ? "success" : "outline"}
                   className="shrink-0"
                 >
-                  {LIFECYCLE_LABEL[project.lifecycle] ?? project.lifecycle}
+                  {STATUS_LABEL[project.status] ?? project.status}
                 </Badge>
               </div>
 
@@ -252,8 +252,8 @@ export default function ProjectsClient({
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => setLifecycle(project)}>
-                        Change lifecycle
+                      <DropdownMenuItem onSelect={() => setStatus(project)}>
+                        Change status
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -276,7 +276,7 @@ export default function ProjectsClient({
             <dl className="grid gap-2 sm:grid-cols-2 text-xs">
               <Row label="Project Code" value={detail.projectCode} />
               <Row label="Type" value={TYPE_LABEL[detail.type] ?? detail.type} />
-              <Row label="Lifecycle" value={LIFECYCLE_LABEL[detail.lifecycle] ?? detail.lifecycle} />
+              <Row label="Status" value={STATUS_LABEL[detail.status] ?? detail.status} />
               <Row label="City" value={detail.city ?? "—"} />
               <Row label="Location" value={detail.location ?? "—"} />
               <Row label="Developer" value={detail.developer ?? "—"} />
@@ -361,13 +361,13 @@ export default function ProjectsClient({
         />
       )}
 
-      {lifecycle && (
-        <LifecycleDialog
-          project={lifecycle}
+      {status && (
+        <StatusDialog
+          project={status}
           busy={busy}
-          onClose={() => setLifecycle(null)}
+          onClose={() => setStatus(null)}
           onSubmit={(next, reason) =>
-            run(() => setProjectLifecycleAction(lifecycle.id, next, reason, newKey()))
+            run(() => setProjectStatusAction(status.id, next, reason, newKey()))
           }
         />
       )}
@@ -717,7 +717,7 @@ function ProjectDialog({
  * The Project Code and the External Resale Property Group flag are not here.
  * The code is what ties an issued export back to what it described, and the
  * flag is what PRD §11.6 uses to tell a development Project from an acquisition
- * container. Lifecycle has its own dialog: releasing is not editing.
+ * container. Status has its own dialog: releasing is not editing.
  */
 function EditProjectDialog({
   project,
@@ -733,7 +733,7 @@ function EditProjectDialog({
   return (
     <Modal
       title={`Edit ${project.name}`}
-      description="The Project Code and the External Resale Property Group setting cannot be changed. Use Change lifecycle to release the Project."
+      description="The Project Code and the External Resale Property Group setting cannot be changed. Use Change status to release the Project."
       wide
       onClose={onClose}
     >
@@ -931,7 +931,7 @@ function PlcDialog({
   );
 }
 
-function LifecycleDialog({
+function StatusDialog({
   project,
   busy,
   onClose,
@@ -941,13 +941,13 @@ function LifecycleDialog({
   busy: boolean;
   onClose: () => void;
   onSubmit: (
-    lifecycle: "SETUP_NOT_ACTIVE" | "ACTIVE" | "SOLD_OUT" | "COMPLETED",
+    status: "SETUP_NOT_ACTIVE" | "ACTIVE" | "SOLD_OUT" | "COMPLETED",
     reason: string
   ) => void;
 }) {
   return (
     <Modal
-      title={`Change lifecycle — ${project.projectCode}`}
+      title={`Change status — ${project.projectCode}`}
       description="Nothing may be sold while a Project is Unreleased."
       onClose={onClose}
     >
@@ -957,14 +957,14 @@ function LifecycleDialog({
           e.preventDefault();
           const f = new FormData(e.currentTarget);
           onSubmit(
-            String(f.get("lifecycle")) as "SETUP_NOT_ACTIVE" | "ACTIVE" | "SOLD_OUT" | "COMPLETED",
+            String(f.get("status")) as "SETUP_NOT_ACTIVE" | "ACTIVE" | "SOLD_OUT" | "COMPLETED",
             String(f.get("reason"))
           );
         }}
       >
-        <Field label="Lifecycle">
-          <select name="lifecycle" className={inputClass} defaultValue={project.lifecycle}>
-            {Object.entries(LIFECYCLE_LABEL).map(([value, label]) => (
+        <Field label="Status">
+          <select name="status" className={inputClass} defaultValue={project.status}>
+            {Object.entries(STATUS_LABEL).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
@@ -979,7 +979,7 @@ function LifecycleDialog({
             Back
           </Button>
           <Button type="submit" size="sm" disabled={busy}>
-            {busy ? "Saving…" : "Change lifecycle"}
+            {busy ? "Saving…" : "Change status"}
           </Button>
         </div>
       </form>

@@ -53,7 +53,7 @@ async function makePlot(projectId: string, suffix: string) {
       areaSqFt: "1350",
       areaSqYd: "150",
       areaSqM: "125.419",
-      lifecycle: "AVAILABLE",
+      status: "AVAILABLE",
     },
   });
 }
@@ -214,7 +214,7 @@ async function main() {
   let state = await db.booking.findUniqueOrThrow({ where: { id: bookingA } });
   assert.equal(state.status, "DELIVERED");
   assert.equal(
-    (await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).lifecycle,
+    (await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).status,
     "DELIVERED"
   );
   const completion = await db.bookingCompletion.findFirstOrThrow({
@@ -285,7 +285,7 @@ async function main() {
   state = await db.booking.findUniqueOrThrow({ where: { id: bookingA } });
   assert.equal(state.status, "PAYMENT_COMPLETED", "the prior state is restored");
   assert.equal(
-    (await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).lifecycle,
+    (await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).status,
     "PAYMENT_COMPLETED"
   );
   assert.equal(

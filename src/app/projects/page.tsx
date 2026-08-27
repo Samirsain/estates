@@ -22,7 +22,7 @@ export default async function ProjectsPage() {
         projectCode: project.projectCode,
         name: project.name,
         type: project.type,
-        lifecycle: project.lifecycle,
+        status: project.status,
         developer: project.developer,
         location: project.location,
         locationUrl: project.locationUrl,

@@ -129,9 +129,9 @@ async function main() {
       developer: "Thirty Milestones LLP",
       location: "Jaipur",
       type: "RESIDENTIAL",
-      lifecycle: "ACTIVE",
+      status: "ACTIVE",
     },
-    update: { lifecycle: "ACTIVE" },
+    update: { status: "ACTIVE" },
   });
 
   // PLC is percentage only; each distinct component is charged once.
@@ -250,7 +250,7 @@ async function main() {
         areaSqFt: areas.areaSqFt.toFixed(4),
         areaSqYd: areas.areaSqYd.toFixed(4),
         areaSqM: areas.areaSqM.toFixed(4),
-        lifecycle: p.release ? "AVAILABLE" : "NOT_AVAILABLE",
+        status: p.release ? "AVAILABLE" : "NOT_AVAILABLE",
         restriction: p.release ? "NONE" : "NOT_YET_RELEASED",
         boundaries: {
           create: p.boundaries.map((b) => ({

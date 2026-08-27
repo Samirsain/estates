@@ -149,7 +149,7 @@ async function main() {
   /* ------------------------------------------------------------- Phase 2 */
 
   const project = await db.project.findUniqueOrThrow({ where: { projectCode: "GRN" } });
-  const plot = await db.plot.findFirstOrThrow({ where: { projectId: project.id, lifecycle: "AVAILABLE" } });
+  const plot = await db.plot.findFirstOrThrow({ where: { projectId: project.id, status: "AVAILABLE" } });
 
   // PRD §16.2 — Plot uniqueness is Project + Plot Type + Plot Number.
   await expectRejected("duplicate Project + Plot Type + Plot Number must be rejected", () =>
@@ -341,7 +341,7 @@ async function main() {
       areaSqFt: "1200",
       areaSqYd: "133.333",
       areaSqM: "111.484",
-      lifecycle: "AVAILABLE",
+      status: "AVAILABLE",
       restriction: "NONE",
     },
   });

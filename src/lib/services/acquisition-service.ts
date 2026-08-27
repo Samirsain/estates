@@ -541,17 +541,17 @@ export async function correctPaymentGiven(args: {
       });
 
       // The Plot moves only where the domain says it may (PRD §11.3).
-      if (acquisition.status === "APPROVED" && acquisition.plotId && outcome.plotLifecycle) {
+      if (acquisition.status === "APPROVED" && acquisition.plotId && outcome.plotStatus) {
         await tx.plot.update({
           where: { id: acquisition.plotId },
-          data: { lifecycle: outcome.plotLifecycle },
+          data: { status: outcome.plotStatus },
         });
         await tx.plotEvent.create({
           data: {
             plotId: acquisition.plotId,
             actorRef: args.actorRef,
             action: "PAYMENT_GIVEN_CORRECTED",
-            toLifecycle: outcome.plotLifecycle,
+            toStatus: outcome.plotStatus,
             reason: outcome.note,
           },
         });
@@ -756,7 +756,7 @@ export async function decideAcquisition(args: {
             areaSqM: acquisition.areaSqFt
               ? new D(acquisition.areaSqFt).mul("0.09290304").toFixed(3)
               : "0",
-            lifecycle: "NOT_AVAILABLE",
+            status: "NOT_AVAILABLE",
             restriction: "NONE",
           },
         });
@@ -774,14 +774,14 @@ export async function decideAcquisition(args: {
         await lockPlot(tx, plotId);
         await tx.plot.update({
           where: { id: plotId },
-          data: { lifecycle: state.lifecycle, isResale: true },
+          data: { status: state.status, isResale: true },
         });
         await tx.plotEvent.create({
           data: {
             plotId,
             actorRef: args.actorRef,
             action: "ACQUISITION_APPROVED",
-            toLifecycle: state.lifecycle,
+            toStatus: state.status,
             reason: state.message ? `${args.note} — ${state.message}` : args.note,
           },
         });
@@ -883,7 +883,7 @@ export async function decideAcquisition(args: {
           entity: "Acquisition",
           entityId: acquisition.id,
           action: "ACQUISITION_APPROVED",
-          after: { plotId, lifecycle: state.lifecycle, isResale: true },
+          after: { plotId, status: state.status, isResale: true },
           reason: args.note,
         },
       };
@@ -931,14 +931,14 @@ export async function cancelAcquisitionDeal(args: {
         const state = plotStateAfterAcquisitionCancelled();
         await tx.plot.update({
           where: { id: acquisition.plotId },
-          data: { lifecycle: state.lifecycle },
+          data: { status: state.status },
         });
         await tx.plotEvent.create({
           data: {
             plotId: acquisition.plotId,
             actorRef: args.actorRef,
             action: "CANCELLED",
-            toLifecycle: state.lifecycle,
+            toStatus: state.status,
             reason: `${args.reason} — ${state.message}`,
           },
         });

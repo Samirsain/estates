@@ -5,7 +5,7 @@
 // restriction-aware rule, adding no RESALE tag. Rejection restores the exact
 // previous Booking, Plot, payment, commission and task state.
 
-import type { BookingStatus, PlotLifecycle } from "@prisma/client";
+import type { BookingStatus, PlotStatus } from "@prisma/client";
 import { canTransition } from "@/lib/domain/booking";
 import { plotReturnState } from "@/lib/domain/inventory";
 import { enquiryStatusAfterBookingCancelled } from "@/lib/domain/enquiry";
@@ -15,7 +15,7 @@ import { cancelCommissionForBooking, reassessCommission } from "./commission-ser
 import { syncPaymentFollowUp } from "./payment-service";
 import { closeTasksFor } from "./task-service";
 
-type RestoreSnapshot = { bookingStatus: BookingStatus; plotLifecycle: PlotLifecycle };
+type RestoreSnapshot = { bookingStatus: BookingStatus; plotStatus: PlotStatus };
 
 export type CancellationDecisionResult = {
   bookingId: string;
@@ -69,7 +69,9 @@ export async function decideCancellation(args: {
         blocked(`This Booking is ${booking.status.replaceAll("_", " ").toLowerCase()}, not Refund Pending.`);
       }
 
-      const snapshot = request.restoreSnapshot as unknown as RestoreSnapshot;
+      // Requests raised before Lifecycle was renamed Status carry the old key.
+      const raw = request.restoreSnapshot as unknown as RestoreSnapshot & { plotLifecycle?: PlotStatus };
+      const snapshot: RestoreSnapshot = { ...raw, plotStatus: raw.plotStatus ?? raw.plotLifecycle };
       const decision = { decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: args.note };
 
       /* ------------------------------ rejection restores the exact prior state */
@@ -88,15 +90,15 @@ export async function decideCancellation(args: {
         });
         await tx.plot.update({
           where: { id: booking.plotId },
-          data: { lifecycle: snapshot.plotLifecycle },
+          data: { status: snapshot.plotStatus },
         });
         await tx.plotEvent.create({
           data: {
             plotId: booking.plotId,
             actorRef: args.actorRef,
             action: "REFUND_REJECTED_STATE_RESTORED",
-            fromLifecycle: "REFUND_PENDING",
-            toLifecycle: snapshot.plotLifecycle,
+            fromStatus: "REFUND_PENDING",
+            toStatus: snapshot.plotStatus,
             reason: args.note,
           },
         });
@@ -197,14 +199,14 @@ export async function decideCancellation(args: {
       // PRD §15 — the one restriction-aware return. Booking cancellation adds
       // no RESALE tag; only an acquisition does that.
       const next = plotReturnState(booking.plot.restriction, booking.plot.restrictionReason);
-      await tx.plot.update({ where: { id: booking.plotId }, data: { lifecycle: next.lifecycle } });
+      await tx.plot.update({ where: { id: booking.plotId }, data: { status: next.status } });
       await tx.plotEvent.create({
         data: {
           plotId: booking.plotId,
           actorRef: args.actorRef,
           action: "BOOKING_CANCELLED",
-          fromLifecycle: "REFUND_PENDING",
-          toLifecycle: next.lifecycle,
+          fromStatus: "REFUND_PENDING",
+          toStatus: next.status,
           reason: next.message ? `${args.note} — ${next.message}` : args.note,
         },
       });
@@ -262,7 +264,7 @@ export async function decideCancellation(args: {
           entityId: args.bookingId,
           action: "BOOKING_CANCELLED",
           before: { status: "REFUND_PENDING" },
-          after: { status: "CANCELLED", plotLifecycle: next.lifecycle, noPaymentReceived: noPayment },
+          after: { status: "CANCELLED", plotStatus: next.status, noPaymentReceived: noPayment },
           reason: args.note,
         },
       };

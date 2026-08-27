@@ -130,7 +130,7 @@ export async function prepareInventory(args: {
             areaSqYd: areas.areaSqYd.toFixed(4),
             areaSqM: areas.areaSqM.toFixed(4),
             // New inventory starts unreleased; Admin/MD releases it (PRD §16.1).
-            lifecycle: "NOT_AVAILABLE",
+            status: "NOT_AVAILABLE",
             restriction: "NOT_YET_RELEASED",
             boundaries: { create: boundaryRows(row.boundaries) },
           },
@@ -140,7 +140,7 @@ export async function prepareInventory(args: {
             plotId: plot.id,
             actorRef: args.actorRef,
             action: "PLOT_PREPARED",
-            toLifecycle: "NOT_AVAILABLE",
+            toStatus: "NOT_AVAILABLE",
             toRestriction: "NOT_YET_RELEASED",
           },
         });
@@ -324,21 +324,21 @@ export async function makeAvailable(args: {
       await lockPlot(tx, args.plotId);
       const plot = await tx.plot.findUniqueOrThrow({ where: { id: args.plotId } });
 
-      if (plot.lifecycle !== "NOT_AVAILABLE") {
-        blocked(`Plot is ${plot.lifecycle.replaceAll("_", " ").toLowerCase()}; only a Not Available Plot can be released.`);
+      if (plot.status !== "NOT_AVAILABLE") {
+        blocked(`Plot is ${plot.status.replaceAll("_", " ").toLowerCase()}; only a Not Available Plot can be released.`);
       }
 
       await tx.plot.update({
         where: { id: args.plotId },
-        data: { restriction: "NONE", restrictionReason: null, lifecycle: "AVAILABLE" },
+        data: { restriction: "NONE", restrictionReason: null, status: "AVAILABLE" },
       });
       await tx.plotEvent.create({
         data: {
           plotId: args.plotId,
           actorRef: args.actorRef,
           action: "PLOT_MADE_AVAILABLE",
-          fromLifecycle: plot.lifecycle,
-          toLifecycle: "AVAILABLE",
+          fromStatus: plot.status,
+          toStatus: "AVAILABLE",
           fromRestriction: plot.restriction,
           toRestriction: "NONE",
           reason: args.reason,
@@ -346,13 +346,13 @@ export async function makeAvailable(args: {
       });
 
       return {
-        result: { plotId: args.plotId, lifecycle: "AVAILABLE" },
+        result: { plotId: args.plotId, status: "AVAILABLE" },
         audit: {
           entity: "Plot",
           entityId: args.plotId,
           action: "PLOT_MADE_AVAILABLE",
-          before: { lifecycle: plot.lifecycle, restriction: plot.restriction },
-          after: { lifecycle: "AVAILABLE", restriction: "NONE" },
+          before: { status: plot.status, restriction: plot.restriction },
+          after: { status: "AVAILABLE", restriction: "NONE" },
           reason: args.reason,
         },
       };
@@ -383,9 +383,9 @@ export async function setRestriction(args: {
       await lockPlot(tx, args.plotId);
       const plot = await tx.plot.findUniqueOrThrow({ where: { id: args.plotId } });
 
-      if (!["AVAILABLE", "NOT_AVAILABLE"].includes(plot.lifecycle)) {
+      if (!["AVAILABLE", "NOT_AVAILABLE"].includes(plot.status)) {
         blocked(
-          `Plot is ${plot.lifecycle.replaceAll("_", " ").toLowerCase()}. Restrictions apply only to ` +
+          `Plot is ${plot.status.replaceAll("_", " ").toLowerCase()}. Restrictions apply only to ` +
             `unallocated inventory — release the current allocation first.`
         );
       }
@@ -396,7 +396,7 @@ export async function setRestriction(args: {
         data: {
           restriction: args.restriction,
           restrictionReason: args.restriction === "NONE" ? null : args.reason,
-          lifecycle: next.lifecycle,
+          status: next.status,
         },
       });
       await tx.plotEvent.create({
@@ -404,8 +404,8 @@ export async function setRestriction(args: {
           plotId: args.plotId,
           actorRef: args.actorRef,
           action: "PLOT_RESTRICTION_CHANGED",
-          fromLifecycle: plot.lifecycle,
-          toLifecycle: next.lifecycle,
+          fromStatus: plot.status,
+          toStatus: next.status,
           fromRestriction: plot.restriction,
           toRestriction: args.restriction,
           reason: args.reason,
@@ -413,13 +413,13 @@ export async function setRestriction(args: {
       });
 
       return {
-        result: { plotId: args.plotId, lifecycle: next.lifecycle, message: next.message },
+        result: { plotId: args.plotId, status: next.status, message: next.message },
         audit: {
           entity: "Plot",
           entityId: args.plotId,
           action: "PLOT_RESTRICTION_CHANGED",
-          before: { restriction: plot.restriction, lifecycle: plot.lifecycle },
-          after: { restriction: args.restriction, lifecycle: next.lifecycle },
+          before: { restriction: plot.restriction, status: plot.status },
+          after: { restriction: args.restriction, status: next.status },
           reason: args.reason,
         },
       };

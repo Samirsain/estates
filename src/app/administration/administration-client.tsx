@@ -152,7 +152,7 @@ export default function AdministrationClient(props: {
         <div>
           <h1 className="text-xl font-semibold">Administration</h1>
           <p className="text-xs text-muted-foreground">
-            Staff lifecycle, the Unassigned Review queue, Person Merge and Activity History.
+            Staff status, the Unassigned Review queue, Person Merge and Activity History.
           </p>
         </div>
 

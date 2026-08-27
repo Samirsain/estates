@@ -46,7 +46,7 @@ async function makePlot(projectId: string, suffix: string, restriction?: "NOT_FO
       areaSqFt: "1350",
       areaSqYd: "150",
       areaSqM: "125.419",
-      lifecycle: "AVAILABLE",
+      status: "AVAILABLE",
       restriction: restriction ?? "NONE",
       restrictionReason: restriction ? "Owner instruction" : null,
     },
@@ -92,7 +92,7 @@ async function main() {
       projectCode: `${TAG}-P2`,
       name: `${TAG} Other Project`,
       type: "RESIDENTIAL",
-      lifecycle: "ACTIVE",
+      status: "ACTIVE",
     },
   });
 
@@ -148,7 +148,7 @@ async function main() {
   let state = await db.booking.findUniqueOrThrow({ where: { id: bookingA } });
   assert.equal(state.status, "REFUND_PENDING");
   assert.equal(state.activeProcess, "REFUND_PENDING");
-  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).lifecycle, "REFUND_PENDING");
+  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).status, "REFUND_PENDING");
   assert.equal(
     await db.task.count({ where: { recordId: bookingA, purpose: "PAYMENT_FOLLOW_UP", status: "PENDING" } }),
     0,
@@ -195,7 +195,7 @@ async function main() {
   assert.equal(state.activeProcess, "NONE");
   assert.equal(state.closeReason, null);
   assert.equal(state.paymentReceivedPercent.toFixed(0), "40", "payment is untouched");
-  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).lifecycle, "BOOKED");
+  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).status, "BOOKED");
   assert.ok(
     await db.task.findFirst({
       where: { recordId: bookingA, purpose: "PAYMENT_FOLLOW_UP", status: "PENDING" },
@@ -226,7 +226,7 @@ async function main() {
   state = await db.booking.findUniqueOrThrow({ where: { id: bookingA } });
   assert.equal(state.status, "CANCELLED");
   const cancelledPlot = await db.plot.findUniqueOrThrow({ where: { id: plotA.id } });
-  assert.equal(cancelledPlot.lifecycle, "AVAILABLE");
+  assert.equal(cancelledPlot.status, "AVAILABLE");
   assert.equal(cancelledPlot.isResale, false, "Booking cancellation adds no RESALE tag (PRD §15)");
   assert.equal(
     (await db.enquiry.findUniqueOrThrow({ where: { id: enquiry.enquiryId } })).status,
@@ -263,7 +263,7 @@ async function main() {
     noPaymentReceived: true,
   });
   assert.equal(
-    (await db.plot.findUniqueOrThrow({ where: { id: plotR.id } })).lifecycle,
+    (await db.plot.findUniqueOrThrow({ where: { id: plotR.id } })).status,
     "NOT_AVAILABLE",
     "an active restriction keeps a returning Plot Not Available"
   );
@@ -324,12 +324,12 @@ async function main() {
     "CHANGE_PLOT_PENDING"
   );
   assert.equal(
-    (await db.plot.findUniqueOrThrow({ where: { id: plotC.id } })).lifecycle,
+    (await db.plot.findUniqueOrThrow({ where: { id: plotC.id } })).status,
     "WAITING_FOR_BOOKING_APPROVAL",
     "the replacement is transactionally blocked while under review"
   );
   assert.equal(
-    (await db.plot.findUniqueOrThrow({ where: { id: plotB.id } })).lifecycle,
+    (await db.plot.findUniqueOrThrow({ where: { id: plotB.id } })).status,
     "BOOKED",
     "the old Plot stays allocated"
   );
@@ -356,8 +356,8 @@ async function main() {
     note: "Replacement not verified.",
   });
 
-  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotC.id } })).lifecycle, "AVAILABLE");
-  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotB.id } })).lifecycle, "BOOKED");
+  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotC.id } })).status, "AVAILABLE");
+  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotB.id } })).status, "BOOKED");
   assert.equal(
     (await db.booking.findUniqueOrThrow({ where: { id: bookingB } })).activeProcess,
     "NONE"
@@ -421,9 +421,9 @@ async function main() {
   assert.equal(moved.status, "BOOKED");
 
   const oldPlot = await db.plot.findUniqueOrThrow({ where: { id: plotB.id } });
-  assert.equal(oldPlot.lifecycle, "AVAILABLE");
+  assert.equal(oldPlot.status, "AVAILABLE");
   assert.equal(oldPlot.isResale, false, "Change Plot adds no RESALE tag (PRD §5.3)");
-  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotC.id } })).lifecycle, "BOOKED");
+  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotC.id } })).status, "BOOKED");
 
   const live = await db.paymentScheduleVersion.findFirstOrThrow({
     where: { bookingId: bookingB, status: "ACTIVE" },

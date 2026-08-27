@@ -905,7 +905,7 @@ export async function loadChangePlotOptions(bookingId: string) {
       projectId: booking.projectId,
       id: { not: booking.plotId },
       OR: [
-        { lifecycle: "AVAILABLE" },
+        { status: "AVAILABLE" },
         // A Hold held by the same Customer may be moved onto (PRD §5.3).
         { holds: { some: { status: "ACTIVE", personId: booking.primaryPersonId } } },
       ],
@@ -918,7 +918,7 @@ export async function loadChangePlotOptions(bookingId: string) {
   return plots.map((plot) => ({
     id: plot.id,
     label: `${plot.plotType.replaceAll("_", " ")} ${plot.plotNumber}`,
-    lifecycle: plot.lifecycle,
+    status: plot.status,
     heldBySameCustomer: plot.holds.some((hold) => hold.personId === booking.primaryPersonId),
   }));
 }

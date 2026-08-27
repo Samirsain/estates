@@ -256,7 +256,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
           blocked("This Hold has expired and cannot be submitted for Booking (PRD §10.5).");
         }
       } else {
-        const allocatable = canAllocate(plot.lifecycle, plot.restriction, plot.project.lifecycle);
+        const allocatable = canAllocate(plot.status, plot.restriction, plot.project.status);
         if (!allocatable.ok) blocked(allocatable.reason);
       }
 
@@ -344,15 +344,15 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
 
       await tx.plot.update({
         where: { id: input.plotId },
-        data: { lifecycle: "WAITING_FOR_BOOKING_APPROVAL" },
+        data: { status: "WAITING_FOR_BOOKING_APPROVAL" },
       });
       await tx.plotEvent.create({
         data: {
           plotId: input.plotId,
           actorRef: input.actorRef,
           action: "BOOKING_REQUEST_SUBMITTED",
-          fromLifecycle: plot.lifecycle,
-          toLifecycle: "WAITING_FOR_BOOKING_APPROVAL",
+          fromStatus: plot.status,
+          toStatus: "WAITING_FOR_BOOKING_APPROVAL",
           reason: input.remark,
         },
       });
@@ -690,14 +690,14 @@ export async function decideBookingRequest(args: {
         });
         await closeTasksFor(tx, "Hold", booking.holdId, args.actorRef, `Booked as ${bookingNumber}`);
       }
-      await tx.plot.update({ where: { id: booking.plotId }, data: { lifecycle: "BOOKED" } });
+      await tx.plot.update({ where: { id: booking.plotId }, data: { status: "BOOKED" } });
       await tx.plotEvent.create({
         data: {
           plotId: booking.plotId,
           actorRef: args.actorRef,
           action: "BOOKING_APPROVED",
-          fromLifecycle: "WAITING_FOR_BOOKING_APPROVAL",
-          toLifecycle: "BOOKED",
+          fromStatus: "WAITING_FOR_BOOKING_APPROVAL",
+          toStatus: "BOOKED",
           reason: args.note,
         },
       });
@@ -773,14 +773,14 @@ async function restorePlotAfterRelease(
         frozenAt: null,
       },
     });
-    await tx.plot.update({ where: { id: booking.plotId }, data: { lifecycle: "HOLD" } });
+    await tx.plot.update({ where: { id: booking.plotId }, data: { status: "HOLD" } });
     await tx.plotEvent.create({
       data: {
         plotId: booking.plotId,
         actorRef,
         action: "HOLD_REMAINDER_RESTORED",
-        fromLifecycle: "WAITING_FOR_BOOKING_APPROVAL",
-        toLifecycle: "HOLD",
+        fromStatus: "WAITING_FOR_BOOKING_APPROVAL",
+        toStatus: "HOLD",
         reason,
       },
     });
@@ -788,14 +788,14 @@ async function restorePlotAfterRelease(
   }
 
   const next = plotReturnState(booking.plot.restriction, booking.plot.restrictionReason);
-  await tx.plot.update({ where: { id: booking.plotId }, data: { lifecycle: next.lifecycle } });
+  await tx.plot.update({ where: { id: booking.plotId }, data: { status: next.status } });
   await tx.plotEvent.create({
     data: {
       plotId: booking.plotId,
       actorRef,
       action: "BOOKING_REQUEST_RELEASED",
-      fromLifecycle: "WAITING_FOR_BOOKING_APPROVAL",
-      toLifecycle: next.lifecycle,
+      fromStatus: "WAITING_FOR_BOOKING_APPROVAL",
+      toStatus: next.status,
       reason: next.message ? `${reason} — ${next.message}` : reason,
     },
   });
@@ -893,7 +893,7 @@ export async function cancelBooking(args: {
           remark: args.remark ?? null,
           restoreSnapshot: {
             bookingStatus: booking.status,
-            plotLifecycle: booking.plot.lifecycle,
+            plotStatus: booking.plot.status,
           },
           requestedByRef: args.actorRef,
         },
@@ -907,14 +907,14 @@ export async function cancelBooking(args: {
           closeReason: args.reason,
         },
       });
-      await tx.plot.update({ where: { id: booking.plotId }, data: { lifecycle: "REFUND_PENDING" } });
+      await tx.plot.update({ where: { id: booking.plotId }, data: { status: "REFUND_PENDING" } });
       await tx.plotEvent.create({
         data: {
           plotId: booking.plotId,
           actorRef: args.actorRef,
           action: "REFUND_PENDING",
-          fromLifecycle: booking.plot.lifecycle,
-          toLifecycle: "REFUND_PENDING",
+          fromStatus: booking.plot.status,
+          toStatus: "REFUND_PENDING",
           reason: args.reason,
         },
       });

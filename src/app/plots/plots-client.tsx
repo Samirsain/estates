@@ -27,10 +27,10 @@ import { formatIst, formatPercent, formatQuantity, istDay, type StaffRole } from
 import {
   buildPlcSnapshot,
   calculateAreas,
-  displayLifecycle,
+  displayStatus,
   plcDisplayComponents,
-  type PlotLifecycle,
-  type ProjectLifecycle,
+  type PlotStatus,
+  type ProjectStatus,
   type Boundary,
   type PlcComponentRule,
 } from "@/lib/domain/inventory";
@@ -54,7 +54,7 @@ export type PlotRowView = {
   areaSqYd: string;
   areaSqFt: string;
   areaSqM: string;
-  lifecycle: string;
+  status: string;
   /** Most recent HOLD_CREATED reasons on this Plot, newest first. */
   pastHolds: Array<{ at: string; actorRef: string; reason: string | null }>;
   restriction: string;
@@ -101,7 +101,7 @@ export type HoldRequestView = {
   id: string;
   project: string;
   plot: string;
-  plotLifecycle: string;
+  plotStatus: string;
   buyer: string;
   member: string;
   createdAt: string;
@@ -121,7 +121,7 @@ export type ProjectView = {
   name: string;
   city?: string | null;
   location?: string | null;
-  lifecycle: string;
+  status: string;
   /** The configured bands, so the grid derives the same PLC the server will. */
   plcComponents: Array<{ category: string; threshold: string | null; percent: string; remark?: string | null }>;
 };
@@ -131,7 +131,7 @@ function projectFullLabel(p: { name: string; city?: string | null; location?: st
   return loc ? `${p.name} — ${loc}` : p.name;
 }
 
-const LIFECYCLE_LABEL: Record<string, string> = {
+const STATUS_LABEL: Record<string, string> = {
   NOT_AVAILABLE: "Not Available",
   AVAILABLE: "Available",
   HOLD: "Hold",
@@ -670,10 +670,10 @@ function AreaReadout({ preview }: { preview: Preview }) {
   );
 }
 
-function lifecycleVariant(lifecycle: string) {
-  if (lifecycle === "AVAILABLE") return "success" as const;
-  if (lifecycle === "HOLD") return "warning" as const;
-  if (lifecycle === "NOT_AVAILABLE") return "outline" as const;
+function statusVariant(status: string) {
+  if (status === "AVAILABLE") return "success" as const;
+  if (status === "HOLD") return "warning" as const;
+  if (status === "NOT_AVAILABLE") return "outline" as const;
   return "info" as const;
 }
 
@@ -726,7 +726,7 @@ export default function PlotsClient({
   const visible = rows.filter(
     (r) =>
       (projectFilter === "ALL" || r.projectId === projectFilter) &&
-      (statusFilter === "ALL" || r.lifecycle === statusFilter) &&
+      (statusFilter === "ALL" || r.status === statusFilter) &&
       (search.trim() === "" ||
         `${r.plotNumber} ${r.project} ${r.hold?.heldForName ?? ""}`
           .toLowerCase()
@@ -794,7 +794,7 @@ export default function PlotsClient({
             aria-label="Filter by status"
           >
             <option value="ALL">All statuses</option>
-            {Object.entries(LIFECYCLE_LABEL).map(([value, label]) => (
+            {Object.entries(STATUS_LABEL).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
@@ -861,8 +861,8 @@ export default function PlotsClient({
                     </p>
                     <p className="text-muted-foreground">
                       Submitted {formatIst(r.createdAt)} · expires {formatIst(r.expiresAt)}
-                      {r.plotLifecycle !== "AVAILABLE"
-                        ? ` · Plot is now ${LIFECYCLE_LABEL[r.plotLifecycle] ?? r.plotLifecycle}`
+                      {r.plotStatus !== "AVAILABLE"
+                        ? ` · Plot is now ${STATUS_LABEL[r.plotStatus] ?? r.plotStatus}`
                         : ""}
                     </p>
                   </div>
@@ -918,7 +918,7 @@ export default function PlotsClient({
                   // be wanted. `ends` is what makes the item read as the one
                   // that stops something, wherever it lands in the list.
                   const holdActions: Array<{ label: string; ends?: boolean; run: () => void }> =
-                    plot.lifecycle !== "HOLD" || !plot.hold
+                    plot.status !== "HOLD" || !plot.hold
                       ? []
                       : [
                           ...(permissions.extend && !plot.hold.pendingExtension
@@ -960,10 +960,10 @@ export default function PlotsClient({
                   // The row payload carries these as plain strings; the values
                   // are Prisma enums either way, so this is the boundary cast
                   // rather than a widening.
-                  const shown = displayLifecycle(
-                    plot.lifecycle as PlotLifecycle,
-                    projects.find((p) => p.id === plot.projectId)?.lifecycle as
-                      | ProjectLifecycle
+                  const shown = displayStatus(
+                    plot.status as PlotStatus,
+                    projects.find((p) => p.id === plot.projectId)?.status as
+                      | ProjectStatus
                       | undefined
                   );
                   const why = statusReason(plot, shown.because);
@@ -1011,11 +1011,11 @@ export default function PlotsClient({
                     </td>
                     <td className="px-3 py-3">
                       <Badge
-                        variant={lifecycleVariant(shown.lifecycle)}
+                        variant={statusVariant(shown.status)}
                         title={why ?? undefined}
                         className={why ? "cursor-help decoration-dotted underline-offset-4 hover:underline" : undefined}
                       >
-                        {LIFECYCLE_LABEL[shown.lifecycle] ?? shown.lifecycle}
+                        {STATUS_LABEL[shown.status] ?? shown.status}
                       </Badge>
                       {shown.because && (
                         <span className="mt-1 block text-[11px] text-muted-foreground">
@@ -1072,7 +1072,7 @@ export default function PlotsClient({
                           apart inside a narrow box. */}
                       <div className="flex items-center gap-2">
                         <div className="flex items-center gap-2">
-                          {plot.lifecycle === "NOT_AVAILABLE" && permissions.makeAvailable && (
+                          {plot.status === "NOT_AVAILABLE" && permissions.makeAvailable && (
                             <Button className={rowButton} onClick={() => setDialog({ kind: "AVAILABLE", plot })}>
                               Make Available
                             </Button>
@@ -1080,13 +1080,13 @@ export default function PlotsClient({
 
                           {/* One other action, so no menu: a menu wrapping a
                               single item is worse than the item. */}
-                          {plot.lifecycle === "AVAILABLE" && permissions.hold && (
+                          {plot.status === "AVAILABLE" && permissions.hold && (
                             <Button className={rowButton} onClick={() => setDialog({ kind: "HOLD", plot })}>
                               Hold
                             </Button>
                           )}
 
-                          {plot.lifecycle === "HOLD" && plot.hold && holdActions.length > 0 && (
+                          {plot.status === "HOLD" && plot.hold && holdActions.length > 0 && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 {/* Named, not three dots. The Available row
@@ -1119,7 +1119,7 @@ export default function PlotsClient({
                             button with a note about Phase 3, which shipped. */}
                         {/* The one row action that leaves this screen, and the
                             only place in the app with a second accent. */}
-                        {["AVAILABLE", "HOLD"].includes(plot.lifecycle) && permissions.hold && (
+                        {["AVAILABLE", "HOLD"].includes(plot.status) && permissions.hold && (
                           <Button
                             className={`${rowButton} bg-[hsl(var(--accent-book))] text-white hover:bg-[hsl(var(--accent-book))]/90`}
                             asChild
@@ -1411,7 +1411,7 @@ const EMPTY_ROW: GridRow = {
 export type EditablePlot = {
   id: string;
   plotNumber: string;
-  lifecycle: string;
+  status: string;
   widthFt: string;
   lengthFt: string;
   exactAreaSqFt: string;
@@ -1466,7 +1466,7 @@ export function EditPlotDetailsDialog({
   const [reason, setReason] = React.useState("");
 
   const preview = derivePreview(form, boundaries, components);
-  const locked = !["AVAILABLE", "NOT_AVAILABLE"].includes(plot.lifecycle);
+  const locked = !["AVAILABLE", "NOT_AVAILABLE"].includes(plot.status);
 
   return (
     <Modal title={`Edit Plot Details — ${plot.plotNumber}`} onClose={onClose}>
@@ -1476,7 +1476,7 @@ export function EditPlotDetailsDialog({
       <div className="space-y-2">
       {locked && (
         <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
-          This Plot is {LIFECYCLE_LABEL[plot.lifecycle] ?? plot.lifecycle} (PRD §8.7). The
+          This Plot is {STATUS_LABEL[plot.status] ?? plot.status} (PRD §8.7). The
           correction is allowed and recorded, but a Location Charge already frozen against a Hold
           or Booking does not move with it.
         </p>

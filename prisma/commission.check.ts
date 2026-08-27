@@ -83,7 +83,7 @@ async function makePlot(projectId: string, suffix: string) {
       areaSqFt: "1350",
       areaSqYd: "150",
       areaSqM: "125.419",
-      lifecycle: "AVAILABLE",
+      status: "AVAILABLE",
       restriction: "NONE",
     },
   });

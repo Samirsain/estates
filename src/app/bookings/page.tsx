@@ -29,9 +29,9 @@ export default async function BookingsPage({
     // (PRD §11.1). Anything else is already committed.
     db.plot.findMany({
       where: {
-        lifecycle: { in: ["AVAILABLE", "HOLD"] },
+        status: { in: ["AVAILABLE", "HOLD"] },
         restriction: "NONE",
-        project: { lifecycle: { not: "SETUP_NOT_ACTIVE" } },
+        project: { status: { not: "SETUP_NOT_ACTIVE" } },
       },
       include: {
         project: true,
@@ -74,7 +74,7 @@ export default async function BookingsPage({
   const bookablePlots: BookableView[] = bookable.map((p) => ({
     id: p.id,
     label: `${p.project.name} · ${p.plotType.replaceAll("_", " ")} ${p.plotNumber}`,
-    lifecycle: p.lifecycle,
+    status: p.status,
     holdId: p.holds[0]?.id ?? null,
     holdPersonId: p.holds[0]?.personId ?? null,
     holdPersonName: p.holds[0]?.person.fullName ?? null,

@@ -1,4 +1,4 @@
-// Staff lifecycle, emergency disable and the Unassigned Review queue.
+// Staff status, emergency disable and the Unassigned Review queue.
 // PRD §17.2; main-PRD §21.
 //
 // Disabling an account never rewrites history: past actions keep the actor who

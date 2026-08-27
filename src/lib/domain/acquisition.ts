@@ -5,7 +5,7 @@
 
 import { Prisma } from "@prisma/client";
 import type { Check, Numeric } from "./booking.ts";
-import { plotReturnState, type PlotLifecycle, type PlotRestriction } from "./inventory.ts";
+import { plotReturnState, type PlotStatus, type PlotRestriction } from "./inventory.ts";
 
 const D = Prisma.Decimal;
 
@@ -95,7 +95,7 @@ export function likelyDuplicateReasons(
 
 /* --------------------------------------------- approval and cancellation */
 
-export type PlotOutcome = { lifecycle: PlotLifecycle; message: string | null; isResale: boolean };
+export type PlotOutcome = { status: PlotStatus; message: string | null; isResale: boolean };
 
 /**
  * main-PRD §17.6 — on approval the property enters normal inventory as
@@ -112,7 +112,7 @@ export function plotStateAfterAcquisitionApproval(
   const pending = new D(paymentGivenPercent).lt(FULL_PAYMENT_GIVEN);
 
   return {
-    lifecycle: returned.lifecycle,
+    status: returned.status,
     message: returned.message ?? (pending ? PAYMENT_PENDING_MESSAGE : null),
     isResale: true,
   };
@@ -134,14 +134,14 @@ export function cancelAcquisition(hasBuyerProcess: boolean): Check {
 }
 
 export function plotStateAfterAcquisitionCancelled(): PlotOutcome {
-  return { lifecycle: "NOT_AVAILABLE", message: DEAL_CANCELLED_MESSAGE, isResale: true };
+  return { status: "NOT_AVAILABLE", message: DEAL_CANCELLED_MESSAGE, isResale: true };
 }
 
 /* ------------------------------------- Payment Given correction outcomes */
 
 export type GivenCorrectionOutcome = {
-  /** Null means the Plot lifecycle is deliberately left exactly as it is. */
-  plotLifecycle: PlotLifecycle | null;
+  /** Null means the Plot status is deliberately left exactly as it is. */
+  plotStatus: PlotStatus | null;
   processMessage: string | null;
   /** ARCHITECTURE §6.3 — the irreconcilable case gets a management decision. */
   managementActionRequired: boolean;
@@ -177,7 +177,7 @@ export function resolvePaymentGivenCorrection(args: {
 
   if (belowThreshold && args.hasBuyerProcess) {
     return {
-      plotLifecycle: null,
+      plotStatus: null,
       processMessage: "Management Action Required",
       managementActionRequired: true,
       buyingCommissionMilestoneLost: fellBelowFull,
@@ -191,7 +191,7 @@ export function resolvePaymentGivenCorrection(args: {
 
   if (belowThreshold) {
     return {
-      plotLifecycle: "NOT_AVAILABLE",
+      plotStatus: "NOT_AVAILABLE",
       processMessage: `${PAYMENT_PENDING_MESSAGE} — below the 20% approval threshold`,
       managementActionRequired: false,
       buyingCommissionMilestoneLost: fellBelowFull,
@@ -204,7 +204,7 @@ export function resolvePaymentGivenCorrection(args: {
 
   if (fellBelowFull) {
     return {
-      plotLifecycle: null,
+      plotStatus: null,
       processMessage: PAYMENT_PENDING_MESSAGE,
       managementActionRequired: false,
       buyingCommissionMilestoneLost: true,
@@ -217,7 +217,7 @@ export function resolvePaymentGivenCorrection(args: {
 
   const stillPending = next.lt(FULL_PAYMENT_GIVEN);
   return {
-    plotLifecycle: null,
+    plotStatus: null,
     processMessage: stillPending ? PAYMENT_PENDING_MESSAGE : null,
     managementActionRequired: false,
     buyingCommissionMilestoneLost: false,
@@ -276,7 +276,7 @@ export function validateChangePlot(args: {
   toProjectId: string;
   fromPlotId: string;
   toPlotId: string;
-  toPlotLifecycle: PlotLifecycle;
+  toPlotStatus: PlotStatus;
   toPlotRestriction: PlotRestriction;
   /** True when this same Customer already holds the replacement Plot. */
   heldBySameCustomer: boolean;
@@ -293,14 +293,14 @@ export function validateChangePlot(args: {
 
   // The replacement must be free, unless this same Customer is already holding
   // it — in which case its Hold PLC snapshot is the one that carries (PRD §5.3).
-  if (args.heldBySameCustomer && args.toPlotLifecycle === "HOLD") return OK;
+  if (args.heldBySameCustomer && args.toPlotStatus === "HOLD") return OK;
 
   if (args.toPlotRestriction === "NOT_FOR_SALE" || args.toPlotRestriction === "PLEDGE") {
     return fail("The replacement Plot carries an active restriction and cannot be allocated.");
   }
-  if (args.toPlotLifecycle !== "AVAILABLE") {
+  if (args.toPlotStatus !== "AVAILABLE") {
     return fail(
-      `The replacement Plot is ${args.toPlotLifecycle.replaceAll("_", " ").toLowerCase()}, not Available.`
+      `The replacement Plot is ${args.toPlotStatus.replaceAll("_", " ").toLowerCase()}, not Available.`
     );
   }
   return OK;
@@ -315,5 +315,5 @@ export function plotStateAfterChangePlot(
   restrictionReason: string | null
 ): PlotOutcome {
   const returned = plotReturnState(restriction, restrictionReason);
-  return { lifecycle: returned.lifecycle, message: returned.message, isResale: false };
+  return { status: returned.status, message: returned.message, isResale: false };
 }

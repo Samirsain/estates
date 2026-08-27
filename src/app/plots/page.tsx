@@ -90,7 +90,7 @@ export default async function PlotsPage({
       areaSqYd: plot.areaSqYd.toDecimalPlaces(2).toString(),
       areaSqFt: plot.areaSqFt.toDecimalPlaces(2).toString(),
       areaSqM: plot.areaSqM.toDecimalPlaces(2).toString(),
-      lifecycle: plot.lifecycle,
+      status: plot.status,
       pastHolds: plot.events.map((e) => ({
         at: e.at.toISOString(),
         actorRef: e.actorRef,
@@ -150,7 +150,7 @@ export default async function PlotsPage({
     id: r.id,
     project: r.plot.project.name,
     plot: `${r.plot.plotType.replaceAll("_", " ")} ${r.plot.plotNumber}`,
-    plotLifecycle: r.plot.lifecycle,
+    plotStatus: r.plot.status,
     buyer: r.person.fullName,
     member: `${r.member.memberId} · ${r.member.person.fullName}`,
     createdAt: r.createdAt.toISOString(),
@@ -171,7 +171,7 @@ export default async function PlotsPage({
         name: p.name,
         city: p.city,
         location: p.location,
-        lifecycle: p.lifecycle,
+        status: p.status,
         // The grid needs the configured bands themselves, so it can compute the
         // same effective PLC the server will, live, as the row is typed.
         plcComponents: plcRules(p.plcRuleVersions[0]?.components ?? []).map((c) => ({
