@@ -29,13 +29,26 @@ const PLOT_WITH_PLC = {
 } as const;
 
 /**
+ * The one read a PLC freeze needs. Callers that already have to read the Plot
+ * for their own state checks read it through this and hand the row over, so a
+ * Hold or a Booking Request loads the Plot once instead of twice — five round
+ * trips to a database that is a round trip away.
+ */
+export function loadPlotForPlc(tx: Tx, plotId: string) {
+  return tx.plot.findUniqueOrThrow({ where: { id: plotId }, include: PLOT_WITH_PLC });
+}
+
+export type PlotForPlc = Awaited<ReturnType<typeof loadPlotForPlc>>;
+
+/**
  * Freezes the Plot's current effective PLC (PLC spec §6.3–6.4). The snapshot
  * keeps the deduplicated breakdown and, for each charged category, the sides
  * that qualified it — the side evidence §7.1 requires, so a later boundary
  * correction can never change how a frozen record reads.
  */
-export async function freezePlcSnapshot(tx: Tx, plotId: string) {
-  const plot = await tx.plot.findUniqueOrThrow({ where: { id: plotId }, include: PLOT_WITH_PLC });
+export async function freezePlcSnapshot(tx: Tx, plotOrId: string | PlotForPlc) {
+  const plot = typeof plotOrId === "string" ? await loadPlotForPlc(tx, plotOrId) : plotOrId;
+  const plotId = plot.id;
   const version = plot.project.plcRuleVersions[0];
   if (!version) blocked("The Project has no current PLC rule version. Complete Project setup first.");
 

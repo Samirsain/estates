@@ -612,8 +612,17 @@ export default function BookingsClient({
           people={people}
           members={members}
           busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(form) => run(() => submitBookingRequestAction(form, newKey()))}
+          // Arrived from Plot Inventory's Book button: closing the form — or
+          // submitting it — returns there, not to a Bookings list nobody asked
+          // for.
+          onClose={() => (openForPlot ? router.push("/plots") : setDialog(null))}
+          onSubmit={(form) =>
+            run(async () => {
+              const result = await submitBookingRequestAction(form, newKey());
+              if (result.ok && openForPlot) router.push("/plots");
+              return result;
+            })
+          }
         />
       )}
 

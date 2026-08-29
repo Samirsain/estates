@@ -39,7 +39,9 @@ export async function ensureTask(tx: Tx, input: TaskInput) {
   if (existing) return existing;
 
   const taskNo = await nextReference(tx, "TSK", "Task");
-  const task = await tx.task.create({
+  // The CREATED event is written with the task, not after it: one round trip
+  // instead of two, on a path every command that raises a task goes through.
+  return tx.task.create({
     data: {
       taskNo,
       recordKind: input.recordKind,
@@ -55,12 +57,9 @@ export async function ensureTask(tx: Tx, input: TaskInput) {
       latestResult: input.latestResult ?? null,
       recurrence: input.recurrence ?? "NONE",
       origin: input.origin ?? "SYSTEM",
+      events: { create: { actorRef: "SYSTEM", action: "CREATED", toDue: input.dueAt } },
     },
   });
-  await tx.taskEvent.create({
-    data: { taskId: task.id, actorRef: "SYSTEM", action: "CREATED", toDue: task.dueAt },
-  });
-  return task;
 }
 
 /** Completing a task is an event, never a delete. */

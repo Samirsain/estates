@@ -408,10 +408,14 @@ enum EnquiryStatus {
 
 /// Source Person is required for BY_MEMBER and BY_CUSTOMER (DESIGN §8.2).
 enum EnquirySource {
-  DIRECT
+  /// Online, Advertisement or Website — one arrival, three names for it.
+  ONLINE
+  SITE_VISIT
   BY_MEMBER
   BY_CUSTOMER
-  OTHER
+  EXISTING_CUSTOMER
+  /// Direct / Walk-in.
+  DIRECT
 }
 
 /// DESIGN §8.4 — follow-up outcomes.

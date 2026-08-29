@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function EnquiriesPage() {
   const actor = await requireStaff();
 
-  const [enquiries, projects, plots, people, members] = await Promise.all([
+  const [enquiries, projects, plots, people, members, customers, staff] = await Promise.all([
     db.enquiry.findMany({
       include: {
         person: true,
@@ -40,6 +40,19 @@ export default async function EnquiriesPage() {
       where: { status: "ACTIVE" },
       include: { person: true },
       orderBy: { memberId: "asc" },
+    }),
+    // A By Customer Enquiry names the Customer who sourced it (main-PRD §9.2).
+    db.customerProfile.findMany({
+      include: { person: true },
+      orderBy: { customerId: "asc" },
+      take: 300,
+    }),
+    // Assigned CRM (DESIGN §8.2). Only the roles that carry an Enquiry
+    // follow-up task appear, so the picker cannot create an unworkable task.
+    db.staffAccount.findMany({
+      where: { status: "ACTIVE", role: { in: ["CRM", "ADMIN", "MD"] } },
+      include: { person: true },
+      orderBy: { staffAccountId: "asc" },
     }),
   ]);
 
@@ -82,6 +95,12 @@ export default async function EnquiriesPage() {
         mobileMasked: maskMobile(p.primaryMobile),
       }))}
       members={members.map((m) => ({ id: m.id, label: `${m.memberId} · ${m.person.fullName}` }))}
+      customers={customers.map((c) => ({ id: c.id, label: `${c.customerId} · ${c.person.fullName}` }))}
+      staff={staff.map((s) => ({
+        id: s.id,
+        label: `${s.person.fullName} · ${s.role}`,
+        isSelf: s.id === actor.accountId,
+      }))}
       canManage={can(actor.role, "ENQUIRY_MANAGE")}
     />
   );

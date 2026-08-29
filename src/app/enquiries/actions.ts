@@ -16,12 +16,18 @@ function toResult(error: unknown): ActionResult {
 
 export async function createEnquiryAction(
   input: {
+    /** Blank when the caller is new: fullName and mobile carry them instead. */
     personId: string;
+    fullName: string;
+    mobile: string;
+    city: string;
     projectId: string;
     plotId: string;
     source: EnquirySource;
     sourceMemberId: string;
     sourceCustomerId: string;
+    /** DESIGN §8.2 Assigned CRM. Blank keeps the Enquiry with whoever took it. */
+    assignedStaffId: string;
     nextFollowUpIso: string;
     remark: string;
   },
@@ -29,18 +35,35 @@ export async function createEnquiryAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("ENQUIRY_MANAGE");
   try {
+    // The follow-up task goes to the named staff account. Reading its role here
+    // keeps the task's assigneeRole and assigneeStaffId describing one person.
+    const assignedStaffId = input.assignedStaffId || actor.accountId;
+    const assignee =
+      assignedStaffId === actor.accountId
+        ? { role: actor.role, status: "ACTIVE" as const }
+        : await db.staffAccount.findUnique({
+            where: { id: assignedStaffId },
+            select: { role: true, status: true },
+          });
+    if (!assignee || assignee.status !== "ACTIVE") {
+      return { ok: false, error: "That staff account is not active. Pick someone else." };
+    }
+
     const result = await createEnquiry({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
-      personId: input.personId,
+      personId: input.personId || null,
+      newPerson: input.personId
+        ? null
+        : { fullName: input.fullName, mobile: input.mobile, city: input.city },
       projectId: input.projectId,
       plotId: input.plotId || null,
       source: input.source,
       sourceMemberId: input.sourceMemberId || null,
       sourceCustomerId: input.sourceCustomerId || null,
-      assignedStaffId: actor.accountId,
-      assigneeRole: actor.role === "MD" || actor.role === "ADMIN" ? actor.role : "CRM",
+      assignedStaffId,
+      assigneeRole: assignee.role === "MD" || assignee.role === "ADMIN" ? assignee.role : "CRM",
       nextFollowUpAt: new Date(input.nextFollowUpIso),
       remark: input.remark,
     });

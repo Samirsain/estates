@@ -1,6 +1,13 @@
 // Enquiry attribution — PRD.md §6.4, §7; DESIGN.md §8.
 
-export type EnquirySource = "DIRECT" | "BY_MEMBER" | "BY_CUSTOMER" | "OTHER";
+/** main-PRD §9.2 — the six ways an Enquiry arrives. */
+export type EnquirySource =
+  | "ONLINE"
+  | "SITE_VISIT"
+  | "BY_MEMBER"
+  | "BY_CUSTOMER"
+  | "EXISTING_CUSTOMER"
+  | "DIRECT";
 
 export type EnquiryClaim = {
   enquiryId: string;

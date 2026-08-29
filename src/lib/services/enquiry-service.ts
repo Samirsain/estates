@@ -83,7 +83,16 @@ export type CreateEnquiryInput = {
   idempotencyKey: string;
   actorRef: string;
   actorRole: string;
-  personId: string;
+  /** An existing Person, or blank when `newPerson` carries a first-time caller. */
+  personId?: string | null;
+  /**
+   * DESIGN §8.2 — the form asks for a name, a mobile and a city, so an Enquiry
+   * can be taken from someone who is not in the system yet. Resolved inside the
+   * transaction, exactly as a Booking resolves a first-time buyer: a retried
+   * idempotency key replays before this runs twice, and primaryMobile is
+   * deliberately not unique.
+   */
+  newPerson?: { fullName: string; mobile: string; city?: string } | null;
   projectId: string;
   plotId?: string | null;
   source: EnquirySource;
@@ -110,17 +119,23 @@ export async function createEnquiry(input: CreateEnquiryInput) {
       actorRef: input.actorRef,
       actorRole: input.actorRole,
       payload: {
-        personId: input.personId,
+        personId: input.personId ?? null,
+        newPerson: input.newPerson?.mobile ?? null,
         projectId: input.projectId,
         plotId: input.plotId ?? null,
       },
     },
     async (tx) => {
+      if (!input.personId && !input.newPerson) blocked("Select a Person, or enter a name and mobile.");
+      const personId = input.personId
+        ? input.personId
+        : (await linkOrCreatePerson(tx, input.newPerson!)).id;
+
       // PRD §7.1 — one Active Enquiry per Person + Project + Plot, and one
       // Active general Enquiry per Person + Project.
       const duplicate = await tx.enquiry.findFirst({
         where: {
-          personId: input.personId,
+          personId,
           projectId: input.projectId,
           plotId: input.plotId ?? null,
           status: "ACTIVE",
@@ -134,13 +149,13 @@ export async function createEnquiry(input: CreateEnquiryInput) {
       }
 
       const enquiryNo = await nextReference(tx, "ENQ", "Enquiry");
-      const person = await tx.person.findUniqueOrThrow({ where: { id: input.personId } });
+      const person = await tx.person.findUniqueOrThrow({ where: { id: personId } });
       const project = await tx.project.findUniqueOrThrow({ where: { id: input.projectId } });
 
       const enquiry = await tx.enquiry.create({
         data: {
           enquiryNo,
-          personId: input.personId,
+          personId,
           projectId: input.projectId,
           plotId: input.plotId ?? null,
           source: input.source,
@@ -151,7 +166,7 @@ export async function createEnquiry(input: CreateEnquiryInput) {
         },
       });
 
-      await applyIntroducerFreeze(tx, input.personId);
+      await applyIntroducerFreeze(tx, personId);
 
       // Each Active Enquiry carries exactly one Pending follow-up task.
       await ensureTask(tx, {

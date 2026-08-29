@@ -47,7 +47,7 @@ export default async function CustomersPage() {
           submittedAt: true,
           project: { select: { name: true } },
           plot: {
-            select: { plotNumber: true, plotType: true },
+            select: { id: true, plotNumber: true, plotType: true },
           },
         },
       },
@@ -81,6 +81,7 @@ export default async function CustomersPage() {
     project: latest.get(c.personId)?.project.name ?? null,
     plotNumber: latest.get(c.personId)?.plot.plotNumber ?? null,
     plotType: latest.get(c.personId)?.plot.plotType.replaceAll("_", " ") ?? null,
+    plotId: latest.get(c.personId)?.plot.id ?? null,
     otherBookings: Math.max((bookingCount.get(c.personId) ?? 0) - 1, 0),
     // The Member ID is what the introduction is filed under; the name is on
     // the Customer's own page.

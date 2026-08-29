@@ -121,6 +121,28 @@ async function main() {
     assigneeRole: "CRM",
     nextFollowUpAt: day(1),
   });
+  // DESIGN §8.2 — New Enquiry may name someone who is not in the system yet,
+  // so the form's name/mobile/city reach createEnquiry instead of a personId.
+  const walkIn = await createEnquiry({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    newPerson: { fullName: `${TAG} Walk-in`, mobile: "9500000009", city: "Indore" },
+    projectId: otherProject.id,
+    source: "DIRECT",
+    assignedStaffId: (await db.staffAccount.findFirstOrThrow({ where: { role: "CRM" } })).id,
+    assigneeRole: "CRM",
+    nextFollowUpAt: day(1),
+  });
+  const walkInRow = await db.enquiry.findUniqueOrThrow({
+    where: { id: walkIn.enquiryId },
+    include: { person: true },
+  });
+  assert.equal(walkInRow.person.fullName, `${TAG} Walk-in`);
+  assert.equal(walkInRow.person.primaryMobile, "9500000009");
+  assert.equal(walkInRow.person.city, "Indore");
+  assert.equal(walkInRow.plotId, null);
+
   const bookingA = await bookAndApprove(plotA.id, buyer.id, enquiry.enquiryId);
   await confirmPaymentReceived({
     idempotencyKey: key(),

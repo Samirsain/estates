@@ -138,7 +138,7 @@ const STATUS_LABEL: Record<string, string> = {
   NOT_AVAILABLE: "Not Available",
   AVAILABLE: "Available",
   HOLD: "Hold",
-  WAITING_FOR_BOOKING_APPROVAL: "Waiting for Booking Approval",
+  WAITING_FOR_BOOKING_APPROVAL: "Awaiting Approval",
   BOOKED: "Booked",
   PAYMENT_COMPLETED: "Payment Completed",
   REFUND_PENDING: "Refund Pending",
@@ -214,10 +214,11 @@ const rowActions = "flex w-28 items-center gap-1.5";
 const rowButton = "h-7 flex-1 basis-0 px-1.5 text-[11px]";
 
 // Status is a column, so its pills are one width — a ragged edge that changes
-// shape with the length of the word inside it is not a column. "Waiting for
-// Booking Approval" is the approved wording and it is three times the length of
-// "Hold", so the long one wraps inside the same pill instead of stretching it
-// and dragging the whole column out with it.
+// shape with the length of the word inside it is not a column. "Awaiting
+// Approval" is four times the length of "Hold", so the long one wraps inside
+// the same pill instead of stretching it and dragging the whole column out
+// with it. The full wording — Waiting for Booking Approval — is on the Plot's
+// own page, where there is room for it.
 const statusBadge = "w-[7.5rem] justify-center whitespace-normal text-center leading-tight";
 
 const inputClass =
@@ -931,7 +932,7 @@ export default function PlotsClient({
                   <th className="px-3 py-1 text-center">Status</th>
                   <th className="px-3 py-1 text-center">Location</th>
                   <th className="w-[5rem] px-3 py-1 text-center">PLC</th>
-                  <th className="px-3 py-1 text-center">Next action</th>
+                  <th className="px-3 py-1 text-center">Action</th>
                 </tr>
               </thead>
               <tbody>

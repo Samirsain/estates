@@ -34,6 +34,13 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
+      # Transaction mode, port 6543, ?pgbouncer=true&connection_limit=5.
+      #
+      # Session mode (5432) is about three times faster on this database —
+      # ~100ms per query against ~350ms — because it holds its connections and
+      # keeps prepared statements. It pins one pooler connection per client
+      # though, and the pool is 15 in total, so raise Pool size in the Supabase
+      # dashboard before pointing this at 5432.
       - key: DATABASE_URL
         sync: false
       # Must be the session-mode pooler on port 5432:

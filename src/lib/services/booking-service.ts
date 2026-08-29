@@ -18,7 +18,7 @@ import {
 import { checkOpenPositions } from "@/lib/domain/holds";
 import { canAllocate, plotReturnState, type PlotRestriction } from "@/lib/domain/inventory";
 import { blocked, lockBooking, lockPlot, nextReference, runCommand, type Tx } from "./command";
-import { freezePlcSnapshot } from "./plc-service";
+import { freezePlcSnapshot, loadPlotForPlc, type PlotForPlc } from "./plc-service";
 import { countOpenPositions } from "./hold-service";
 import {
   generateForBooking,
@@ -158,15 +158,12 @@ async function validateSoldBy(tx: Tx, soldByType: SoldByType, soldByPersonId: st
   }
 }
 
-/** All plcSnapshotFor still needs is which Plot to freeze. */
-type PlotWithPlc = { id: string };
-
 /** Reuses the Hold's frozen snapshot, or freezes the current PLC version. */
-async function plcSnapshotFor(tx: Tx, plot: PlotWithPlc, holdSnapshotId: string | null) {
+async function plcSnapshotFor(tx: Tx, plot: PlotForPlc, holdSnapshotId: string | null) {
   // PLC spec §6.4 — a Booking Request from an active Hold carries that Hold's
   // frozen snapshot forward; one raised from an Available Plot freezes now.
   if (holdSnapshotId) return tx.plcSnapshot.findUniqueOrThrow({ where: { id: holdSnapshotId } });
-  return freezePlcSnapshot(tx, plot.id);
+  return freezePlcSnapshot(tx, plot);
 }
 
 async function currentParties(tx: Tx, bookingId: string) {
@@ -264,14 +261,10 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
     },
     async (tx) => {
       await lockPlot(tx, input.plotId);
-      const plot = await tx.plot.findUniqueOrThrow({
-        where: { id: input.plotId },
-        include: {
-          project: {
-            include: { plcRuleVersions: { where: { status: "PUBLISHED" }, include: { components: true }, take: 1 } },
-          },
-        },
-      });
+      // Read once, in the shape the PLC freeze also needs: the state checks
+      // below and plcSnapshotFor share this row instead of reading the Plot,
+      // its Project, the published rule version and its components twice.
+      const plot = await loadPlotForPlc(tx, input.plotId);
 
       const parties = await resolveParties(tx, input.parties);
       const primary = parties.find((p) => p.role === "PRIMARY")!;
@@ -332,6 +325,16 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
               actorRef: input.actorRef,
             })),
           },
+          // Written with the Booking rather than after it: nothing here is
+          // known any later, and every separate write is another round trip.
+          events: {
+            create: {
+              actorRef: input.actorRef,
+              action: "BOOKING_REQUEST_SUBMITTED",
+              toStatus: "REQUEST_PENDING",
+              detail: { requestNo, version: 1 },
+            },
+          },
         },
       });
 
@@ -378,25 +381,17 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
 
       await tx.plot.update({
         where: { id: input.plotId },
-        data: { status: "WAITING_FOR_BOOKING_APPROVAL" },
-      });
-      await tx.plotEvent.create({
         data: {
-          plotId: input.plotId,
-          actorRef: input.actorRef,
-          action: "BOOKING_REQUEST_SUBMITTED",
-          fromStatus: plot.status,
-          toStatus: "WAITING_FOR_BOOKING_APPROVAL",
-          reason: input.remark,
-        },
-      });
-      await tx.bookingEvent.create({
-        data: {
-          bookingId: booking.id,
-          actorRef: input.actorRef,
-          action: "BOOKING_REQUEST_SUBMITTED",
-          toStatus: "REQUEST_PENDING",
-          detail: { requestNo, version: 1 },
+          status: "WAITING_FOR_BOOKING_APPROVAL",
+          events: {
+            create: {
+              actorRef: input.actorRef,
+              action: "BOOKING_REQUEST_SUBMITTED",
+              fromStatus: plot.status,
+              toStatus: "WAITING_FOR_BOOKING_APPROVAL",
+              reason: input.remark,
+            },
+          },
         },
       });
 

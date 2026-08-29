@@ -13,19 +13,34 @@ import {
 } from "@/lib/domain/holds";
 import { canAllocate, plotReturnState } from "@/lib/domain/inventory";
 import { blocked, lockPlot, runCommand, type Tx } from "./command";
-import { freezePlcSnapshot } from "./plc-service";
+import { freezePlcSnapshot, loadPlotForPlc } from "./plc-service";
 import { closeTasksFor } from "./task-service";
 
 /** PRD §8.2 — counts Active Holds, Waiting for Booking Approval and Pending requests. */
 export async function countOpenPositions(tx: Tx, personId: string) {
-  const [activeHolds, pendingHoldRequests, waitingBookingApproval] = await Promise.all([
-    tx.hold.count({ where: { personId, status: "ACTIVE" } }),
-    tx.holdRequest.count({ where: { personId, status: "PENDING" } }),
-    // Counted from the Booking itself, not through the Hold: a Booking Request
-    // freezes its Hold, and a request from an Available Plot has none at all.
-    tx.booking.count({ where: { primaryPersonId: personId, status: "REQUEST_PENDING" } }),
-  ]);
-  return { activeHolds, waitingBookingApproval, pendingHoldRequests };
+  // Three counts, one round trip. They were three Prisma counts under a
+  // Promise.all, which reads better but is three trips: a transaction holds one
+  // connection, so nothing there runs in parallel. This sits on the Hold and
+  // Booking Request paths, where every trip is felt.
+  //
+  // The Booking side counts from the Booking itself, not through the Hold: a
+  // Booking Request freezes its Hold, and one raised from an Available Plot has
+  // no Hold at all.
+  const [row] = await tx.$queryRaw<
+    Array<{ activeHolds: number; pendingHoldRequests: number; waitingBookingApproval: number }>
+  >`
+    SELECT (SELECT COUNT(*) FROM "Hold"
+             WHERE "personId" = ${personId} AND status = 'ACTIVE')::int AS "activeHolds",
+           (SELECT COUNT(*) FROM "HoldRequest"
+             WHERE "personId" = ${personId} AND status = 'PENDING')::int AS "pendingHoldRequests",
+           (SELECT COUNT(*) FROM "Booking"
+             WHERE "primaryPersonId" = ${personId} AND status = 'REQUEST_PENDING')::int
+             AS "waitingBookingApproval"`;
+  return {
+    activeHolds: row.activeHolds,
+    waitingBookingApproval: row.waitingBookingApproval,
+    pendingHoldRequests: row.pendingHoldRequests,
+  };
 }
 
 
@@ -56,10 +71,8 @@ async function placeHold(
   if (!input.personId) blocked("A Hold must identify the actual Customer/Person.");
   await lockPlot(tx, input.plotId);
 
-  const plot = await tx.plot.findUniqueOrThrow({
-    where: { id: input.plotId },
-    include: { project: { select: { status: true } } },
-  });
+  // Read once, in the shape the PLC freeze also needs — see loadPlotForPlc.
+  const plot = await loadPlotForPlc(tx, input.plotId);
   const allocatable = canAllocate(plot.status, plot.restriction, plot.project.status);
   if (!allocatable.ok) blocked(allocatable.reason);
 
@@ -67,7 +80,7 @@ async function placeHold(
   const room = checkOpenPositions(positions);
   if (!room.ok) blocked(room.reason);
 
-  const snapshot = await freezePlcSnapshot(tx, input.plotId);
+  const snapshot = await freezePlcSnapshot(tx, plot);
   const startsAt = new Date();
 
   const hold = await tx.hold.create({
@@ -83,15 +96,19 @@ async function placeHold(
     },
   });
 
-  await tx.plot.update({ where: { id: input.plotId }, data: { status: "HOLD" } });
-  await tx.plotEvent.create({
+  await tx.plot.update({
+    where: { id: input.plotId },
     data: {
-      plotId: input.plotId,
-      actorRef: input.actorRef,
-      action: "HOLD_CREATED",
-      fromStatus: plot.status,
-      toStatus: "HOLD",
-      reason: input.remark,
+      status: "HOLD",
+      events: {
+        create: {
+          actorRef: input.actorRef,
+          action: "HOLD_CREATED",
+          fromStatus: plot.status,
+          toStatus: "HOLD",
+          reason: input.remark,
+        },
+      },
     },
   });
 

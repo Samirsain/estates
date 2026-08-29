@@ -55,6 +55,16 @@ const OUTCOMES = [
   "BOOKING_DISCUSSION",
 ] as const;
 
+/** main-PRD §9.2 — the six sources, in the words the spec uses. */
+const SOURCE_LABEL: Record<string, string> = {
+  ONLINE: "Online / Advertisement / Website",
+  SITE_VISIT: "Site Visit",
+  BY_MEMBER: "By Member",
+  BY_CUSTOMER: "By Customer",
+  EXISTING_CUSTOMER: "Existing Customer",
+  DIRECT: "Direct / Walk-in",
+};
+
 const inputClass =
   "h-9 w-full rounded-lg border border-input bg-card px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
@@ -84,6 +94,8 @@ export default function EnquiriesClient({
   plots,
   people,
   members,
+  customers,
+  staff,
   canManage,
 }: {
   role: StaffRole;
@@ -94,6 +106,8 @@ export default function EnquiriesClient({
   plots: Array<{ id: string; projectId: string; label: string }>;
   people: Array<{ id: string; fullName: string; mobileMasked: string }>;
   members: Array<{ id: string; label: string }>;
+  customers: Array<{ id: string; label: string }>;
+  staff: Array<{ id: string; label: string; isSelf: boolean }>;
   canManage: boolean;
 }) {
   const router = useRouter();
@@ -205,6 +219,7 @@ export default function EnquiriesClient({
             <table className="w-full min-w-[60rem] border-collapse text-xs">
               <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                 <tr className="border-b border-border">
+                  <th className="w-[6.5rem] px-3 py-1.5">Enquiry ID</th>
                   <th className="px-3 py-1.5">Name</th>
                   <th className="w-[6.5rem] px-3 py-1.5">Mobile</th>
                   <th className="px-3 py-1.5">Project</th>
@@ -221,6 +236,7 @@ export default function EnquiriesClient({
                     key={e.id}
                     className="border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1"
                   >
+                    <td className="whitespace-nowrap font-mono font-semibold">{e.enquiryNo}</td>
                     <td>
                       <Cell
                         value={<PersonLink personId={e.personId} name={e.name} />}
@@ -247,7 +263,7 @@ export default function EnquiriesClient({
                     </td>
                     <td>
                       <Cell
-                        value={humanise(e.source)}
+                        value={SOURCE_LABEL[e.source] ?? humanise(e.source)}
                         under={
                           e.sourceMember && (
                             <PersonLink
@@ -310,6 +326,8 @@ export default function EnquiriesClient({
           plots={plots}
           people={people}
           members={members}
+          customers={customers}
+          staff={staff}
           busy={busy}
           onClose={() => setCreating(false)}
           onSubmit={async (input) => {
@@ -367,11 +385,19 @@ export default function EnquiriesClient({
 
 
 
+/**
+ * New Enquiry — DESIGN §8.2 fields, laid out the way the Booking form is laid
+ * out: who it is, then what they are interested in, then how it arrived, then
+ * the follow-up. The Person block is the Booking form's Customer block, so a
+ * first-time caller is captured here instead of having to exist already.
+ */
 function CreateEnquiryDialog({
   projects,
   plots,
   people,
   members,
+  customers,
+  staff,
   busy,
   onClose,
   onSubmit,
@@ -380,109 +406,222 @@ function CreateEnquiryDialog({
   plots: Array<{ id: string; projectId: string; label: string }>;
   people: Array<{ id: string; fullName: string; mobileMasked: string }>;
   members: Array<{ id: string; label: string }>;
+  customers: Array<{ id: string; label: string }>;
+  staff: Array<{ id: string; label: string; isSelf: boolean }>;
   busy: boolean;
   onClose: () => void;
   onSubmit: (input: Parameters<typeof createEnquiryAction>[0]) => void;
 }) {
-  const [projectId, setProjectId] = React.useState(projects[0]?.id ?? "");
+  // "NEW" is a marker for this form only, exactly as the Booking form uses it:
+  // a blank personId with a name and mobile beside it is a first-time caller.
+  const [personId, setPersonId] = React.useState("");
+  const [projectId, setProjectId] = React.useState("");
+  const [plotId, setPlotId] = React.useState("");
   const [source, setSource] = React.useState("DIRECT");
+  const [assignedStaffId, setAssignedStaffId] = React.useState(
+    staff.find((s) => s.isSelf)?.id ?? ""
+  );
   const projectPlots = plots.filter((p) => p.projectId === projectId);
 
   return (
     <Modal title="New Enquiry" onClose={onClose}>
-      <p className="-mt-1 text-xs text-muted-foreground">
-        A Plot-wise Enquiry stays a separate record. Only one Active Enquiry may exist for the same
-        Person, Project and Plot.
-      </p>
       <form
         className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
           onSubmit({
-            personId: String(f.get("personId")),
+            personId: personId === "NEW" ? "" : personId,
+            fullName: String(f.get("fullName") ?? ""),
+            mobile: String(f.get("mobile") ?? ""),
+            city: String(f.get("city") ?? ""),
             projectId,
-            plotId: String(f.get("plotId") ?? ""),
+            plotId,
             source: source as "DIRECT",
-            sourceMemberId: String(f.get("sourceMemberId") ?? ""),
-            sourceCustomerId: "",
+            sourceMemberId: source === "BY_MEMBER" ? String(f.get("sourceMemberId") ?? "") : "",
+            sourceCustomerId: source === "BY_CUSTOMER" ? String(f.get("sourceCustomerId") ?? "") : "",
+            assignedStaffId,
             nextFollowUpIso: istInstant(String(f.get("date")), String(f.get("time"))),
             remark: String(f.get("remark") ?? ""),
           });
         }}
       >
-        <Field label="Person">
-          <select name="personId" required defaultValue="" className={inputClass}>
-            <option value="" disabled>
-              Select the Person
-            </option>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.fullName} · {p.mobileMasked}
+        <section className="space-y-2.5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Person
+          </h3>
+          <div className="space-y-2 rounded-xl border border-border/60 p-3">
+            <select
+              className={`${inputClass} w-full`}
+              required
+              value={personId}
+              onChange={(e) => setPersonId(e.target.value)}
+            >
+              <option value="" disabled>
+                Select the Person
               </option>
-            ))}
-          </select>
-        </Field>
+              <option value="NEW">+ New Person — enter details</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.fullName} · {p.mobileMasked}
+                </option>
+              ))}
+            </select>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Interested Project">
-            <select className={inputClass} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Interested Plot (optional)">
-            <select name="plotId" defaultValue="" className={inputClass}>
-              <option value="">General Enquiry</option>
-              {projectPlots.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Enquiry Source">
-            <select className={inputClass} value={source} onChange={(e) => setSource(e.target.value)}>
-              {["DIRECT", "BY_MEMBER", "BY_CUSTOMER", "OTHER"].map((s) => (
-                <option key={s} value={s}>
-                  {humanise(s)}
-                </option>
-              ))}
-            </select>
-          </Field>
-          {source === "BY_MEMBER" && (
-            <Field label="Source Member — required">
-              <select name="sourceMemberId" required defaultValue="" className={inputClass}>
+            {personId === "NEW" && (
+              <div className="grid gap-2 sm:grid-cols-3">
+                <Input className="h-9 text-xs" name="fullName" placeholder="Full name" required />
+                <Input
+                  className="h-9 text-xs"
+                  name="mobile"
+                  placeholder="Mobile"
+                  inputMode="numeric"
+                  required
+                />
+                <Input className="h-9 text-xs" name="city" placeholder="City — optional" />
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="space-y-2.5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Interest
+          </h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Interested Project">
+              <select
+                className={inputClass}
+                required
+                value={projectId}
+                onChange={(e) => {
+                  setProjectId(e.target.value);
+                  setPlotId("");
+                }}
+              >
                 <option value="" disabled>
-                  Select the Member
+                  Select a Project
                 </option>
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
                   </option>
                 ))}
               </select>
             </Field>
-          )}
-          <Field label="Next follow-up date">
-            <input
-              name="date"
-              type="date"
-              required
-              defaultValue={addIstDays(istDay(new Date()), 1)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Time">
-            <input name="time" type="time" required defaultValue="11:00" className={inputClass} />
-          </Field>
-        </div>
+            <Field label="Interested Plot — optional">
+              <select
+                className={inputClass}
+                disabled={!projectId}
+                value={plotId}
+                onChange={(e) => setPlotId(e.target.value)}
+              >
+                <option value="">
+                  {projectId ? "General Enquiry — no Plot" : "Select a Project first"}
+                </option>
+                {projectPlots.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <p className="rounded-xl border border-border/60 bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+            {plotId
+              ? "A Plot-wise Enquiry is its own record and never blocks the Plot — a Hold does that. Only one Active Enquiry may exist for the same Person, Project and Plot."
+              : "A General Enquiry covers the Project. Only one Active General Enquiry may exist per Person and Project."}
+          </p>
+        </section>
 
-        <Field label="Remark (optional)">
-          <Input name="remark" />
+        <section className="space-y-2.5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Source
+          </h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Enquiry Source">
+              <select
+                className={inputClass}
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+              >
+                {Object.entries(SOURCE_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {source === "BY_MEMBER" && (
+              <Field label="Source Member — required">
+                <select name="sourceMemberId" required defaultValue="" className={inputClass}>
+                  <option value="" disabled>
+                    Select the Member
+                  </option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            {source === "BY_CUSTOMER" && (
+              <Field label="Source Customer — required">
+                <select name="sourceCustomerId" required defaultValue="" className={inputClass}>
+                  <option value="" disabled>
+                    Select the Customer
+                  </option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Enquiry Source records how the enquiry arrived. It does not decide commission — the
+            Sold By selection on the Booking does.
+          </p>
+        </section>
+
+        <section className="space-y-2.5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Follow-up
+          </h3>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Assigned to">
+              <select
+                className={inputClass}
+                value={assignedStaffId}
+                onChange={(e) => setAssignedStaffId(e.target.value)}
+              >
+                {staff.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.isSelf ? `${s.label} — you` : s.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Next follow-up date">
+              <input
+                name="date"
+                type="date"
+                required
+                defaultValue={addIstDays(istDay(new Date()), 1)}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Time">
+              <input name="time" type="time" required defaultValue="11:00" className={inputClass} />
+            </Field>
+          </div>
+        </section>
+
+        <Field label="Remark — optional">
+          <Input name="remark" className="h-9 text-xs" />
         </Field>
 
         <div className="flex justify-end gap-2 pt-2">

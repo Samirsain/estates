@@ -37,6 +37,7 @@ export type CustomerRowView = {
   project: string | null;
   plotNumber: string | null;
   plotType: string | null;
+  plotId: string | null;
   otherBookings: number;
   introducedBy: string | null;
   introducedByMemberId: string | null;
@@ -197,7 +198,18 @@ export default function CustomersClient({
                   </td>
                   <td>
                     <Cell
-                      value={row.plotNumber ? <span className="font-mono">{row.plotNumber}</span> : "—"}
+                      value={
+                        row.plotNumber && row.plotId ? (
+                          <Link
+                            href={`/plots/${row.plotId}`}
+                            className="font-mono text-primary hover:underline"
+                          >
+                            {row.plotNumber}
+                          </Link>
+                        ) : (
+                          (row.plotNumber ?? "—")
+                        )
+                      }
                       under={row.plotType}
                     />
                   </td>
