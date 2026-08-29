@@ -144,7 +144,7 @@ export function AppShell({
                     } ${
                       active
                         ? "bg-primary/15 font-semibold text-primary"
-                        : item.href || ("children" in item && item.children)
+                        : item.href
                           ? "text-muted-foreground hover:bg-accent"
                           : "cursor-default text-foreground/70"
                     }`}
