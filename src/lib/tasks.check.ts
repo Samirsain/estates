@@ -10,6 +10,7 @@ import {
   summarise,
   type Task,
   type TaskView,
+  recordReference,
 } from "./tasks.ts";
 
 const task = (over: Partial<Task>): Task => ({
@@ -101,5 +102,25 @@ assert.equal(
 const s = summarise(tasks, now);
 assert.equal(s.pending + s.completed, tasks.length);
 assert.equal(s.overdue + s.urgent <= s.pending, true);
+
+/* ------------------------------------------- which id is worth showing */
+
+// A reference someone typed is a reference.
+assert.equal(recordReference({ id: "CUS-3390", name: "Vikram Shah" }), "CUS-3390");
+assert.equal(recordReference({ id: "MEM-0217", name: "Kavita Joshi" }), "MEM-0217");
+
+// A row id is not: the RERA reminder puts one here, and the card used to print
+// it beside a link icon as though it were something to look up.
+assert.equal(
+  recordReference({
+    id: "bdedd579-75a3-4085-8e8b-d811cf666424",
+    name: "MEM-000218 · SAMIR",
+  }),
+  null
+);
+
+// Neither is the placeholder an unlinked manual task carries.
+assert.equal(recordReference({ id: "UNLINKED:STF-0001", name: "Not linked" }), null);
+assert.equal(recordReference({ id: "", name: "Not linked" }), null);
 
 console.log("tasks.check.ts OK");

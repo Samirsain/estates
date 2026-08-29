@@ -4,9 +4,7 @@
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
-import { can, canViewField } from "@/lib/security/permissions";
-import { maskAadhaar, maskMobile } from "@/lib/security/identity";
-import { experienceSince } from "@/lib/domain/commission";
+import { maskMobile } from "@/lib/security/identity";
 import CustomersClient, { type CustomerRowView } from "./customers-client";
 
 export const dynamic = "force-dynamic";
@@ -38,15 +36,37 @@ export default async function CustomersPage() {
       kind: "COMMERCIAL",
       booking: { bookingNumber: { not: null } },
     },
-    select: { personId: true, booking: { select: { bookingDate: true } } },
+    select: {
+      personId: true,
+      booking: {
+        select: {
+          bookingDate: true,
+          // Two Bookings can share a date, so the later submission breaks the
+          // tie and the Project column names one deal, not whichever row the
+          // database happened to return first.
+          submittedAt: true,
+          project: { select: { name: true } },
+          plot: {
+            select: { plotNumber: true, plotType: true },
+          },
+        },
+      },
+    },
   });
 
-  const firstBooking = new Map<string, Date>();
+  // What they actually bought, newest first, and how much else there is.
+  /** Their most recent deal — a Customer who bought in two Projects shows that one. */
+  const latest = new Map<string, (typeof parties)[number]["booking"]>();
+  const bookingCount = new Map<string, number>();
   for (const party of parties) {
-    const current = firstBooking.get(party.personId);
-    if (!current || party.booking.bookingDate < current) {
-      firstBooking.set(party.personId, party.booking.bookingDate);
-    }
+    const newest = latest.get(party.personId);
+    const isNewer =
+      !newest ||
+      party.booking.bookingDate > newest.bookingDate ||
+      (party.booking.bookingDate.getTime() === newest.bookingDate.getTime() &&
+        party.booking.submittedAt > newest.submittedAt);
+    if (isNewer) latest.set(party.personId, party.booking);
+    bookingCount.set(party.personId, (bookingCount.get(party.personId) ?? 0) + 1);
   }
 
   const rows: CustomerRowView[] = customers.map((c) => ({
@@ -58,16 +78,15 @@ export default async function CustomersPage() {
     mobileMasked: maskMobile(c.person.primaryMobile),
     city: c.person.city ?? "—",
     customerType: c.customerType,
-    aadhaarEnding: maskAadhaar(c.person.aadhaarLastFour),
-    aadhaarStatus: c.person.aadhaarStatus,
-    // PRD §14.2 — the visible status is Available or Not Available, not the value.
-    panStatus: c.person.panStatus === "NOT_AVAILABLE" ? "PAN Not Available" : "PAN Available",
-    introducedBy: c.originalIntroducedByMember
-      ? `${c.originalIntroducedByMember.memberId} · ${c.originalIntroducedByMember.person.fullName}`
-      : null,
+    project: latest.get(c.personId)?.project.name ?? null,
+    plotNumber: latest.get(c.personId)?.plot.plotNumber ?? null,
+    plotType: latest.get(c.personId)?.plot.plotType.replaceAll("_", " ") ?? null,
+    otherBookings: Math.max((bookingCount.get(c.personId) ?? 0) - 1, 0),
+    // The Member ID is what the introduction is filed under; the name is on
+    // the Customer's own page.
+    introducedBy: c.originalIntroducedByMember?.memberId ?? null,
+    introducedByMemberId: c.originalIntroducedByMemberId,
     loyaltySlotsConsumed: c.loyaltySlotsConsumed,
-    // Derived on every read, never stored (see experienceSince).
-    experience: experienceSince(firstBooking.get(c.personId) ?? null)?.label ?? null,
   }));
 
   return (
@@ -76,10 +95,6 @@ export default async function CustomersPage() {
       actorName={actor.name}
       staffAccountId={actor.staffAccountId}
       rows={rows}
-      permissions={{
-        viewFullAadhaar: canViewField(actor.role, "AADHAAR_FULL"),
-        manageEnquiry: can(actor.role, "ENQUIRY_MANAGE"),
-      }}
     />
   );
 }

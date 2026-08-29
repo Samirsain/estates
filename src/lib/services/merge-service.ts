@@ -112,7 +112,7 @@ export async function decidePersonMerge(args: {
   approve: boolean;
   note: string;
 }) {
-  if (args.actorRole !== "MD") blocked("Only the MD may decide a Person Merge (PRD §22).");
+  if (args.actorRole !== "MD") blocked("Only the MD may decide a Person Merge.");
   if (!args.note.trim()) blocked("A compulsory remark is required on the merge decision.");
 
   return runCommand<MergeDecisionResult>(

@@ -18,6 +18,7 @@ const badgeVariants = cva(
         success: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
         warning: "border-amber-500/30 bg-amber-500/10 text-amber-700",
         info: "border-primary/30 bg-primary/10 text-primary",
+        purple: "border-violet-500/30 bg-violet-500/10 text-violet-700",
       },
     },
     defaultVariants: {
@@ -27,7 +28,15 @@ const badgeVariants = cva(
 );
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
-  variant?: "default" | "secondary" | "destructive" | "outline" | "success" | "warning" | "info";
+  variant?:
+    | "default"
+    | "secondary"
+    | "destructive"
+    | "outline"
+    | "success"
+    | "warning"
+    | "info"
+    | "purple";
 }
 
 function Badge({ className, variant = "default", ...props }: BadgeProps) {

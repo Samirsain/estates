@@ -85,11 +85,106 @@ export type Boundary = {
  *
  * Defined by what closes a side rather than by listing what opens one, so a new
  * boundary kind is open unless it is deliberately made to close.
+ *
+ * Other Land closes a side. It is land the way the Plot beside it is land — not
+ * a road, not a park — so it can no more make a corner than a neighbour can.
  */
-const CLOSED_KINDS: BoundaryKind[] = ["PLOT", "COMMERCIAL", "INFORMAL_SECTOR"];
+const CLOSED_KINDS: BoundaryKind[] = ["PLOT", "COMMERCIAL", "INFORMAL_SECTOR", "OTHER"];
 
-function isOpenSide(kind: BoundaryKind): boolean {
+export function isOpenSide(kind: BoundaryKind): boolean {
   return !CLOSED_KINDS.includes(kind);
+}
+
+/* ------------------------------------------------- what a Plot still allows */
+
+/**
+ * A Plot a Booking has taken hold of.
+ *
+ * From the moment a Booking Request is submitted, the Plot's dimensions and
+ * sides are frozen into that request's snapshot and into the PLC frozen beside
+ * it. Correcting them on the Plot afterwards does not correct the Booking — it
+ * only makes the two disagree, quietly, with the Booking being the one that was
+ * approved. So they stop being editable here and a correction goes through the
+ * Booking instead.
+ */
+const COMMITTED_STATUSES: PlotStatus[] = [
+  "WAITING_FOR_BOOKING_APPROVAL",
+  "BOOKED",
+  "PAYMENT_COMPLETED",
+  "REFUND_PENDING",
+  "DELIVERED",
+];
+
+export function plotIsCommitted(status: PlotStatus): boolean {
+  return COMMITTED_STATUSES.includes(status);
+}
+
+/** Plot details are the Plot's own facts until a Booking freezes them. */
+export function canEditPlotDetails(status: PlotStatus): boolean {
+  return !plotIsCommitted(status);
+}
+
+/**
+ * A restriction decides whether a Plot may be sold, so it applies to
+ * unallocated inventory only — a Hold or a Booking has already answered that
+ * question and has to be released first.
+ */
+export function canSetRestriction(status: PlotStatus): boolean {
+  return status === "AVAILABLE" || status === "NOT_AVAILABLE";
+}
+
+/* ------------------------------------------- what the charge is for, named */
+
+/**
+ * A Plot's position, written the one way the business writes it.
+ *
+ * Four sides, each open or closed, is sixteen states; the fifteen with at least
+ * one open side each have a name, and a green side doubles them to thirty. That
+ * is the whole vocabulary — nothing else can come out of here, which is the
+ * point: "Location Charge for" is read across a list, and a phrase assembled
+ * from parts reads differently on every row.
+ *
+ * Returned as lines because a green-area Plot is written on two.
+ */
+const THREE_SIDE_OPEN: Record<BoundarySide, string> = {
+  WEST: "N-E-S THREE SIDE OPEN",
+  EAST: "N-W-S THREE SIDE OPEN",
+  NORTH: "E-S-W THREE SIDE OPEN",
+  SOUTH: "E-N-W THREE SIDE OPEN",
+};
+
+function openSidesLabel(open: ReadonlySet<BoundarySide>): string {
+  switch (open.size) {
+    case 0:
+      return "NO OPEN SIDE";
+    case 1:
+      return `${[...open][0]} FACING`;
+    case 2: {
+      // Two opposite sides are a through Plot; two adjacent ones are a corner,
+      // and a corner is always named North or South first.
+      if (open.has("NORTH") && open.has("SOUTH")) return "NORTH-SOUTH TWO SIDE OPEN";
+      if (open.has("EAST") && open.has("WEST")) return "EAST-WEST TWO SIDE OPEN";
+      return `${open.has("NORTH") ? "NORTH" : "SOUTH"}-${open.has("EAST") ? "EAST" : "WEST"} CORNER`;
+    }
+    case 3: {
+      const closed = (["NORTH", "EAST", "SOUTH", "WEST"] as const).find((s) => !open.has(s));
+      return THREE_SIDE_OPEN[closed!];
+    }
+    default:
+      return "N-E-S-W FOUR SIDE OPEN";
+  }
+}
+
+/**
+ * Park and Playground are two categories in the PLC catalogue, so they are two
+ * lines here — a Plot facing a playground is not sold as park facing.
+ */
+export function locationChargeLabel(boundaries: readonly Boundary[]): string[] {
+  const open = new Set(boundaries.filter((b) => isOpenSide(b.kind)).map((b) => b.side));
+  const lines = [openSidesLabel(open)];
+  if (boundaries.some((b) => b.kind === "PARK")) lines.push("PARK FACING");
+  if (boundaries.some((b) => b.kind === "PLAYGROUND")) lines.push("PLAYGROUND FACING");
+  return lines;
 }
 
 /* ------------------------------------------------------------------- PLC */

@@ -18,9 +18,9 @@ import { exportReportAction, runReportAction, type ReportResult, type ReportRow 
 
 const REPORTS: Array<{ name: ReportName; label: string; note: string }> = [
   { name: "BOOKINGS", label: "Bookings", note: "Every Booking with its Plot, Customer and payment progress." },
-  { name: "PAYMENTS_RECEIVED", label: "Payment Received", note: "Sale-side receipts. Its own dataset (PRD §1.2)." },
+  { name: "PAYMENTS_RECEIVED", label: "Payment Received", note: "Sale-side receipts. Its own dataset." },
   { name: "PAYMENTS_GIVEN", label: "Payment Given", note: "Money we pay out on Buyback and Resale. Never merged with the sale side." },
-  { name: "COMMISSION", label: "Commission", note: "Current records only — superseded rows are excluded (PRD §21)." },
+  { name: "COMMISSION", label: "Commission", note: "Current records only — superseded rows are excluded." },
   { name: "INVENTORY", label: "Plot Inventory", note: "Every Plot with status, restriction and resale flag." },
   { name: "COMPLETIONS", label: "Allotment / Registry", note: "Delivered Bookings and the route that completed them." },
 ];
@@ -78,7 +78,7 @@ export default function ReportsClient({
           <h1 className="text-xl font-semibold">Reports</h1>
           <p className="text-xs text-muted-foreground">
             Live from current records. Exports are masked and logged with the filters, user and row
-            count (PRD §21).
+            count.
           </p>
         </div>
 

@@ -594,7 +594,7 @@ function MergeTab({
 
       <p className="text-xs text-muted-foreground">
         Two Active Members cannot be merged — deactivate one first. Only the MD decides. Loyalty is
-        rebuilt from unique qualifying events, and old IDs stay searchable (PRD §22).
+        rebuilt from unique qualifying events, and old IDs stay searchable.
       </p>
 
       {merges.length === 0 ? (

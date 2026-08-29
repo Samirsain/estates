@@ -23,6 +23,7 @@ import {
   type BookingPartyInput,
 } from "@/lib/services/booking-service";
 import { db } from "@/lib/db";
+import { locationChargeLabel } from "@/lib/domain/inventory";
 import { decideCancellation } from "@/lib/services/cancellation-service";
 import { plcSnapshotHistory } from "@/lib/services/project-service";
 import { decideChangePlot, submitChangePlot } from "@/lib/services/change-plot-service";
@@ -52,15 +53,35 @@ function refresh() {
   revalidatePath("/dashboard");
 }
 
-export type PartyInput = { personId: string; role: "PRIMARY" | "ADDITIONAL"; sharePercent: string };
+export type PartyInput = {
+  /** Empty when the buyer is being typed in for the first time. */
+  personId: string;
+  role: "PRIMARY" | "ADDITIONAL";
+  sharePercent: string;
+  fullName?: string;
+  mobile?: string;
+  city?: string;
+};
 export type ScheduleRowInput = { seq: number; percent: string; dueDate: string };
 
-/** A blank share means "sole buyer, treated as 100%" (PRD §12.1). */
+/**
+ * A blank share means "sole buyer, treated as 100%".
+ *
+ * A buyer with no personId was typed into the form — a first-time Customer.
+ * The name/mobile/city ride along unresolved; the service finds-or-creates the
+ * Person itself, inside the same transaction and idempotency guard that
+ * creates the Booking. Resolving it here instead, against the bare `db`
+ * client, was the bug: a retried submission could miss the find and create the
+ * buyer twice before the Booking's own guard ever saw the request.
+ */
 function toParties(rows: PartyInput[]): BookingPartyInput[] {
   return rows.map((r) => ({
     personId: r.personId,
     role: r.role,
     sharePercent: r.sharePercent.trim() === "" ? null : r.sharePercent.trim(),
+    fullName: r.fullName,
+    mobile: r.mobile,
+    city: r.city,
   }));
 }
 
@@ -643,11 +664,23 @@ export async function loadBookingDetail(bookingId: string) {
     plc: booking.plcSnapshot
       ? {
           totalPercent: booking.plcSnapshot.totalPercent.toFixed(3),
+          // buildPlcSnapshot writes category/label/percent/evidence. The cast
+          // used to claim a `code` field that has never existed, so the panel
+          // keyed its list on undefined and printed nothing beside each label.
           components: booking.plcSnapshot.components as Array<{
-            code: string;
+            category: string;
             label: string;
             percent: string;
+            evidence: string;
           }>,
+          /**
+           * What the charge is for, in the vocabulary the Plot list uses.
+           * Read from the Plot's sides as they stand, not from the snapshot: a
+           * snapshot freezes percentages, never the shape of the Plot. Correct
+           * a side later and the percentages here stay frozen while this line
+           * follows the correction — which is the honest pair of facts.
+           */
+          position: locationChargeLabel(booking.plot.boundaries),
           version: booking.plcSnapshot.ruleVersion.version,
           frozenAt: booking.plcSnapshot.frozenAt.toISOString(),
           isCurrent: booking.plcSnapshot.isCurrent,
@@ -724,6 +757,7 @@ export async function loadBookingDetail(bookingId: string) {
       id: c.id,
       type: c.type,
       beneficiary: c.beneficiaryPerson.fullName,
+      beneficiaryPersonId: c.beneficiaryPersonId,
       beneficiaryRole: c.beneficiaryRole,
       percent: c.percent.toFixed(2),
       milestonePercent: c.milestonePercent.toFixed(0),

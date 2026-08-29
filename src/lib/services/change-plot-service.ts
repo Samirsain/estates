@@ -65,7 +65,7 @@ export async function submitChangePlot(args: {
         include: { plot: { include: { project: true } } },
       });
       if (!["BOOKED", "PAYMENT_COMPLETED"].includes(booking.status)) {
-        blocked("Change Plot applies to an approved Booking that is not yet Delivered (PRD §5.1).");
+        blocked("Change Plot applies to an approved Booking that is not yet Delivered.");
       }
       const free = assertProcessFree(booking.activeProcess, "Change Plot");
       if (!free.ok) blocked(free.reason);
@@ -219,7 +219,7 @@ export async function decideChangePlot(args: {
       });
       if (!request) blocked("There is no Change Plot waiting for the Accounts decision.");
       if (request.requestedByRef === args.actorRef) {
-        blocked("A Change Plot must be decided by a different staff account (PRD §3.3).");
+        blocked("A Change Plot must be decided by a different staff account.");
       }
 
       await lockPlot(tx, request.fromPlotId);
@@ -311,8 +311,8 @@ export async function decideChangePlot(args: {
       /* ------------------------------------------------------ approval */
       if (!args.appliedPercent) {
         blocked(
-          "Accounts must record the Payment Received percentage applicable to the replacement Plot " +
-            "(PRD §5.3). No rupee conversion is performed."
+          "Accounts must record the Payment Received percentage applicable to the replacement " +
+            "Plot. No rupee conversion is performed."
         );
       }
       if (!args.schedule || args.schedule.length === 0) {

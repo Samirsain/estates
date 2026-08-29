@@ -104,6 +104,17 @@ No Customer portal exists.
 
 `Revise` is an action, not a final status.
 
+#### Booking
+
+- Under Review
+- Request Rejected
+- Request Cancelled
+- Booked
+- Payment Completed
+- Refund Pending
+- Cancelled
+- Delivered
+
 #### Plot
 
 - Not Available

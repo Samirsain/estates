@@ -12,6 +12,7 @@ export function Modal({
   onClose,
   children,
   wide,
+  centerTitle,
 }: {
   title: string;
   description?: string;
@@ -19,6 +20,8 @@ export function Modal({
   children: React.ReactNode;
   /** Wide is for grids and side-by-side comparisons. */
   wide?: boolean;
+  /** A form that reads top to bottom centres its heading over the column. */
+  centerTitle?: boolean;
 }) {
   const ref = React.useRef<HTMLDialogElement>(null);
   React.useEffect(() => ref.current?.showModal(), []);
@@ -28,13 +31,13 @@ export function Modal({
       ref={ref}
       onClose={onClose}
       className={`${
-        wide ? "w-[min(72rem,96vw)]" : "w-[min(36rem,92vw)]"
+        wide ? "w-[min(72rem,96vw)]" : "w-[min(40rem,94vw)]"
       } rounded-[20px] border border-border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/40 backdrop:backdrop-blur-xs`}
     >
-      <div className="space-y-4 p-6">
-        <div>
-          <h2 className="text-lg font-semibold">{title}</h2>
-          {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
+      <div className="space-y-3.5 p-5">
+        <div className={centerTitle ? "text-center" : undefined}>
+          <h2 className="text-base font-semibold">{title}</h2>
+          {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
         </div>
         {children}
       </div>
@@ -53,4 +56,4 @@ export function Field({ label, children }: { label: string; children: React.Reac
 
 /** Shared input styling for the plain selects and number fields in forms. */
 export const inputClass =
-  "h-10 w-full rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+  "h-9 w-full rounded-lg border border-input bg-card px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";

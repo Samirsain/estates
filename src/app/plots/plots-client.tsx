@@ -6,9 +6,10 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, ChevronDown, Clock, Plus, X, Trash2, Pencil, Lock, Pause, Calendar, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Plus, X, Trash2, Pencil, Lock, Pause, Calendar, XCircle } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
+import { PersonLink } from "@/components/person-link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatIst, formatPercent, formatQuantity, istDay, type StaffRole } from "@/lib/tasks";
+import { formatIst, formatIstDate, formatPercent, formatQuantity, istDay, type StaffRole } from "@/lib/tasks";
 // The grid computes Area and Location Charge live from the same domain rules
 // the server runs on save, which is the only way the two cannot disagree. It
 // costs decimal.js in the client bundle (~30 kB). Recomputing in float here
@@ -28,6 +29,7 @@ import {
   buildPlcSnapshot,
   calculateAreas,
   displayStatus,
+  locationChargeLabel,
   plcDisplayComponents,
   type PlotStatus,
   type ProjectStatus,
@@ -73,11 +75,10 @@ export type PlotRowView = {
     components: Array<{ label: string; evidence: string }>;
   } | null;
   plcIssue: string | null;
-  /** "N road facing · 2 open sides", derived and shortened on the server. */
-  facing: string;
   hold: {
     id: string;
     heldForName: string;
+    heldForPersonId: string;
     expiresAt: string;
     extensionCount: number;
     pendingExtension: boolean;
@@ -103,7 +104,9 @@ export type HoldRequestView = {
   plot: string;
   plotStatus: string;
   buyer: string;
+  buyerPersonId: string;
   member: string;
+  memberPersonId: string;
   createdAt: string;
   expiresAt: string;
   queuePosition: number;
@@ -197,7 +200,25 @@ const EXTENSION_STATUS_LABEL: Record<string, string> = {
   REJECTED: "rejected",
 };
 
-const rowButton = "h-9 px-4 text-sm";
+// One width for every row action, so two buttons on a row are the same
+// button twice over rather than one wider than the other. Longer labels
+// still grow past it.
+/*
+ * The action column is one fixed box on every row, and whatever is in it
+ * divides that box evenly. One button fills the whole width; two take half
+ * each with the gap between them. So a row with Cancel and Book ends exactly
+ * where a row with Make Available ends, and the column has one edge instead of
+ * one per row. Width lives here and nowhere else.
+ */
+const rowActions = "flex w-28 items-center gap-1.5";
+const rowButton = "h-7 flex-1 basis-0 px-1.5 text-[11px]";
+
+// Status is a column, so its pills are one width — a ragged edge that changes
+// shape with the length of the word inside it is not a column. "Waiting for
+// Booking Approval" is the approved wording and it is three times the length of
+// "Hold", so the long one wraps inside the same pill instead of stretching it
+// and dragging the whole column out with it.
+const statusBadge = "w-[7.5rem] justify-center whitespace-normal text-center leading-tight";
 
 const inputClass =
   "h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
@@ -312,9 +333,10 @@ function derivePreview(
 ): Preview {
   const blank: Preview = { areaSqFt: "—", areaSqYd: "—", areaSqM: "—", plc: "—", issue: null };
 
-  // Two decimals is the display precision (PRD §23.1); the Decimal rounds, so
-  // no area is rounded by a binary float on its way to the screen.
-  const show = (d: { toDecimalPlaces(n: number): { toString(): string } }) =>
+  // Square feet is the number that gets saved, so the preview shows all of it.
+  // The conversions under it are rounded to two — they are read, not entered.
+  const show = (d: { toString(): string }) => formatQuantity(d.toString());
+  const conv = (d: { toDecimalPlaces(n: number): { toString(): string } }) =>
     formatQuantity(d.toDecimalPlaces(2).toString());
 
   let areas: ReturnType<typeof calculateAreas> | null = null;
@@ -335,7 +357,7 @@ function derivePreview(
   }
 
   const measured = areas
-    ? { areaSqFt: show(areas.areaSqFt), areaSqYd: show(areas.areaSqYd), areaSqM: show(areas.areaSqM) }
+    ? { areaSqFt: show(areas.areaSqFt), areaSqYd: conv(areas.areaSqYd), areaSqM: conv(areas.areaSqM) }
     : { areaSqFt: "—", areaSqYd: "—", areaSqM: "—" };
 
   if (components.length === 0) {
@@ -672,6 +694,7 @@ function AreaReadout({ preview }: { preview: Preview }) {
 
 function statusVariant(status: string) {
   if (status === "AVAILABLE") return "success" as const;
+  if (status === "PAYMENT_COMPLETED") return "purple" as const;
   if (status === "HOLD") return "warning" as const;
   if (status === "NOT_AVAILABLE") return "outline" as const;
   return "info" as const;
@@ -759,10 +782,6 @@ export default function PlotsClient({
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Plot Inventory</h1>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {visible.length} of {rows.length} Plots · Plot Location Charge is a percentage only ·
-              times in Asia/Kolkata
-            </p>
           </div>
           {permissions.setup && (
             <Button size="sm" variant="gradient" asChild>
@@ -838,7 +857,7 @@ export default function PlotsClient({
           <Card className="space-y-3 p-4">
             <div>
               <h2 className="text-sm font-semibold">Member Hold Requests — {holdRequests.length} Pending</h2>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs font-medium text-foreground">
                 Each request names the actual buyer. A request expires on the working-day cut-off and
                 cannot be approved after that.
               </p>
@@ -856,10 +875,11 @@ export default function PlotsClient({
                         Queue #{r.queuePosition}
                       </Badge>
                     </p>
-                    <p className="text-muted-foreground">
-                      For {r.buyer} · requested by {r.member}
+                    <p className="font-medium text-foreground">
+                      For <PersonLink personId={r.buyerPersonId} name={r.buyer} /> · requested by{" "}
+                      <PersonLink personId={r.memberPersonId} name={r.member} as="member" />
                     </p>
-                    <p className="text-muted-foreground">
+                    <p className="font-medium text-foreground">
                       Submitted {formatIst(r.createdAt)} · expires {formatIst(r.expiresAt)}
                       {r.plotStatus !== "AVAILABLE"
                         ? ` · Plot is now ${STATUS_LABEL[r.plotStatus] ?? r.plotStatus}`
@@ -892,7 +912,7 @@ export default function PlotsClient({
         {visible.length === 0 ? (
           <Card className="p-10 text-center">
             <p className="text-sm font-semibold">No Plots match these filters.</p>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-xs font-medium text-foreground">
               {rows.length === 0
                 ? permissions.setup
                   ? "Use Prepare Inventory to add Plots to a Project."
@@ -903,13 +923,15 @@ export default function PlotsClient({
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[62rem] border-separate border-spacing-y-2 text-sm">
-              <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+              <thead className="text-left text-[11px] font-semibold uppercase tracking-wide text-foreground">
                 <tr>
                   <th className="px-3 py-1">Plot</th>
-                  <th className="px-3 py-1 text-right">Area</th>
-                  <th className="px-3 py-1">Status</th>
-                  <th className="px-3 py-1">Location Charge for</th>
-                  <th className="px-3 py-1">Next action</th>
+                  <th className="px-3 py-1 text-center">Size</th>
+                  <th className="px-3 py-1 text-center">Area</th>
+                  <th className="px-3 py-1 text-center">Status</th>
+                  <th className="px-3 py-1 text-center">Location</th>
+                  <th className="w-[5rem] px-3 py-1 text-center">PLC</th>
+                  <th className="px-3 py-1 text-center">Next action</th>
                 </tr>
               </thead>
               <tbody>
@@ -968,71 +990,103 @@ export default function PlotsClient({
                   );
                   const why = statusReason(plot, shown.because);
                   return (
-                  // card-surface puts its border on the <tr>, and a table in
-                  // border-separate does not paint one there — the outline has
-                  // been written and invisible all along, which is why the rows
-                  // ran together. Cells can paint it, so they do.
+                  // A 1px outline and no fill: the row is a card in outline
+                  // only. A table in border-separate paints no border on the
+                  // <tr>, so the cells paint it — border-y across the row, and
+                  // the two end cells close it off.
                   <tr
                     key={plot.id}
-                    className="card-surface rounded-xl align-top [&>td]:border-y [&>td]:border-border"
+                    // One vertical alignment for the whole row. Status, PLC and
+                    // the action were centred while Plot, Size, Area and
+                    // Location hung from the top, so every column started on a
+                    // different line.
+                    className="rounded-xl align-middle [&>td]:border-y [&>td]:border-border"
                   >
                     {/* The Plot is the subject; the Project and type are what
                         it belongs to, so they read under it rather than as a
                         column repeating one name down the whole list. */}
-                    <td className="rounded-l-xl border-l px-3 py-2">
+                    <td className="rounded-l-xl border-l border-border px-3 py-2">
                       <Link
                         href={`/plots/${plot.id}`}
                         className="font-mono font-semibold text-primary hover:underline"
                       >
                         {plot.plotNumber}
                       </Link>
-                      <span className="block text-[11px] text-muted-foreground">
-                        {plot.project} · {PLOT_TYPE_LABEL[plot.plotType] ?? plot.plotType}
+                      <span className="block text-[11px] font-medium text-foreground">
+                        {plot.project}
+                        {/* The Project names the Plot; its type only classifies
+                            it, and one word repeated down the whole column does
+                            not need the same weight. */}
+                        <span className="text-muted-foreground">
+                          {" · "}
+                          {PLOT_TYPE_LABEL[plot.plotType] ?? plot.plotType}
+                        </span>
                       </span>
+                    </td>
+                    {/* The sides the Plot is measured by. An irregular Plot has
+                        none — it carries an exact area instead, which the next
+                        column already shows. */}
+                    <td className="px-3 py-2 text-center tabular-nums">
+                      {plot.widthFt && plot.lengthFt ? (
+                        <span className="font-semibold text-foreground">
+                          {formatQuantity(plot.widthFt)} × {formatQuantity(plot.lengthFt)}
+                          <span className="ml-1 text-[11px] font-medium text-foreground">
+                            ft
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-medium text-foreground">Irregular</span>
+                      )}
                     </td>
                     {/* Area is what a Plot is bought by, so it carries weight.
                         Square metres are dropped: nobody quotes a plot in them
                         here, and the Plot's own page still has all three. */}
-                    <td className="px-3 py-2 text-right tabular-nums">
+                    <td className="px-3 py-2 text-center tabular-nums">
                       {/* Both figures are quoted, so both are read at the same
                           size. Only the unit steps back. */}
                       <span className="block font-semibold text-foreground">
-                        {formatQuantity(plot.areaSqYd)}
-                        <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-                          sq yd
-                        </span>
-                      </span>
-                      <span className="block font-semibold text-foreground">
                         {formatQuantity(plot.areaSqFt)}
-                        <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                        <span className="ml-1 text-[11px] font-medium text-foreground">
                           sq ft
                         </span>
                       </span>
+                      <span className="block font-semibold text-foreground">
+                        {formatQuantity(plot.areaSqYd)}
+                        <span className="ml-1 text-[11px] font-medium text-foreground">
+                          sq yd
+                        </span>
+                      </span>
                     </td>
-                    <td className="px-3 py-3">
-                      <Badge
-                        variant={statusVariant(shown.status)}
-                        title={why ?? undefined}
-                        className={why ? "cursor-help decoration-dotted underline-offset-4 hover:underline" : undefined}
-                      >
-                        {STATUS_LABEL[shown.status] ?? shown.status}
-                      </Badge>
+                    <td className="px-3 py-2 text-center">
+                      {/* The status and the resale tag are two pills on one
+                          line, not a pill, a sentence and then another pill
+                          hanging off its side. */}
+                      <div className="flex flex-wrap items-center justify-center gap-1">
+                        <Badge
+                          variant={statusVariant(shown.status)}
+                          title={why ?? undefined}
+                          className={`${statusBadge} ${
+                            why ? "cursor-help decoration-dotted underline-offset-4 hover:underline" : ""
+                          }`}
+                        >
+                          {STATUS_LABEL[shown.status] ?? shown.status}
+                        </Badge>
+                        {plot.isResale && (
+                          <Badge variant="outline" className={statusBadge}>
+                            RESALE
+                          </Badge>
+                        )}
+                      </div>
                       {shown.because && (
-                        <span className="mt-1 block text-[11px] text-muted-foreground">
+                        <span className="mt-1 block text-[11px] font-medium text-foreground">
                           {shown.because}
                         </span>
                       )}
-                      {plot.isResale && (
-                        <Badge variant="outline" className="ml-1">
-                          RESALE
-                        </Badge>
-                      )}
                       {plot.hold && (
-                        <span className="mt-1 block text-[11px] text-muted-foreground">
-                          <Clock className="mr-1 inline h-3 w-3" />
+                        <span className="mt-1 block text-[11px] font-medium text-foreground">
                           {plot.hold.frozen
                             ? "Hold timer frozen — Booking Request under review"
-                            : `Expires ${formatIst(plot.hold.expiresAt)}`}
+                            : `Expires ${formatIstDate(plot.hold.expiresAt)}`}
                         </span>
                       )}
                     </td>
@@ -1044,34 +1098,32 @@ export default function PlotsClient({
 
                         plcIssue stays: that is not a detail, it is the reason
                         there is no charge at all. */}
-                    <td className="px-3 py-2 text-xs">
+                    <td className="px-3 py-2 text-center text-xs">
                       {plot.plc ? (
-                        <>
-                          <span className="block text-foreground">
-                            {plot.plc.components.length === 0
-                              ? "No component applies"
-                              : plot.plc.components.map((c) => c.label).join(" · ")}
+                        // One of the thirty names a position can have, not a
+                        // phrase assembled per row: the column is read down.
+                        // Every line is a name from the same catalogue — PARK
+                        // FACING is not a footnote to NORTH-WEST CORNER, so it
+                        // is not set smaller than it.
+                        locationChargeLabel(plot.boundaries as Boundary[]).map((line) => (
+                          <span key={line} className="block font-semibold text-foreground">
+                            {line}
                           </span>
-                          <span className="block text-[11px] text-muted-foreground">
-                            {plot.facing}
-                          </span>
-                        </>
+                        ))
                       ) : (
                         <span className="text-[11px] text-amber-800">{plot.plcIssue}</span>
                       )}
                     </td>
-                    <td className="w-px whitespace-nowrap rounded-r-xl border-r px-3 py-2">
+                    <td className="px-3 py-2 text-center text-sm font-semibold tabular-nums">
+                      {plot.plc ? `${Number(plot.plc.totalPercent).toFixed(2)}%` : "—"}
+                    </td>
+                    <td className="w-px whitespace-nowrap rounded-r-xl border-r border-border py-2 pl-3 pr-2">
                       {/* At most two: the thing to do to this Plot now — or a
                           menu, once there is more than one — and then Book.
                           Both solid: the row offers two things and neither is
                           the lesser one. What ends something still reads as such
                           — Cancel Hold is red inside the menu. */}
-                      {/* One row, no justify-between. That was pinning Book to
-                          the far edge back when this column stretched; now the
-                          column is content-width, so it only pushed two buttons
-                          apart inside a narrow box. */}
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-2">
+                      <div className={rowActions}>
                           {plot.status === "NOT_AVAILABLE" && permissions.makeAvailable && (
                             <Button className={rowButton} onClick={() => setDialog({ kind: "AVAILABLE", plot })}>
                               Make Available
@@ -1093,10 +1145,7 @@ export default function PlotsClient({
                                     shows what it can do; a bare ··· made the
                                     held row the one place you had to open
                                     something to find out. */}
-                                <Button className={rowButton}>
-                                  Manage Hold
-                                  <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
-                                </Button>
+                                <Button className={rowButton}>Cancel</Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="start">
                                 {holdActions.map((action) => (
@@ -1111,7 +1160,6 @@ export default function PlotsClient({
                               </DropdownMenuContent>
                             </DropdownMenu>
                           )}
-                        </div>
 
                         {/* A Booking may start from an Available Plot or from a
                             Hold — submitBookingRequest takes holdId as optional
@@ -1476,7 +1524,7 @@ export function EditPlotDetailsDialog({
       <div className="space-y-2">
       {locked && (
         <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
-          This Plot is {STATUS_LABEL[plot.status] ?? plot.status} (PRD §8.7). The
+          This Plot is {STATUS_LABEL[plot.status] ?? plot.status}. The
           correction is allowed and recorded, but a Location Charge already frozen against a Hold
           or Booking does not move with it.
         </p>
@@ -1925,7 +1973,7 @@ export function PrepareInventoryForm({
 
       </div>
 
-      <p className="text-[10px] text-muted-foreground text-right">Prepared {istDay(new Date())} (IST).</p>
+      <p className="text-[10px] text-muted-foreground text-right">Prepared {istDay(new Date())}.</p>
     </div>
   );
 }

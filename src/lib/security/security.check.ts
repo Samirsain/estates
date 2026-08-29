@@ -143,7 +143,11 @@ assert.ok(!can("PC", "PAYMENT_RECEIVED_CONFIRM"), "PC has no financial approval"
 assert.ok(!can("MIS", "TASK_COMPLETE"), "MIS is read-only besides manual tasks");
 assert.ok(can("MIS", "TASK_CREATE"));
 assert.ok(!can("MEMBER", "BOOKING_REQUEST_SUBMIT"), "Members submit Hold Requests, not Bookings");
-assert.ok(!can("ADMIN", "BOOKING_DECIDE"), "Booking decisions belong to Accounts");
+// MD and Admin hold everything, so a new Action is theirs the day it is added.
+for (const action of ALL_ACTIONS) {
+  assert.ok(can("MD", action), `MD holds ${action}`);
+  assert.ok(can("ADMIN", action), `Admin holds ${action}`);
+}
 assert.ok(can("CRM", "HOLD_EXTEND_FIRST") && !can("CRM", "HOLD_EXTEND_FURTHER"));
 assert.ok(can("ADMIN", "HOLD_EXTEND_FURTHER"), "further extension needs Admin");
 assert.ok(can("PC", "PLOT_SETUP", ["PLOT_SETUP"]));

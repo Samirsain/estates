@@ -78,9 +78,11 @@ export default async function AcquisitionsPage() {
           : `${a.propertyName ?? "—"} · ${a.propertyNumber ?? "—"}`,
         location: a.location,
         seller: a.sellerPerson.fullName,
+        sellerPersonId: a.sellerPersonId,
         arrangedBy: a.arrangedByPerson
           ? a.arrangedByPerson.fullName
           : "3% Club",
+        arrangedByPersonId: a.arrangedByPersonId ?? null,
         arrangedByType: a.arrangedByType,
         sourceBooking: a.sourceBooking
           ? `${a.sourceBooking.bookingNumber ?? a.sourceBooking.requestNo} · ${a.sourceBooking.project.name} ${a.sourceBooking.plot.plotNumber}`
@@ -109,6 +111,7 @@ export default async function AcquisitionsPage() {
         commission: a.commissions[0]
           ? {
               beneficiary: a.commissions[0].beneficiaryPerson.fullName,
+              beneficiaryPersonId: a.commissions[0].beneficiaryPersonId,
               percent: a.commissions[0].percent.toFixed(2),
               eligibility: a.commissions[0].eligibility,
               payment: a.commissions[0].payment,

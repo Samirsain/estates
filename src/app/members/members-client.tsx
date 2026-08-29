@@ -4,15 +4,22 @@
 // Actions are hidden by permission for clarity; the server re-checks every one.
 
 import React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Eye, Plus, Share2, Copy } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
-import { formatIst, istDay, type StaffRole } from "@/lib/tasks";
+import { formatIst, istDay, type StaffRole, formatIstDate } from "@/lib/tasks";
 import {
   activateMemberAction,
   createAndActivateMemberAction,
@@ -39,12 +46,12 @@ export type MemberRowView = {
   memberId: string;
   personId: string;
   name: string;
-  mobileMasked: string;
+  mobile: string;
   city: string;
   status: string;
   activationDate: string | null;
   experience: string | null;
-  invitedBy: string | null;
+  invitedBy: { id: string; memberId: string; name: string } | null;
   invitePosition: number | null;
   inviteRatePercent: string | null;
   reraStatus: string;
@@ -244,17 +251,20 @@ export default function MembersClient({
           </Card>
         )}
 
-        <Card className="overflow-x-auto p-2">
-          <table className="w-full min-w-[58rem] border-separate border-spacing-y-1 text-sm">
+        {/* Same table as Plots, Customers and Enquiries: a rule between rows,
+            no block of colour behind each one, and every column wide enough for
+            what it holds so nothing wraps to a third line. */}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[62rem] border-collapse text-xs">
             <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2">Member</th>
-                <th className="px-3 py-2">Mobile · City</th>
-                <th className="px-3 py-2">Invited By</th>
-                <th className="px-3 py-2">Position</th>
-                <th className="px-3 py-2">RERA</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Actions</th>
+              <tr className="border-b border-border">
+                <th className="px-3 py-1.5">Member</th>
+                <th className="w-[8rem] px-3 py-1.5">Mobile · City</th>
+                <th className="w-[11rem] px-3 py-1.5">Invited by</th>
+                <th className="w-[9rem] px-3 py-1.5">Position</th>
+                <th className="w-[10rem] px-3 py-1.5">RERA</th>
+                <th className="w-[8rem] px-3 py-1.5">Status</th>
+                <th className="w-[6.5rem] px-3 py-1.5 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -267,30 +277,43 @@ export default function MembersClient({
               )}
               {visible.map((row) => (
                 <React.Fragment key={row.id}>
-                  <tr className="bg-secondary align-top">
-                    <td className="rounded-l-xl px-3 py-3">
+                  <tr className="border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1">
+                    <td>
                       <button
                         type="button"
-                        className="inline-flex items-center gap-1.5 font-bold text-primary hover:underline group"
+                        className="group inline-flex items-center gap-1.5 font-mono font-bold text-primary hover:underline"
                         onClick={() => router.push(`/members/${row.id}`)}
                         aria-label={`View details for ${row.memberId}`}
                       >
-                        <Eye className="h-3.5 w-3.5 text-primary/70 group-hover:text-primary transition-colors" />
                         <span>{row.memberId}</span>
                       </button>
-                      <span className="block text-[11px] text-muted-foreground">{row.name}</span>
-                      {row.experience && (
-                        <span className="block text-[11px] text-muted-foreground">
-                          {row.experience} as a Member
-                        </span>
+                      <span className="block text-[11px] text-muted-foreground">
+                        <Link href={`/members/${row.id}`} className="hover:underline">
+                          {row.name}
+                        </Link>
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap font-mono">
+                      {row.mobile}
+                      <span className="block font-sans text-[11px] text-muted-foreground">
+                        {row.city}
+                      </span>
+                    </td>
+                    <td>
+                      {row.invitedBy ? (
+                        <Link href={`/members/${row.invitedBy.id}`} className="group">
+                          <span className="block font-mono font-semibold text-primary group-hover:underline">
+                            {row.invitedBy.memberId}
+                          </span>
+                          <span className="block text-[11px] text-muted-foreground">
+                            {row.invitedBy.name}
+                          </span>
+                        </Link>
+                      ) : (
+                        "—"
                       )}
                     </td>
-                    <td className="px-3 py-3 text-xs">
-                      {row.mobileMasked}
-                      <span className="block text-[11px] text-muted-foreground">{row.city}</span>
-                    </td>
-                    <td className="px-3 py-3 text-xs">{row.invitedBy ?? "—"}</td>
-                    <td className="px-3 py-3 text-xs tabular-nums">
+                    <td className="tabular-nums">
                       {row.invitePosition
                         ? `${row.invitePosition} · ${row.inviteRatePercent}%`
                         : "Not assigned"}
@@ -298,30 +321,29 @@ export default function MembersClient({
                         {row.invitedCount} invited · {row.introducedCount} introduced
                       </span>
                     </td>
-                    <td className="px-3 py-3 text-xs">
+                    <td>
                       <Badge
                         variant={
                           row.reraStatus === "REGISTERED" || row.reraStatus === "NOT_APPLICABLE"
                             ? "success"
                             : "destructive"
                         }
+                        className="whitespace-nowrap"
                       >
                         {RERA_LABEL[row.reraStatus] ?? row.reraStatus}
                       </Badge>
                       {row.reraExpiryDate && (
-                        <span className="mt-1 block text-[11px] text-muted-foreground">
-                          Expires {formatIst(row.reraExpiryDate)}
+                        <span className="block text-[11px] text-muted-foreground">
+                          Expires {formatIstDate(row.reraExpiryDate)}
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-3">
+                    <td>
                       <Badge variant={row.status === "ACTIVE" ? "success" : "outline"}>
                         {row.status === "ACTIVE" ? "Active" : "Deactivated"}
                       </Badge>
                       {row.commissionHold && (
-                        <span className="mt-1 block text-[11px] text-amber-800">
-                          Commission Hold
-                        </span>
+                        <span className="block text-[11px] text-amber-800">Commission Hold</span>
                       )}
                       {row.portalStatus === "DISABLED" && (
                         <span className="block text-[11px] text-muted-foreground">
@@ -329,44 +351,50 @@ export default function MembersClient({
                         </span>
                       )}
                     </td>
-                    <td className="rounded-r-xl px-3 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {row.status === "ACTIVE" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title="Copy Portal Invite Link & Credentials"
-                            onClick={() => copyInviteText(row.memberId, row.name)}
-                          >
-                            <Share2 className="mr-1 h-3.5 w-3.5" /> Invite Link
+                    <td className="whitespace-nowrap text-right">
+                      {/* Four ghost labels in a row read as a sentence, not as
+                          four things you can do. One named trigger, the choices
+                          behind it — the shape the Plot and Enquiry rows use. */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="xs" className="w-20">
+                            Update
                           </Button>
-                        )}
-                        {permissions.deactivate && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              setDialog({ kind: "STATUS", row, active: row.status !== "ACTIVE" })
-                            }
-                          >
-                            {row.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
-                          </Button>
-                        )}
-                        {permissions.deactivate && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setDialog({ kind: "HOLD", row, hold: !row.commissionHold })}
-                          >
-                            {row.commissionHold ? "Remove Hold" : "Commission Hold"}
-                          </Button>
-                        )}
-                        {permissions.activate && (
-                          <Button size="sm" variant="ghost" onClick={() => setDialog({ kind: "RERA", row })}>
-                            RERA
-                          </Button>
-                        )}
-                      </div>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {row.status === "ACTIVE" && (
+                            <DropdownMenuItem onSelect={() => copyInviteText(row.memberId, row.name)}>
+                              Copy invite link
+                            </DropdownMenuItem>
+                          )}
+                          {permissions.activate && (
+                            <DropdownMenuItem onSelect={() => setDialog({ kind: "RERA", row })}>
+                              Update RERA
+                            </DropdownMenuItem>
+                          )}
+                          {permissions.deactivate && (
+                            <DropdownMenuItem
+                              onSelect={() =>
+                                setDialog({ kind: "HOLD", row, hold: !row.commissionHold })
+                              }
+                            >
+                              {row.commissionHold ? "Remove Commission Hold" : "Apply Commission Hold"}
+                            </DropdownMenuItem>
+                          )}
+                          {permissions.deactivate && (
+                            <DropdownMenuItem
+                              onSelect={() =>
+                                setDialog({ kind: "STATUS", row, active: row.status !== "ACTIVE" })
+                              }
+                              className={
+                                row.status === "ACTIVE" ? "text-red-700 focus:text-red-700" : ""
+                              }
+                            >
+                              {row.status === "ACTIVE" ? "Deactivate Member" : "Reactivate Member"}
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </td>
                   </tr>
                   {openId === row.id && (
@@ -386,7 +414,7 @@ export default function MembersClient({
               ))}
             </tbody>
           </table>
-        </Card>
+        </div>
       </div>
 
       {dialog?.kind === "ACTIVATE" && (
@@ -613,7 +641,9 @@ function MemberDetailPanel({
                 {detail.invitedMembers.map((m) => (
                   <li key={m.memberId} className="flex flex-wrap justify-between gap-2">
                     <span>
-                      {m.memberId} · {m.name}
+                      <Link href={`/members/${m.id}`} className="text-primary hover:underline">
+                        {m.memberId} · {m.name}
+                      </Link>
                       {m.status !== "ACTIVE" && (
                         <span className="ml-2 text-[11px] text-muted-foreground">Deactivated</span>
                       )}
@@ -639,7 +669,9 @@ function MemberDetailPanel({
                 {detail.introducedCustomers.map((c) => (
                   <li key={c.customerId} className="flex flex-wrap justify-between gap-2">
                     <span>
-                      {c.customerId} · {c.name}
+                      <Link href={`/customers/${c.id}`} className="text-primary hover:underline">
+                        {c.customerId} · {c.name}
+                      </Link>
                       <span className="ml-2 text-[11px] text-muted-foreground">
                         {c.loyaltySlotsConsumed}/3 Loyalty slots used
                       </span>

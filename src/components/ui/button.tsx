@@ -6,7 +6,9 @@ import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
   // apple.md — the pill is the action shape, and chrome carries no shadow.
-  "inline-flex items-center justify-center whitespace-nowrap rounded-full text-sm font-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-40",
+  // text-center because a Button rendered asChild is an <a>, and only <button>
+  // gets centred text from the browser. Same box, same label, same alignment.
+  "inline-flex items-center justify-center whitespace-nowrap rounded-full text-center text-sm font-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-40",
   {
     variants: {
       variant: {

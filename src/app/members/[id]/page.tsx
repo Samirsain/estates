@@ -1,18 +1,21 @@
 // Member detail page — /members/[id]
-// Shows everything about one Member: profile, RERA, network, commissions, bank.
+//
+// Built in the Customer page's language, because a Member profile and a
+// Customer profile are the same kind of screen: who this person is, the facts
+// filed under them, and what they have done. Same hero, same Stat strip, same
+// card of Rows, same full-width lists underneath.
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
-import { can, canViewField } from "@/lib/security/permissions";
-import { maskMobile } from "@/lib/security/identity";
+import { can } from "@/lib/security/permissions";
 import { experienceSince } from "@/lib/domain/commission";
 import { formatIst } from "@/lib/tasks";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Building2, CheckCircle2, Clock, UserCheck, Users, Layers, ShieldCheck, Banknote, AlertCircle } from "lucide-react";
+import { ArrowLeft, UserCheck, Users, Layers, ShieldCheck, Banknote, FileText, MapPin } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -39,26 +42,114 @@ const PAYMENT_LABEL: Record<string, string> = {
   ACCOUNTS_ADJUSTMENT_REQUIRED: "Accounts Adjustment Required",
 };
 
-function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+/**
+ * Profile, RERA and Bank are the same kind of thing — a short list of facts
+ * about one person — so they are one card three times over: same heading, same
+ * rows, same order of weight.
+ */
+function Section({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="space-y-3">
+    <Card className="flex h-full flex-col p-4">
       <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {icon}
         {title}
       </h2>
-      {children}
+      <div className="mt-3">{children}</div>
+    </Card>
+  );
+}
+
+/**
+ * The label is the question and the value is the answer, so the answer carries
+ * the weight. `hint` is for what qualifies the answer rather than being it, and
+ * stays quiet underneath.
+ */
+function Row({
+  label,
+  value,
+  hint,
+  mono,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: React.ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-border/50 py-2 last:border-0">
+      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
+      <span className="text-right">
+        <span className={`block text-sm font-semibold text-foreground ${mono ? "font-mono" : ""}`}>
+          {value}
+        </span>
+        {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
+      </span>
     </div>
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+/** The header's facts, in the same voice as the cards below. */
+function Stat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: React.ReactNode;
+}) {
   return (
-    <div className="flex justify-between gap-4 border-b border-border/50 py-2 last:border-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={`text-right text-xs font-medium ${mono ? "font-mono" : ""}`}>{value}</span>
+    <div className="min-w-[7.5rem]">
+      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold text-foreground">{value}</p>
+      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
     </div>
   );
 }
+
+/**
+ * One row of a network list: the identifier the relationship is filed under,
+ * the name that confirms it, and the band it sits in.
+ */
+function NetworkRow({
+  href,
+  code,
+  name,
+  note,
+  band,
+}: {
+  href: string;
+  code: string;
+  name: string;
+  note?: string | null;
+  band: string;
+}) {
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+      <span className="min-w-0">
+        <Link href={href} className="font-mono font-semibold text-primary hover:underline">
+          {code}
+        </Link>
+        <span className="block text-[11px] text-muted-foreground">
+          {name}
+          {note ? ` · ${note}` : ""}
+        </span>
+      </span>
+      <span className="text-[11px] tabular-nums text-muted-foreground">{band}</span>
+    </li>
+  );
+}
+
+/** DIRECT, INVITE_OVERRIDE — read as words, not as constants. */
+const humanise = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
 
 export default async function MemberDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await requireStaff();
@@ -76,287 +167,337 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
 
   if (!member) notFound();
 
-  const commissions = await db.commissionRecord.findMany({
-    where: { beneficiaryPersonId: member.personId },
-    include: {
-      booking: { include: { project: true, plot: true } },
-      acquisition: { include: { plot: { include: { project: true } } } },
-    },
-    orderBy: [{ isCurrent: "desc" }, { createdAt: "desc" }],
-    take: 100,
-  });
-
-  const banks = await db.bankDetail.findMany({
-    where: { personId: member.personId },
-    orderBy: { createdAt: "desc" },
-  });
-
-  const introducedCustomers = await db.customerProfile.findMany({
-    where: { originalIntroducedByMemberId: member.id },
-    include: { person: true },
-    orderBy: { introducedPosition: "asc" },
-  });
+  const [commissions, banks, introducedCustomers] = await Promise.all([
+    db.commissionRecord.findMany({
+      where: { beneficiaryPersonId: member.personId },
+      include: {
+        booking: { include: { project: true, plot: true } },
+        acquisition: { include: { plot: { include: { project: true } } } },
+      },
+      orderBy: [{ isCurrent: "desc" }, { createdAt: "desc" }],
+      take: 100,
+    }),
+    db.bankDetail.findMany({
+      where: { personId: member.personId },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.customerProfile.findMany({
+      where: { originalIntroducedByMemberId: member.id },
+      include: { person: true },
+      orderBy: { introducedPosition: "asc" },
+    }),
+  ]);
 
   const experience = experienceSince(member.activationDate);
-  const canViewBank = canViewField(actor.role, "BANK_FULL");
+  // BANK_FULL is not consulted here: this page only ever prints the last four
+  // digits, which is the masked form every screen shows.
   const canManage = can(actor.role, "MEMBER_ACTIVATE");
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
       <div className="mx-auto max-w-4xl space-y-4">
-        {/* Back navigation */}
+        {/* Back */}
         <Link
           href="/members"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to Members
         </Link>
 
-        {/* Hero Card */}
-        <Card className="p-4 space-y-4">
+        {/* Hero */}
+        <Card className="space-y-4 p-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <UserCheck className="h-7 w-7" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-bold tracking-tight">{member.person.fullName}</h1>
+                {/* Who they are: the name, the id it is filed under, and the
+                    two states asked about a Member — one line, not three
+                    stacked sentences. */}
+                <h1 className="text-2xl font-bold tracking-tight">{member.person.fullName}</h1>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-sm text-muted-foreground">{member.memberId}</span>
                   <Badge variant={member.status === "ACTIVE" ? "success" : "destructive"}>
                     {STATUS_LABEL[member.status] ?? member.status}
                   </Badge>
+                  {member.commissionHold && <Badge variant="warning">Commission hold</Badge>}
                 </div>
-                <p className="mt-0.5 font-mono text-sm text-muted-foreground">{member.memberId}</p>
-                {experience && (
-                  <p className="text-xs text-muted-foreground">{experience.label} as a Member</p>
-                )}
               </div>
             </div>
-            <div className="text-right text-xs text-muted-foreground space-y-1">
-              {member.activationDate && <p>Activated {formatIst(member.activationDate.toISOString())}</p>}
-              {member.portalAccount?.lastLoginAt && (
-                <p>Portal last login {formatIst(member.portalAccount.lastLoginAt.toISOString())}</p>
+            <div className="flex flex-wrap gap-x-10 gap-y-3 md:pr-2">
+              {experience && <Stat label="Member for" value={experience.label} />}
+              <Stat
+                label="Invite position"
+                value={member.invitePosition ? `Position ${member.invitePosition}` : "Not assigned"}
+                hint={member.inviteRatePercent ? `${member.inviteRatePercent.toFixed(2)}% band` : undefined}
+              />
+              {member.invitedByMember && (
+                <Stat
+                  label="Invited by"
+                  // The Member ID is what the invitation is filed under, so it
+                  // leads and the name confirms it.
+                  value={
+                    <Link
+                      href={`/members/${member.invitedByMemberId}`}
+                      className="font-mono text-primary hover:underline"
+                    >
+                      {member.invitedByMember.memberId}
+                    </Link>
+                  }
+                  hint={member.invitedByMember.person.fullName}
+                />
               )}
-              {member.portalAccount && (
-                <p>Portal: {member.portalAccount.status === "ACTIVE" ? "Enabled" : "Disabled"}</p>
-              )}
+              <Stat
+                label="Portal login"
+                value={
+                  member.portalAccount
+                    ? member.portalAccount.status === "ACTIVE"
+                      ? "Enabled"
+                      : "Disabled"
+                    : "Not created"
+                }
+                hint={
+                  member.portalAccount?.lastLoginAt
+                    ? `last ${formatIst(member.portalAccount.lastLoginAt.toISOString())}`
+                    : undefined
+                }
+              />
             </div>
           </div>
+
+          {member.commissionHold && member.commissionHoldReason && (
+            <p className="max-w-prose text-xs text-amber-800">{member.commissionHoldReason}</p>
+          )}
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          {/* Profile */}
-          <Card className="p-4 space-y-4">
-            <Section title="Profile" icon={<Building2 className="h-3.5 w-3.5" />}>
-              <Row label="Mobile" value={maskMobile(member.person.primaryMobile)} />
-              {member.person.altMobile && <Row label="Alt Mobile" value={maskMobile(member.person.altMobile)} />}
-              <Row label="Email" value={member.person.email ?? "—"} />
-              <Row label="City" value={member.person.city ?? "—"} />
-              <Row label="Address" value={member.person.addressLine ?? "—"} />
-            </Section>
-          </Card>
+        {/* Who they are, how they are registered, where the money goes — three
+            lists of facts, so three of the same card side by side. */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Section title="Profile" icon={<UserCheck className="h-3.5 w-3.5" />}>
+            <Row label="Mobile" value={member.person.primaryMobile} mono />
+            {member.person.altMobile && (
+              <Row label="Alt Mobile" value={member.person.altMobile} mono />
+            )}
+            <Row label="Email" value={member.person.email ?? "—"} />
+            <Row label="City" value={member.person.city ?? "—"} />
+            <Row label="Address" value={member.person.addressLine ?? "—"} />
+            <Row
+              label="Activated"
+              value={member.activationDate ? formatIst(member.activationDate.toISOString()) : "—"}
+            />
+          </Section>
 
-          {/* RERA */}
-          <Card className="p-4 space-y-4">
-            <Section title="RERA" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
-              <Row
-                label="Status"
-                value={
-                  <Badge variant={
+          <Section title="RERA" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
+            <Row
+              label="Status"
+              value={
+                <Badge
+                  variant={
                     member.reraStatus === "REGISTERED" || member.reraStatus === "NOT_APPLICABLE"
                       ? "success"
                       : "destructive"
-                  }>
-                    {RERA_LABEL[member.reraStatus] ?? member.reraStatus}
-                  </Badge>
-                }
-              />
-              <Row label="RERA Number" value={member.reraNumber ?? "—"} mono />
-              <Row
-                label="Expiry"
-                value={member.reraExpiryDate ? formatIst(member.reraExpiryDate.toISOString()) : "—"}
-              />
-              {member.reraNotApplicableReason && (
-                <Row label="Not Applicable Reason" value={member.reraNotApplicableReason} />
-              )}
-            </Section>
-
-            {member.commissionHold && (
-              <div className="rounded-xl border border-amber-300/40 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-                <p className="font-semibold flex items-center gap-1.5">
-                  <AlertCircle className="h-3.5 w-3.5" /> Commission Hold Active
-                </p>
-                {member.commissionHoldReason && <p className="mt-0.5">{member.commissionHoldReason}</p>}
-              </div>
-            )}
-          </Card>
-        </div>
-
-        {/* Network */}
-        <Card className="p-4 space-y-4">
-          <Section title="Network" icon={<Users className="h-3.5 w-3.5" />}>
-            <div className="text-xs space-y-1">
-              <Row
-                label="Invited By"
-                value={
-                  member.invitedByMember
-                    ? `${member.invitedByMember.memberId} · ${member.invitedByMember.person.fullName}`
-                    : "—"
-                }
-              />
-              <Row
-                label="Position &amp; Band"
-                value={
-                  member.invitePosition
-                    ? `Position ${member.invitePosition} · ${member.inviteRatePercent?.toFixed(2)}%`
-                    : "Not assigned"
-                }
-              />
-            </div>
-
-            {member.invitedMembers.length > 0 && (
-              <div>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Members Invited ({member.invitedMembers.length})
-                </p>
-                <ul className="divide-y divide-border/50 text-xs">
-                  {member.invitedMembers.map((m) => (
-                    <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                      <span>
-                        <Link href={`/members/${m.id}`} className="font-mono font-semibold text-primary hover:underline">
-                          {m.memberId}
-                        </Link>
-                        {" · "}{m.person.fullName}
-                        {m.status !== "ACTIVE" && (
-                          <span className="ml-2 text-[11px] text-muted-foreground">Deactivated</span>
-                        )}
-                      </span>
-                      <span className="tabular-nums text-muted-foreground">
-                        Pos {m.invitePosition} · {m.inviteRatePercent?.toFixed(2)}%
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {introducedCustomers.length > 0 && (
-              <div>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Customers Introduced ({introducedCustomers.length})
-                </p>
-                <ul className="divide-y divide-border/50 text-xs">
-                  {introducedCustomers.map((c) => (
-                    <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                      <span>
-                        <Link href={`/customers/${c.id}`} className="font-mono font-semibold text-primary hover:underline">
-                          {c.customerId}
-                        </Link>
-                        {" · "}{c.person.fullName}
-                      </span>
-                      <span className="tabular-nums text-muted-foreground">
-                        {c.introducedPosition ? `Pos ${c.introducedPosition} · ${c.introducedRatePercent?.toFixed(2)}%` : "—"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+                  }
+                >
+                  {RERA_LABEL[member.reraStatus] ?? member.reraStatus}
+                </Badge>
+              }
+              hint={member.reraNotApplicableReason ?? undefined}
+            />
+            <Row label="Number" value={member.reraNumber ?? "—"} mono={!!member.reraNumber} />
+            <Row
+              label="Expiry"
+              value={member.reraExpiryDate ? formatIst(member.reraExpiryDate.toISOString()) : "—"}
+            />
           </Section>
-        </Card>
 
-        {/* Commission */}
-        <Card className="p-4 space-y-4">
-          <Section title="Commission Records" icon={<Layers className="h-3.5 w-3.5" />}>
-            {commissions.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No commission records yet.</p>
+          <Section title="Bank" icon={<Banknote className="h-3.5 w-3.5" />}>
+            {banks.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {canManage ? "No bank details recorded." : "None recorded."}
+              </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[40rem] text-xs">
-                  <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground border-b border-border/50">
-                    <tr>
-                      <th className="pb-2">Booking</th>
-                      <th className="pb-2">Project · Plot</th>
-                      <th className="pb-2">Type</th>
-                      <th className="pb-2 text-right">%</th>
-                      <th className="pb-2">Eligibility</th>
-                      <th className="pb-2">Payment</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/40">
-                    {commissions.map((c) => (
-                      <tr key={c.id} className={c.isCurrent ? "" : "opacity-50"}>
-                        <td className="py-2">
-                          {c.booking?.bookingNumber ?? c.booking?.requestNo ?? c.acquisition?.acquisitionNo ?? "—"}
-                          {!c.isCurrent && (
-                            <span className="ml-2 rounded border border-border/60 px-1 text-[10px]">Superseded</span>
-                          )}
-                        </td>
-                        <td className="py-2">
-                          {c.booking?.project.name ?? c.acquisition?.plot?.project.name ?? "—"}
-                          <span className="block text-[11px] text-muted-foreground">
-                            {c.booking
-                              ? `${c.booking.plot.plotType.replaceAll("_", " ")} ${c.booking.plot.plotNumber}`
-                              : c.acquisition?.plot
-                                ? `${c.acquisition.plot.plotType.replaceAll("_", " ")} ${c.acquisition.plot.plotNumber}`
-                                : c.acquisition?.propertyNumber ?? "—"}
-                          </span>
-                        </td>
-                        <td className="py-2">{c.type}</td>
-                        <td className="py-2 text-right tabular-nums font-medium">{c.percent.toFixed(2)}</td>
-                        <td className="py-2">
-                          {ELIGIBILITY_LABEL[c.eligibility] ?? c.eligibility}
-                          {c.holdReason && (
-                            <span className="block text-[11px] text-amber-700">
-                              {c.holdReason.replaceAll("_", " ").toLowerCase()}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2">{PAYMENT_LABEL[c.payment] ?? c.payment}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Section>
-        </Card>
-
-        {/* Bank Details */}
-        {(banks.length > 0 || canManage) && (
-          <Card className="p-4 space-y-4">
-            <Section title="Bank Details" icon={<Banknote className="h-3.5 w-3.5" />}>
-              {banks.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No bank details recorded.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {banks.map((b) => (
-                    <li key={b.id} className="rounded-xl border border-border/50 p-3 text-xs">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span>
-                          <span className="font-medium">{b.accountHolder}</span>
-                          {" · "}{b.bankName}
-                          <span className="block text-muted-foreground">
-                            Account ending {b.accountLastFour} · {b.ifsc}
-                          </span>
-                        </span>
-                        <Badge variant={b.status === "VERIFIED" ? "success" : b.status === "PENDING" ? "warning" : "outline"}>
+              banks.map((b) => (
+                // The account is the fact; its verification qualifies it, so
+                // the badge rides with the number.
+                <div key={b.id} className="border-b border-border/50 pb-2 last:border-0 last:pb-0">
+                  <Row
+                    label="Account"
+                    value={`•••• ${b.accountLastFour}`}
+                    hint={
+                      <>
+                        <Badge
+                          variant={
+                            b.status === "VERIFIED"
+                              ? "success"
+                              : b.status === "PENDING"
+                                ? "warning"
+                                : "outline"
+                          }
+                        >
                           {b.status.charAt(0) + b.status.slice(1).toLowerCase()}
                         </Badge>
-                      </div>
-                      {b.verifiedAt && (
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          Verified {formatIst(b.verifiedAt.toISOString())}
-                        </p>
-                      )}
-                    </li>
+                        {b.verifiedAt && ` ${formatIst(b.verifiedAt.toISOString())}`}
+                      </>
+                    }
+                    mono
+                  />
+                  <Row label="IFSC" value={b.ifsc} mono />
+                  <Row label="Bank" value={b.bankName} />
+                  <Row label="Holder" value={b.accountHolder} />
+                </div>
+              ))
+            )}
+          </Section>
+        </div>
+
+        {/* Their network: who they brought in, on both counters. */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <Section
+            title={`Members Invited (${member.invitedMembers.length})`}
+            icon={<Users className="h-3.5 w-3.5" />}
+          >
+            {member.invitedMembers.length === 0 ? (
+              <p className="text-xs text-muted-foreground">None yet.</p>
+            ) : (
+              <ul className="divide-y divide-border/50 text-xs">
+                {member.invitedMembers.map((m) => (
+                  <NetworkRow
+                    key={m.id}
+                    href={`/members/${m.id}`}
+                    code={m.memberId}
+                    name={m.person.fullName}
+                    note={m.status === "ACTIVE" ? null : "Deactivated"}
+                    band={`Pos ${m.invitePosition ?? "—"} · ${m.inviteRatePercent?.toFixed(2) ?? "—"}%`}
+                  />
+                ))}
+              </ul>
+            )}
+          </Section>
+
+          <Section
+            title={`Customers Introduced (${introducedCustomers.length})`}
+            icon={<Users className="h-3.5 w-3.5" />}
+          >
+            {introducedCustomers.length === 0 ? (
+              <p className="text-xs text-muted-foreground">None yet.</p>
+            ) : (
+              <ul className="divide-y divide-border/50 text-xs">
+                {introducedCustomers.map((c) => (
+                  <NetworkRow
+                    key={c.id}
+                    href={`/customers/${c.id}`}
+                    code={c.customerId}
+                    name={c.person.fullName}
+                    note={`${c.loyaltySlotsConsumed}/3 Loyalty slots used`}
+                    band={
+                      c.introducedPosition
+                        ? `Pos ${c.introducedPosition} · ${c.introducedRatePercent?.toFixed(2)}%`
+                        : "—"
+                    }
+                  />
+                ))}
+              </ul>
+            )}
+          </Section>
+        </div>
+
+        {/* Commission Records */}
+        <Section title="Commission Records" icon={<Layers className="h-3.5 w-3.5" />}>
+          {commissions.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No commission records yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[40rem] text-xs">
+                <thead className="border-b border-border/50 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="pb-2">Booking</th>
+                    <th className="pb-2">Project · Plot</th>
+                    <th className="pb-2">Type</th>
+                    <th className="w-[5rem] pb-2 pr-6 text-right">%</th>
+                    <th className="pb-2">Eligibility</th>
+                    <th className="pb-2">Payment</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40 align-baseline">
+                  {commissions.map((c) => (
+                    <tr key={c.id}>
+                      <td className="py-2 font-mono">
+                        <span className="inline-flex items-center gap-1.5">
+                          <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          {c.booking ? (
+                            <Link
+                              href={`/bookings/${c.booking.id}`}
+                              className="text-primary hover:underline"
+                            >
+                              {c.booking.bookingNumber ?? c.booking.requestNo}
+                            </Link>
+                          ) : (
+                            (c.acquisition?.acquisitionNo ?? "—")
+                          )}
+                        </span>
+                        {/* Superseded is said once, as a word. Fading the whole
+                            row said it twice and made it hard to read. */}
+                        {!c.isCurrent && (
+                          <span className="ml-2 rounded border border-border/60 px-1 font-sans text-[10px] text-muted-foreground">
+                            Superseded
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2">
+                        {(() => {
+                          const plot = c.booking?.plot ?? c.acquisition?.plot ?? null;
+                          const project =
+                            c.booking?.project.name ?? c.acquisition?.plot?.project.name ?? "—";
+                          const label = plot
+                            ? `${plot.plotType.replaceAll("_", " ")} ${plot.plotNumber}`
+                            : (c.acquisition?.propertyNumber ?? "—");
+                          return (
+                            <span className="inline-flex items-center gap-1.5">
+                              <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              <span className="min-w-0">
+                                <span className="block">{project}</span>
+                                <span className="block text-[11px] text-muted-foreground">
+                                  {plot ? (
+                                    <Link
+                                      href={`/plots/${plot.id}`}
+                                      className="text-primary hover:underline"
+                                    >
+                                      {label}
+                                    </Link>
+                                  ) : (
+                                    label
+                                  )}
+                                </span>
+                              </span>
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="py-2">{humanise(c.type)}</td>
+                      {/* The rate carries its unit and its own width; without
+                          them "3.00" sat against "Milestone Pending" and read
+                          as one value. */}
+                      <td className="py-2 pr-6 text-right font-medium tabular-nums">
+                        {c.percent.toFixed(2)}%
+                      </td>
+                      <td className="py-2">
+                        {ELIGIBILITY_LABEL[c.eligibility] ?? c.eligibility}
+                        {c.holdReason && (
+                          <span className="block text-[11px] text-amber-700">
+                            {c.holdReason.replaceAll("_", " ").toLowerCase()}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2">{PAYMENT_LABEL[c.payment] ?? c.payment}</td>
+                    </tr>
                   ))}
-                </ul>
-              )}
-            </Section>
-          </Card>
-        )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
       </div>
     </AppShell>
   );

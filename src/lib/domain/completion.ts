@@ -171,7 +171,7 @@ export function validateMergeRequest(survivor: MergeSide, merged: MergeSide): Ch
   }
   if (survivor.memberStatus === "ACTIVE" && merged.memberStatus === "ACTIVE") {
     return fail(
-      "Two Active Member profiles cannot be merged. Deactivate one Member first (PRD §22)."
+      "Two Active Member profiles cannot be merged. Deactivate one Member first."
     );
   }
   return OK;

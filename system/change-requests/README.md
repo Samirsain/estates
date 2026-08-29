@@ -11,12 +11,17 @@ Migration impact, Acceptance-test impact, Release target.
 | [CR-002](./CR-002-identity-reveal.md) | Administration screen for reading a full Aadhaar or PAN | Identity | Raised, awaiting signature |
 | [CR-003](./CR-003-remove-mfa.md) | Multi-factor authentication removed | Identity, permissions | Raised, awaiting signature — **contradicts PRD §3.1, §17.1 and gate 8** |
 | [CR-004](./CR-004-loyalty-separate-allowances.md) | Loyalty Bonus split into two separate three-deal allowances | Commission | Raised, awaiting signature — **not implemented; nothing is built until signed** |
+| [CR-005](./CR-005-plc-catalogue-and-derivation.md) | Location Charge components become a fixed catalogue, derived from Plot boundaries | Inventory | Raised, implemented on the owner's instruction — awaiting signature |
+| [CR-006](./CR-006-member-terms-acceptance.md) | Recorded acceptance of the Member Terms and Privacy Notice at portal sign-in | Identity, authentication | Raised, implemented on the owner's instruction — awaiting signature |
+| [CR-007](./CR-007-commission-calculator.md) | A Commission Calculator inside the CRM | Commission — **reopens an express owner exclusion** | Raised, awaiting signature — **not implemented; nothing is built until signed** |
 
 **Status meanings**
 
-- **Raised** — written down, but not yet signed by the owner. CR-001, CR-002 and
-  CR-003 were implemented before signature; CR-004 deliberately was not, because
-  it changes a commission entitlement rather than recording one already built.
+- **Raised** — written down, but not yet signed by the owner. CR-001, CR-002,
+  CR-003, CR-005 and CR-006 were implemented before signature; CR-004 and CR-007
+  deliberately were not. Both change what the company owes rather than recording
+  something already built, and CR-007 additionally reopens an item the owner
+  excluded by name.
 - **Approved** — the owner has signed section 7. It is a requirement of the
   system from that date.
 - **Withdrawn** — not proceeding. The reason stays in the file.

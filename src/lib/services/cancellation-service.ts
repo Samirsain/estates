@@ -58,7 +58,7 @@ export async function decideCancellation(args: {
       if (!request) blocked("There is no cancellation waiting for the Accounts decision.");
       // PRD §3.3 — the account that raised it may not decide it.
       if (request.requestedByRef === args.actorRef) {
-        blocked("A cancellation must be decided by a different staff account (PRD §3.3).");
+        blocked("A cancellation must be decided by a different staff account.");
       }
 
       const booking = await tx.booking.findUniqueOrThrow({

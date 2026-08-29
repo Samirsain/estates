@@ -120,7 +120,7 @@ export async function activateMember(args: {
   reraNotApplicableReason?: string | null;
 }) {
   if (args.actorRole !== "ADMIN" && args.actorRole !== "MD") {
-    blocked("Only Admin or MD may activate a Member (main-PRD §7.1).");
+    blocked("Only Admin or MD may activate a Member.");
   }
 
   return runCommand(
@@ -145,7 +145,7 @@ export async function activateMember(args: {
 
       const rera = args.reraStatus ?? "PENDING";
       if (rera === "NOT_APPLICABLE" && !args.reraNotApplicableReason?.trim()) {
-        blocked("Not Applicable requires a compulsory reason (main-PRD §19.5).");
+        blocked("Not Applicable requires a compulsory reason.");
       }
       if (rera === "REGISTERED" && !args.reraNumber?.trim()) {
         blocked("A Registered RERA status requires the Registration Number.");
@@ -264,7 +264,7 @@ export async function setMemberStatus(args: {
   reason: string;
 }) {
   if (args.actorRole !== "ADMIN" && args.actorRole !== "MD") {
-    blocked("Only Admin or MD may activate or deactivate a Member (PRD §13).");
+    blocked("Only Admin or MD may activate or deactivate a Member.");
   }
   if (!args.reason.trim()) blocked("A compulsory reason is required to change a Member status.");
 
@@ -381,7 +381,7 @@ export async function updateMemberRera(args: {
   notApplicableReason?: string | null;
 }) {
   if (args.status === "NOT_APPLICABLE" && !args.notApplicableReason?.trim()) {
-    blocked("Not Applicable requires a compulsory reason (main-PRD §19.5).");
+    blocked("Not Applicable requires a compulsory reason.");
   }
   if (args.status === "REGISTERED" && !args.reraNumber?.trim()) {
     blocked("A Registered RERA status requires the Registration Number.");

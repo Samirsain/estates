@@ -60,11 +60,14 @@ const dateFmt = new Intl.DateTimeFormat("en-GB", {
   month: "2-digit",
   year: "numeric",
 });
-const timeFmt = new Intl.DateTimeFormat("en-GB", {
+// en-US for the clock alone: it is the locale that prints AM / PM in capitals.
+// Everything reading these times is in one timezone, so the zone is not worth
+// a suffix on every line.
+const timeFmt = new Intl.DateTimeFormat("en-US", {
   timeZone: IST,
   hour: "2-digit",
   minute: "2-digit",
-  hour12: false,
+  hour12: true,
 });
 
 /** Calendar day in Asia/Kolkata as YYYY-MM-DD — sortable and comparable as a string. */
@@ -72,10 +75,18 @@ export function istDay(at: Date | string): string {
   return dayFmt.format(new Date(at));
 }
 
-/** DD/MM/YYYY HH:mm IST (DESIGN §18). */
+/** DD/MM/YYYY — the date alone, where the clock time says nothing extra. */
+export function formatIstDate(at: Date | string): string {
+  return dateFmt.format(new Date(at));
+}
+
+/** DD/MM/YYYY hh:mm AM/PM — DESIGN §18, read on a 12-hour clock. */
 export function formatIst(at: Date | string): string {
   const d = new Date(at);
-  return `${dateFmt.format(d)} ${timeFmt.format(d)} IST`;
+  // Some ICU builds put a narrow no-break space before AM/PM and some a plain
+  // one. One space, so what is stored, compared and read is the same string
+  // everywhere this runs.
+  return `${dateFmt.format(d)} ${timeFmt.format(d).replace(/ /g, " ")}`;
 }
 
 /**
@@ -166,6 +177,24 @@ export function sortTasks(tasks: Task[], now: Date): Task[] {
   return [...tasks].sort(
     (a, b) => rank(a) - rank(b) || Date.parse(a.dueAt) - Date.parse(b.dueAt)
   );
+}
+
+/**
+ * The reference a person can act on, or nothing.
+ *
+ * `record.id` carries two different things. A task someone typed in holds what
+ * they typed — CUS-3390, MEM-0217 — and that is worth showing. A task a job
+ * raised holds the row's database id, which is not a reference to anything a
+ * person can look up; for those the record's name is the reference, and it is
+ * already on the same line. An unlinked manual task holds a placeholder.
+ *
+ * So: show the id only when it is one of ours to show.
+ */
+const INTERNAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function recordReference(record: { id: string; name: string }): string | null {
+  if (!record.id || record.id.startsWith("UNLINKED:") || INTERNAL_ID.test(record.id)) return null;
+  return record.id;
 }
 
 /**

@@ -290,8 +290,7 @@ export async function createStaffAccountAction(
           });
           if (activeMd) {
             blocked(
-              `${activeMd.staffAccountId} is already the active MD. Disable that account first ` +
-                `(PRD §3.1).`
+              `${activeMd.staffAccountId} is already the active MD. Disable that account first.`
             );
           }
         }
@@ -373,7 +372,7 @@ export async function changeStaffRoleAction(
             where: { role: "MD", status: "ACTIVE", id: { not: account.id } },
           });
           if (activeMd) {
-            blocked(`${activeMd.staffAccountId} is already the active MD. Move that account first (PRD §3.1).`);
+            blocked(`${activeMd.staffAccountId} is already the active MD. Move that account first.`);
           }
         }
 

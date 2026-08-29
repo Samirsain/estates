@@ -136,7 +136,7 @@ export default function PlotActions({
       {dialog === "RESTRICTION" && (
         <Modal
           title={`Change restriction — ${plot.plotNumber}`}
-          description="Not for Sale and Pledge keep the Plot Not Available, including whenever it returns from a Hold or a cancelled Booking (PRD §15)."
+          description="Not for Sale and Pledge keep the Plot Not Available, including whenever it returns from a Hold or a cancelled Booking."
           onClose={() => setDialog(null)}
         >
           <div className="space-y-3">

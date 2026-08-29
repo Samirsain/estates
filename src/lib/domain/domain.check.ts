@@ -27,6 +27,9 @@ import {
   restrictionBlocksSale,
   validatePlcComponents,
   type PlcComponentRule,
+  locationChargeLabel,
+  canEditPlotDetails,
+  canSetRestriction,
 } from "./inventory.ts";
 import {
   DEFAULT_CALENDAR,
@@ -219,7 +222,24 @@ const greenReversed = buildPlcSnapshot(
 );
 assert.equal(greenReversed.totalPercent.toFixed(4), "2.0000");
 
-// An open side is one that does not abut another Plot, so Other counts too.
+// An open side is one nothing is built against — a facility leaves it open, and
+// Other Land, being land the way a Plot is land, closes it.
+const withFacility = buildPlcSnapshot(
+  [
+    { side: "NORTH", kind: "ROAD", roadWidthFt: "30" },
+    { side: "EAST", kind: "PLOT" },
+    { side: "SOUTH", kind: "PLOT" },
+    { side: "WEST", kind: "FACILITIES" },
+  ],
+  rules
+);
+// Road 30-39 = 2, and Road + Facilities = two open sides = 2.
+assert.equal(withFacility.totalPercent.toFixed(4), "4.0000");
+assert.match(
+  withFacility.components.find((c) => c.category === "OPEN_SIDES")!.evidence,
+  /North, West open/
+);
+
 const withOther = buildPlcSnapshot(
   [
     { side: "NORTH", kind: "ROAD", roadWidthFt: "30" },
@@ -229,9 +249,13 @@ const withOther = buildPlcSnapshot(
   ],
   rules
 );
-// Road 30-39 = 2, and Road + Other = two open sides = 2.
-assert.equal(withOther.totalPercent.toFixed(4), "4.0000");
-assert.match(withOther.components.find((c) => c.category === "OPEN_SIDES")!.evidence, /North, West open/);
+// One open side reaches no band, so the Road is the whole charge.
+assert.equal(withOther.totalPercent.toFixed(4), "2.0000");
+assert.equal(
+  withOther.components.find((c) => c.category === "OPEN_SIDES"),
+  undefined,
+  "Other Land closes its side, so the Road is alone and no band is reached"
+);
 
 // A Plot is a Plot whatever its type: Commercial and Informal Sector close a
 // side just as a Residential one does, while a facility or utility does not.
@@ -261,7 +285,7 @@ const cornerPlot = buildPlcSnapshot(
     { side: "NORTH", kind: "ROAD", roadWidthFt: "30" },
     { side: "EAST", kind: "PLOT" },
     { side: "SOUTH", kind: "PLOT" },
-    { side: "WEST", kind: "OTHER" },
+    { side: "WEST", kind: "FACILITIES" },
   ],
   rulesWithCorner
 );
@@ -491,8 +515,13 @@ assert.match(
 );
 assert.match(
   derivedFacing([{ side: "NORTH", kind: "OTHER" }, { side: "SOUTH", kind: "PLOT" }]),
+  /0 open sides/,
+  "Other Land closes its side the way a neighbouring Plot does"
+);
+assert.match(
+  derivedFacing([{ side: "NORTH", kind: "FACILITIES" }, { side: "SOUTH", kind: "PLOT" }]),
   /1 open side/,
-  "Other leaves the side open; only a neighbouring Plot closes it"
+  "a facility still leaves the side open"
 );
 
 /* ---------------------------------------------------------------- holds */
@@ -531,7 +560,7 @@ assert.equal(decideExtension(false, expiry, 24, new Date("2026-08-20T06:00:00Z")
 // Wednesday 19 Aug 2026, 11:30 IST — before the 17:00 cut-off.
 const beforeCutOff = new Date("2026-08-19T06:00:00Z");
 assert.equal(istDay(holdRequestExpiry(beforeCutOff)), "2026-08-19");
-assert.match(formatIst(holdRequestExpiry(beforeCutOff)), /19\/08\/2026 23:59 IST/);
+assert.match(formatIst(holdRequestExpiry(beforeCutOff)), /19\/08\/2026 11:59 PM/);
 
 // Same day 18:00 IST — after the cut-off, so it rolls to the next working day.
 const afterCutOff = new Date("2026-08-19T12:30:00Z");
@@ -1760,5 +1789,126 @@ assert.equal(shortSides("2 open sides"), "2 open sides", "nothing to shorten is 
 // Only the whole word, or "Northgate Road" would become "Ngate Road".
 assert.equal(shortSides("Northgate Road facing"), "Northgate Road facing");
 assert.equal(shortSides("Eastern Avenue"), "Eastern Avenue");
+
+/* -------------------------------------- Location Charge for: the catalogue */
+
+const SIDES = ["NORTH", "EAST", "SOUTH", "WEST"] as const;
+const open = (...sides: (typeof SIDES)[number][]) =>
+  SIDES.map((side) => ({ side, kind: sides.includes(side) ? "ROAD" : "PLOT" }));
+
+assert.deepEqual(locationChargeLabel(open("NORTH") as never), ["NORTH FACING"]);
+assert.deepEqual(locationChargeLabel(open("WEST") as never), ["WEST FACING"]);
+// Two adjacent sides are a corner, always named North or South first.
+assert.deepEqual(locationChargeLabel(open("EAST", "NORTH") as never), ["NORTH-EAST CORNER"]);
+assert.deepEqual(locationChargeLabel(open("WEST", "SOUTH") as never), ["SOUTH-WEST CORNER"]);
+// Two opposite sides are a through Plot, not a corner.
+assert.deepEqual(locationChargeLabel(open("NORTH", "SOUTH") as never), ["NORTH-SOUTH TWO SIDE OPEN"]);
+assert.deepEqual(locationChargeLabel(open("EAST", "WEST") as never), ["EAST-WEST TWO SIDE OPEN"]);
+// Three open sides are named by the one that is closed.
+assert.deepEqual(locationChargeLabel(open("NORTH", "EAST", "SOUTH") as never), [
+  "N-E-S THREE SIDE OPEN",
+]);
+assert.deepEqual(locationChargeLabel(open("EAST", "NORTH", "WEST") as never), [
+  "E-N-W THREE SIDE OPEN",
+]);
+assert.deepEqual(locationChargeLabel(open(...SIDES) as never), ["N-E-S-W FOUR SIDE OPEN"]);
+assert.deepEqual(locationChargeLabel(open() as never), ["NO OPEN SIDE"]);
+
+// A green side adds one line and never changes the one above it. Park and
+// Playground are two catalogue categories, so each is named for what it is.
+assert.deepEqual(
+  locationChargeLabel([
+    { side: "NORTH", kind: "ROAD" },
+    { side: "EAST", kind: "PARK" },
+    { side: "SOUTH", kind: "PLOT" },
+    { side: "WEST", kind: "PLOT" },
+  ] as never),
+  ["NORTH-EAST CORNER", "PARK FACING"]
+);
+assert.deepEqual(
+  locationChargeLabel([
+    { side: "NORTH", kind: "PLAYGROUND" },
+    { side: "EAST", kind: "PLOT" },
+    { side: "SOUTH", kind: "PLOT" },
+    { side: "WEST", kind: "PLOT" },
+  ] as never),
+  ["NORTH FACING", "PLAYGROUND FACING"]
+);
+// A Plot on both keeps both lines, in catalogue order.
+assert.deepEqual(
+  locationChargeLabel([
+    { side: "NORTH", kind: "PARK" },
+    { side: "EAST", kind: "PLAYGROUND" },
+    { side: "SOUTH", kind: "PLOT" },
+    { side: "WEST", kind: "PLOT" },
+  ] as never),
+  ["NORTH-EAST CORNER", "PARK FACING", "PLAYGROUND FACING"]
+);
+
+/*
+ * The whole vocabulary, and nothing outside it: every one of the sixteen
+ * open/closed combinations, with and without a green side, must land on one of
+ * the thirty-one names below — thirty from the catalogue plus the closed Plot.
+ */
+const CATALOGUE = new Set([
+  "NO OPEN SIDE",
+  "NORTH FACING",
+  "SOUTH FACING",
+  "EAST FACING",
+  "WEST FACING",
+  "NORTH-EAST CORNER",
+  "NORTH-WEST CORNER",
+  "SOUTH-EAST CORNER",
+  "SOUTH-WEST CORNER",
+  "NORTH-SOUTH TWO SIDE OPEN",
+  "EAST-WEST TWO SIDE OPEN",
+  "N-E-S THREE SIDE OPEN",
+  "N-W-S THREE SIDE OPEN",
+  "E-S-W THREE SIDE OPEN",
+  "E-N-W THREE SIDE OPEN",
+  "N-E-S-W FOUR SIDE OPEN",
+]);
+const produced = new Set<string>();
+for (let mask = 0; mask < 16; mask++) {
+  for (const green of [false, true]) {
+    // A green side is an open side, so the park goes on the first side this
+    // mask already opens — a Plot closed on all four has no green twin.
+    const firstOpen = [0, 1, 2, 3].find((i) => mask & (1 << i));
+    const boundaries = SIDES.map((side, i) => ({
+      side,
+      kind: mask & (1 << i) ? (green && i === firstOpen ? "PARK" : "ROAD") : "PLOT",
+    }));
+    const lines = locationChargeLabel(boundaries as never);
+    assert.ok(CATALOGUE.has(lines[0]), `${lines[0]} is not in the catalogue`);
+    if (lines.length > 1) assert.equal(lines[1], "PARK FACING");
+    produced.add(lines.join(" / "));
+  }
+}
+assert.equal(produced.size, 31, "fifteen named positions plus the closed Plot, each with a green twin");
+
+/* ------------------------------------------ what a committed Plot still allows */
+
+// Unallocated inventory is the Plot's own to correct.
+for (const status of ["NOT_AVAILABLE", "AVAILABLE"] as const) {
+  assert.equal(canEditPlotDetails(status), true, `${status} is still editable`);
+  assert.equal(canSetRestriction(status), true, `${status} can still be restricted`);
+}
+
+// A Hold answers "may this be sold", so a restriction has nothing left to say;
+// the Plot's own measurements are still correctable until a Booking freezes them.
+assert.equal(canSetRestriction("HOLD"), false, "a held Plot is already allocated");
+assert.equal(canEditPlotDetails("HOLD"), true, "a Hold does not freeze the measurements");
+
+// From the submitted request onward the Plot is inside a Booking snapshot.
+for (const status of [
+  "WAITING_FOR_BOOKING_APPROVAL",
+  "BOOKED",
+  "PAYMENT_COMPLETED",
+  "REFUND_PENDING",
+  "DELIVERED",
+] as const) {
+  assert.equal(canEditPlotDetails(status), false, `${status} freezes the Plot details`);
+  assert.equal(canSetRestriction(status), false, `${status} is past restricting`);
+}
 
 console.log("domain.check.ts OK");

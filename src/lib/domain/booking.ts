@@ -59,8 +59,8 @@ export function validateSchedule(lines: readonly ScheduleLine[], bookingDate: Da
     if (istDay(line.dueDate) < istDay(bookingDate)) {
       return fail(`Instalment ${line.seq} is due before the Booking Date.`);
     }
-    if (previousDue && istDay(line.dueDate) < istDay(previousDue)) {
-      return fail(`Instalment ${line.seq} is due before the one before it. Due dates stay chronological.`);
+    if (previousDue && istDay(line.dueDate) <= istDay(previousDue)) {
+      return fail(`Instalment ${line.seq} is due on or before the previous instalment. Due dates stay chronological.`);
     }
     previousDue = line.dueDate;
   }

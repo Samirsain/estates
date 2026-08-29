@@ -139,7 +139,7 @@ export async function createAcquisition(args: {
   }
   if (args.arrangedByPersonId === args.sellerPersonId) {
     blocked(
-      "The seller cannot also be the arranger — that is the Buying Commission conflict in PRD §11.7."
+      "The seller cannot also be the arranger — that is a Buying Commission conflict."
     );
   }
 
@@ -685,7 +685,7 @@ export async function decideAcquisition(args: {
       }
       // PRD §3.3 — the account that raised it may not decide it.
       if (acquisition.submittedByRef === args.actorRef) {
-        blocked("An acquisition must be decided by a different staff account (PRD §3.3).");
+        blocked("An acquisition must be decided by a different staff account.");
       }
 
       const decision = { decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: args.note };
@@ -741,7 +741,7 @@ export async function decideAcquisition(args: {
         if (!acquisition.resaleGroupId) {
           blocked(
             "Select the External Resale Property Group this property belongs to before approving " +
-              "(PRD §11.6)."
+              "."
           );
         }
         const created = await tx.plot.create({

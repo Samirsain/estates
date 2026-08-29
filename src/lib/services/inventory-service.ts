@@ -2,7 +2,14 @@
 
 import type { BoundaryKind, BoundarySide, PlotType } from "@prisma/client";
 import { db } from "@/lib/db";
-import { buildPlcSnapshot, calculateAreas, plotReturnState, type AreaInput } from "@/lib/domain/inventory";
+import {
+  buildPlcSnapshot,
+  calculateAreas,
+  canEditPlotDetails,
+  canSetRestriction,
+  plotReturnState,
+  type AreaInput,
+} from "@/lib/domain/inventory";
 import { blocked, lockPlot, runCommand, type Tx } from "./command";
 import { plcRules } from "./plc-service";
 
@@ -211,6 +218,16 @@ export async function updatePlotDetails(args: {
         },
       });
 
+      // The Plot's width, length and sides are frozen into a submitted Booking
+      // Request and into the PLC beside it. Editing them here would not correct
+      // that Booking, only disagree with it.
+      if (!canEditPlotDetails(plot.status)) {
+        blocked(
+          `Plot ${plot.plotNumber} is ${plot.status.replaceAll("_", " ").toLowerCase()}. Its ` +
+            `dimensions and sides are frozen into the Booking; correct them through the Booking.`
+        );
+      }
+
       validateBoundaries(plot.plotNumber, args.boundaries);
       const areas = calculateAreas(
         areaInput({
@@ -383,7 +400,7 @@ export async function setRestriction(args: {
       await lockPlot(tx, args.plotId);
       const plot = await tx.plot.findUniqueOrThrow({ where: { id: args.plotId } });
 
-      if (!["AVAILABLE", "NOT_AVAILABLE"].includes(plot.status)) {
+      if (!canSetRestriction(plot.status)) {
         blocked(
           `Plot is ${plot.status.replaceAll("_", " ").toLowerCase()}. Restrictions apply only to ` +
             `unallocated inventory — release the current allocation first.`

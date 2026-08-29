@@ -38,14 +38,19 @@ export default async function MembersPage() {
     memberId: m.memberId,
     personId: m.personId,
     name: m.person.fullName,
-    mobileMasked: maskMobile(m.person.primaryMobile),
+    mobile: m.person.primaryMobile,
     city: m.person.city ?? "—",
     status: m.status,
     activationDate: m.activationDate?.toISOString() ?? null,
     // Derived on every read, never stored — see experienceSince.
     experience: experienceSince(m.activationDate)?.label ?? null,
+    // The Member ID identifies, the name is who that is. Two facts, two lines.
     invitedBy: m.invitedByMember
-      ? `${m.invitedByMember.memberId} · ${m.invitedByMember.person.fullName}`
+      ? {
+          id: m.invitedByMember.id,
+          memberId: m.invitedByMember.memberId,
+          name: m.invitedByMember.person.fullName,
+        }
       : null,
     invitePosition: m.invitePosition,
     inviteRatePercent: m.inviteRatePercent?.toFixed(2) ?? null,

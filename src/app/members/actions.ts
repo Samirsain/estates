@@ -355,6 +355,7 @@ export async function loadMemberDetail(memberProfileId: string) {
     id: member.id,
     personId: member.personId,
     invitedMembers: member.invitedMembers.map((m) => ({
+      id: m.id,
       memberId: m.memberId,
       name: m.person.fullName,
       position: m.invitePosition,
@@ -363,6 +364,7 @@ export async function loadMemberDetail(memberProfileId: string) {
       status: m.status,
     })),
     introducedCustomers: member.introducedCustomers.map((c) => ({
+      id: c.id,
       customerId: c.customerId,
       name: c.person.fullName,
       position: c.introducedPosition,

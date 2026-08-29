@@ -533,7 +533,7 @@ export async function markCommissionPaid(args: {
   remarks: string;
 }) {
   if (args.early && !args.remarks.trim()) {
-    blocked("Paid Early requires compulsory remarks (PRD §6.11).");
+    blocked("Paid Early requires compulsory remarks.");
   }
 
   return runCommand(

@@ -234,7 +234,7 @@ export async function requestHoldExtension(args: {
       if (hold.status === "FROZEN") {
         blocked(
           "This Hold is frozen behind a Booking Request, so its timer is not running and there is " +
-            "nothing to extend (PRD §10.5)."
+            "nothing to extend."
         );
       }
       if (hold.status !== "ACTIVE") blocked("This Hold is no longer active.");

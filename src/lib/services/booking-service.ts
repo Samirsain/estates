@@ -28,16 +28,44 @@ import {
 } from "./commission-service";
 import { createScheduleVersion, syncPaymentFollowUp, type ScheduleInput } from "./payment-service";
 import { closeTasksFor, ensureTask } from "./task-service";
+import { linkOrCreatePerson } from "./enquiry-service";
 
 /** PRD §11.6 — the decision/follow-up period is seven calendar days. */
 export const BOOKING_DECISION_DAYS = 7;
 
 export type BookingPartyInput = {
+  /** Empty when this party is a first-time buyer typed straight into the form. */
   personId: string;
   role: "PRIMARY" | "ADDITIONAL";
   /** Omitted only where this is the sole buyer, who is treated as 100%. */
   sharePercent?: string | null;
+  /** Only meaningful alongside an empty personId. See resolveParties. */
+  fullName?: string;
+  mobile?: string;
+  city?: string;
 };
+
+/**
+ * A party's personId, resolved. A blank one was typed straight into the form
+ * as a first-time buyer — linkOrCreatePerson is the same find-or-create an
+ * Enquiry uses. Called from inside the transaction the Booking itself commits
+ * in, so a retried idempotency key replays before this ever runs twice: doing
+ * this find-or-create against the bare `db` client, ahead of the transaction,
+ * was the bug (a retry could miss the find and create the buyer twice, since
+ * primaryMobile is deliberately not unique).
+ */
+async function resolveParties(
+  tx: Tx,
+  parties: readonly BookingPartyInput[]
+): Promise<BookingPartyInput[]> {
+  const out: BookingPartyInput[] = [];
+  for (const p of parties) {
+    const personId =
+      p.personId || (await linkOrCreatePerson(tx, { fullName: p.fullName ?? "", mobile: p.mobile ?? "", city: p.city })).id;
+    out.push({ personId, role: p.role, sharePercent: p.sharePercent });
+  }
+  return out;
+}
 
 export type BookingDecisionResult = {
   bookingId: string;
@@ -116,7 +144,7 @@ async function validateSoldBy(tx: Tx, soldByType: SoldByType, soldByPersonId: st
   if (soldByType === "MEMBER") {
     if (!person.memberProfile) blocked("The selected Person has no Member profile.");
     if (person.memberProfile.status !== "ACTIVE") {
-      blocked("A Member must be Active at Booking Request to be selected as the closer (PRD §7.1).");
+      blocked("A Member must be Active at Booking Request to be selected as the closer.");
     }
     if (!person.memberProfile.activationDate) blocked("This Member has not been activated yet.");
     return;
@@ -125,7 +153,7 @@ async function validateSoldBy(tx: Tx, soldByType: SoldByType, soldByPersonId: st
   if (person.memberProfile?.status === "ACTIVE") {
     blocked(
       "This Person holds an Active Member capability, so the close must be recorded as Sold By " +
-        "Member. An Active Member cannot close as a Customer (PRD §6.7)."
+        "Member. An Active Member cannot close as a Customer."
     );
   }
 }
@@ -211,7 +239,10 @@ async function accountsBookingTask(
 /* --------------------------------------------------- submit and revise */
 
 export async function submitBookingRequest(input: SubmitBookingInput) {
-  const primary = primaryOf(input.parties);
+  // Exactly one Primary, shares total 100 — structural checks that never
+  // depend on a personId, so they run before a first-time buyer's Person even
+  // exists. The resolved list is looked up again inside the transaction below.
+  primaryOf(input.parties);
   const shares = validateShares(input.parties.map((p) => ({ personId: p.personId, sharePercent: p.sharePercent })));
   if (!shares.ok) blocked(shares.reason);
 
@@ -242,6 +273,9 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
         },
       });
 
+      const parties = await resolveParties(tx, input.parties);
+      const primary = parties.find((p) => p.role === "PRIMARY")!;
+
       // A Booking Request starts from an Available Plot or from this buyer's own
       // live Hold. Anything else means the Plot is already committed.
       let hold = null;
@@ -253,7 +287,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
           blocked("The Hold is held for a different Customer. Cancel it or book for the Customer on the Hold.");
         }
         if (hold.expiresAt.getTime() <= Date.now()) {
-          blocked("This Hold has expired and cannot be submitted for Booking (PRD §10.5).");
+          blocked("This Hold has expired and cannot be submitted for Booking.");
         }
       } else {
         const allocatable = canAllocate(plot.status, plot.restriction, plot.project.status);
@@ -270,7 +304,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
       );
       if (!room.ok) blocked(room.reason);
 
-      for (const party of input.parties) await ensureCustomerProfile(tx, party.personId);
+      for (const party of parties) await ensureCustomerProfile(tx, party.personId);
 
       const snapshot = await plcSnapshotFor(tx, plot, hold?.plcSnapshotId ?? null);
       const requestNo = await nextReference(tx, "REQ", "BookingRequest");
@@ -291,7 +325,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
           plcSnapshotId: snapshot.id,
           submittedByRef: input.actorRef,
           parties: {
-            create: input.parties.map((p) => ({
+            create: parties.map((p) => ({
               personId: p.personId,
               role: p.role,
               sharePercent: p.sharePercent ?? null,
@@ -317,7 +351,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
           snapshot: reviewSnapshot({
             projectId: plot.projectId,
             plotId: input.plotId,
-            parties: input.parties,
+            parties,
             plc: { totalPercent: snapshot.totalPercent.toFixed(3), components: snapshot.components },
             soldByType: input.soldByType,
             soldByPersonId: input.soldByPersonId ?? null,
@@ -408,7 +442,9 @@ export async function reviseBookingRequest(args: {
   reason: string;
 }) {
   if (!args.reason.trim()) blocked("A compulsory reason is required to replace a Booking Request version.");
-  const primary = primaryOf(args.parties);
+  // Exactly one Primary, shares total 100 — checked on the unresolved list; a
+  // first-time buyer's personId is resolved inside the transaction below.
+  primaryOf(args.parties);
   const shares = validateShares(args.parties.map((p) => ({ personId: p.personId, sharePercent: p.sharePercent })));
   if (!shares.ok) blocked(shares.reason);
   const dated = validateBookingDate(args.bookingDate, args.bookingDateReason);
@@ -431,6 +467,9 @@ export async function reviseBookingRequest(args: {
       if (booking.status !== "REQUEST_PENDING") {
         blocked("Only a Booking Request still Waiting for Booking Approval can be replaced.");
       }
+
+      const parties = await resolveParties(tx, args.parties);
+      const primary = parties.find((p) => p.role === "PRIMARY")!;
 
       const pending = await tx.bookingReviewVersion.findFirst({
         where: { bookingId: args.bookingId, status: "PENDING" },
@@ -460,7 +499,7 @@ export async function reviseBookingRequest(args: {
         data: { effectiveTo: new Date(), changeReason: args.reason },
       });
       await tx.bookingParty.createMany({
-        data: args.parties.map((p) => ({
+        data: parties.map((p) => ({
           bookingId: args.bookingId,
           personId: p.personId,
           role: p.role,
@@ -469,7 +508,7 @@ export async function reviseBookingRequest(args: {
           actorRef: args.actorRef,
         })),
       });
-      for (const party of args.parties) await ensureCustomerProfile(tx, party.personId);
+      for (const party of parties) await ensureCustomerProfile(tx, party.personId);
 
       await tx.booking.update({
         where: { id: args.bookingId },
@@ -500,7 +539,7 @@ export async function reviseBookingRequest(args: {
           snapshot: reviewSnapshot({
             projectId: booking.projectId,
             plotId: booking.plotId,
-            parties: args.parties,
+            parties,
             // The Plot is unchanged, so the frozen PLC carries into the new version.
             plc: {
               totalPercent: booking.plcSnapshot?.totalPercent.toFixed(3) ?? null,
@@ -596,7 +635,7 @@ export async function decideBookingRequest(args: {
       }
       // PRD §3.3 — the account that submitted may not be the account that decides.
       if (booking.submittedByRef === args.actorRef) {
-        blocked("A Booking Request must be decided by a different staff account (PRD §3.3).");
+        blocked("A Booking Request must be decided by a different staff account.");
       }
 
       const review = await tx.bookingReviewVersion.findFirstOrThrow({
@@ -984,7 +1023,9 @@ export async function changeOwnershipShares(args: {
   reason: string;
 }) {
   if (!args.reason.trim()) blocked("A compulsory reason is required to change ownership shares.");
-  const primary = primaryOf(args.parties);
+  // Exactly one Primary, shares total 100 — checked on the unresolved list; a
+  // first-time buyer's personId is resolved inside the transaction below.
+  primaryOf(args.parties);
   const shares = validateShares(args.parties.map((p) => ({ personId: p.personId, sharePercent: p.sharePercent })));
   if (!shares.ok) blocked(shares.reason);
 
@@ -1008,6 +1049,9 @@ export async function changeOwnershipShares(args: {
       }
       const free = assertProcessFree(booking.activeProcess, "Change ownership shares");
       if (!free.ok) blocked(free.reason);
+
+      const parties = await resolveParties(tx, args.parties);
+      const primary = parties.find((p) => p.role === "PRIMARY")!;
       if (primary.personId !== booking.primaryPersonId) {
         blocked("Use Change Primary Customer to replace the Primary Customer — it needs Accounts approval.");
       }
@@ -1018,7 +1062,7 @@ export async function changeOwnershipShares(args: {
         data: { effectiveTo: new Date(), changeReason: args.reason },
       });
       await tx.bookingParty.createMany({
-        data: args.parties.map((p) => ({
+        data: parties.map((p) => ({
           bookingId: args.bookingId,
           personId: p.personId,
           role: p.role,
@@ -1027,7 +1071,7 @@ export async function changeOwnershipShares(args: {
           actorRef: args.actorRef,
         })),
       });
-      for (const party of args.parties) await ensureCustomerProfile(tx, party.personId);
+      for (const party of parties) await ensureCustomerProfile(tx, party.personId);
 
       await tx.bookingEvent.create({
         data: {
@@ -1036,20 +1080,20 @@ export async function changeOwnershipShares(args: {
           action: "OWNERSHIP_SHARES_CHANGED",
           detail: {
             before: before.map((p) => ({ personId: p.personId, share: p.sharePercent?.toFixed(4) ?? null })),
-            after: args.parties.map((p) => ({ personId: p.personId, share: p.sharePercent ?? null })),
+            after: parties.map((p) => ({ personId: p.personId, share: p.sharePercent ?? null })),
           },
           reason: args.reason,
         },
       });
 
       return {
-        result: { bookingId: args.bookingId, parties: args.parties.length },
+        result: { bookingId: args.bookingId, parties: parties.length },
         audit: {
           entity: "Booking",
           entityId: args.bookingId,
           action: "OWNERSHIP_SHARES_CHANGED",
           before: { parties: before.map((p) => p.sharePercent?.toFixed(4) ?? null) },
-          after: { parties: args.parties.map((p) => p.sharePercent ?? null) },
+          after: { parties: parties.map((p) => p.sharePercent ?? null) },
           reason: args.reason,
         },
       };
@@ -1173,7 +1217,7 @@ export async function decidePrimaryCustomerChange(args: {
       });
       if (!request) blocked("There is no Primary Customer change waiting for a decision.");
       if (request.requestedByRef === args.actorRef) {
-        blocked("A Primary Customer change must be approved by a different staff account (PRD §3.3).");
+        blocked("A Primary Customer change must be approved by a different staff account.");
       }
 
       const decision = { decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: args.note };
@@ -1269,7 +1313,7 @@ export async function requestSoldByCorrection(args: {
 }) {
   if (!args.reason.trim()) blocked("A compulsory reason is required for a Sold By Correction.");
   if (!args.supportingNote.trim()) {
-    blocked("A compulsory supporting remark is required for a Sold By Correction (PRD §6.10).");
+    blocked("A compulsory supporting remark is required for a Sold By Correction.");
   }
 
   return runCommand(
@@ -1292,7 +1336,7 @@ export async function requestSoldByCorrection(args: {
       });
 
       if (!["BOOKED", "PAYMENT_COMPLETED", "DELIVERED"].includes(booking.status)) {
-        blocked("Sold By Correction applies to an approved Booking (PRD §6.10).");
+        blocked("Sold By Correction applies to an approved Booking.");
       }
       const free = assertProcessFree(booking.activeProcess, "Sold By Correction");
       if (!free.ok) blocked(free.reason);
@@ -1377,7 +1421,7 @@ export async function decideSoldByCorrection(args: {
 }): Promise<SoldByDecisionResult> {
   if (!args.note.trim()) blocked("A compulsory remark is required on the decision.");
   if (args.actorRole !== "ADMIN" && args.actorRole !== "MD") {
-    blocked("Only Admin or MD may approve a Sold By Correction (PRD §6.10).");
+    blocked("Only Admin or MD may approve a Sold By Correction.");
   }
 
   return runCommand<SoldByDecisionResult>(
@@ -1395,7 +1439,7 @@ export async function decideSoldByCorrection(args: {
       });
       if (!correction) blocked("There is no Sold By Correction waiting for a decision.");
       if (correction.requestedByRef === args.actorRef) {
-        blocked("A Sold By Correction must be approved by a different staff account (PRD §3.3).");
+        blocked("A Sold By Correction must be approved by a different staff account.");
       }
 
       const booking = await tx.booking.findUniqueOrThrow({
@@ -1504,7 +1548,14 @@ export function listBookings() {
       project: true,
       plot: true,
       primaryPerson: true,
-      soldByPerson: true,
+      // The list names Sold By by their Member ID or Customer ID, so the two
+      // codes ride along with the Person.
+      soldByPerson: {
+        include: {
+          memberProfile: { select: { memberId: true } },
+          customerProfile: { select: { customerId: true } },
+        },
+      },
       reviewVersions: { where: { status: "PENDING" }, take: 1 },
     },
     orderBy: { submittedAt: "desc" },
@@ -1517,7 +1568,8 @@ export function getBooking(bookingId: string) {
     where: { id: bookingId },
     include: {
       project: true,
-      plot: true,
+      // The Plot's own sides name what the Location Charge is for.
+      plot: { include: { boundaries: true } },
       primaryPerson: true,
       soldByPerson: true,
       // PLC spec §15.3 — the frozen total, its breakdown and its version, plus

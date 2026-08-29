@@ -47,6 +47,7 @@ export default async function EnquiriesPage() {
     id: e.id,
     enquiryNo: e.enquiryNo,
     name: e.person.fullName,
+    personId: e.personId,
     // Contact numbers are masked in list views by default (DESIGN §2.6).
     mobileMasked: maskMobile(e.person.primaryMobile),
     city: e.person.city ?? "—",
@@ -54,6 +55,7 @@ export default async function EnquiriesPage() {
     plot: e.plot ? `${e.plot.plotType.replaceAll("_", " ")} ${e.plot.plotNumber}` : "General",
     source: e.source,
     sourceMember: e.sourceMember ? `${e.sourceMember.memberId} · ${e.sourceMember.person.fullName}` : null,
+    sourceMemberPersonId: e.sourceMember?.personId ?? null,
     status: e.status,
     closeReason: e.closeReason,
     assignedTo: e.assignedStaff?.person.fullName ?? "Unassigned",

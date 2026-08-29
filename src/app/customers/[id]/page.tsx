@@ -1,11 +1,10 @@
 // Customer detail page — /customers/[id]
-// Full profile: identity, property activity, Aadhaar/PAN, bank details, loyalty.
+// Full profile: identity, property activity, Aadhaar/PAN and bank details.
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
-import { canViewField } from "@/lib/security/permissions";
 import { maskAadhaar, maskMobile, maskPan } from "@/lib/security/identity";
 import { experienceSince } from "@/lib/domain/commission";
 import { formatIst } from "@/lib/tasks";
@@ -14,14 +13,24 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import {
   ArrowLeft,
-  Activity,
   ShieldCheck,
   Banknote,
-  Star,
   User,
+  FileText,
+  Clock,
+  MapPin,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * PENDING → "Pending", NOT_AVAILABLE → "Not available". AVAILABLE says
+ * nothing the number above it has not already said, so it says nothing.
+ */
+function statusWord(status: string): string | undefined {
+  if (status === "AVAILABLE") return undefined;
+  return status.charAt(0) + status.slice(1).toLowerCase().replaceAll("_", " ");
+}
 
 const ACTIVITY_VARIANT: Record<string, "info" | "warning" | "success"> = {
   Enquiry: "info",
@@ -29,41 +38,84 @@ const ACTIVITY_VARIANT: Record<string, "info" | "warning" | "success"> = {
   Booking: "success",
 };
 
+/**
+ * Profile, Identity and Bank are the same kind of thing — a short list of
+ * facts about one person — so they are one card three times over: same
+ * heading, same rows, same order of weight.
+ */
 function Section({
   title,
   icon,
   children,
 }: {
   title: string;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-3">
+    <Card className="flex h-full flex-col p-4">
       <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {icon}
         {title}
       </h2>
-      {children}
-    </div>
+      <div className="mt-3">{children}</div>
+    </Card>
   );
 }
 
+/**
+ * The label is the question and the value is the answer, so the answer is what
+ * carries the weight: a mobile number, an Aadhaar, an account. `hint` is for
+ * what qualifies the answer rather than being it — a verification state — and
+ * stays quiet underneath.
+ */
 function Row({
   label,
   value,
+  hint,
   mono,
 }: {
   label: string;
   value: React.ReactNode;
+  hint?: React.ReactNode;
   mono?: boolean;
 }) {
   return (
-    <div className="flex justify-between gap-4 border-b border-border/50 py-2 last:border-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={`text-right text-xs font-medium ${mono ? "font-mono" : ""}`}>
-        {value}
+    <div className="flex items-baseline justify-between gap-4 border-b border-border/50 py-2 last:border-0">
+      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
+      <span className="text-right">
+        <span
+          className={`block text-sm font-semibold text-foreground ${mono ? "font-mono" : ""}`}
+        >
+          {value}
+        </span>
+        {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
       </span>
+    </div>
+  );
+}
+
+/**
+ * The header's facts, in the same voice as the cards below: the label is
+ * quiet, the fact is not. Four muted sentences of the same size stacked in a
+ * corner read as a paragraph nobody finishes.
+ */
+function Stat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: React.ReactNode;
+}) {
+  return (
+    // A floor width, so three stats read as three columns rather than three
+    // boxes each sized by the length of its own answer.
+    <div className="min-w-[7.5rem]">
+      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold text-foreground">{value}</p>
+      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -88,7 +140,7 @@ export default async function CustomerDetailPage({
 
   const personId = customer.personId;
 
-  const [enquiries, holds, bookings, loyalty, banks] = await Promise.all([
+  const [enquiries, holds, bookings, banks] = await Promise.all([
     db.enquiry.findMany({
       where: { personId },
       include: { project: true, plot: true },
@@ -109,10 +161,6 @@ export default async function CustomerDetailPage({
       orderBy: { submittedAt: "desc" },
       take: 50,
     }),
-    db.commissionOpportunity.findMany({
-      where: { kind: "LOYALTY", subjectPersonId: personId },
-      orderBy: { slotIndex: "asc" },
-    }),
     db.bankDetail.findMany({
       where: { personId },
       orderBy: { createdAt: "desc" },
@@ -122,33 +170,35 @@ export default async function CustomerDetailPage({
   const activity = [
     ...enquiries.map((e) => ({
       kind: "Enquiry" as const,
-      reference: e.enquiryNo,
       project: e.project.name,
       plot: e.plot
         ? `${e.plot.plotType.replaceAll("_", " ")} ${e.plot.plotNumber}`
         : "General",
+      plotId: e.plot?.id ?? null,
+      href: null,
       status: e.status,
       at: e.createdAt.toISOString(),
     })),
     ...holds.map((h) => ({
       kind: "Hold" as const,
-      reference: h.id.slice(0, 8),
       project: h.plot.project.name,
       plot: `${h.plot.plotType.replaceAll("_", " ")} ${h.plot.plotNumber}`,
+      plotId: h.plot.id,
+      href: null,
       status: h.status,
       at: h.createdAt.toISOString(),
     })),
     ...bookings.map((b) => ({
       kind: "Booking" as const,
-      reference: b.bookingNumber ?? b.requestNo,
       project: b.project.name,
       plot: `${b.plot.plotType.replaceAll("_", " ")} ${b.plot.plotNumber}`,
+      plotId: b.plot.id,
+      href: `/bookings/${b.id}`,
       status: b.status,
       at: b.submittedAt.toISOString(),
     })),
   ].sort((a, b) => (a.at < b.at ? 1 : -1));
 
-  const canViewAadhaar = canViewField(actor.role, "AADHAAR_FULL");
   const firstBookingDate = bookings.at(-1)?.submittedAt ?? null;
   const experience = experienceSince(firstBookingDate);
 
@@ -172,187 +222,183 @@ export default async function CustomerDetailPage({
                 <User className="h-7 w-7" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-bold tracking-tight">
-                    {customer.person.fullName}
-                  </h1>
+                {/* Who they are: the name, the id it is filed under, and what
+                    kind of Customer — one line, not three stacked sentences. */}
+                <h1 className="text-2xl font-bold tracking-tight">
+                  {customer.person.fullName}
+                </h1>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-sm text-muted-foreground">
+                    {customer.customerId}
+                  </span>
+                  {customer.customerType && (
+                    <Badge variant="outline">
+                      {customer.customerType.replaceAll("_", " ")}
+                    </Badge>
+                  )}
                 </div>
-                <p className="mt-0.5 font-mono text-sm text-muted-foreground">
-                  {customer.customerId}
-                </p>
-                {customer.customerType && (
-                  <p className="text-xs text-muted-foreground">
-                    {customer.customerType.replaceAll("_", " ")}
-                  </p>
-                )}
-                {experience && (
-                  <p className="text-xs text-muted-foreground">
-                    {experience.label} as a Customer
-                  </p>
-                )}
               </div>
             </div>
-            <div className="text-right text-xs text-muted-foreground space-y-1">
-              <p>Loyalty: {customer.loyaltySlotsConsumed}/3 slots used</p>
+            <div className="flex flex-wrap gap-x-10 gap-y-3 md:pr-2">
+              {experience && <Stat label="Customer for" value={experience.label} />}
+              <Stat
+                label="Loyalty slots"
+                value={`${customer.loyaltySlotsConsumed} of 3 used`}
+              />
               {customer.originalIntroducedByMember && (
-                <p>
-                  Introduced by{" "}
-                  <Link
-                    href={`/members/${customer.originalIntroducedByMember.id}`}
-                    className="font-mono text-primary hover:underline"
-                  >
-                    {customer.originalIntroducedByMember.memberId}
-                  </Link>
-                </p>
+                <Stat
+                  label="Introduced by"
+                  // The Member ID is what the introduction is filed under, so
+                  // it leads and the name confirms it.
+                  value={
+                    <Link
+                      href={`/members/${customer.originalIntroducedByMember.id}`}
+                      className="font-mono text-primary hover:underline"
+                    >
+                      {customer.originalIntroducedByMember.memberId}
+                    </Link>
+                  }
+                  hint={customer.originalIntroducedByMember.person.fullName}
+                />
               )}
             </div>
           </div>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          {/* Profile */}
-          <Card className="p-4 space-y-4">
-            <Section title="Profile" icon={<User className="h-3.5 w-3.5" />}>
-              <Row label="Mobile" value={maskMobile(customer.person.primaryMobile)} />
-              {customer.person.altMobile && (
-                <Row label="Alt Mobile" value={maskMobile(customer.person.altMobile)} />
-              )}
-              <Row label="Email" value={customer.person.email ?? "—"} />
-              <Row label="City" value={customer.person.city ?? "—"} />
-            </Section>
-          </Card>
-
-          {/* Identity */}
-          <Card className="p-4 space-y-4">
-            <Section title="Identity" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
-              <p className="text-xs text-muted-foreground">
-                Aadhaar is a protected field. Full access is restricted and logged.
-              </p>
-              <Row
-                label="Aadhaar"
-                value={
-                  <span>
-                    {maskAadhaar(customer.person.aadhaarLastFour)}
-                    <span className="ml-2 text-[11px] text-muted-foreground">
-                      {customer.person.aadhaarStatus.charAt(0) +
-                        customer.person.aadhaarStatus.slice(1).toLowerCase()}
-                    </span>
-                  </span>
-                }
-              />
-              <Row
-                label="PAN"
-                value={
-                  customer.person.panMasked
-                    ? maskPan(customer.person.panMasked)
-                    : customer.person.panStatus === "NOT_AVAILABLE"
-                      ? "Not Available"
-                      : "—"
-                }
-                mono
-              />
-            </Section>
-          </Card>
-        </div>
-
-        {/* Property Activity */}
-        <Card className="p-4 space-y-4">
-          <Section title="Property Activity" icon={<Activity className="h-3.5 w-3.5" />}>
-            {activity.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                No Enquiries, Holds or Bookings yet.
-              </p>
-            ) : (
-              <ul className="divide-y divide-border/50 text-xs">
-                {activity.map((a, index) => (
-                  <li
-                    key={index}
-                    className="flex flex-wrap items-center justify-between gap-2 py-2.5"
-                  >
-                    <span className="flex items-center gap-2">
-                      <Badge variant={ACTIVITY_VARIANT[a.kind]}>{a.kind}</Badge>
-                      <span className="font-mono">{a.reference}</span>
-                      <span className="text-muted-foreground">
-                        {a.project} · {a.plot}
-                      </span>
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {a.status.replaceAll("_", " ").toLowerCase()} · {formatIst(a.at)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+        {/* Who they are, how they prove it, where the money goes — three lists
+            of facts, so three of the same card side by side. Bank used to sit
+            at the bottom of the page in a shape of its own. */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Section title="Profile" icon={<User className="h-3.5 w-3.5" />}>
+            <Row label="Mobile" value={maskMobile(customer.person.primaryMobile)} mono />
+            {customer.person.altMobile && (
+              <Row label="Alt Mobile" value={maskMobile(customer.person.altMobile)} mono />
             )}
+            <Row label="Email" value={customer.person.email ?? "—"} />
+            <Row label="City" value={customer.person.city ?? "—"} />
           </Section>
-        </Card>
 
-        {/* Loyalty */}
-        <Card className="p-4 space-y-4">
-          <Section title="Loyalty Bonus Slots" icon={<Star className="h-3.5 w-3.5" />}>
-            <p className="text-xs text-muted-foreground">
-              Lifetime maximum of 3 Loyalty Bonuses — from any mix of introduced-buyer sales and
-              repeat personal purchases. A slot reopens only if a qualifying sale is cancelled
-              before legal completion.
-            </p>
-            <p className="text-xs font-medium">
-              Used: {customer.loyaltySlotsConsumed}/3
-            </p>
-            {loyalty.length > 0 && (
-              <ul className="space-y-1 text-xs">
-                {loyalty.map((slot) => (
-                  <li key={slot.slotIndex} className="flex justify-between gap-2">
-                    <span>Slot {slot.slotIndex}</span>
-                    <span className="text-muted-foreground">
-                      {slot.status === "CONSUMED"
-                        ? `Consumed${slot.consumedAt ? ` · ${formatIst(slot.consumedAt.toISOString())}` : ""}`
-                        : `Open${slot.reopenedReason ? ` — ${slot.reopenedReason}` : ""}`}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+          <Section title="Identity" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
+            {/* Either the number or the reason there is not one — never
+                "Not recorded" with "Pending" underneath saying it twice. */}
+            <Row
+              label="Aadhaar"
+              value={
+                customer.person.aadhaarLastFour
+                  ? maskAadhaar(customer.person.aadhaarLastFour)
+                  : (statusWord(customer.person.aadhaarStatus) ?? "—")
+              }
+              hint={
+                customer.person.aadhaarLastFour
+                  ? statusWord(customer.person.aadhaarStatus)
+                  : undefined
+              }
+              mono={!!customer.person.aadhaarLastFour}
+            />
+            <Row
+              label="PAN"
+              value={
+                customer.person.panMasked
+                  ? maskPan(customer.person.panMasked)
+                  : (statusWord(customer.person.panStatus) ?? "—")
+              }
+              hint={
+                customer.person.panMasked ? statusWord(customer.person.panStatus) : undefined
+              }
+              mono={!!customer.person.panMasked}
+            />
           </Section>
-        </Card>
 
-        {/* Bank Details */}
-        <Card className="p-4 space-y-4">
-          <Section title="Bank Details" icon={<Banknote className="h-3.5 w-3.5" />}>
+          <Section title="Bank" icon={<Banknote className="h-3.5 w-3.5" />}>
             {banks.length === 0 ? (
               <p className="text-xs text-muted-foreground">No bank details recorded.</p>
             ) : (
-              <ul className="space-y-2">
-                {banks.map((b) => (
-                  <li key={b.id} className="rounded-xl border border-border/50 p-3 text-xs">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span>
-                        <span className="font-medium">{b.accountHolder}</span> · {b.bankName}
-                        <span className="block text-muted-foreground">
-                          Account ending {b.accountLastFour} · {b.ifsc}
-                        </span>
-                      </span>
-                      <Badge
-                        variant={
-                          b.status === "VERIFIED"
-                            ? "success"
-                            : b.status === "PENDING"
-                              ? "warning"
-                              : "outline"
-                        }
-                      >
-                        {b.status.charAt(0) + b.status.slice(1).toLowerCase()}
-                      </Badge>
-                    </div>
-                    {b.verifiedAt && (
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        Verified {formatIst(b.verifiedAt.toISOString())}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              banks.map((b) => (
+                // The account is the fact; who verified it and when qualifies
+                // it, so the badge rides with the number rather than opposite
+                // it across a box of its own.
+                <div key={b.id} className="border-b border-border/50 pb-2 last:border-0 last:pb-0">
+                  <Row
+                    label="Account"
+                    value={`•••• ${b.accountLastFour}`}
+                    hint={
+                      <>
+                        <Badge
+                          variant={
+                            b.status === "VERIFIED"
+                              ? "success"
+                              : b.status === "PENDING"
+                                ? "warning"
+                                : "outline"
+                          }
+                        >
+                          {b.status.charAt(0) + b.status.slice(1).toLowerCase()}
+                        </Badge>
+                        {b.verifiedAt && ` ${formatIst(b.verifiedAt.toISOString())}`}
+                      </>
+                    }
+                    mono
+                  />
+                  <Row label="IFSC" value={b.ifsc} mono />
+                  <Row label="Bank" value={b.bankName} />
+                  <Row label="Holder" value={b.accountHolder} />
+                </div>
+              ))
             )}
           </Section>
-        </Card>
+        </div>
+
+        {/* Property Activity */}
+        <Section title="Property Activity">
+          {activity.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No Enquiries, Holds or Bookings yet.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border/50 text-xs">
+              {activity.map((a, index) => (
+                <li
+                  key={index}
+                  className="flex flex-wrap items-center justify-between gap-2 py-2.5"
+                >
+                  <span className="flex items-center gap-2">
+                    {/* The kind, as a mark rather than a word repeated down the
+                        column — the badge beside it already says which. */}
+                    {a.kind === "Booking" ? (
+                      <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    ) : a.kind === "Hold" ? (
+                      <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    )}
+                    <Badge variant={ACTIVITY_VARIANT[a.kind]}>{a.kind}</Badge>
+                    <span className="text-muted-foreground">
+                      {a.href ? (
+                        <Link href={a.href} className="text-primary hover:underline">
+                          {a.project}
+                        </Link>
+                      ) : (
+                        a.project
+                      )}
+                      {" · "}
+                      {a.plotId ? (
+                        <Link href={`/plots/${a.plotId}`} className="text-primary hover:underline">
+                          {a.plot}
+                        </Link>
+                      ) : (
+                        a.plot
+                      )}
+                    </span>
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {a.status.replaceAll("_", " ").toLowerCase()} · {formatIst(a.at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+
       </div>
     </AppShell>
   );

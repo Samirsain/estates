@@ -451,7 +451,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
 
           <p className="pt-2 text-[11px] leading-relaxed text-muted-foreground">
             Introduced Customers are shown as positions and bands only. The portal never shows a
-            Customer&apos;s name, Customer ID or contact details (PRD §23.1).
+            Customer&apos;s name, Customer ID or contact details.
           </p>
         </div>
       )}

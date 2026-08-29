@@ -24,7 +24,7 @@ const NAV = [
   {
     label: "Plots & Sales",
     icon: Building2,
-    href: null,
+    href: "/plots",
     phase: null,
     children: [
       { label: "Projects", href: "/projects", phase: null },
@@ -108,7 +108,15 @@ export function AppShell({
         <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col md:overflow-y-auto md:overflow-x-hidden">
           {NAV.filter((item) => !("admin" in item && item.admin) || canAdminister).map(
             (item) => {
-              const active = item.href === pathname;
+              const active =
+                Boolean(item.href && (pathname === item.href || pathname.startsWith(item.href + "/"))) ||
+                ("children" in item &&
+                  Boolean(
+                    item.children?.some(
+                      (child) =>
+                        child.href && (pathname === child.href || pathname.startsWith(child.href + "/"))
+                    )
+                  ));
               return (
                 <div key={item.label} className="min-w-max md:min-w-0">
                   <a
@@ -130,11 +138,13 @@ export function AppShell({
                       // Closed, the label is gone, so the icon and its pill
                       // centre on the rail instead of sitting where the text
                       // used to start.
-                      menuOpen ? "" : "md:justify-center md:gap-0 md:px-0"
+                      menuOpen
+                        ? ""
+                        : "md:h-10 md:w-10 md:mx-auto md:justify-center md:gap-0 md:px-0"
                     } ${
                       active
                         ? "bg-primary/15 font-semibold text-primary"
-                        : item.href
+                        : item.href || ("children" in item && item.children)
                           ? "text-muted-foreground hover:bg-accent"
                           : "cursor-default text-foreground/70"
                     }`}
@@ -165,29 +175,33 @@ export function AppShell({
                         menuOpen ? "md:h-auto" : "md:h-0"
                       }`}
                     >
-                      {item.children.map((child) => (
-                        <li key={child.label}>
-                          <a
-                            href={child.href ?? undefined}
-                            aria-disabled={!child.href}
-                            aria-current={child.href === pathname ? "page" : undefined}
-                            className={`flex items-center gap-2 rounded-lg py-1 pl-9 pr-3 text-xs ${
-                              child.href === pathname
-                                ? "font-semibold text-primary"
-                                : child.href
-                                  ? "text-muted-foreground hover:bg-accent"
-                                  : "cursor-default text-muted-foreground"
-                            }`}
-                          >
-                            <span>{child.label}</span>
-                            {child.phase && (
-                              <span className="ml-auto rounded-md border border-border/60 px-1.5 py-0.5 text-[9px]">
-                                {child.phase}
-                              </span>
-                            )}
-                          </a>
-                        </li>
-                      ))}
+                      {item.children.map((child) => {
+                        const childActive =
+                          Boolean(child.href && (pathname === child.href || pathname.startsWith(child.href + "/")));
+                        return (
+                          <li key={child.label}>
+                            <a
+                              href={child.href ?? undefined}
+                              aria-disabled={!child.href}
+                              aria-current={childActive ? "page" : undefined}
+                              className={`flex items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs transition-colors ${
+                                childActive
+                                  ? "font-semibold text-primary bg-primary/10"
+                                  : child.href
+                                    ? "text-muted-foreground hover:bg-accent"
+                                    : "cursor-default text-muted-foreground"
+                              }`}
+                            >
+                              <span>{child.label}</span>
+                              {child.phase && (
+                                <span className="ml-auto rounded-md border border-border/60 px-1.5 py-0.5 text-[9px]">
+                                  {child.phase}
+                                </span>
+                              )}
+                            </a>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </div>

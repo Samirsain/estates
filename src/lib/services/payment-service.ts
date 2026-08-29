@@ -392,7 +392,7 @@ export async function correctPaymentReceived(args: {
       });
       if (original.status !== "CONFIRMED") blocked("This entry has already been corrected.");
       if (original.confirmedByRef === args.actorRef) {
-        blocked("A payment correction must be verified by a different staff account (PRD §3.3).");
+        blocked("A payment correction must be verified by a different staff account.");
       }
 
       await lockBooking(tx, original.bookingId);
@@ -643,7 +643,7 @@ export async function decideScheduleRevision(args: {
       });
       if (!pending) blocked("There is no schedule revision waiting for a decision.");
       if (pending.createdByRef === args.actorRef) {
-        blocked("A schedule revision must be approved by a different staff account (PRD §3.3).");
+        blocked("A schedule revision must be approved by a different staff account.");
       }
 
       const decision = { decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: args.note };

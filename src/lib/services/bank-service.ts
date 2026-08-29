@@ -134,7 +134,7 @@ export async function decideBankDetails(args: {
         blocked(`These bank details are already ${detail.status.toLowerCase()}.`);
       }
       if (detail.enteredByRef === args.actorRef) {
-        blocked("Bank details must be verified by a different staff account (PRD §3.3).");
+        blocked("Bank details must be verified by a different staff account.");
       }
 
       if (args.approve) {

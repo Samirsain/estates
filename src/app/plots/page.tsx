@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
-import { buildPlcSnapshot, derivedFacing, shortSides } from "@/lib/domain/inventory";
+import { buildPlcSnapshot, shortSides } from "@/lib/domain/inventory";
 import { plcRules } from "@/lib/services/plc-service";
 import { listPendingHoldRequests } from "@/lib/services/hold-service";
 import { listPlots } from "@/lib/services/inventory-service";
@@ -87,8 +87,11 @@ export default async function PlotsPage({
       projectId: plot.projectId,
       plotType: plot.plotType,
       plotNumber: plot.plotNumber,
+      // Square feet at stored precision — it is the figure a Plot is sold by.
+      // The two conversions are rounded; nobody quotes a Plot to four decimals
+      // of a square metre.
       areaSqYd: plot.areaSqYd.toDecimalPlaces(2).toString(),
-      areaSqFt: plot.areaSqFt.toDecimalPlaces(2).toString(),
+      areaSqFt: plot.areaSqFt.toString(),
       areaSqM: plot.areaSqM.toDecimalPlaces(2).toString(),
       status: plot.status,
       pastHolds: plot.events.map((e) => ({
@@ -103,11 +106,6 @@ export default async function PlotsPage({
       lengthFt: plot.lengthFt?.toString() ?? "",
       exactAreaSqFt: plot.exactAreaSqFt?.toString() ?? "",
       exactAreaReason: plot.exactAreaReason ?? "",
-      facing: shortSides(
-        derivedFacing(
-          plot.boundaries.map((b) => ({ side: b.side, kind: b.kind, roadWidthFt: b.roadWidthFt?.toString() }))
-        )
-      ),
       boundaries: plot.boundaries.map((b) => ({
         side: b.side,
         kind: b.kind,
@@ -118,6 +116,7 @@ export default async function PlotsPage({
         ? {
             id: hold.id,
             heldForName: hold.person.fullName,
+            heldForPersonId: hold.person.id,
             expiresAt: hold.expiresAt.toISOString(),
             extensionCount: hold.extensionCount,
             // "There is a request" used to mean "there is a pending request",
@@ -152,7 +151,9 @@ export default async function PlotsPage({
     plot: `${r.plot.plotType.replaceAll("_", " ")} ${r.plot.plotNumber}`,
     plotStatus: r.plot.status,
     buyer: r.person.fullName,
+    buyerPersonId: r.person.id,
     member: `${r.member.memberId} · ${r.member.person.fullName}`,
+    memberPersonId: r.member.person.id,
     createdAt: r.createdAt.toISOString(),
     expiresAt: r.expiresAt.toISOString(),
     queuePosition: r.queuePosition,

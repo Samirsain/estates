@@ -30,6 +30,7 @@ import {
   type StaffRole,
   type Task,
   type TaskView,
+  recordReference,
 } from "@/lib/tasks";
 
 const VIEWS: { id: TaskView; label: string }[] = [
@@ -54,6 +55,9 @@ const RECORD_KINDS: { kind: RecordKind; label: string }[] = [
   { kind: "Member", label: "Member" },
   { kind: "Acquisition", label: "Buyback / Resale" },
 ];
+
+/** Both row buttons are one size, as they are on every other list. */
+const taskButton = "w-20";
 
 const EMPHASIS_STYLE: Record<Emphasis, { row: string; label: string | null }> = {
   overdue: { row: "border-l-4 border-l-red-500", label: "Overdue" },
@@ -81,7 +85,9 @@ export default function DashboardClient({
   const tasks = initialTasks;
   const [now, setNow] = React.useState<Date | null>(null);
   const [view, setView] = React.useState<TaskView>("TODAY");
-  const [showAllAssignees, setShowAllAssignees] = React.useState(false);
+  // MD and Admin answer for every queue, Accounts' included, so they open on
+  // all of it. Everyone else opens on their own work and has no toggle.
+  const [showAllAssignees, setShowAllAssignees] = React.useState(seesAllWork);
   const [range, setRange] = React.useState<DateRange | undefined>();
   const [revising, setRevising] = React.useState<Task | null>(null);
   const [adding, setAdding] = React.useState(false);
@@ -105,6 +111,24 @@ export default function DashboardClient({
       : tasks.filter((t) => t.assigneeRole === role);
     return sortTasks(filterTasks(scoped, view, now, range), now);
   }, [tasks, view, now, range, role, showAllAssignees]);
+
+  /**
+   * The same tasks, under their own title. sortTasks has already put the most
+   * pressing first, so a Map keeps that order inside each group, and the groups
+   * themselves follow whichever holds the earliest due date — the ordering the
+   * flat list had, one level up.
+   */
+  const groups = React.useMemo(() => {
+    const byTitle = new Map<string, Task[]>();
+    for (const task of visible) {
+      const list = byTitle.get(task.title);
+      if (list) list.push(task);
+      else byTitle.set(task.title, [task]);
+    }
+    const earliest = (list: Task[]) =>
+      Math.min(...list.map((t) => new Date(t.dueAt).getTime()));
+    return [...byTitle].sort((a, b) => earliest(a[1]) - earliest(b[1]));
+  }, [visible]);
 
   const stats = now ? summarise(tasks.filter((t) => showAllAssignees || t.assigneeRole === role), now) : null;
 
@@ -178,27 +202,29 @@ export default function DashboardClient({
             </button>
           ))}
           {view === "RANGE" && (
-            <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <div className="inline-flex items-center gap-0 rounded-xl border border-border/60 bg-secondary/50 overflow-hidden">
               <input
                 type="date"
                 aria-label="Range from"
-                className={`${inputClass} h-8 w-auto`}
+                className="h-8 border-0 bg-transparent px-3 text-xs font-medium text-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:ring-inset"
                 value={range?.from ?? ""}
                 onChange={(e) =>
                   setRange((r) => ({ from: e.target.value, to: r?.to ?? e.target.value }))
                 }
               />
-              to
+              <span className="flex h-8 items-center border-x border-border/40 bg-muted/30 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                to
+              </span>
               <input
                 type="date"
                 aria-label="Range to"
-                className={`${inputClass} h-8 w-auto`}
+                className="h-8 border-0 bg-transparent px-3 text-xs font-medium text-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:ring-inset"
                 value={range?.to ?? ""}
                 onChange={(e) =>
                   setRange((r) => ({ from: r?.from ?? e.target.value, to: e.target.value }))
                 }
               />
-            </span>
+            </div>
           )}
         </div>
 
@@ -219,6 +245,10 @@ export default function DashboardClient({
           </Card>
         )}
 
+        {/* Twenty-eight cards, each repeating the same title, is a list you
+            scroll rather than read. The title becomes the heading it already
+            was, once per group, and the card underneath carries only what is
+            different about that one task. */}
         {!now ? (
           <Card className="p-10 text-center text-sm text-muted-foreground">
             Loading tasks…
@@ -235,94 +265,115 @@ export default function DashboardClient({
             </p>
           </Card>
         ) : (
-          <ul className="space-y-3">
-            {visible.map((task) => {
+          <div className="space-y-6">
+            {groups.map(([title, tasks]) => {
+              const overdue = tasks.filter((t) => emphasis(t, now) === "overdue").length;
+              return (
+                <section key={title} className="space-y-2">
+                  <h2 className="flex flex-wrap items-baseline gap-2 border-b border-border pb-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {title}
+                    </span>
+                    <span className="text-[11px] tabular-nums text-muted-foreground">
+                      {tasks.length}
+                    </span>
+                    {overdue > 0 && (
+                      <span className="text-[11px] tabular-nums text-red-700">
+                        {overdue} overdue
+                      </span>
+                    )}
+                  </h2>
+                  <ul className="space-y-2">
+            {tasks.map((task) => {
               const state = EMPHASIS_STYLE[emphasis(task, now)];
               return (
-                <li key={task.id}>
-                  <Card className={`p-4 ${state.row}`}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="text-sm font-semibold">{task.title}</h2>
-                          {state.label && (
-                            <Badge
-                              variant={state.label === "Overdue" ? "destructive" : "warning"}
-                            >
-                              {state.label}
-                            </Badge>
-                          )}
-                          <Badge variant={task.status === "PENDING" ? "info" : "success"}>
-                            {task.status === "PENDING" ? "Pending" : "Completed"}
-                          </Badge>
-                          {task.revisions > 0 && (
-                            <Badge variant="outline">Revised ×{task.revisions}</Badge>
-                          )}
-                        </div>
-                        <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                          <Link2 className="h-3 w-3" />
-                          <span className="font-mono text-primary">{task.record.id}</span>
-                          <span>· {task.record.kind}</span>
-                          <span className="truncate">· {task.record.name}</span>
-                        </p>
-                        <p className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                          <span>
-                            <Clock className="mr-1 inline h-3 w-3" />
-                            Due {formatIst(task.dueAt)}
-                          </span>
-                          <span>
-                            {task.assigneeName} ({task.assigneeRole})
-                          </span>
-                        </p>
-                        {task.latestResult && (
-                          <p className="max-w-3xl text-xs text-muted-foreground/90">
-                            Latest: {task.latestResult}
-                          </p>
-                        )}
-                      </div>
+                // One row, spread across the width the page already has. The
+                // card put every fact hard against the left edge and the two
+                // buttons hard against the right, with the middle third of
+                // every row empty.
+                <li
+                  key={task.id}
+                  className={`flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border/60 py-1.5 pl-3 text-xs last:border-b-0 hover:bg-secondary/50 ${state.row}`}
+                >
+                  {state.label && (
+                    <Badge variant={state.label === "Overdue" ? "destructive" : "warning"}>
+                      {state.label}
+                    </Badge>
+                  )}
+                  {task.revisions > 0 && (
+                    <Badge variant="outline">Revised ×{task.revisions}</Badge>
+                  )}
 
-                      <div className="flex shrink-0 items-center gap-2">
-                        {task.status === "COMPLETED" ? (
-                          <span className="flex items-center gap-1 text-xs text-emerald-700">
-                            <CheckCircle2 className="h-4 w-4" /> Completed
-                          </span>
-                        ) : task.decision ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled
-                            title="Approve / Reject happens on the record's immutable review snapshot (DESIGN §5.2) — built in Phase 3."
-                          >
-                            Open Review
-                          </Button>
-                        ) : (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={readOnly || busy}
-                              title={readOnly ? "MIS is read-only." : undefined}
-                              onClick={() => setRevising(task)}
-                            >
-                              Revise
-                            </Button>
-                            <Button
-                              size="sm"
-                              disabled={readOnly || busy}
-                              title={readOnly ? "MIS is read-only." : undefined}
-                              onClick={() => run(() => completeTaskAction(task.id, newKey()))}
-                            >
-                              Done
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
+                  <span className="min-w-0 flex-1 truncate">
+                    {recordReference(task.record) && (
+                      <span className="mr-1.5 font-mono text-primary">
+                        {recordReference(task.record)}
+                      </span>
+                    )}
+                    {task.record.kind} · {task.record.name}
+                  </span>
+
+                  {task.latestResult && (
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                      {task.latestResult}
+                    </span>
+                  )}
+
+                  <span className="w-[11rem] shrink-0 text-muted-foreground">
+                    <Clock className="mr-1 inline h-3 w-3" />
+                    {formatIst(task.dueAt)}
+                  </span>
+                  <span className="w-[9rem] shrink-0 truncate text-muted-foreground">
+                    {task.assigneeName} ({task.assigneeRole})
+                  </span>
+
+                  <span className="flex shrink-0 items-center justify-end gap-1.5">
+                    {task.status === "COMPLETED" ? (
+                      <span className="flex items-center gap-1 text-emerald-700">
+                        <CheckCircle2 className="h-4 w-4" /> Completed
+                      </span>
+                    ) : task.decision ? (
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        className={taskButton}
+                        disabled
+                        title="Approve / Reject happens on the record's review snapshot."
+                      >
+                        Open Review
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          className={taskButton}
+                          disabled={readOnly || busy}
+                          title={readOnly ? "MIS is read-only." : undefined}
+                          onClick={() => setRevising(task)}
+                        >
+                          Revise
+                        </Button>
+                        <Button
+                          size="xs"
+                          className={taskButton}
+                          disabled={readOnly || busy}
+                          title={readOnly ? "MIS is read-only." : undefined}
+                          onClick={() => run(() => completeTaskAction(task.id, newKey()))}
+                        >
+                          Done
+                        </Button>
+                      </>
+                    )}
+                  </span>
                 </li>
               );
             })}
-          </ul>
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
         )}
       </div>
 
@@ -369,7 +420,7 @@ function ReviseDialog({
   return (
     <Modal
       title="Revise task"
-      description={`${task.title} — ${task.record.id}. The task stays Pending and the new date, result and remark are recorded.`}
+      description={`${task.title} — ${recordReference(task.record) ?? task.record.name}. The task stays Pending and the new date, result and remark are recorded.`}
       onClose={onClose}
     >
       <form
@@ -394,7 +445,7 @@ function ReviseDialog({
               className={inputClass}
             />
           </Field>
-          <Field label="Time (IST)">
+          <Field label="Time">
             <input required name="time" type="time" defaultValue="11:00" className={inputClass} />
           </Field>
         </div>
@@ -481,7 +532,7 @@ function AddTaskDialog({
               className={inputClass}
             />
           </Field>
-          <Field label="Time (IST)">
+          <Field label="Time">
             <input name="time" type="time" required defaultValue="11:00" className={inputClass} />
           </Field>
           <Field label="Recurrence">

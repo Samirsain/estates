@@ -66,80 +66,12 @@ export type Action =
 
 /** Baseline grants per role. Anything not listed is denied. */
 const ROLE_ACTIONS: Record<Role, readonly Action[]> = {
-  MD: [
-    "STAFF_MANAGE",
-    "STAFF_EMERGENCY_DISABLE",
-    "ROLE_PERMISSION_MANAGE",
-    "MEMBER_ACTIVATE",
-    "MEMBER_DEACTIVATE",
-    "PERSON_MERGE",
-    "PROJECT_SETUP",
-    "PLC_SNAPSHOT_CORRECT",
-    "PLOT_SETUP",
-    "PLOT_RESTRICTION_MANAGE",
-    "PLOT_MAKE_AVAILABLE",
-    "BANK_DETAILS_ENTER",
-    "ENQUIRY_MANAGE",
-    "HOLD_CREATE",
-    "HOLD_EXTEND_FIRST",
-    "HOLD_EXTEND_FURTHER",
-    "HOLD_REQUEST_REVIEW",
-    "BOOKING_REQUEST_SUBMIT",
-    "BOOKING_CANCEL_REQUEST",
-    "OWNERSHIP_SHARE_CHANGE",
-    "PRIMARY_CUSTOMER_CHANGE_RAISE",
-    "SOLD_BY_CORRECTION_RAISE",
-    "ACQUISITION_CREATE",
-    "CHANGE_PLOT_RAISE",
-    "BUYING_COMMISSION_RECORD",
-    "SOLD_BY_CORRECTION_APPROVE",
-    "FINAL_BUYER_RECORD",
-    "COMPLETION_RECORD",
-    "DELIVERY_REOPEN",
-    "WORK_REASSIGN",
-    "TASK_CREATE",
-    "TASK_COMPLETE",
-    "REPORT_VIEW",
-    "REPORT_EXPORT",
-    "AUDIT_VIEW",
-  ],
-  ADMIN: [
-    "STAFF_MANAGE",
-    "STAFF_EMERGENCY_DISABLE",
-    "ROLE_PERMISSION_MANAGE",
-    "MEMBER_ACTIVATE",
-    "MEMBER_DEACTIVATE",
-    "PERSON_MERGE",
-    "PROJECT_SETUP",
-    "PLC_SNAPSHOT_CORRECT",
-    "PLOT_SETUP",
-    "PLOT_RESTRICTION_MANAGE",
-    "PLOT_MAKE_AVAILABLE",
-    "BANK_DETAILS_ENTER",
-    "ENQUIRY_MANAGE",
-    "HOLD_CREATE",
-    "HOLD_EXTEND_FIRST",
-    "HOLD_EXTEND_FURTHER",
-    "HOLD_REQUEST_REVIEW",
-    "BOOKING_REQUEST_SUBMIT",
-    "BOOKING_CANCEL_REQUEST",
-    "OWNERSHIP_SHARE_CHANGE",
-    "PRIMARY_CUSTOMER_CHANGE_RAISE",
-    "SOLD_BY_CORRECTION_RAISE",
-    "ACQUISITION_CREATE",
-    "CHANGE_PLOT_RAISE",
-    "BUYING_COMMISSION_RECORD",
-    "SOLD_BY_CORRECTION_APPROVE",
-    "FINAL_BUYER_RECORD",
-    "COMPLETION_RECORD",
-    "DELIVERY_REOPEN",
-    "WORK_REASSIGN",
-    "TASK_CREATE",
-    "TASK_COMPLETE",
-    "REPORT_VIEW",
-    "REPORT_EXPORT",
-    "AUDIT_VIEW",
-  ],
+  // MD and Admin answer for everything the company does, so they hold every
+  // Action rather than a list that has to be remembered each time one is added
+  // — see FULL_ACCESS in `can`. Maker-checker still stands: holding both sides
+  // of a decision never lets one account approve its own request.
+  MD: [],
+  ADMIN: [],
   // PRD §3 — Accounts decides Bookings, confirms payment, verifies banks and
   // processes commission. It does not administer users or set up inventory.
   ACCOUNTS: [
@@ -201,8 +133,15 @@ const FIELD_ACCESS: Record<SensitiveField, readonly Role[]> = {
   BUYER_IDENTITY: ["MD", "ADMIN", "ACCOUNTS", "CRM", "PC"],
 };
 
+/** The roles that hold every Action, present and future. */
+const FULL_ACCESS: readonly Role[] = ["MD", "ADMIN"];
+
 export function can(role: Role, action: Action, extraPermissions: readonly string[] = []): boolean {
-  return ROLE_ACTIONS[role]?.includes(action) || extraPermissions.includes(action);
+  return (
+    FULL_ACCESS.includes(role) ||
+    ROLE_ACTIONS[role]?.includes(action) ||
+    extraPermissions.includes(action)
+  );
 }
 
 export function canViewField(role: Role, field: SensitiveField): boolean {
