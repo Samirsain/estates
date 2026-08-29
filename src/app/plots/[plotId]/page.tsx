@@ -32,7 +32,7 @@ const STATUS_LABEL: Record<string, string> = {
   NOT_AVAILABLE: "Not Available",
   AVAILABLE: "Available",
   HOLD: "Hold",
-  WAITING_FOR_BOOKING_APPROVAL: "Waiting for Booking Approval",
+  WAITING_FOR_BOOKING_APPROVAL: "Waiting Approval",
   BOOKED: "Booked",
   PAYMENT_COMPLETED: "Payment Completed",
   REFUND_PENDING: "Refund Pending",

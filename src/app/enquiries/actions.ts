@@ -23,6 +23,8 @@ export async function createEnquiryAction(
     city: string;
     projectId: string;
     plotId: string;
+    /** Used when no Plot is named: the size or facing they asked for. */
+    plotRequirement: string;
     source: EnquirySource;
     sourceMemberId: string;
     sourceCustomerId: string;
@@ -59,6 +61,7 @@ export async function createEnquiryAction(
         : { fullName: input.fullName, mobile: input.mobile, city: input.city },
       projectId: input.projectId,
       plotId: input.plotId || null,
+      plotRequirement: input.plotRequirement,
       source: input.source,
       sourceMemberId: input.sourceMemberId || null,
       sourceCustomerId: input.sourceCustomerId || null,

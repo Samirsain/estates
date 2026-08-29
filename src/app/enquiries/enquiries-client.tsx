@@ -17,8 +17,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Field, Modal } from "@/components/ui/modal";
-import { addIstDays, formatIst, istDay, istInstant, type StaffRole } from "@/lib/tasks";
+import { Field, Modal, inputClass } from "@/components/ui/modal";
+import {
+  addIstDays,
+  formatDimension,
+  formatIst,
+  formatIstDate,
+  formatQuantity,
+  istDay,
+  istInstant,
+  type StaffRole,
+} from "@/lib/tasks";
 import {
   closeEnquiryAction,
   createEnquiryAction,
@@ -36,15 +45,31 @@ export type EnquiryRowView = {
   city: string;
   project: string;
   plot: string;
+  plotRequirement: string | null;
   source: string;
-  sourceMember: string | null;
-  sourceMemberPersonId: string | null;
+  sourceRefId: string | null;
+  sourceRefName: string | null;
+  sourceRefPersonId: string | null;
+  sourceRefKind: "member" | "customer" | null;
   status: string;
   closeReason: string | null;
   assignedTo: string;
+  assignedStaffCode: string | null;
   lastOutcome: string | null;
   nextFollowUpAt: string | null;
   createdAt: string;
+};
+
+/** A Plot the Enquiry can name, with the facts the form shows once it is picked. */
+export type PlotOption = {
+  id: string;
+  projectId: string;
+  label: string;
+  status: string;
+  widthFt: string;
+  lengthFt: string;
+  areaSqFt: string;
+  areaSqM: string;
 };
 
 const OUTCOMES = [
@@ -62,11 +87,15 @@ const SOURCE_LABEL: Record<string, string> = {
   BY_MEMBER: "By Member",
   BY_CUSTOMER: "By Customer",
   EXISTING_CUSTOMER: "Existing Customer",
-  DIRECT: "Direct / Walk-in",
+  DIRECT: "3% Club",
 };
 
-const inputClass =
-  "h-9 w-full rounded-lg border border-input bg-card px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+/**
+ * A follow-up is due on a day, not at a minute — main-PRD §9.5 makes the time
+ * optional and nobody was setting it, so the form stopped asking. The task the
+ * Enquiry raises still needs an instant, and this is it, in IST.
+ */
+const FOLLOW_UP_HOUR = "11:00";
 
 const humanise = (v: string) =>
   v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
@@ -103,7 +132,7 @@ export default function EnquiriesClient({
   staffAccountId: string;
   rows: EnquiryRowView[];
   projects: Array<{ id: string; name: string }>;
-  plots: Array<{ id: string; projectId: string; label: string }>;
+  plots: PlotOption[];
   people: Array<{ id: string; fullName: string; mobileMasked: string }>;
   members: Array<{ id: string; label: string }>;
   customers: Array<{ id: string; label: string }>;
@@ -114,16 +143,27 @@ export default function EnquiriesClient({
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [statusFilter, setStatusFilter] = React.useState("ACTIVE");
+  const [assigneeFilter, setAssigneeFilter] = React.useState("ALL");
   const [search, setSearch] = React.useState("");
   const [creating, setCreating] = React.useState(false);
   const [followUp, setFollowUp] = React.useState<EnquiryRowView | null>(null);
   const [closing, setClosing] = React.useState<EnquiryRowView | null>(null);
 
+  /** Who currently carries work here, for the filter beside the status one. */
+  const assignees = Array.from(
+    new Map(rows.map((r) => [r.assignedStaffCode ?? "", r.assignedTo])).entries()
+  )
+    .filter(([code]) => code !== "")
+    .sort((a, b) => a[1].localeCompare(b[1]));
+
   const visible = rows.filter(
     (r) =>
       (statusFilter === "ALL" || r.status === statusFilter) &&
+      (assigneeFilter === "ALL" || (r.assignedStaffCode ?? "") === assigneeFilter) &&
       (search.trim() === "" ||
-        `${r.enquiryNo} ${r.name} ${r.project} ${r.plot}`.toLowerCase().includes(search.trim().toLowerCase()))
+        `${r.enquiryNo} ${r.name} ${r.city} ${r.mobileMasked} ${r.project} ${r.plot} ${r.plotRequirement ?? ""} ${r.assignedTo} ${r.assignedStaffCode ?? ""}`
+          .toLowerCase()
+          .includes(search.trim().toLowerCase()))
   );
 
   async function run(action: () => Promise<ActionResult>) {
@@ -170,9 +210,22 @@ export default function EnquiriesClient({
               </option>
             ))}
           </select>
+          <select
+            className={filterClass}
+            value={assigneeFilter}
+            onChange={(e) => setAssigneeFilter(e.target.value)}
+            aria-label="Filter by assignee"
+          >
+            <option value="ALL">All assignees</option>
+            {assignees.map(([code, name]) => (
+              <option key={code} value={code}>
+                {name} · {code}
+              </option>
+            ))}
+          </select>
           <Input
             className="h-9 w-56"
-            placeholder="Search Enquiry ID, name or Project"
+            placeholder="Search name, city, Project, Plot or Enquiry ID"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -212,22 +265,23 @@ export default function EnquiriesClient({
           // Enquiries fit on a laptop screen without the page becoming stripes.
           // Same table as Customers, so the two lists are read the same way.
           <div className="overflow-x-auto">
-            {/* Nine columns in a laptop width leaves the two that vary — the
-                name and the Project — about 8rem each, so what qualifies them
-                (the city, the Plot, who sourced it) sits on the second line of
-                its own cell rather than taking a column and wrapping. */}
-            <table className="w-full min-w-[60rem] border-collapse text-xs">
+            {/* A sheet: every fact under its own heading — when it came in, who
+                it is, where they are, what they asked about — rather than two
+                facts stacked in one cell. Only the Plot keeps a second line,
+                for the type it is. */}
+            <table className="w-full min-w-[64rem] border-collapse text-xs">
               <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                 <tr className="border-b border-border">
-                  <th className="w-[6.5rem] px-3 py-1.5">Enquiry ID</th>
+                  <th className="w-[5.5rem] px-3 py-1.5">Date</th>
                   <th className="px-3 py-1.5">Name</th>
                   <th className="w-[6.5rem] px-3 py-1.5">Mobile</th>
+                  <th className="w-[7rem] px-3 py-1.5">City</th>
                   <th className="px-3 py-1.5">Project</th>
+                  <th className="w-[8rem] px-3 py-1.5">Plot</th>
                   <th className="w-[6rem] px-3 py-1.5">Status</th>
                   <th className="w-[9.5rem] px-3 py-1.5">Source</th>
-                  <th className="w-[10rem] px-3 py-1.5">Follow-up</th>
-                  <th className="w-[7rem] px-3 py-1.5">Assigned to</th>
-                  {canManage && <th className="w-[7rem] px-3 py-1.5 text-right">Action</th>}
+                  <th className="w-[8rem] px-3 py-1.5">Follow-up</th>
+                  {canManage && <th className="w-[6rem] px-3 py-1.5 text-center">Action</th>}
                 </tr>
               </thead>
               <tbody>
@@ -236,16 +290,28 @@ export default function EnquiriesClient({
                     key={e.id}
                     className="border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1"
                   >
-                    <td className="whitespace-nowrap font-mono font-semibold">{e.enquiryNo}</td>
+                    <td className="whitespace-nowrap tabular-nums text-muted-foreground">
+                      {formatIstDate(e.createdAt)}
+                    </td>
                     <td>
-                      <Cell
-                        value={<PersonLink personId={e.personId} name={e.name} />}
-                        under={e.city}
-                      />
+                      <PersonLink personId={e.personId} name={e.name} />
                     </td>
                     <td className="whitespace-nowrap font-mono">{e.mobileMasked}</td>
+                    <td>{e.city || "—"}</td>
+                    <td>{e.project || "—"}</td>
                     <td>
-                      <Cell value={e.project || "—"} under={e.plot} />
+                      {/* Three kinds of interest, and the column says which:
+                          a Plot in inventory, something asked for that is not
+                          in it yet, or the Project itself. */}
+                      {e.plot !== "General" ? (
+                        <span className="font-mono">{e.plot}</span>
+                      ) : e.plotRequirement ? (
+                        <span className="italic" title={e.plotRequirement}>
+                          {e.plotRequirement}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">General</span>
+                      )}
                     </td>
                     <td>
                       <Badge
@@ -263,27 +329,29 @@ export default function EnquiriesClient({
                     </td>
                     <td>
                       <Cell
-                        value={SOURCE_LABEL[e.source] ?? humanise(e.source)}
-                        under={
-                          e.sourceMember && (
+                        value={
+                          e.sourceRefId ? (
                             <PersonLink
-                              personId={e.sourceMemberPersonId}
-                              name={e.sourceMember}
-                              as="member"
+                              personId={e.sourceRefPersonId}
+                              name={e.sourceRefId}
+                              as={e.sourceRefKind ?? undefined}
+                              className="font-mono"
                             />
+                          ) : (
+                            (SOURCE_LABEL[e.source] ?? humanise(e.source))
                           )
                         }
+                        under={e.sourceRefName}
                       />
                     </td>
                     <td>
                       <Cell
                         value={e.lastOutcome ? humanise(e.lastOutcome) : "No follow-up yet"}
-                        under={e.nextFollowUpAt ? `next ${formatIst(e.nextFollowUpAt)}` : null}
+                        under={e.nextFollowUpAt ? `next ${formatIstDate(e.nextFollowUpAt)}` : null}
                       />
                     </td>
-                    <td>{e.assignedTo || "—"}</td>
                     {canManage && (
-                      <td className="whitespace-nowrap text-right">
+                      <td className="whitespace-nowrap text-center">
                         {/* One button, the same shape the Plot row uses when a
                             row has more than one thing to do: a named trigger,
                             the choice behind it. Two pills side by side at the
@@ -292,12 +360,12 @@ export default function EnquiriesClient({
                         {e.status === "ACTIVE" && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button size="xs" className="w-24" disabled={busy}>
+                              <Button size="xs" className="h-6 w-20 px-2 text-[11px]" disabled={busy}>
                                 Update
-                                <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                                <ChevronDown className="ml-0.5 h-3 w-3" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
+                            <DropdownMenuContent align="center">
                               <DropdownMenuItem onSelect={() => setFollowUp(e)}>
                                 Record follow-up
                               </DropdownMenuItem>
@@ -385,10 +453,71 @@ export default function EnquiriesClient({
 
 
 
+/** Read the way Plot Inventory reads them, so one Plot has one status. */
+const PLOT_STATUS_LABEL: Record<string, string> = {
+  NOT_AVAILABLE: "Not Available",
+  AVAILABLE: "Available",
+  HOLD: "Hold",
+  WAITING_FOR_BOOKING_APPROVAL: "Waiting Approval",
+  BOOKED: "Booked",
+  PAYMENT_COMPLETED: "Payment Completed",
+  REFUND_PENDING: "Refund Pending",
+  DELIVERED: "Delivered",
+};
+
 /**
- * New Enquiry — DESIGN §8.2 fields, laid out the way the Booking form is laid
- * out: who it is, then what they are interested in, then how it arrived, then
- * the follow-up. The Person block is the Booking form's Customer block, so a
+ * Who the Enquiry came through — the Booking form's Sold By picker in every
+ * respect: choose from the list, and what was chosen is echoed underneath as
+ * the reference over the name, so a wrong pick is visible before submitting.
+ */
+function SourcePersonPicker({
+  name,
+  label,
+  placeholder,
+  options,
+}: {
+  name: string;
+  label: string;
+  placeholder: string;
+  options: Array<{ id: string; label: string }>;
+}) {
+  const [picked, setPicked] = React.useState("");
+  const chosen = options.find((o) => o.id === picked);
+  const [code, ...rest] = (chosen?.label ?? "").split(" · ");
+
+  return (
+    <Field label={label}>
+      <select
+        name={name}
+        required
+        className={inputClass}
+        value={picked}
+        onChange={(e) => setPicked(e.target.value)}
+      >
+        <option value="" disabled>
+          {placeholder}
+        </option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      {chosen && (
+        <p className="mt-1 leading-tight">
+          <span className="text-xs font-semibold tabular-nums">{code}</span>
+          <br />
+          <span className="text-[11px] text-muted-foreground">{rest.join(" · ")}</span>
+        </p>
+      )}
+    </Field>
+  );
+}
+
+/**
+ * New Enquiry — DESIGN §8.2 fields in the Booking form's own order: the Plot
+ * first with its facts under it, then the Customer block, then the flat grid of
+ * everything else. The Person block is the Booking form's Customer block, so a
  * first-time caller is captured here instead of having to exist already.
  */
 function CreateEnquiryDialog({
@@ -403,7 +532,7 @@ function CreateEnquiryDialog({
   onSubmit,
 }: {
   projects: Array<{ id: string; name: string }>;
-  plots: Array<{ id: string; projectId: string; label: string }>;
+  plots: PlotOption[];
   people: Array<{ id: string; fullName: string; mobileMasked: string }>;
   members: Array<{ id: string; label: string }>;
   customers: Array<{ id: string; label: string }>;
@@ -422,6 +551,7 @@ function CreateEnquiryDialog({
     staff.find((s) => s.isSelf)?.id ?? ""
   );
   const projectPlots = plots.filter((p) => p.projectId === projectId);
+  const plot = plots.find((p) => p.id === plotId);
 
   return (
     <Modal title="New Enquiry" onClose={onClose}>
@@ -436,23 +566,106 @@ function CreateEnquiryDialog({
             mobile: String(f.get("mobile") ?? ""),
             city: String(f.get("city") ?? ""),
             projectId,
-            plotId,
+            plotId: plotId === "CUSTOM" ? "" : plotId,
+            plotRequirement: String(f.get("plotRequirement") ?? ""),
             source: source as "DIRECT",
             sourceMemberId: source === "BY_MEMBER" ? String(f.get("sourceMemberId") ?? "") : "",
             sourceCustomerId: source === "BY_CUSTOMER" ? String(f.get("sourceCustomerId") ?? "") : "",
             assignedStaffId,
-            nextFollowUpIso: istInstant(String(f.get("date")), String(f.get("time"))),
+            nextFollowUpIso: istInstant(String(f.get("date")), FOLLOW_UP_HOUR),
             remark: String(f.get("remark") ?? ""),
           });
         }}
       >
-        <section className="space-y-2.5">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Person
-          </h3>
-          <div className="space-y-2 rounded-xl border border-border/60 p-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Project">
             <select
-              className={`${inputClass} w-full`}
+              className={inputClass}
+              required
+              value={projectId}
+              onChange={(e) => {
+                setProjectId(e.target.value);
+                setPlotId("");
+              }}
+            >
+              <option value="" disabled>
+                Select a Project
+              </option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Plot — optional">
+            <select
+              className={inputClass}
+              disabled={!projectId}
+              value={plotId}
+              onChange={(e) => setPlotId(e.target.value)}
+            >
+              <option value="">
+                {projectId ? "General Enquiry — no Plot" : "Select a Project first"}
+              </option>
+              <option value="CUSTOM">Custom — not in inventory</option>
+              {projectPlots.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
+        {plotId === "CUSTOM" && (
+          <Field label="What they asked for — compulsory">
+            <Input
+              name="plotRequirement"
+              className="h-9 text-xs"
+              required
+              placeholder="e.g. 40 × 60 corner, west facing"
+            />
+          </Field>
+        )}
+
+        {plot ? (
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl border border-border/60 bg-secondary/60 px-3 py-2 text-xs">
+            <dt className="text-muted-foreground">Status</dt>
+            <dd className="text-right font-medium">
+              {PLOT_STATUS_LABEL[plot.status] ?? plot.status.replaceAll("_", " ")}
+            </dd>
+            <dt className="text-muted-foreground">Size</dt>
+            <dd className="text-right font-medium tabular-nums">
+              {plot.widthFt && plot.lengthFt
+                ? `${formatDimension(plot.widthFt)} × ${formatDimension(plot.lengthFt)}`
+                : "Irregular"}
+            </dd>
+            <dt className="text-muted-foreground">Area</dt>
+            <dd className="text-right font-medium tabular-nums">
+              {formatQuantity(plot.areaSqFt)} sq ft · {formatQuantity(plot.areaSqM)} sq m
+            </dd>
+            <dd className="col-span-2 pt-1 text-[11px] text-muted-foreground">
+              An Enquiry never blocks a Plot — a Hold does that. Only one Active Enquiry may exist
+              for the same Person, Project and Plot.
+            </dd>
+          </dl>
+        ) : (
+          <p className="rounded-xl border border-border/60 bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+            {plotId === "CUSTOM"
+              ? "A requirement, not a Plot: it allocates nothing and blocks nothing. Raise a Plot-wise Enquiry once inventory holds one that matches."
+              : "A General Enquiry covers the Project. Only one Active General Enquiry may exist per Person and Project."}
+          </p>
+        )}
+
+        {/* One person, so no bordered card and no section heading: an empty box
+            around a single select is the space the Booking form spends on
+            several Customers and their shares. */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Customer">
+            <select
+              className={inputClass}
               required
               value={personId}
               onChange={(e) => setPersonId(e.target.value)}
@@ -467,162 +680,90 @@ function CreateEnquiryDialog({
                 </option>
               ))}
             </select>
+          </Field>
 
-            {personId === "NEW" && (
-              <div className="grid gap-2 sm:grid-cols-3">
-                <Input className="h-9 text-xs" name="fullName" placeholder="Full name" required />
-                <Input
-                  className="h-9 text-xs"
-                  name="mobile"
-                  placeholder="Mobile"
-                  inputMode="numeric"
-                  required
-                />
-                <Input className="h-9 text-xs" name="city" placeholder="City — optional" />
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="space-y-2.5">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Interest
-          </h3>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Interested Project">
-              <select
-                className={inputClass}
-                required
-                value={projectId}
-                onChange={(e) => {
-                  setProjectId(e.target.value);
-                  setPlotId("");
-                }}
-              >
-                <option value="" disabled>
-                  Select a Project
+          <Field label="Enquiry Source">
+            <select
+              className={inputClass}
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+            >
+              {Object.entries(SOURCE_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
                 </option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Interested Plot — optional">
-              <select
-                className={inputClass}
-                disabled={!projectId}
-                value={plotId}
-                onChange={(e) => setPlotId(e.target.value)}
-              >
-                <option value="">
-                  {projectId ? "General Enquiry — no Plot" : "Select a Project first"}
-                </option>
-                {projectPlots.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          <p className="rounded-xl border border-border/60 bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
-            {plotId
-              ? "A Plot-wise Enquiry is its own record and never blocks the Plot — a Hold does that. Only one Active Enquiry may exist for the same Person, Project and Plot."
-              : "A General Enquiry covers the Project. Only one Active General Enquiry may exist per Person and Project."}
-          </p>
-        </section>
+              ))}
+            </select>
+          </Field>
 
-        <section className="space-y-2.5">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Source
-          </h3>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Enquiry Source">
-              <select
-                className={inputClass}
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-              >
-                {Object.entries(SOURCE_LABEL).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            {source === "BY_MEMBER" && (
-              <Field label="Source Member — required">
-                <select name="sourceMemberId" required defaultValue="" className={inputClass}>
-                  <option value="" disabled>
-                    Select the Member
-                  </option>
-                  {members.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            {source === "BY_CUSTOMER" && (
-              <Field label="Source Customer — required">
-                <select name="sourceCustomerId" required defaultValue="" className={inputClass}>
-                  <option value="" disabled>
-                    Select the Customer
-                  </option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Enquiry Source records how the enquiry arrived. It does not decide commission — the
-            Sold By selection on the Booking does.
-          </p>
-        </section>
-
-        <section className="space-y-2.5">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Follow-up
-          </h3>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Assigned to">
-              <select
-                className={inputClass}
-                value={assignedStaffId}
-                onChange={(e) => setAssignedStaffId(e.target.value)}
-              >
-                {staff.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.isSelf ? `${s.label} — you` : s.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Next follow-up date">
-              <input
-                name="date"
-                type="date"
+          {personId === "NEW" && (
+            <div className="grid gap-2 sm:col-span-2 sm:grid-cols-3">
+              <Input className="h-9 text-xs" name="fullName" placeholder="Full name" required />
+              <Input
+                className="h-9 text-xs"
+                name="mobile"
+                placeholder="Mobile"
+                inputMode="numeric"
                 required
-                defaultValue={addIstDays(istDay(new Date()), 1)}
-                className={inputClass}
               />
-            </Field>
-            <Field label="Time">
-              <input name="time" type="time" required defaultValue="11:00" className={inputClass} />
+              <Input className="h-9 text-xs" name="city" placeholder="City — optional" />
+            </div>
+          )}
+
+          {source === "BY_MEMBER" && (
+            <SourcePersonPicker
+              key="member"
+              name="sourceMemberId"
+              label="Source Member — compulsory"
+              placeholder="Select the Member"
+              options={members}
+            />
+          )}
+          {source === "BY_CUSTOMER" && (
+            <SourcePersonPicker
+              key="customer"
+              name="sourceCustomerId"
+              label="Source Customer — compulsory"
+              placeholder="Select the Customer"
+              options={customers}
+            />
+          )}
+
+          <Field label="Assigned to">
+            <select
+              className={inputClass}
+              value={assignedStaffId}
+              onChange={(e) => setAssignedStaffId(e.target.value)}
+            >
+              {staff.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.isSelf ? `${s.label} — you` : s.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Next follow-up date">
+            <input
+              name="date"
+              type="date"
+              required
+              defaultValue={addIstDays(istDay(new Date()), 1)}
+              className={inputClass}
+            />
+          </Field>
+
+          {/* A remark is a sentence, not a field width — it takes the row. */}
+          <div className="sm:col-span-2">
+            <Field label="Remark — optional">
+              <Input name="remark" className="h-9 text-xs" />
             </Field>
           </div>
-        </section>
+        </div>
 
-        <Field label="Remark — optional">
-          <Input name="remark" className="h-9 text-xs" />
-        </Field>
+        <p className="text-[11px] text-muted-foreground">
+          Source records how the Enquiry arrived — commission follows the Booking&rsquo;s Sold By.
+        </p>
 
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
@@ -676,7 +817,7 @@ function FollowUpDialog({
               <li key={i}>
                 {formatIst(h.at)} — {humanise(h.outcome)}
                 {h.remark ? ` · ${h.remark}` : ""}
-                {h.nextAt ? ` · next ${formatIst(h.nextAt)}` : ""}
+                {h.nextAt ? ` · next ${formatIstDate(h.nextAt)}` : ""}
               </li>
             ))}
           </ul>
@@ -691,7 +832,7 @@ function FollowUpDialog({
           onSubmit(
             f.get("outcome") as (typeof OUTCOMES)[number],
             String(f.get("remark") ?? ""),
-            istInstant(String(f.get("date")), String(f.get("time")))
+            istInstant(String(f.get("date")), FOLLOW_UP_HOUR)
           );
         }}
       >
@@ -704,20 +845,15 @@ function FollowUpDialog({
             ))}
           </select>
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Next follow-up date">
-            <input
-              name="date"
-              type="date"
-              required
-              defaultValue={addIstDays(istDay(new Date()), 2)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Time">
-            <input name="time" type="time" required defaultValue="11:00" className={inputClass} />
-          </Field>
-        </div>
+        <Field label="Next follow-up date">
+          <input
+            name="date"
+            type="date"
+            required
+            defaultValue={addIstDays(istDay(new Date()), 2)}
+            className={inputClass}
+          />
+        </Field>
         <Field label="Remark">
           <Input name="remark" />
         </Field>

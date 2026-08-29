@@ -129,6 +129,8 @@ async function main() {
     actorRole: "CRM",
     newPerson: { fullName: `${TAG} Walk-in`, mobile: "9500000009", city: "Indore" },
     projectId: otherProject.id,
+    // An Enquiry may be for something inventory does not hold yet.
+    plotRequirement: "40 × 60 corner, west facing",
     source: "DIRECT",
     assignedStaffId: (await db.staffAccount.findFirstOrThrow({ where: { role: "CRM" } })).id,
     assigneeRole: "CRM",
@@ -142,6 +144,7 @@ async function main() {
   assert.equal(walkInRow.person.primaryMobile, "9500000009");
   assert.equal(walkInRow.person.city, "Indore");
   assert.equal(walkInRow.plotId, null);
+  assert.equal(walkInRow.plotRequirement, "40 × 60 corner, west facing");
 
   const bookingA = await bookAndApprove(plotA.id, buyer.id, enquiry.enquiryId);
   await confirmPaymentReceived({

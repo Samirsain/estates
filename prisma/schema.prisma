@@ -668,6 +668,10 @@ model Enquiry {
   /// Optional — a Plot-wise Enquiry stays a separate record (PRD §7.1).
   plotId    String?
   plot      Plot?   @relation(fields: [plotId], references: [id])
+  /// What they asked for when no Plot in inventory matches it — "40 × 60
+  /// corner, west facing". Free text on purpose: it is a requirement, not a
+  /// record, and it never allocates or blocks anything.
+  plotRequirement String?
 
   source                EnquirySource
   sourceMemberId        String?

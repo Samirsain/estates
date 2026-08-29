@@ -138,7 +138,7 @@ const STATUS_LABEL: Record<string, string> = {
   NOT_AVAILABLE: "Not Available",
   AVAILABLE: "Available",
   HOLD: "Hold",
-  WAITING_FOR_BOOKING_APPROVAL: "Awaiting Approval",
+  WAITING_FOR_BOOKING_APPROVAL: "Waiting Approval",
   BOOKED: "Booked",
   PAYMENT_COMPLETED: "Payment Completed",
   REFUND_PENDING: "Refund Pending",
@@ -195,7 +195,7 @@ const RESTRICTION_REASON_LABEL: Record<string, string> = {
 };
 
 const EXTENSION_STATUS_LABEL: Record<string, string> = {
-  PENDING: "awaiting a decision",
+  PENDING: "waiting approval",
   APPROVED: "approved",
   REJECTED: "rejected",
 };
@@ -214,11 +214,11 @@ const rowActions = "flex w-28 items-center gap-1.5";
 const rowButton = "h-7 flex-1 basis-0 px-1.5 text-[11px]";
 
 // Status is a column, so its pills are one width — a ragged edge that changes
-// shape with the length of the word inside it is not a column. "Awaiting
+// shape with the length of the word inside it is not a column. "Waiting
 // Approval" is four times the length of "Hold", so the long one wraps inside
 // the same pill instead of stretching it and dragging the whole column out
-// with it. The full wording — Waiting for Booking Approval — is on the Plot's
-// own page, where there is room for it.
+// with it. Every screen says Waiting Approval — a Plot, a Booking Request and
+// an Acquisition are all waiting on the same kind of decision.
 const statusBadge = "w-[7.5rem] justify-center whitespace-normal text-center leading-tight";
 
 const inputClass =
@@ -553,29 +553,43 @@ function SideControl({
               <option key={kind} value={kind}>{BOUNDARY_KIND_LABEL[kind]}</option>
             ))}
           </select>
-          {isRoad && hasPreconfiguredRoads && (
-            <select
-              className="h-7 w-full rounded-md border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
-              value={selectedRoad ? `${selectedRoad.threshold}|${selectedRoad.remark || ""}` : "custom"}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === "custom") {
-                  onChange({ roadWidthFt: "", reference: "" });
-                } else {
-                  const [threshold, remark] = val.split("|");
-                  onChange({ roadWidthFt: threshold, reference: remark || "" });
-                }
-              }}
-            >
-              <option value="custom">Custom</option>
-              {roads.map((r, ri) => {
-                const pct = r.percent.includes(".") ? r.percent.replace(/0+$/, "").replace(/\.$/, "") : r.percent;
-                const nameStr = r.remark ? `${r.remark} (${r.threshold}ft, ${pct}%)` : `Road ${r.threshold}ft (${pct}%)`;
-                return <option key={ri} value={`${r.threshold}|${r.remark || ""}`}>{nameStr}</option>;
-              })}
-            </select>
-          )}
-          {(!hasPreconfiguredRoads || isCustomRoad) && (
+          {/* Two lines, never three: a Custom road puts its width beside the
+              PLC select rather than under it, so choosing Custom does not make
+              this side taller than the three next to it. */}
+          {isRoad && hasPreconfiguredRoads ? (
+            <div className="flex items-center gap-1 min-w-0">
+              <select
+                className="h-7 min-w-0 flex-1 rounded-md border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
+                value={selectedRoad ? `${selectedRoad.threshold}|${selectedRoad.remark || ""}` : "custom"}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "custom") {
+                    onChange({ roadWidthFt: "", reference: "" });
+                  } else {
+                    const [threshold, remark] = val.split("|");
+                    onChange({ roadWidthFt: threshold, reference: remark || "" });
+                  }
+                }}
+              >
+                <option value="custom">Custom</option>
+                {roads.map((r, ri) => {
+                  const pct = r.percent.includes(".") ? r.percent.replace(/0+$/, "").replace(/\.$/, "") : r.percent;
+                  const nameStr = r.remark ? `${r.remark} (${r.threshold}ft, ${pct}%)` : `Road ${r.threshold}ft (${pct}%)`;
+                  return <option key={ri} value={`${r.threshold}|${r.remark || ""}`}>{nameStr}</option>;
+                })}
+              </select>
+              {isCustomRoad && (
+                <input
+                  className="h-7 w-14 shrink-0 rounded-md border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
+                  inputMode="decimal"
+                  placeholder="ft"
+                  aria-label={`${boundary.side.toLowerCase()} road width in feet`}
+                  value={boundary.roadWidthFt ?? ""}
+                  onChange={(e) => onChange({ roadWidthFt: e.target.value })}
+                />
+              )}
+            </div>
+          ) : (
             <input
               className="h-7 w-full rounded-md border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
               inputMode={isRoad ? "decimal" : undefined}
@@ -595,12 +609,14 @@ function SideControl({
     <div className="grid grid-cols-[3.25rem_1fr_1fr] items-start gap-1.5">
       <span className="pt-1.5 text-xs font-medium text-foreground">{SIDE_NAME[boundary.side]}</span>
       {kindSelect}
-      <div className="flex w-full flex-col gap-1">
-        {roadSelect}
-        {(!hasPreconfiguredRoads || isCustomRoad) && (
-          React.cloneElement(detailInput, { id: `${boundary.side}-detail` })
-        )}
-      </div>
+      {hasPreconfiguredRoads ? (
+        <div className="flex w-full items-center gap-1 min-w-0">
+          {roadSelect}
+          {isCustomRoad && React.cloneElement(detailInput, { id: `${boundary.side}-detail`, className: "h-8 w-16 shrink-0 rounded-lg border border-input bg-card px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" })}
+        </div>
+      ) : (
+        React.cloneElement(detailInput, { id: `${boundary.side}-detail` })
+      )}
     </div>
   );
 }
@@ -1659,6 +1675,12 @@ export function EditPlotDetailsDialog({
  * floating over the list they are about — so this renders the form and the page
  * around it supplies the chrome.
  */
+/**
+ * The Prepare Inventory tracks, named once so the sticky header and every row
+ * cannot drift apart — a heading over the wrong field is worse than no heading.
+ */
+const PREPARE_GRID = "lg:grid-cols-[3.5rem_5rem_9rem_1fr_10.5rem_5rem_7rem_2rem]";
+
 export function PrepareInventoryForm({
   projects,
   busy,
@@ -1747,13 +1769,20 @@ export function PrepareInventoryForm({
 
       {/* ── Column header ──
           Sticky, because at row fifteen the question is which column this is. */}
-      <div className="sticky top-0 z-10 hidden border-b border-border bg-background/95 px-1 pb-1 pt-2 backdrop-blur-sm lg:grid lg:grid-cols-[2rem_5rem_9rem_13rem_1fr] lg:gap-3">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">#</span>
-        {["Plot No.", "Type", "Dimensions (W × L ft)", "Boundaries"].map((h) => (
-          <span key={h} className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            {h}
-          </span>
-        ))}
+      <div
+        className={`sticky top-0 z-10 hidden border-b border-border bg-background/95 px-3 pb-1 pt-2 backdrop-blur-sm lg:grid ${PREPARE_GRID} lg:gap-3`}
+      >
+        {/* One label per control, in the same track, so a heading sits directly
+            above the thing it names. Area, PLC and Irregular used to share the
+            last track under one heading and carried their own inline labels
+            instead — three names floating in a wide gap. */}
+        {["Sr No", "Plot No.", "Type", "Dimensions (W × L ft)", "Area", "PLC", "Irregular"].map(
+          (h) => (
+            <span key={h} className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              {h}
+            </span>
+          )
+        )}
       </div>
 
       {/* ── Plot rows ──
@@ -1777,7 +1806,7 @@ export function PrepareInventoryForm({
               }`}
             >
               {/* ── Top line: plot details ── */}
-              <div className="grid grid-cols-1 lg:grid-cols-[2rem_5rem_9rem_13rem_1fr] gap-3 items-center px-3 py-2 border-b border-border">
+              <div className={`grid grid-cols-1 ${PREPARE_GRID} gap-3 items-center px-3 py-2 border-b border-border`}>
                 {/* Row serial */}
                 <span className="hidden lg:flex items-center justify-center text-[11px] font-bold tabular-nums text-muted-foreground select-none bg-secondary rounded h-6 w-6 border border-border">
                   {i + 1}
@@ -1829,42 +1858,74 @@ export function PrepareInventoryForm({
                   </div>
                 )}
 
-                {/* PLC + controls */}
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">PLC</span>
-                  <span className="tabular-nums text-xs font-bold text-foreground bg-secondary border border-border px-2 py-0.5 rounded">{preview.plc}</span>
-                  <div className="flex items-center gap-1.5 ml-auto">
-                    <label
-                      title="Irregular plot — type the area instead of width × length"
-                      className="flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground has-[:checked]:border-primary/50 has-[:checked]:text-foreground"
+                {/* Area — plain figures, no box: these are read, not pressed.
+                    The number carries the weight, the unit stays quiet beside
+                    it, and an unfilled row says nothing rather than 0.00. */}
+                <div className="flex items-baseline gap-2 tabular-nums">
+                  {[
+                    { value: preview.areaSqYd, unit: "sq yd", title: "Area in Square Yards" },
+                    { value: preview.areaSqM, unit: "sq m", title: "Area in Square Meters" },
+                  ].map((area) => (
+                    <span
+                      key={area.unit}
+                      title={area.title}
+                      // The figure right-aligned against a unit of fixed width,
+                      // so twenty rows of different digit counts still line up
+                      // in two columns instead of drifting.
+                      className="flex flex-1 items-baseline justify-end gap-1"
                     >
-                      <input
-                        type="checkbox"
-                        className="h-3.5 w-3.5 rounded border-border accent-primary"
-                        checked={row.irregular}
-                        onChange={(e) =>
-                          update(i, {
-                            irregular: e.target.checked,
-                            ...(e.target.checked
-                              ? { widthFt: "", lengthFt: "" }
-                              : { exactAreaSqFt: "", exactAreaReason: "" }),
-                          })
-                        }
-                      />
-                      Irregular
-                    </label>
-                    {rows.length > 1 && (
-                      <button
-                        type="button"
-                        title="Remove this plot"
-                        className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                        onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
+                      <span
+                        className={`text-xs font-semibold ${
+                          area.value === "—" ? "text-muted-foreground/60" : "text-foreground"
+                        }`}
                       >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
+                        {area.value}
+                      </span>
+                      <span className="w-8 shrink-0 text-[10px] text-muted-foreground">{area.unit}</span>
+                    </span>
+                  ))}
                 </div>
+
+                {/* PLC */}
+                <span className="tabular-nums text-xs font-bold text-foreground bg-secondary border border-border px-2 py-0.5 rounded text-center">
+                  {preview.plc}
+                </span>
+
+                {/* Irregular */}
+                <label
+                  title="Irregular plot — type the area instead of width × length"
+                  className="flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground has-[:checked]:border-primary/50 has-[:checked]:text-foreground"
+                >
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 rounded border-border accent-primary"
+                    checked={row.irregular}
+                    onChange={(e) =>
+                      update(i, {
+                        irregular: e.target.checked,
+                        ...(e.target.checked
+                          ? { widthFt: "", lengthFt: "" }
+                          : { exactAreaSqFt: "", exactAreaReason: "" }),
+                      })
+                    }
+                  />
+                  Irregular
+                </label>
+
+                {/* Remove — its own track, so nothing above it shifts when the
+                    second row appears and it can be gone. */}
+                {rows.length > 1 ? (
+                  <button
+                    type="button"
+                    title="Remove this plot"
+                    className="justify-self-center p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                ) : (
+                  <span aria-hidden className="hidden lg:block" />
+                )}
               </div>
 
               {/* ── Bottom line: 4 boundaries with shaded background and dark vertical dividers ── */}
@@ -1932,18 +1993,16 @@ export function PrepareInventoryForm({
             {rows.length > 0 ? `${rows.length} plot${rows.length === 1 ? "" : "s"} in grid` : "No plots yet — add some above"}
           </span>
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onCancel}
-              className="rounded-lg border-border text-muted-foreground hover:bg-muted"
-            >
+            {/* The same pair every dialog in the app ends with: the way out on
+                the left in outline, the commit on the right. The overrides that
+                were here made Cancel a third kind of button. */}
+            <Button type="button" variant="outline" size="sm" className="w-24" onClick={onCancel}>
               Cancel
             </Button>
             <Button
               type="button"
               size="sm"
+              className="min-w-[8rem]"
               disabled={busy || !projectId || named === 0}
               onClick={() =>
                 onSubmit(

@@ -5,6 +5,7 @@ import {
   emphasis,
   filterTasks,
   findPendingDuplicate,
+  formatDimension,
   istDay,
   istInstant,
   summarise,
@@ -122,5 +123,13 @@ assert.equal(
 // Neither is the placeholder an unlinked manual task carries.
 assert.equal(recordReference({ id: "UNLINKED:STF-0001", name: "Not linked" }), null);
 assert.equal(recordReference({ id: "", name: "Not linked" }), null);
+
+// Decimal feet read back as feet and inches — the inverse of what the Plot
+// form parses, so 25'5" typed in is 25'5" shown.
+assert.equal(formatDimension("25.4167"), `25'5"`);
+assert.equal(formatDimension("24"), "24'");
+assert.equal(formatDimension("24.000"), "24'");
+// A rounding that lands on twelve inches is the next foot, not 24'12".
+assert.equal(formatDimension("24.999"), "25'");
 
 console.log("tasks.check.ts OK");

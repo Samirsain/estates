@@ -77,7 +77,7 @@ type Permissions = {
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING_APPROVAL: "Pending Approval",
+  PENDING_APPROVAL: "Waiting Approval",
   APPROVED: "Approved",
   REJECTED: "Rejected",
   CANCELLED: "Deal Cancelled",

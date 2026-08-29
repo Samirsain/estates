@@ -122,6 +122,18 @@ export function formatQuantity(value: string | number): string {
   return fraction ? `${sign}${grouped}.${fraction}` : `${sign}${grouped}`;
 }
 
+/**
+ * Feet and inches, the way a Plot is spoken about: dimensions are stored as
+ * decimal feet — the inverse of what the Plot form parses — and nobody says
+ * "25.42 feet". 25.4167 reads 25'5", a whole number reads 24'.
+ */
+export function formatDimension(value: string | number): string {
+  const ft = Math.floor(Number(value));
+  const inches = Math.round((Number(value) - ft) * 12);
+  if (inches === 12) return `${ft + 1}'`;
+  return inches ? `${ft}'${inches}"` : `${ft}'`;
+}
+
 export function addIstDays(day: string, days: number): string {
   const t = Date.parse(`${day}T00:00:00Z`) + days * 86_400_000;
   return new Date(t).toISOString().slice(0, 10);

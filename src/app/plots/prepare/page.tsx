@@ -38,10 +38,6 @@ export default async function PrepareInventoryPage() {
 
         <header>
           <h1 className="text-xl font-bold tracking-tight">Prepare Inventory</h1>
-          <p className="text-xs text-muted-foreground">
-            Every Plot is created Not Available and Not Yet Released. Activating the Project
-            releases them.
-          </p>
         </header>
 
         <PrepareInventoryClient

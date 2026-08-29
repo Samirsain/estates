@@ -95,6 +95,11 @@ export type CreateEnquiryInput = {
   newPerson?: { fullName: string; mobile: string; city?: string } | null;
   projectId: string;
   plotId?: string | null;
+  /**
+   * What they asked for when inventory holds nothing like it. Free text, and
+   * only meaningful without a plotId — a named Plot says it already.
+   */
+  plotRequirement?: string | null;
   source: EnquirySource;
   sourceMemberId?: string | null;
   sourceCustomerId?: string | null;
@@ -158,6 +163,7 @@ export async function createEnquiry(input: CreateEnquiryInput) {
           personId,
           projectId: input.projectId,
           plotId: input.plotId ?? null,
+          plotRequirement: input.plotId ? null : (input.plotRequirement?.trim() || null),
           source: input.source,
           sourceMemberId: input.sourceMemberId ?? null,
           sourceCustomerId: input.sourceCustomerId ?? null,

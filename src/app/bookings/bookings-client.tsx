@@ -130,9 +130,14 @@ const headerButton = "h-8 w-[9rem]";
 /** DIRECT, INVITE_OVERRIDE — read as words, not as constants. */
 const humanise = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
 
-/** DESIGN §4.2 — the exact approved wording. */
+/**
+ * DESIGN §4.2 wording, with one change the owner asked for: everything that is
+ * waiting on somebody's decision says Waiting Approval, in those words, on
+ * every screen — a Plot, a Booking Request, an Acquisition. "Under Review" was
+ * the same state under a different name.
+ */
 const STATUS_LABEL: Record<string, string> = {
-  REQUEST_PENDING: "Under Review",
+  REQUEST_PENDING: "Waiting Approval",
   REQUEST_REJECTED: "Request Rejected",
   REQUEST_CANCELLED: "Request Cancelled",
   BOOKED: "Booked",
@@ -152,8 +157,8 @@ const PROCESS_LABEL: Record<string, string> = {
   BUYBACK_PENDING: "",
   REFUND_PENDING: "Refund Pending",
   CHANGE_PLOT_PENDING: "Change Plot Under Process",
-  PRIMARY_CUSTOMER_CHANGE_UNDER_REVIEW: "Primary Customer Change Under Review",
-  SOLD_BY_CORRECTION_UNDER_REVIEW: "Sold By Correction Under Review",
+  PRIMARY_CUSTOMER_CHANGE_UNDER_REVIEW: "Primary Customer Change — Waiting Approval",
+  SOLD_BY_CORRECTION_UNDER_REVIEW: "Sold By Correction — Waiting Approval",
   MANAGEMENT_ACTION_REQUIRED: "Management Action Required",
 };
 
@@ -1124,7 +1129,7 @@ function BookingDetailPanel({
           )}
           {pendingCustomerChange && (
             <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
-              <p className="font-semibold">Primary Customer Change Under Review</p>
+              <p className="font-semibold">Primary Customer Change — Waiting Approval</p>
               <p className="mt-1">
                 {pendingCustomerChange.reason} · raised by {pendingCustomerChange.requestedByRef} on{" "}
                 {formatIst(pendingCustomerChange.requestedAt)}
@@ -1151,7 +1156,7 @@ function BookingDetailPanel({
 
           {pendingSoldBy && (
             <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
-              <p className="font-semibold">Sold By Correction Under Review</p>
+              <p className="font-semibold">Sold By Correction — Waiting Approval</p>
               <p className="mt-1">
                 {SOLD_BY_LABEL[pendingSoldBy.fromSoldByType]} →{" "}
                 {SOLD_BY_LABEL[pendingSoldBy.toSoldByType]} · {pendingSoldBy.reason}

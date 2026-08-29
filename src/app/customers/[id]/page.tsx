@@ -32,6 +32,15 @@ function statusWord(status: string): string | undefined {
   return status.charAt(0) + status.slice(1).toLowerCase().replaceAll("_", " ");
 }
 
+/**
+ * Anything waiting on somebody's decision says the same two words here as on
+ * the Plot, the Booking and the Acquisition. Everything else is the enum read
+ * as words.
+ */
+const WAITING_STATUS = new Set(["WAITING_FOR_BOOKING_APPROVAL", "REQUEST_PENDING", "PENDING_APPROVAL"]);
+const statusWords = (status: string) =>
+  WAITING_STATUS.has(status) ? "waiting approval" : status.replaceAll("_", " ").toLowerCase();
+
 const ACTIVITY_VARIANT: Record<string, "info" | "warning" | "success"> = {
   Enquiry: "info",
   Hold: "warning",
@@ -391,7 +400,7 @@ export default async function CustomerDetailPage({
                     </span>
                   </span>
                   <span className="text-[11px] text-muted-foreground">
-                    {a.status.replaceAll("_", " ").toLowerCase()} · {formatIst(a.at)}
+                    {statusWords(a.status)} · {formatIst(a.at)}
                   </span>
                 </li>
               ))}
