@@ -6,9 +6,10 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Coins, Plus, Wallet } from "lucide-react";
+import { Ban, ChevronDown, Coins, Plus, Wallet } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
+import { PersonLink } from "@/components/person-link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -43,7 +44,9 @@ export type AcquisitionRowView = {
   property: string;
   location: string | null;
   seller: string;
+  sellerPersonId: string;
   arrangedBy: string;
+  arrangedByPersonId: string | null;
   arrangedByType: string;
   sourceBooking: string | null;
   purchaseDate: string;
@@ -56,6 +59,7 @@ export type AcquisitionRowView = {
   entries: EntryView[];
   commission: {
     beneficiary: string;
+    beneficiaryPersonId: string;
     percent: string;
     eligibility: string;
     payment: string;
@@ -138,7 +142,7 @@ export default function AcquisitionsClient({
           </div>
           {permissions.create && (
             <Button size="sm" variant="gradient" onClick={() => setDialog({ kind: "NEW" })}>
-              <Plus className="mr-2 h-3.5 w-3.5" /> New deal
+              <Plus className="mr-2 h-3.5 w-3.5" /> New Buyback
             </Button>
           )}
         </div>
@@ -168,7 +172,7 @@ export default function AcquisitionsClient({
                   <th className="px-4 py-3 font-medium">Seller / Arranged by</th>
                   <th className="px-4 py-3 font-medium">Payment Given</th>
                   <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium"></th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -186,8 +190,15 @@ export default function AcquisitionsClient({
                         {row.location && <div className="text-muted-foreground">{row.location}</div>}
                       </td>
                       <td className="px-4 py-3">
-                        {row.seller}
-                        <div className="text-muted-foreground">via {row.arrangedBy}</div>
+                        <PersonLink personId={row.sellerPersonId} name={row.seller} />
+                        <div className="text-muted-foreground">
+                          via{" "}
+                          <PersonLink
+                            personId={row.arrangedByPersonId}
+                            name={row.arrangedBy}
+                            as={row.arrangedByType === "MEMBER" ? "member" : undefined}
+                          />
+                        </div>
                       </td>
                       <td className="px-4 py-3 tabular-nums">
                         {row.paymentGivenPercent}%
@@ -208,13 +219,18 @@ export default function AcquisitionsClient({
                           {STATUS_LABEL[row.status] ?? row.status}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-right">
                         <Button
-                          size="sm"
-                          variant="ghost"
+                          size="xs"
+                          variant="outline"
                           onClick={() => setOpen(open === row.id ? null : row.id)}
                         >
-                          {open === row.id ? "Hide" : "Open"}
+                          {open === row.id ? "Close" : "Open"}
+                          <ChevronDown
+                            className={`ml-1.5 h-3.5 w-3.5 transition-transform duration-200 ${
+                              open === row.id ? "rotate-180" : ""
+                            }`}
+                          />
                         </Button>
                       </td>
                     </tr>
@@ -485,7 +501,11 @@ function Detail({
         </h3>
         {row.commission ? (
           <p className="text-xs">
-            {row.commission.beneficiary} · {row.commission.percent}% ·{" "}
+            <PersonLink
+              personId={row.commission.beneficiaryPersonId}
+              name={row.commission.beneficiary}
+            />{" "}
+            · {row.commission.percent}% ·{" "}
             <Badge variant="outline">{row.commission.eligibility}</Badge>{" "}
             <Badge variant="outline">{row.commission.payment}</Badge>
           </p>
@@ -571,7 +591,7 @@ function FormDialog({
         <p className="mt-1 text-muted-foreground">{consequence}</p>
       </div>
       <form
-        className="space-y-4"
+        className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
           onSubmit(new FormData(e.currentTarget));
@@ -591,6 +611,35 @@ function FormDialog({
   );
 }
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+function fillForward(rows: ScheduleRowInput[], typedIndex = -1): ScheduleRowInput[] {
+  const out = rows.map((r, i) => ({ ...r, seq: i + 1 }));
+  const last = out.length - 1;
+  if (last < 1 || typedIndex === last) return out;
+  const others = out.reduce((sum, r, i) => (i === last ? sum : sum + (Number(r.percent) || 0)), 0);
+  out[last] = { ...out[last], percent: String(Math.max(0, round2(100 - others))) };
+  return out;
+}
+
+const scheduleTotal = (rows: ScheduleRowInput[]) =>
+  round2(rows.reduce((sum, r) => sum + (Number(r.percent) || 0), 0));
+
+function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+function fillDatesForward(rows: ScheduleRowInput[], changedIndex: number): ScheduleRowInput[] {
+  const out = rows.map((r) => ({ ...r }));
+  for (let i = changedIndex + 1; i < out.length; i++) {
+    if (out[i].dueDate <= out[i - 1].dueDate) {
+      out[i] = { ...out[i], dueDate: addDays(out[i - 1].dueDate, 1) };
+    }
+  }
+  return out;
+}
+
 function NewAcquisitionDialog({
   busy,
   buybackable,
@@ -606,24 +655,25 @@ function NewAcquisitionDialog({
   onClose: () => void;
   onSubmit: (input: Parameters<typeof createAcquisitionAction>[0]) => void;
 }) {
+  const today = istDay(new Date());
   const [type, setType] = React.useState<"BUYBACK" | "PURCHASE_FOR_RESALE">("BUYBACK");
   const [arrangedByType, setArrangedByType] = React.useState<
     "THREE_PERCENT_CLUB" | "MEMBER" | "CUSTOMER"
   >("THREE_PERCENT_CLUB");
   const [sourceBookingId, setSourceBookingId] = React.useState("");
   const [schedule, setSchedule] = React.useState<ScheduleRowInput[]>([
-    { seq: 1, percent: "25", dueDate: istDay(new Date()) },
-    { seq: 2, percent: "75", dueDate: istDay(new Date(Date.now() + 30 * 86_400_000)) },
+    { seq: 1, percent: "25", dueDate: today },
+    { seq: 2, percent: "75", dueDate: addDays(today, 30) },
   ]);
   const [acknowledge, setAcknowledge] = React.useState(false);
 
-  const total = schedule.reduce((sum, row) => sum + Number(row.percent || 0), 0);
+  const remaining = round2(100 - scheduleTotal(schedule));
   const selected = buybackable.find((b) => b.id === sourceBookingId);
 
   return (
-    <Modal title="New acquisition" wide onClose={onClose}>
+    <Modal title="New Buyback" centerTitle onClose={onClose}>
       <form
-        className="space-y-4"
+        className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
@@ -649,7 +699,7 @@ function NewAcquisitionDialog({
           });
         }}
       >
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Type">
             <select
               className={inputClass}
@@ -661,7 +711,7 @@ function NewAcquisitionDialog({
             </select>
           </Field>
           <Field label="Purchase Date">
-            <Input type="date" name="purchaseDate" required defaultValue={istDay(new Date())} />
+            <Input type="date" name="purchaseDate" required defaultValue={today} />
           </Field>
         </div>
 
@@ -682,7 +732,7 @@ function NewAcquisitionDialog({
             </select>
           </Field>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Property / Project Name">
               <Input name="propertyName" required />
             </Field>
@@ -713,7 +763,7 @@ function NewAcquisitionDialog({
           </div>
         )}
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Seller / previous owner">
             <select
               name="sellerPersonId"
@@ -759,67 +809,88 @@ function NewAcquisitionDialog({
           )}
         </div>
 
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">
-            Payment Given schedule — must total exactly 100%
-          </p>
+        {/* Schedule — compact inline rows, same rules as Booking ScheduleEditor */}
+        <section className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Payment Given Schedule
+          </h3>
           {schedule.map((line, index) => (
-            <div key={line.seq} className="grid gap-2 md:grid-cols-3">
-              <Field label={`Instalment ${line.seq} — %`}>
-                <Input
-                  value={line.percent}
-                  inputMode="decimal"
-                  onChange={(e) =>
-                    setSchedule((rows) =>
-                      rows.map((r, i) => (i === index ? { ...r, percent: e.target.value } : r))
+            <div key={index} className="flex items-center gap-2">
+              <span className="flex h-9 w-6 items-center justify-center text-xs font-medium text-muted-foreground">
+                {line.seq}
+              </span>
+              <Input
+                className="h-9 w-28 text-xs"
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                required
+                value={line.percent}
+                placeholder="%"
+                onChange={(e) =>
+                  setSchedule(
+                    fillForward(
+                      schedule.map((r, i) => (i === index ? { ...r, percent: e.target.value } : r)),
+                      index
                     )
-                  }
-                />
-              </Field>
-              <Field label="Due date">
-                <Input
-                  type="date"
-                  value={line.dueDate}
-                  onChange={(e) =>
-                    setSchedule((rows) =>
-                      rows.map((r, i) => (i === index ? { ...r, dueDate: e.target.value } : r))
+                  )
+                }
+              />
+              <Input
+                className="h-9 w-44 text-xs"
+                type="date"
+                min={index === 0 ? today : addDays(schedule[index - 1].dueDate, 1)}
+                required
+                value={line.dueDate}
+                onChange={(e) =>
+                  setSchedule(
+                    fillDatesForward(
+                      schedule.map((r, i) => (i === index ? { ...r, dueDate: e.target.value } : r)),
+                      index
                     )
-                  }
-                />
-              </Field>
-              {index === schedule.length - 1 && (
-                <div className="flex items-end gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      setSchedule((rows) => [
-                        ...rows,
-                        { seq: rows.length + 1, percent: "", dueDate: istDay(new Date()) },
-                      ])
-                    }
-                  >
-                    Add
-                  </Button>
-                  {schedule.length > 1 && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setSchedule((rows) => rows.slice(0, -1))}
-                    >
-                      Remove
-                    </Button>
-                  )}
-                </div>
+                  )
+                }
+              />
+              {schedule.length > 1 && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => setSchedule(fillForward(schedule.filter((_, i) => i !== index)))}
+                >
+                  Remove
+                </Button>
               )}
             </div>
           ))}
-          <p className={`text-xs ${total === 100 ? "text-muted-foreground" : "text-amber-700"}`}>
-            Total: {total.toFixed(2)}%
-          </p>
-        </div>
+          <div className="flex items-center justify-between pt-0.5">
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={() =>
+                setSchedule([
+                  ...schedule,
+                  {
+                    seq: schedule.length + 1,
+                    percent: String(Math.max(0, remaining)),
+                    dueDate: addDays(schedule[schedule.length - 1]?.dueDate ?? today, 30),
+                  },
+                ])
+              }
+            >
+              + Add instalment
+            </Button>
+            <p className={remaining === 0 ? "text-xs text-muted-foreground" : "text-xs text-amber-700 font-medium"}>
+              {remaining === 0
+                ? "Total 100% — complete."
+                : remaining > 0
+                  ? `Remaining ${remaining}%`
+                  : `Over by ${round2(-remaining)}%`}
+            </p>
+          </div>
+        </section>
 
         <Field label="Remark — compulsory">
           <Input name="remark" required minLength={3} />
@@ -841,7 +912,7 @@ function NewAcquisitionDialog({
             Back
           </Button>
           <Button type="submit" size="sm" disabled={busy}>
-            {busy ? "Creating…" : "Create acquisition"}
+            {busy ? "Creating…" : "Create Buyback"}
           </Button>
         </div>
       </form>

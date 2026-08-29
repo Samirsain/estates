@@ -6,14 +6,16 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Plus } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, CheckCircle2, ChevronLeft, Plus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
+import { PersonLink } from "@/components/person-link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
-import { formatIst, istDay, type StaffRole } from "@/lib/tasks";
+import { formatIst, formatIstDate, formatQuantity, istDay, type StaffRole } from "@/lib/tasks";
 import {
   cancelBookingAction,
   changeOwnershipSharesAction,
@@ -49,10 +51,16 @@ export type BookingRowView = {
   requestNo: string;
   bookingNumber: string | null;
   project: string;
-  plot: string;
+  plotNumber: string;
+  /** CONSTANT_CASE from the schema — pass through `humanise` before showing it. */
+  plotType: string;
   primaryCustomer: string;
+  primaryCustomerPersonId: string;
   soldByType: string;
   soldByName: string | null;
+  /** MEM-0012 or CUS-3390 — the 3% Club sells under no code. */
+  soldByCode: string | null;
+  soldByPersonId: string | null;
   status: string;
   activeProcess: string;
   paymentReceivedPercent: string;
@@ -64,8 +72,17 @@ export type BookingRowView = {
 
 export type BookableView = {
   id: string;
-  label: string;
+  projectId: string;
+  projectName: string;
+  plotNumber: string;
+  plotType: string;
   status: string;
+  widthFt: string | null;
+  lengthFt: string | null;
+  areaSqFt: string;
+  areaSqYd: string;
+  /** One of the named positions a Plot can hold — see locationChargeLabel. */
+  locationCharge: string[];
   holdId: string | null;
   holdPersonId: string | null;
   holdPersonName: string | null;
@@ -75,8 +92,14 @@ export type BookableView = {
 const filterClass =
   "h-9 w-auto rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
-type PersonView = { id: string; fullName: string; mobileMasked: string };
-type MemberView = { personId: string; label: string };
+type PersonView = {
+  id: string;
+  fullName: string;
+  mobileMasked: string;
+  /** CUS-3390, where the Person holds a Customer profile at all. */
+  customerId: string | null;
+};
+type MemberView = { personId: string; memberId: string; fullName: string };
 
 type Permissions = {
   submit: boolean;
@@ -100,9 +123,16 @@ type Permissions = {
   reopenDelivered: boolean;
 };
 
+// One width and one height for every action in the Booking header, so three
+// buttons on a line read as three of the same thing.
+const headerButton = "h-8 w-[9rem]";
+
+/** DIRECT, INVITE_OVERRIDE — read as words, not as constants. */
+const humanise = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
+
 /** DESIGN §4.2 — the exact approved wording. */
 const STATUS_LABEL: Record<string, string> = {
-  REQUEST_PENDING: "Waiting for Booking Approval",
+  REQUEST_PENDING: "Under Review",
   REQUEST_REJECTED: "Request Rejected",
   REQUEST_CANCELLED: "Request Cancelled",
   BOOKED: "Booked",
@@ -112,11 +142,16 @@ const STATUS_LABEL: Record<string, string> = {
   DELIVERED: "Delivered",
 };
 
+/**
+ * A process with no label here is not shown at all — Buyback is run and read
+ * on Acquisitions, and repeating it against the Booking only crowds the
+ * status the Booking is actually in.
+ */
 const PROCESS_LABEL: Record<string, string> = {
   NONE: "",
+  BUYBACK_PENDING: "",
   REFUND_PENDING: "Refund Pending",
   CHANGE_PLOT_PENDING: "Change Plot Under Process",
-  BUYBACK_PENDING: "Buyback Under Process",
   PRIMARY_CUSTOMER_CHANGE_UNDER_REVIEW: "Primary Customer Change Under Review",
   SOLD_BY_CORRECTION_UNDER_REVIEW: "Sold By Correction Under Review",
   MANAGEMENT_ACTION_REQUIRED: "Management Action Required",
@@ -166,8 +201,21 @@ const REJECT_REASONS = [
 
 const CANCEL_REASONS = ["Payment Not Received", "Loan Denied", "Other"] as const;
 
+/** Everything the row knows about its Status, for the list table's hover. */
+function statusTooltip(row: BookingRowView): string {
+  const lines = [STATUS_LABEL[row.status] ?? row.status];
+  if (PROCESS_LABEL[row.activeProcess]) lines.push(PROCESS_LABEL[row.activeProcess]);
+  lines.push(row.bookingNumber ? `${row.bookingNumber} · ${row.requestNo}` : row.requestNo);
+  lines.push(`Booking Date: ${formatIstDate(row.bookingDate)}`);
+  lines.push(`Submitted by ${row.submittedByRef} on ${formatIst(row.submittedAt)}`);
+  lines.push(`Payment Received: ${row.paymentReceivedPercent}%`);
+  if (row.pendingReviewVersion !== null) lines.push("Waiting on the Accounts decision");
+  return lines.join("\n");
+}
+
 function statusVariant(status: string) {
-  if (status === "BOOKED" || status === "PAYMENT_COMPLETED") return "success" as const;
+  if (status === "PAYMENT_COMPLETED") return "purple" as const;
+  if (status === "BOOKED") return "success" as const;
   if (status === "REQUEST_PENDING") return "warning" as const;
   if (status.startsWith("REQUEST_") || status === "CANCELLED") return "outline" as const;
   return "info" as const;
@@ -204,6 +252,7 @@ export default function BookingsClient({
   rows,
   bookable,
   openForPlot,
+  focusId,
   people,
   members,
   permissions,
@@ -216,6 +265,8 @@ export default function BookingsClient({
   bookable: BookableView[];
   /** A Plot id from ?plot=, so Plot Inventory's Book button lands on the form. */
   openForPlot: string | null;
+  /** Set on /bookings/[id]: one Booking, full page, instead of the list. */
+  focusId: string | null;
   people: PersonView[];
   members: MemberView[];
   permissions: Permissions;
@@ -224,7 +275,12 @@ export default function BookingsClient({
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [statusFilter, setStatusFilter] = React.useState("ALL");
+  const [projectFilter, setProjectFilter] = React.useState("ALL");
   const [search, setSearch] = React.useState("");
+  const projects = React.useMemo(
+    () => Array.from(new Set(rows.map((r) => r.project))).sort(),
+    [rows]
+  );
   // Arriving from Plot Inventory's Book button opens the form on that Plot.
   // Initial state, not an effect: the dialog is right on the first render and
   // never flickers shut and open again.
@@ -233,27 +289,41 @@ export default function BookingsClient({
       ? { kind: "NEW", plotId: openForPlot }
       : null
   );
-  const [openId, setOpenId] = React.useState<string | null>(null);
+  const [openId, setOpenId] = React.useState<string | null>(focusId);
   const [detail, setDetail] = React.useState<BookingDetail | null>(null);
+
+  // The full page is one Booking, so its detail is fetched on arrival rather
+  // than waiting for a click that no longer exists.
+  const focusRow = focusId ? (rows.find((r) => r.id === focusId) ?? null) : null;
+  React.useEffect(() => {
+    if (focusId) loadBookingDetail(focusId).then(setDetail);
+  }, [focusId]);
 
   const visible = rows.filter(
     (r) =>
       (statusFilter === "ALL" || r.status === statusFilter) &&
+      (projectFilter === "ALL" || r.project === projectFilter) &&
       (search.trim() === "" ||
-        `${r.bookingNumber ?? ""} ${r.requestNo} ${r.project} ${r.plot} ${r.primaryCustomer}`
+        `${r.bookingNumber ?? ""} ${r.requestNo} ${r.project} ${r.plotType} ${r.plotNumber} ${r.primaryCustomer}`
           .toLowerCase()
           .includes(search.trim().toLowerCase()))
   );
 
-  async function openDetail(id: string) {
-    if (openId === id) {
-      setOpenId(null);
-      setDetail(null);
-      return;
-    }
-    setOpenId(id);
+  /**
+   * Dialogs read `detail` — the submitted snapshot, the live schedule, the
+   * parties — and only the row expander used to load it. Opened straight from
+   * a row's button, they sat on data nobody had asked for: "Loading…" that
+   * never finished. Opening a dialog asks for it too.
+   */
+  async function openDialog(next: Dialog) {
+    setDialog(next);
+    if (!next || !("row" in next)) return;
+    if (detail?.id === next.row.id) return;
+    // The row being acted on becomes the open row, so the panel underneath and
+    // the dialog above it are never two different Bookings.
+    setOpenId(next.row.id);
     setDetail(null);
-    setDetail(await loadBookingDetail(id));
+    setDetail(await loadBookingDetail(next.row.id));
   }
 
   async function run(action: () => Promise<ActionResult>) {
@@ -274,9 +344,129 @@ export default function BookingsClient({
 
   const newKey = () => globalThis.crypto.randomUUID();
 
+  /**
+   * What can be done to this Booking now. These used to sit in the row, four
+   * buttons wide in a column that was already carrying six others; they belong
+   * with the detail that says whether doing them is the right call.
+   */
+  function actions(row: BookingRowView) {
+    return (
+      <>
+        {row.status === "REQUEST_PENDING" && permissions.decide && (
+          <Button size="sm" className={headerButton} onClick={() => openDialog({ kind: "DECIDE", row, approve: true })}>
+            Review
+          </Button>
+        )}
+        {row.status === "REQUEST_PENDING" && permissions.submit && (
+          <Button
+            size="sm"
+            variant="outline"
+            className={headerButton}
+            onClick={() => openDialog({ kind: "REVISE", row })}
+          >
+            Revise request
+          </Button>
+        )}
+        {["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) && permissions.confirmPayment && (
+          <Button
+            size="sm"
+            variant="outline"
+            className={headerButton}
+            onClick={() => openDialog({ kind: "PAY", row })}
+          >
+            Confirm Payment
+          </Button>
+        )}
+        {["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
+          permissions.cancel && (
+            // Outline, not ghost: three actions on one line, and the third had
+            // no edge at all, so it read as a stray link rather than the third
+            // button. Red says what it does; the shape says it is one of three.
+            <Button
+              size="sm"
+              variant="outline"
+              className={`${headerButton} border-red-500/40 text-red-700 hover:bg-red-500/5`}
+              onClick={() => openDialog({ kind: "CANCEL", row })}
+            >
+              Cancel Booking
+            </Button>
+          )}
+      </>
+    );
+  }
+
+  const noticeCard = notice && (
+    <Card
+      className={`p-4 ${
+        notice.kind === "ok" ? "border-emerald-500/40 bg-emerald-500/5" : "border-red-500/40 bg-red-500/5"
+      }`}
+    >
+      <p
+        role="status"
+        className={`flex items-start gap-2 text-sm ${
+          notice.kind === "ok" ? "text-emerald-700" : "text-red-700"
+        }`}
+      >
+        {notice.kind === "ok" ? (
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+        ) : (
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        )}
+        {notice.text}
+      </p>
+    </Card>
+  );
+
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="mx-auto max-w-6xl space-y-4">
+      {/* One Booking gets the page to itself. The row used to unfold this
+          underneath the list, which put a form-length panel inside a table and
+          left the actions stranded in a seventh column. */}
+      {focusRow ? (
+        <div className="mx-auto max-w-6xl space-y-3">
+          <Link
+            href="/bookings"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" /> Bookings
+          </Link>
+          {/* The Booking Number is generated, not chosen, and nobody reads a
+              page to find out what it is. The title is who bought what; the
+              numbers stay on the line that carries the other filing facts. */}
+          <header className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-bold tracking-tight">{focusRow.primaryCustomer}</h1>
+                <Badge variant={statusVariant(focusRow.status)}>
+                  {STATUS_LABEL[focusRow.status] ?? focusRow.status}
+                </Badge>
+                {PROCESS_LABEL[focusRow.activeProcess] && (
+                  <Badge variant="warning">{PROCESS_LABEL[focusRow.activeProcess]}</Badge>
+                )}
+              </div>
+              <p className="mt-1 text-sm">
+                {focusRow.project} · {focusRow.plotNumber}
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {focusRow.bookingNumber
+                  ? `${focusRow.bookingNumber} · ${focusRow.requestNo}`
+                  : focusRow.requestNo}{" "}
+                · booked {formatIstDate(focusRow.bookingDate)} · submitted by {focusRow.submittedByRef}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">{actions(focusRow)}</div>
+          </header>
+          {noticeCard}
+          <BookingDetailPanel
+            row={focusRow}
+            detail={detail}
+            people={people}
+            permissions={permissions}
+            onAction={setDialog}
+          />
+        </div>
+      ) : (
+      <div className="mx-auto max-w-6xl space-y-3">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Bookings</h1>
@@ -285,7 +475,7 @@ export default function BookingsClient({
             </p>
           </div>
           {permissions.submit && (
-            <Button size="sm" variant="gradient" onClick={() => setDialog({ kind: "NEW" })}>
+            <Button size="sm" variant="gradient" onClick={() => openDialog({ kind: "NEW" })}>
               <Plus className="mr-1 h-4 w-4" /> Start Booking
             </Button>
           )}
@@ -305,6 +495,19 @@ export default function BookingsClient({
               </option>
             ))}
           </select>
+          <select
+            className={filterClass}
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            aria-label="Filter by project"
+          >
+            <option value="ALL">All projects</option>
+            {projects.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
           <Input
             className="h-9 w-64"
             placeholder="Search Booking Number, Request ID, Plot or Customer"
@@ -313,143 +516,93 @@ export default function BookingsClient({
           />
         </div>
 
-        {notice && (
-          <Card
-            className={`p-4 ${
-              notice.kind === "ok"
-                ? "border-emerald-500/40 bg-emerald-500/5"
-                : "border-red-500/40 bg-red-500/5"
-            }`}
-          >
-            <p
-              role="status"
-              className={`flex items-start gap-2 text-sm ${
-                notice.kind === "ok" ? "text-emerald-700" : "text-red-700"
-              }`}
-            >
-              {notice.kind === "ok" ? (
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              ) : (
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              )}
-              {notice.text}
-            </p>
-          </Card>
-        )}
+        {noticeCard}
 
-        <Card className="overflow-x-auto p-2">
-          <table className="w-full min-w-[52rem] border-separate border-spacing-y-1 text-sm">
+        {/* Same table as Customers and Enquiries: a rule between rows, no
+            block of colour behind each one. The Booking Number is the page it
+            opens, not a column of its own. */}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[52rem] border-collapse text-xs">
             <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2">Booking</th>
-                <th className="px-3 py-2">Project · Plot</th>
-                <th className="px-3 py-2">Primary Customer</th>
-                <th className="px-3 py-2">Sold By</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2 text-right">Payment Received</th>
-                <th className="px-3 py-2">Actions</th>
+              <tr className="border-b border-border">
+                <th className="px-3 py-1.5">Plot · Project</th>
+                <th className="px-3 py-1.5">Customer</th>
+                <th className="px-3 py-1.5">Sold By</th>
+                <th className="w-[14rem] px-3 py-1.5">Status</th>
+                <th className="w-[8rem] px-3 py-1.5 text-right">Payment Received</th>
               </tr>
             </thead>
             <tbody>
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={5} className="px-3 py-10 text-center text-sm text-muted-foreground">
                     No Bookings match these filters. Start one from an Available Plot or a live Hold.
                   </td>
                 </tr>
               )}
               {visible.map((row) => (
-                <React.Fragment key={row.id}>
-                  <tr className="bg-secondary align-top">
-                    <td className="rounded-l-xl px-3 py-3">
+                <tr
+                  key={row.id}
+                  className="border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1"
+                >
+                  <td>
+                    <div className="flex flex-wrap items-baseline gap-x-1.5">
                       <button
                         type="button"
-                        className="text-left font-semibold hover:underline"
-                        onClick={() => openDetail(row.id)}
-                        aria-expanded={openId === row.id}
+                        className="text-left font-semibold text-primary hover:underline"
+                        onClick={() => router.push(`/bookings/${row.id}`)}
                       >
-                        {row.bookingNumber ?? row.requestNo}
+                        {row.plotNumber}
                       </button>
+                      <span className="text-[11px] text-muted-foreground">{humanise(row.plotType)}</span>
+                    </div>
+                    <span className="block text-[11px] text-muted-foreground">{row.project}</span>
+                  </td>
+                  <td>
+                    <PersonLink
+                      personId={row.primaryCustomerPersonId}
+                      name={row.primaryCustomer}
+                    />
+                  </td>
+                  <td>
+                    {/* MEM- is a Member and CUS- is a Customer, so the ID says
+                        which kind of seller this is without a word above it
+                        repeating the same thing. Only the 3% Club, which sells
+                        under no ID, is named. */}
+                    {row.soldByCode ? (
+                      <PersonLink
+                        personId={row.soldByPersonId}
+                        name={row.soldByCode}
+                        as={row.soldByType === "MEMBER" ? "member" : undefined}
+                        className="font-medium tabular-nums"
+                      />
+                    ) : (
+                      (SOLD_BY_LABEL[row.soldByType] ?? row.soldByType)
+                    )}
+                    {row.soldByName && (
                       <span className="block text-[11px] text-muted-foreground">
-                        {row.bookingNumber ? `Request ${row.requestNo}` : "Temporary Request ID"}
+                        {row.soldByName}
                       </span>
-                    </td>
-                    <td className="px-3 py-3 text-xs">
-                      {row.project}
-                      <span className="block text-[11px] text-muted-foreground">{row.plot}</span>
-                    </td>
-                    <td className="px-3 py-3 text-xs">{row.primaryCustomer}</td>
-                    <td className="px-3 py-3 text-xs">
-                      {SOLD_BY_LABEL[row.soldByType] ?? row.soldByType}
-                      {row.soldByName && (
-                        <span className="block text-[11px] text-muted-foreground">{row.soldByName}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3">
-                      <Badge variant={statusVariant(row.status)}>
-                        {STATUS_LABEL[row.status] ?? row.status}
-                      </Badge>
-                      {row.activeProcess !== "NONE" && (
-                        <span className="mt-1 block text-[11px] text-amber-800">
-                          {PROCESS_LABEL[row.activeProcess]}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-right text-xs tabular-nums">
-                      {row.paymentReceivedPercent}%
-                    </td>
-                    <td className="rounded-r-xl px-3 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {row.status === "REQUEST_PENDING" && permissions.decide && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setDialog({ kind: "DECIDE", row, approve: true })}
-                            >
-                              Review
-                            </Button>
-                          </>
-                        )}
-                        {row.status === "REQUEST_PENDING" && permissions.submit && (
-                          <Button size="sm" variant="ghost" onClick={() => setDialog({ kind: "REVISE", row })}>
-                            New version
-                          </Button>
-                        )}
-                        {["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
-                          permissions.confirmPayment && (
-                            <Button size="sm" variant="outline" onClick={() => setDialog({ kind: "PAY", row })}>
-                              Confirm Payment
-                            </Button>
-                          )}
-                        {["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
-                          permissions.cancel && (
-                            <Button size="sm" variant="ghost" onClick={() => setDialog({ kind: "CANCEL", row })}>
-                              Cancel Booking
-                            </Button>
-                          )}
-                      </div>
-                    </td>
-                  </tr>
-                  {openId === row.id && (
-                    <tr>
-                      <td colSpan={7} className="px-1 pb-3">
-                        <BookingDetailPanel
-                          row={row}
-                          detail={detail}
-                          people={people}
-                          permissions={permissions}
-                          onAction={setDialog}
-                        />
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
+                    )}
+                  </td>
+                  <td title={statusTooltip(row)}>
+                    <Badge variant={statusVariant(row.status)} className="whitespace-nowrap">
+                      {STATUS_LABEL[row.status] ?? row.status}
+                    </Badge>
+                    {PROCESS_LABEL[row.activeProcess] && (
+                      <span className="block text-[11px] text-amber-800">
+                        {PROCESS_LABEL[row.activeProcess]}
+                      </span>
+                    )}
+                  </td>
+                  <td className="text-right tabular-nums">{row.paymentReceivedPercent}%</td>
+                </tr>
               ))}
             </tbody>
           </table>
-        </Card>
+        </div>
       </div>
+      )}
 
       {dialog?.kind === "NEW" && (
         <BookingFormDialog
@@ -471,7 +624,7 @@ export default function BookingsClient({
           people={people}
           members={members}
           busy={busy}
-          fixedPlotLabel={`${dialog.row.project} · ${dialog.row.plot}`}
+          fixedPlotLabel={`${dialog.row.project} · ${dialog.row.plotNumber}`}
           requireReason
           onClose={() => setDialog(null)}
           onSubmit={(form) =>
@@ -915,9 +1068,16 @@ function BookingDetailPanel({
 
   if (!detail || detail.id !== row.id) {
     return (
-      <Card className="p-4 text-xs text-muted-foreground">Loading Booking details…</Card>
+      <p className="py-6 text-xs text-muted-foreground">Loading Booking details…</p>
     );
   }
+
+  const hasExceptionAction =
+    (row.status === "REFUND_PENDING" && permissions.decideCancellation) ||
+    (row.activeProcess === "CHANGE_PLOT_PENDING" && permissions.decideChangePlot) ||
+    (["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
+      row.activeProcess === "NONE" &&
+      permissions.raiseChangePlot);
 
   const currentParties = detail.parties.filter((p) => p.effectiveTo === null);
   const liveSchedule = detail.scheduleVersions.find((s) => s.status === "ACTIVE");
@@ -926,15 +1086,18 @@ function BookingDetailPanel({
   const pendingSoldBy = detail.soldByCorrections.find((c) => c.status === "PENDING");
 
   return (
-    <Card className="space-y-4 p-4">
-      <div className="flex flex-wrap gap-2">
+    <div className="space-y-5">
+      {/* Tabs sit on a rule rather than inside a box — the panel is the page. */}
+      <div className="flex flex-wrap gap-1 border-b border-border">
         {(["OVERVIEW", "PAYMENT", "COMMISSION", "HISTORY"] as const).map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
-            className={`rounded-lg px-3 py-1 text-xs ${
-              tab === t ? "bg-primary/15 font-semibold text-primary" : "text-muted-foreground hover:bg-accent"
+            className={`-mb-px border-b-2 px-3 py-2 text-xs ${
+              tab === t
+                ? "border-primary font-semibold text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             {t.charAt(0) + t.slice(1).toLowerCase()}
@@ -946,8 +1109,8 @@ function BookingDetailPanel({
         <div className="space-y-4">
           {row.status === "REQUEST_PENDING" && (
             <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
-              Waiting for Booking Approval — submitted values are locked. To change a reviewed field,
-              cancel this request version and create a new version.
+              Submitted values are locked while Accounts reviews them. To change one, cancel this
+              request and submit a revised one.
             </p>
           )}
           {pendingCustomerChange && (
@@ -1007,13 +1170,13 @@ function BookingDetailPanel({
 
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Customers and ownership shares
+              Customers
             </h3>
             <ul className="mt-2 space-y-1 text-xs">
               {currentParties.map((p) => (
                 <li key={`${p.personId}-${p.effectiveFrom}`} className="flex justify-between gap-3">
                   <span>
-                    {p.name}
+                    <PersonLink personId={p.personId} name={p.name} />
                     <span className="ml-2 text-[11px] text-muted-foreground">
                       {p.role === "PRIMARY" ? "Primary Customer" : "Additional Customer"}
                     </span>
@@ -1062,9 +1225,12 @@ function BookingDetailPanel({
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
                   <span className="text-base font-semibold tabular-nums">
                     {Number(detail.plc.totalPercent).toFixed(2)}%
+                    <span className="ml-2 text-xs font-normal">
+                      {detail.plc.position.join(" · ")}
+                    </span>
                   </span>
                   <span className="text-[11px] text-muted-foreground">
-                    Frozen from PLC version {detail.plc.version} · {formatIst(detail.plc.frozenAt)}
+                    Frozen {formatIst(detail.plc.frozenAt)}
                     {detail.plc.correctionReason ? " · corrected" : " · original freeze"}
                     {detail.plc.isCurrent ? "" : " · superseded"}
                   </span>
@@ -1072,10 +1238,10 @@ function BookingDetailPanel({
 
                 <ul className="space-y-0.5">
                   {detail.plc.components.map((c) => (
-                    <li key={c.code} className="flex justify-between gap-3">
+                    <li key={c.category} className="flex justify-between gap-3">
                       <span>
                         {c.label}
-                        <span className="ml-2 text-[11px] text-muted-foreground">{c.code}</span>
+                        <span className="ml-2 text-[11px] text-muted-foreground">{c.evidence}</span>
                       </span>
                       <span className="tabular-nums">{Number(c.percent).toFixed(2)}%</span>
                     </li>
@@ -1097,7 +1263,7 @@ function BookingDetailPanel({
                       {detail.plc.history.map((h, index) => (
                         <li key={index} className="flex justify-between gap-3">
                           <span>
-                            {formatIst(h.frozenAt)} · version {h.version}
+                            {formatIst(h.frozenAt)}
                             {h.correctionReason ? ` — ${h.correctionReason}` : " — original freeze"}
                           </span>
                           <span className="tabular-nums">
@@ -1111,13 +1277,17 @@ function BookingDetailPanel({
                 )}
 
                 <p className="text-[11px] text-muted-foreground">
-                  A later PLC version does not change this Booking. The snapshot it froze is what
-                  applies.
+                  Frozen at submission — a later change to the Project PLC does not move it.
                 </p>
               </div>
             )}
           </section>
 
+          {/* Drawn only when there is an exception to act on. It used to render
+              a heading and a line saying no exception applied — true of almost
+              every Booking, almost all of the time, and three of the six things
+              on this page were saying nothing in the same way. */}
+          {hasExceptionAction && (
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Exception workflows
@@ -1173,19 +1343,9 @@ function BookingDetailPanel({
                 </>
               )}
 
-              {row.status !== "REFUND_PENDING" &&
-                row.activeProcess !== "CHANGE_PLOT_PENDING" &&
-                !(
-                  ["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
-                  row.activeProcess === "NONE" &&
-                  permissions.raiseChangePlot
-                ) && (
-                  <p className="text-xs text-muted-foreground">
-                    No exception workflow applies to this Booking right now.
-                  </p>
-                )}
             </div>
           </section>
+          )}
 
           <CompletionSection
             row={row}
@@ -1196,19 +1356,17 @@ function BookingDetailPanel({
 
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Review versions
+              Review history
             </h3>
             <ul className="mt-2 space-y-1 text-xs">
               {detail.reviewVersions.map((v) => (
-                <li key={v.version} className="flex flex-wrap justify-between gap-2">
+                <li key={v.version} className="flex flex-wrap items-center justify-between gap-2">
                   <span>
-                    Version {v.version} · <Badge variant="outline">{v.status}</Badge>
-                  </span>
-                  <span className="text-[11px] text-muted-foreground">
-                    {v.submittedByRef} · {formatIst(v.submittedAt)}
+                    Submitted by {v.submittedByRef} · {formatIst(v.submittedAt)}
                     {v.decisionNote ? ` · ${v.decisionNote}` : ""}
                     {v.rejectReason ? ` · ${v.rejectReason.replaceAll("_", " ")}` : ""}
                   </span>
+                  <Badge variant="outline">{v.status.charAt(0) + v.status.slice(1).toLowerCase()}</Badge>
                 </li>
               ))}
             </ul>
@@ -1225,9 +1383,7 @@ function BookingDetailPanel({
 
           {pendingSchedule && (
             <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
-              <p className="font-semibold">
-                Schedule revision version {pendingSchedule.version} waiting for the Accounts decision
-              </p>
+              <p className="font-semibold">Schedule revision waiting for the Accounts decision</p>
               <p className="mt-1">{pendingSchedule.reason}</p>
               <ul className="mt-2 space-y-0.5">
                 {pendingSchedule.instalments.map((i) => (
@@ -1366,30 +1522,47 @@ function BookingDetailPanel({
               <table className="w-full min-w-[46rem] text-xs">
                 <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <tr>
-                    <th className="py-1">Type</th>
-                    <th className="py-1">Beneficiary</th>
-                    <th className="py-1 text-right">%</th>
-                    <th className="py-1 text-right">Milestone</th>
-                    <th className="py-1">Eligibility</th>
-                    <th className="py-1">Payment</th>
-                    <th className="py-1">Action</th>
+                    <th className="w-[8rem] py-1.5 pr-3">Type</th>
+                    <th className="py-1.5 pr-3">Beneficiary</th>
+                    <th className="w-[4.5rem] py-1.5 pr-3 text-right">Rate</th>
+                    <th className="w-[6rem] py-1.5 pr-3 text-right">Milestone</th>
+                    <th className="w-[10rem] py-1.5 pr-3">Eligibility</th>
+                    <th className="w-[12rem] py-1.5 pr-3">Payment</th>
+                    <th className="w-[7rem] py-1.5 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {detail.commissions.map((c) => (
-                    <tr key={c.id} className={c.isCurrent ? "" : "text-muted-foreground"}>
-                      <td className="py-1">
-                        {c.type}
+                    <tr
+                      key={c.id}
+                      className={`border-b border-border/60 align-middle leading-tight last:border-0 [&>td]:py-1.5 [&>td]:pr-3 ${
+                        c.isCurrent ? "" : "text-muted-foreground"
+                      }`}
+                    >
+                      <td>
+                        {/* DIRECT and INVITE_OVERRIDE are how the database
+                            spells them, not how a person reads them. */}
+                        {humanise(c.type)}
                         {!c.isCurrent && (
                           <span className="ml-2 rounded border border-border/60 px-1 text-[10px]">
                             Superseded
                           </span>
                         )}
                       </td>
-                      <td className="py-1">{c.beneficiary}</td>
-                      <td className="py-1 text-right tabular-nums">{c.percent}</td>
-                      <td className="py-1 text-right tabular-nums">{c.milestonePercent}%</td>
-                      <td className="py-1">
+                      <td>
+                        <PersonLink
+                          personId={c.beneficiaryPersonId}
+                          name={c.beneficiary}
+                          // Three of the five beneficiary roles are Members;
+                          // the other two are the Customer buying again.
+                          as={c.beneficiaryRole.endsWith("MEMBER") ? "member" : undefined}
+                        />
+                      </td>
+                      {/* The rate carries its unit: "3.00" beside a milestone
+                          percentage read as two halves of one number. */}
+                      <td className="text-right tabular-nums">{c.percent}%</td>
+                      <td className="text-right tabular-nums">{c.milestonePercent}%</td>
+                      <td>
                         <Badge
                           variant={
                             c.eligibility === "READY"
@@ -1402,12 +1575,12 @@ function BookingDetailPanel({
                           {ELIGIBILITY_LABEL[c.eligibility] ?? c.eligibility}
                         </Badge>
                         {c.holdReason && (
-                          <span className="mt-1 block text-[11px] text-amber-800">
+                          <span className="block text-[11px] text-amber-800">
                             {HOLD_LABEL[c.holdReason] ?? c.holdReason}
                           </span>
                         )}
                       </td>
-                      <td className="py-1">
+                      <td>
                         <Badge
                           variant={
                             c.payment === "PAID" || c.payment === "PAID_EARLY"
@@ -1420,7 +1593,7 @@ function BookingDetailPanel({
                           {PAYMENT_LABEL[c.payment] ?? c.payment}
                         </Badge>
                         {c.payment === "PAID_EARLY" && c.paymentRemarks && (
-                          <span className="mt-1 block text-[11px] text-muted-foreground">
+                          <span className="block text-[11px] text-muted-foreground">
                             Paid Early — {c.paymentRemarks}
                           </span>
                         )}
@@ -1434,11 +1607,12 @@ function BookingDetailPanel({
                           <span className="block text-[11px]">{c.closedReason}</span>
                         )}
                       </td>
-                      <td className="py-1">
+                      <td className="whitespace-nowrap text-right">
                         {c.isCurrent && permissions.processCommission && c.payment === "NOT_PAID" && (
                           <Button
-                            size="sm"
-                            variant={c.eligibility === "READY" ? "outline" : "ghost"}
+                            size="xs"
+                            className="w-24"
+                            variant={c.eligibility === "READY" ? "default" : "outline"}
                             onClick={() =>
                               onAction({
                                 kind: "COMMISSION_PAY",
@@ -1479,7 +1653,7 @@ function BookingDetailPanel({
 
       {/* People are needed for the shares dialog rendered by the parent. */}
       <span className="hidden">{people.length}</span>
-    </Card>
+    </div>
   );
 }
 
@@ -1507,7 +1681,7 @@ function ActionDialog({
     <Modal title={title} onClose={onClose}>
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plot} · {row.primaryCustomer}
+          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber} · {row.primaryCustomer}
         </p>
         <p className="mt-1 text-muted-foreground">{consequence}</p>
       </div>
@@ -1533,6 +1707,113 @@ function ActionDialog({
 }
 
 /** DESIGN §10.3 — the immutable submitted snapshot with Approve and Reject. */
+/**
+ * The submitted snapshot, read out rather than dumped.
+ *
+ * This was `JSON.stringify(snapshot, null, 2)` in a <pre>: the exact bytes that
+ * were frozen, and unreadable — a reviewer approving a Booking had to pick
+ * percentages out of raw JSON and match personIds by eye. The values below are
+ * still the snapshot's own, never the live record; only the names beside the
+ * ids come from the loaded Booking, which for a pending request is the same
+ * Person either way.
+ */
+type SubmittedSnapshot = {
+  parties?: Array<{ role: string; personId: string; sharePercent: string | null }>;
+  schedule?: Array<{ seq: number; dueDate: string; scheduledPercent: string }>;
+  plcSnapshot?: {
+    totalPercent: string | null;
+    components?: Array<{ label: string; percent: string; category: string; evidence: string }>;
+  } | null;
+  customerType?: string | null;
+  remark?: string | null;
+};
+
+function SubmittedSnapshotView({
+  snapshot,
+  detail,
+}: {
+  snapshot: SubmittedSnapshot;
+  detail: BookingDetail;
+}) {
+  const nameFor = (personId: string) =>
+    detail.parties.find((p) => p.personId === personId)?.name ?? "Person no longer on file";
+  const parties = snapshot.parties ?? [];
+  const schedule = snapshot.schedule ?? [];
+  const plc = snapshot.plcSnapshot;
+
+  return (
+    <div className="space-y-4 rounded-xl border border-border/60 p-4 text-xs">
+      <section>
+        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Customers
+        </h4>
+        <ul className="mt-1 space-y-0.5">
+          {parties.map((p) => (
+            <li key={p.personId} className="flex justify-between gap-3">
+              <span>
+                {nameFor(p.personId)}
+                <span className="ml-2 text-[11px] text-muted-foreground">
+                  {p.role === "PRIMARY" ? "Primary Customer" : "Additional Customer"}
+                </span>
+              </span>
+              <span className="tabular-nums">
+                {p.sharePercent ? `${p.sharePercent}%` : "100% (sole buyer)"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {plc && (
+        <section>
+          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Plot Location Charge
+          </h4>
+          <p className="mt-1 text-sm font-semibold tabular-nums">
+            {Number(plc.totalPercent ?? 0).toFixed(2)}%
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {(plc.components ?? []).map((c) => (
+              <li key={c.category} className="flex justify-between gap-3">
+                <span>
+                  {c.label}
+                  <span className="ml-2 text-[11px] text-muted-foreground">{c.evidence}</span>
+                </span>
+                <span className="tabular-nums">{Number(c.percent).toFixed(2)}%</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section>
+        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Payment schedule
+        </h4>
+        <ul className="mt-1 space-y-0.5">
+          {schedule.map((i) => (
+            <li key={i.seq} className="flex justify-between gap-3 tabular-nums">
+              <span>
+                {i.seq}. due {formatIstDate(i.dueDate)}
+              </span>
+              <span>{Number(i.scheduledPercent).toFixed(2)}%</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {(snapshot.customerType || snapshot.remark) && (
+        <section className="space-y-0.5 border-t border-border/50 pt-3 text-muted-foreground">
+          {snapshot.customerType && (
+            <p>Customer Type: {snapshot.customerType.replaceAll("_", " ")}</p>
+          )}
+          {snapshot.remark && <p>Remark: {snapshot.remark}</p>}
+        </section>
+      )}
+    </div>
+  );
+}
+
 function ReviewDialog({
   row,
   detail,
@@ -1554,7 +1835,10 @@ function ReviewDialog({
   }) => void;
 }) {
   const [approve, setApprove] = React.useState(true);
-  const pending = detail?.reviewVersions.find((v) => v.status === "PENDING");
+  // Detail is shared with the expanded row, so it may belong to another
+  // Booking — the snapshot shown must be this one's or none.
+  const ready = detail?.id === row.id;
+  const pending = ready ? detail.reviewVersions.find((v) => v.status === "PENDING") : undefined;
   const isMaker = row.submittedByRef === selfRef;
 
   return (
@@ -1566,27 +1850,32 @@ function ReviewDialog({
     >
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.project} · {row.plot} · {row.primaryCustomer}
+          {row.project} · {row.plotNumber} · {row.primaryCustomer}
         </p>
         <p className="mt-1 text-muted-foreground">
           Submitted by {row.submittedByRef} on {formatIst(row.submittedAt)} · Booking Date{" "}
-          {formatIst(row.bookingDate)} · Sold By {SOLD_BY_LABEL[row.soldByType] ?? row.soldByType}
+          {formatIstDate(row.bookingDate)} · Sold By {SOLD_BY_LABEL[row.soldByType] ?? row.soldByType}
         </p>
       </div>
 
       {isMaker && (
         <p className="rounded-xl border border-red-500/40 bg-red-500/5 p-3 text-xs text-red-700">
-          You submitted this request. A Booking Request must be decided by a different staff account
-          (PRD §3.3), so this decision will be refused.
+          You submitted this request. A Booking Request must be decided by a different staff
+          account, so this decision will be refused.
         </p>
       )}
 
-      {pending ? (
-        <pre className="max-h-64 overflow-auto rounded-xl border border-border/60 bg-secondary p-3 text-[11px] leading-relaxed">
-          {JSON.stringify(pending.snapshot, null, 2)}
-        </pre>
+      {pending && ready ? (
+        <SubmittedSnapshotView
+          snapshot={pending.snapshot as SubmittedSnapshot}
+          detail={detail}
+        />
       ) : (
-        <p className="text-xs text-muted-foreground">Loading the submitted snapshot…</p>
+        <p className="text-xs text-muted-foreground">
+          {ready
+            ? "This request has no version waiting for a decision."
+            : "Loading the submitted snapshot…"}
+        </p>
       )}
 
       <form
@@ -1699,8 +1988,13 @@ function BookingFormDialog({
   initialPlotId?: string;
 }) {
   const today = istDay(new Date());
+  const initial = bookable.find((p) => p.id === initialPlotId);
+  const [projectId, setProjectId] = React.useState(initial?.projectId ?? "");
   const [plotId, setPlotId] = React.useState(initialPlotId ?? "");
+  const [bookingDate, setBookingDate] = React.useState(today);
   const [soldByType, setSoldByType] = React.useState<FormOut["soldByType"]>("THREE_PERCENT_CLUB");
+  // The first row is the Primary Customer, always. There is no role to choose:
+  // an Additional Customer is what the button underneath adds.
   const [parties, setParties] = React.useState<PartyInput[]>([
     { personId: "", role: "PRIMARY", sharePercent: "" },
   ]);
@@ -1708,19 +2002,19 @@ function BookingFormDialog({
     { seq: 1, percent: "100", dueDate: today },
   ]);
 
+  const projects = Array.from(
+    new Map(bookable.map((p) => [p.projectId, p.projectName])).entries()
+  ).sort((a, b) => a[1].localeCompare(b[1]));
+  const projectPlots = bookable.filter((p) => p.projectId === projectId);
   const plot = bookable.find((p) => p.id === plotId);
   const shareTotal = parties.reduce((sum, p) => sum + (Number(p.sharePercent) || 0), 0);
-  const scheduleTotal = schedule.reduce((sum, r) => sum + (Number(r.percent) || 0), 0);
+  const patch = (index: number, next: Partial<PartyInput>) =>
+    setParties(parties.map((p, i) => (i === index ? { ...p, ...next } : p)));
 
   return (
-    <Modal
-      title={title}
-      description="Submitted values are frozen for the Accounts review. Changing one later needs a new version."
-      onClose={onClose}
-      wide
-    >
+    <Modal title={title} onClose={onClose}>
       <form
-        className="space-y-4"
+        className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
@@ -1728,130 +2022,213 @@ function BookingFormDialog({
             plotId,
             holdId: plot?.holdId ?? "",
             enquiryId: "",
-            parties,
+            // "NEW" is a marker for this form only. The action reads a blank
+            // personId with a name and mobile beside it as a first-time buyer.
+            parties: parties.map((p) =>
+              p.personId === "NEW"
+                ? { ...p, personId: "" }
+                : { personId: p.personId, role: p.role, sharePercent: p.sharePercent }
+            ),
             soldByType,
             soldByPersonId: String(f.get("soldByPersonId") ?? ""),
-            bookingDate: String(f.get("bookingDate")),
+            bookingDate,
             bookingDateReason: String(f.get("bookingDateReason") ?? ""),
             customerType: String(f.get("customerType") ?? ""),
-            remark: String(f.get("remark") ?? ""),
+            remark: "",
             schedule,
             reason: String(f.get("reason") ?? ""),
           });
         }}
       >
         {fixedPlotLabel ? (
-          <p className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
-            {fixedPlotLabel} — the Plot cannot change on a new version. Cross-Plot movement uses
-            Change Plot after approval.
+          <p className="rounded-xl border border-border/60 bg-secondary p-3 text-sm">
+            {fixedPlotLabel} — the Plot cannot change here. Cross-Plot movement uses Change Plot
+            after approval.
           </p>
         ) : (
-          <Field label="Plot — Available, or a live Hold for this buyer">
-            <select
-              className={inputClass}
-              required
-              value={plotId}
-              onChange={(e) => setPlotId(e.target.value)}
-            >
-              <option value="" disabled>
-                Select a Plot
-              </option>
-              {bookable.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                  {p.holdPersonName ? ` — on Hold for ${p.holdPersonName}` : ""}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Project">
+                <select
+                  className={inputClass}
+                  required
+                  value={projectId}
+                  onChange={(e) => {
+                    setProjectId(e.target.value);
+                    setPlotId("");
+                  }}
+                >
+                  <option value="" disabled>
+                    Select a Project
+                  </option>
+                  {projects.map(([id, name]) => (
+                    <option key={id} value={id}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Plot — Available or Hold">
+                <select
+                  className={inputClass}
+                  required
+                  disabled={!projectId}
+                  value={plotId}
+                  onChange={(e) => setPlotId(e.target.value)}
+                >
+                  <option value="" disabled>
+                    {projectId ? "Select a Plot" : "Select a Project first"}
+                  </option>
+                  {projectPlots.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.plotType} {p.plotNumber}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            {plot && (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl border border-border/60 bg-secondary/60 px-3 py-2 text-xs">
+                <dt className="text-muted-foreground">Status</dt>
+                <dd className="text-right font-medium">
+                  {plot.holdPersonName
+                    ? `On Hold for ${plot.holdPersonName}`
+                    : plot.status.replaceAll("_", " ")}
+                </dd>
+                <dt className="text-muted-foreground">Size</dt>
+                <dd className="text-right tabular-nums font-medium">
+                  {plot.widthFt && plot.lengthFt
+                    ? `${formatQuantity(plot.widthFt)} × ${formatQuantity(plot.lengthFt)} ft (${formatQuantity(plot.areaSqFt)} sq ft)`
+                    : `${formatQuantity(plot.areaSqFt)} sq ft · ${formatQuantity(plot.areaSqYd)} sq yd`}
+                </dd>
+                {plot.locationCharge.length > 0 && (
+                  <>
+                    <dt className="text-muted-foreground">Location Charge</dt>
+                    <dd className="text-right font-semibold text-foreground">
+                      {plot.locationCharge.join(" · ")}
+                    </dd>
+                  </>
+                )}
+              </dl>
+            )}
+          </>
         )}
 
         {plot?.holdPersonName && (
-          <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-[11px] text-amber-800">
+          <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
             This Plot is on Hold for {plot.holdPersonName}. The Primary Customer must be that Person,
             and the remaining Hold time freezes on submission.
           </p>
         )}
 
-        <section className="space-y-2">
+        <section className="space-y-2.5">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Customers and ownership shares
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Customers
             </h3>
-            <span className={`text-[11px] ${parties.length > 1 && shareTotal !== 100 ? "text-red-700" : "text-muted-foreground"}`}>
-              {parties.length === 1 ? "Sole buyer — leave the share blank for 100%" : `Total ${shareTotal}%`}
-            </span>
+            {parties.length > 1 && (
+              <span
+                className={`text-xs tabular-nums ${
+                  shareTotal === 100 ? "text-muted-foreground" : "text-red-700"
+                }`}
+              >
+                {shareTotal}%
+              </span>
+            )}
           </div>
+
           {parties.map((party, index) => (
-            <div key={index} className="flex flex-wrap gap-2">
-              <select
-                className={`${inputClass} flex-1`}
-                required
-                value={party.personId}
-                onChange={(e) =>
-                  setParties(parties.map((p, i) => (i === index ? { ...p, personId: e.target.value } : p)))
-                }
-              >
-                <option value="" disabled>
-                  Select a Person
-                </option>
-                {people.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.fullName} · {p.mobileMasked}
-                  </option>
-                ))}
-              </select>
-              <select
-                className={`${inputClass} w-40`}
-                value={party.role}
-                onChange={(e) =>
-                  setParties(
-                    parties.map((p, i) =>
-                      i === index ? { ...p, role: e.target.value as PartyInput["role"] } : p
-                    )
-                  )
-                }
-              >
-                <option value="PRIMARY">Primary Customer</option>
-                <option value="ADDITIONAL">Additional Customer</option>
-              </select>
-              <Input
-                className="w-28"
-                placeholder="Share %"
-                type="number"
-                step="0.0001"
-                min="0"
-                max="100"
-                value={party.sharePercent}
-                onChange={(e) =>
-                  setParties(
-                    parties.map((p, i) => (i === index ? { ...p, sharePercent: e.target.value } : p))
-                  )
-                }
-              />
-              {parties.length > 1 && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setParties(parties.filter((_, i) => i !== index))}
+            <div key={index} className="space-y-2 rounded-xl border border-border/60 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {index === 0 ? "Primary Customer" : `Additional Customer ${index}`}
+                </span>
+                {index > 0 && (
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => setParties(parties.filter((_, i) => i !== index))}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <select
+                  className={`${inputClass} flex-1`}
+                  required
+                  value={party.personId}
+                  onChange={(e) => patch(index, { personId: e.target.value })}
                 >
-                  Remove
-                </Button>
+                  <option value="" disabled>
+                    Select a Customer
+                  </option>
+                  <option value="NEW">+ New Customer — enter details</option>
+                  {people.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.fullName} · {p.mobileMasked}
+                    </option>
+                  ))}
+                </select>
+                {parties.length > 1 && (
+                  <Input
+                    className="h-9 w-28 text-xs"
+                    placeholder="Share %"
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    max="100"
+                    value={party.sharePercent}
+                    onChange={(e) => patch(index, { sharePercent: e.target.value })}
+                  />
+                )}
+              </div>
+
+              {party.personId === "NEW" && (
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Input
+                    className="h-9 text-xs"
+                    placeholder="Full name"
+                    required
+                    value={party.fullName ?? ""}
+                    onChange={(e) => patch(index, { fullName: e.target.value })}
+                  />
+                  <Input
+                    className="h-9 text-xs"
+                    placeholder="Mobile"
+                    required
+                    inputMode="numeric"
+                    value={party.mobile ?? ""}
+                    onChange={(e) => patch(index, { mobile: e.target.value })}
+                  />
+                  <Input
+                    className="h-9 text-xs"
+                    placeholder="City — optional"
+                    value={party.city ?? ""}
+                    onChange={(e) => patch(index, { city: e.target.value })}
+                  />
+                </div>
               )}
             </div>
           ))}
+
           <Button
             type="button"
             size="sm"
             variant="outline"
-            onClick={() => setParties([...parties, { personId: "", role: "ADDITIONAL", sharePercent: "" }])}
+            onClick={() =>
+              setParties([...parties, { personId: "", role: "ADDITIONAL", sharePercent: "" }])
+            }
           >
-            Add Additional Customer
+            + Add Additional Customer
           </Button>
         </section>
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Sold By">
             <select
               className={inputClass}
@@ -1863,46 +2240,47 @@ function BookingFormDialog({
               <option value="CUSTOMER">Customer</option>
             </select>
           </Field>
-          {soldByType !== "THREE_PERCENT_CLUB" && (
-            <Field label={soldByType === "MEMBER" ? "Selling Member" : "Closing Customer"}>
-              <select name="soldByPersonId" required className={inputClass} defaultValue="">
-                <option value="" disabled>
-                  Select
-                </option>
-                {(soldByType === "MEMBER"
-                  ? members.map((m) => ({ id: m.personId, label: m.label }))
-                  : people.map((p) => ({ id: p.id, label: `${p.fullName} · ${p.mobileMasked}` }))
-                ).map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          )}
           <Field label="Booking Date">
-            <Input name="bookingDate" type="date" defaultValue={today} max={today} required />
-          </Field>
-          <Field label="Reason — compulsory only if backdated">
-            <Input name="bookingDateReason" />
+            <Input
+              className="h-9 text-xs"
+              type="date"
+              max={today}
+              required
+              value={bookingDate}
+              onChange={(e) => setBookingDate(e.target.value)}
+            />
           </Field>
           <Field label="Customer Type">
-            <select name="customerType" className={inputClass} defaultValue="">
-              <option value="">Not recorded</option>
+            <select name="customerType" className={inputClass} defaultValue="END_USER" required>
               <option value="END_USER">End User</option>
               <option value="INVESTOR">Investor</option>
             </select>
           </Field>
-          <Field label="Remark — optional">
-            <Input name="remark" />
-          </Field>
+          {soldByType === "THREE_PERCENT_CLUB" ? (
+            <div aria-hidden className="hidden sm:block" />
+          ) : (
+            <SoldByPicker
+              key={soldByType}
+              name="soldByPersonId"
+              type={soldByType}
+              people={people}
+              members={members}
+            />
+          )}
         </div>
 
-        <ScheduleEditor schedule={schedule} setSchedule={setSchedule} total={scheduleTotal} minDate={today} />
+        {/* Only a backdated Booking has to say why */}
+        {bookingDate < today && (
+          <Field label="Reason for the backdated Booking Date — compulsory">
+            <Input className="h-9 text-xs" name="bookingDateReason" required minLength={3} />
+          </Field>
+        )}
+
+        <ScheduleEditor schedule={schedule} setSchedule={setSchedule} minDate={today} />
 
         {requireReason && (
-          <Field label="Reason for replacing the pending version — compulsory">
-            <Input name="reason" required minLength={3} />
+          <Field label="Reason for replacing this request — compulsory">
+            <Input className="h-9 text-xs" name="reason" required minLength={3} />
           </Field>
         )}
 
@@ -1919,80 +2297,138 @@ function BookingFormDialog({
   );
 }
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * The percentages fill forward. Every row keeps exactly what was typed and the
+ * last row carries whatever is left of the 100 — type 30 into the first and the
+ * second reads 70 on its own. Type into the last row as well and the shortfall
+ * shows as Remaining, which the next instalment added picks up.
+ */
+function fillForward(rows: ScheduleRowInput[], typedIndex = -1): ScheduleRowInput[] {
+  const out = rows.map((r, i) => ({ ...r, seq: i + 1 }));
+  const last = out.length - 1;
+  if (last < 1 || typedIndex === last) return out;
+  const others = out.reduce((sum, r, i) => (i === last ? sum : sum + (Number(r.percent) || 0)), 0);
+  out[last] = { ...out[last], percent: String(Math.max(0, round2(100 - others))) };
+  return out;
+}
+
+const scheduleTotal = (rows: ScheduleRowInput[]) =>
+  round2(rows.reduce((sum, r) => sum + (Number(r.percent) || 0), 0));
+
+/** YYYY-MM-DD plus N calendar days — done in UTC so it never drifts across a DST edge. */
+function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * Due dates fill forward too (PRD §11.4 — chronological, never before the one
+ * before it): editing an earlier row so it lands after a later one carries
+ * that later row's date up to match, rather than leaving the schedule invalid
+ * for a validation message to catch later.
+ */
+function fillDatesForward(rows: ScheduleRowInput[], changedIndex: number): ScheduleRowInput[] {
+  const out = rows.map((r) => ({ ...r }));
+  for (let i = changedIndex + 1; i < out.length; i++) {
+    if (out[i].dueDate <= out[i - 1].dueDate) {
+      out[i] = { ...out[i], dueDate: addDays(out[i - 1].dueDate, 1) };
+    }
+  }
+  return out;
+}
+
 function ScheduleEditor({
   schedule,
   setSchedule,
-  total,
   minDate,
 }: {
   schedule: ScheduleRowInput[];
   setSchedule: (rows: ScheduleRowInput[]) => void;
-  total: number;
   minDate: string;
 }) {
+  const remaining = round2(100 - scheduleTotal(schedule));
   return (
     <section className="space-y-2">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Payment schedule — percentage only
-        </h3>
-        <span className={`text-[11px] tabular-nums ${total === 100 ? "text-emerald-700" : "text-red-700"}`}>
-          Total {total}% — must be exactly 100%
-        </span>
-      </div>
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Payment Schedule
+      </h3>
       {schedule.map((line, index) => (
-        <div key={index} className="flex flex-wrap gap-2">
-          <span className="flex h-10 w-8 items-center justify-center text-xs text-muted-foreground">
+        <div key={index} className="flex flex-wrap items-center gap-2">
+          <span className="flex h-9 w-6 items-center justify-center text-xs font-medium text-muted-foreground">
             {line.seq}
           </span>
           <Input
-            className="w-32"
+            className="h-9 w-32 text-xs"
             type="number"
-            step="0.0001"
-            min="0.0001"
+            step="0.01"
+            min="0"
             max="100"
             required
             value={line.percent}
             onChange={(e) =>
-              setSchedule(schedule.map((r, i) => (i === index ? { ...r, percent: e.target.value } : r)))
+              setSchedule(
+                fillForward(
+                  schedule.map((r, i) => (i === index ? { ...r, percent: e.target.value } : r)),
+                  index
+                )
+              )
             }
           />
           <Input
-            className="w-48"
+            className="h-9 w-44 text-xs"
             type="date"
-            min={minDate}
+            min={index === 0 ? minDate : addDays(schedule[index - 1].dueDate, 1)}
             required
             value={line.dueDate}
             onChange={(e) =>
-              setSchedule(schedule.map((r, i) => (i === index ? { ...r, dueDate: e.target.value } : r)))
+              setSchedule(
+                fillDatesForward(
+                  schedule.map((r, i) => (i === index ? { ...r, dueDate: e.target.value } : r)),
+                  index
+                )
+              )
             }
           />
           {schedule.length > 1 && (
             <Button
               type="button"
-              size="sm"
+              size="xs"
               variant="ghost"
-              onClick={() =>
-                setSchedule(
-                  schedule.filter((_, i) => i !== index).map((r, i) => ({ ...r, seq: i + 1 }))
-                )
-              }
+              onClick={() => setSchedule(fillForward(schedule.filter((_, i) => i !== index)))}
             >
               Remove
             </Button>
           )}
         </div>
       ))}
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        onClick={() =>
-          setSchedule([...schedule, { seq: schedule.length + 1, percent: "", dueDate: minDate }])
-        }
-      >
-        Add instalment
-      </Button>
+      <div className="flex items-center justify-between pt-1">
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          onClick={() =>
+            setSchedule([
+              ...schedule,
+              {
+                seq: schedule.length + 1,
+                percent: String(Math.max(0, remaining)),
+                dueDate: addDays(schedule[schedule.length - 1]?.dueDate ?? minDate, 30),
+              },
+            ])
+          }
+        >
+          + Add instalment
+        </Button>
+        <p className={remaining === 0 ? "text-xs text-muted-foreground" : "text-xs text-red-700 font-medium"}>
+          {remaining === 0
+            ? "Total 100% — complete."
+            : remaining > 0
+              ? `Remaining ${remaining}%`
+              : `Over by ${round2(-remaining)}%`}
+        </p>
+      </div>
     </section>
   );
 }
@@ -2018,7 +2454,6 @@ function ScheduleDialog({
       dueDate: i.dueDate.slice(0, 10),
     }))
   );
-  const total = schedule.reduce((sum, r) => sum + (Number(r.percent) || 0), 0);
   const today = istDay(new Date());
 
   return (
@@ -2044,7 +2479,7 @@ function ScheduleDialog({
           onSubmit(schedule, String(new FormData(e.currentTarget).get("reason")));
         }}
       >
-        <ScheduleEditor schedule={schedule} setSchedule={setSchedule} total={total} minDate={today} />
+        <ScheduleEditor schedule={schedule} setSchedule={setSchedule} minDate={today} />
         <Field label="Reason — compulsory">
           <Input name="reason" required minLength={3} />
         </Field>
@@ -2187,6 +2622,64 @@ function SharesDialog({
   );
 }
 
+/**
+ * Sold By is picked by identity: the Member ID or the Customer ID chooses the
+ * row, and the name sits under it — the code is what a form or a payout sheet
+ * carries, the name is how the office checks it is the right person.
+ */
+function SoldByPicker({
+  name,
+  type,
+  people,
+  members,
+}: {
+  name: string;
+  type: "MEMBER" | "CUSTOMER";
+  people: PersonView[];
+  members: MemberView[];
+}) {
+  const [picked, setPicked] = React.useState("");
+  const options =
+    type === "MEMBER"
+      ? members.map((m) => ({ id: m.personId, code: m.memberId, name: m.fullName }))
+      : people
+          .filter((p) => p.customerId !== null)
+          .map((p) => ({
+            id: p.id,
+            code: p.customerId!,
+            name: `${p.fullName} · ${p.mobileMasked}`,
+          }));
+  const chosen = options.find((o) => o.id === picked);
+
+  return (
+    <Field label={type === "MEMBER" ? "Selling Member" : "Closing Customer"}>
+      <select
+        name={name}
+        required
+        className={inputClass}
+        value={picked}
+        onChange={(e) => setPicked(e.target.value)}
+      >
+        <option value="" disabled>
+          Select
+        </option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.code} · {o.name}
+          </option>
+        ))}
+      </select>
+      {chosen && (
+        <p className="mt-1 leading-tight">
+          <span className="text-xs font-semibold tabular-nums">{chosen.code}</span>
+          <br />
+          <span className="text-[11px] text-muted-foreground">{chosen.name}</span>
+        </p>
+      )}
+    </Field>
+  );
+}
+
 /** The Sold By picker, shared by the correction dialog. */
 function SoldByForm({
   people,
@@ -2234,21 +2727,13 @@ function SoldByForm({
         </select>
       </Field>
       {type !== "THREE_PERCENT_CLUB" && (
-        <Field label={type === "MEMBER" ? "Selling Member" : "Closing Customer"}>
-          <select name="toSoldByPersonId" required className={inputClass} defaultValue="">
-            <option value="" disabled>
-              Select
-            </option>
-            {(type === "MEMBER"
-              ? members.map((m) => ({ id: m.personId, label: m.label }))
-              : people.map((p) => ({ id: p.id, label: `${p.fullName} · ${p.mobileMasked}` }))
-            ).map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <SoldByPicker
+          key={type}
+          name="toSoldByPersonId"
+          type={type}
+          people={people}
+          members={members}
+        />
       )}
       <Field label="Reason — compulsory">
         <Input name="reason" required minLength={3} />
@@ -2294,17 +2779,15 @@ function CompletionSection({
   const atCompletion = row.status === "PAYMENT_COMPLETED";
   const delivered = row.status === "DELIVERED";
 
+  // Nothing here until the money is in. The section used to draw itself just to
+  // say so, on every Booking that had not got there yet — which is most of them.
+  if (!atCompletion && !delivered) return null;
+
   return (
     <section>
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Allotment / Registry
       </h3>
-
-      {!atCompletion && !delivered && (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Available once Payment Received reaches 100% and the Booking is Payment Completed.
-        </p>
-      )}
 
       {(atCompletion || delivered) && (
         <div className="mt-2 space-y-3 text-xs">
@@ -2443,7 +2926,7 @@ function FinalBuyersDialog({
     <Modal title="Final buyer details" wide onClose={onClose}>
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plot}
+          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber}
         </p>
         <p className="mt-1 text-muted-foreground">
           Aadhaar comes from the Person record and must already be recorded. A single final buyer may
@@ -2562,12 +3045,12 @@ function CompletionDialog({
   return (
     <Modal
       title="Record Allotment / Registry"
-      description="One route only. There is no Allotment-then-Registry sequence (PRD §4.1)."
+      description="One route only. There is no Allotment-then-Registry sequence."
       onClose={onClose}
     >
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plot}
+          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber}
         </p>
         <p className="mt-1 text-muted-foreground">
           Completing the route sets the Booking and Plot to Delivered once, and Papers Legally
@@ -2696,7 +3179,7 @@ function CancellationDecisionDialog({
     >
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plot} · {row.primaryCustomer}
+          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber} · {row.primaryCustomer}
         </p>
         <p className="mt-1 text-muted-foreground">
           {approve
@@ -2798,7 +3281,7 @@ function ChangePlotDialog({
     >
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plot}
+          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber}
         </p>
         <p className="mt-1 text-muted-foreground">
           The replacement Plot is reserved with its own PLC snapshot. Accounts then records the
@@ -2879,7 +3362,7 @@ function ChangePlotDecisionDialog({
     >
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plot}
+          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber}
         </p>
         <p className="mt-1 text-muted-foreground">
           {approve
@@ -2912,13 +3395,10 @@ function ChangePlotDecisionDialog({
               />
             </Field>
             <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">
-                Revised payment schedule — must total exactly 100%
-              </p>
+              <p className="text-xs font-medium text-muted-foreground">Revised payment schedule</p>
               <ScheduleEditor
                 schedule={schedule}
                 setSchedule={setSchedule}
-                total={schedule.reduce((sum, r) => sum + Number(r.percent || 0), 0)}
                 minDate={istDay(new Date())}
               />
             </div>

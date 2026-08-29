@@ -4,11 +4,18 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Plus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Plus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
+import { PersonLink } from "@/components/person-link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Field, Modal } from "@/components/ui/modal";
 import { addIstDays, formatIst, istDay, istInstant, type StaffRole } from "@/lib/tasks";
@@ -24,12 +31,14 @@ export type EnquiryRowView = {
   id: string;
   enquiryNo: string;
   name: string;
+  personId: string;
   mobileMasked: string;
   city: string;
   project: string;
   plot: string;
   source: string;
   sourceMember: string | null;
+  sourceMemberPersonId: string | null;
   status: string;
   closeReason: string | null;
   assignedTo: string;
@@ -47,7 +56,7 @@ const OUTCOMES = [
 ] as const;
 
 const inputClass =
-  "h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+  "h-9 w-full rounded-lg border border-input bg-card px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
 const humanise = (v: string) =>
   v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
@@ -55,6 +64,16 @@ const humanise = (v: string) =>
 /** Filters sit inline and size to their content, unlike a form field. */
 const filterClass =
   "h-9 w-auto rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+
+/** The fact, and under it what qualifies it. Every cell reads the same way. */
+function Cell({ value, under }: { value: React.ReactNode; under?: React.ReactNode }) {
+  return (
+    <>
+      <span className="block text-foreground">{value}</span>
+      {under && <span className="block text-[11px] text-muted-foreground">{under}</span>}
+    </>
+  );
+}
 
 export default function EnquiriesClient({
   role,
@@ -108,7 +127,7 @@ export default function EnquiriesClient({
 
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="mx-auto max-w-6xl space-y-4">
+      <div className="mx-auto max-w-6xl space-y-3">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Enquiries</h1>
@@ -175,75 +194,113 @@ export default function EnquiriesClient({
             </p>
           </Card>
         ) : (
-          // Two lines, not four. The four were stacked down the left while the
-          // middle of the card stayed empty — an Enquiry is a handful of short
-          // facts, and they read across.
-          <ul className="space-y-2">
-            {visible.map((e) => {
-              const where = [e.mobileMasked, e.city, e.project, e.plot].filter(Boolean).join(" · ");
-              const who = [
-                e.assignedTo ? `Assigned to ${e.assignedTo}` : null,
-                e.sourceMember ? `Sourced by ${e.sourceMember}` : null,
-              ]
-                .filter(Boolean)
-                .join(" · ");
-              const progress = [
-                e.lastOutcome ? humanise(e.lastOutcome) : "No follow-up yet",
-                e.nextFollowUpAt ? `next ${formatIst(e.nextFollowUpAt)}` : null,
-                e.closeReason ? `closed: ${e.closeReason}` : null,
-              ]
-                .filter(Boolean)
-                .join(" · ");
-
-              return (
-                <li key={e.id}>
-                  <Card className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3">
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="font-mono text-sm font-semibold text-primary">
-                          {e.enquiryNo}
+          // A rule between rows, not a filled card behind each one: ten
+          // Enquiries fit on a laptop screen without the page becoming stripes.
+          // Same table as Customers, so the two lists are read the same way.
+          <div className="overflow-x-auto">
+            {/* Nine columns in a laptop width leaves the two that vary — the
+                name and the Project — about 8rem each, so what qualifies them
+                (the city, the Plot, who sourced it) sits on the second line of
+                its own cell rather than taking a column and wrapping. */}
+            <table className="w-full min-w-[60rem] border-collapse text-xs">
+              <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr className="border-b border-border">
+                  <th className="px-3 py-1.5">Name</th>
+                  <th className="w-[6.5rem] px-3 py-1.5">Mobile</th>
+                  <th className="px-3 py-1.5">Project</th>
+                  <th className="w-[6rem] px-3 py-1.5">Status</th>
+                  <th className="w-[9.5rem] px-3 py-1.5">Source</th>
+                  <th className="w-[10rem] px-3 py-1.5">Follow-up</th>
+                  <th className="w-[7rem] px-3 py-1.5">Assigned to</th>
+                  {canManage && <th className="w-[7rem] px-3 py-1.5 text-right">Action</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((e) => (
+                  <tr
+                    key={e.id}
+                    className="border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1"
+                  >
+                    <td>
+                      <Cell
+                        value={<PersonLink personId={e.personId} name={e.name} />}
+                        under={e.city}
+                      />
+                    </td>
+                    <td className="whitespace-nowrap font-mono">{e.mobileMasked}</td>
+                    <td>
+                      <Cell value={e.project || "—"} under={e.plot} />
+                    </td>
+                    <td>
+                      <Badge
+                        variant={
+                          e.status === "ACTIVE" ? "info" : e.status === "BOOKED" ? "success" : "outline"
+                        }
+                      >
+                        {humanise(e.status)}
+                      </Badge>
+                      {e.closeReason && (
+                        <span className="block text-[11px] text-muted-foreground">
+                          {e.closeReason}
                         </span>
-                        <h2 className="text-sm font-semibold">{e.name}</h2>
-                        <Badge
-                          variant={
-                            e.status === "ACTIVE"
-                              ? "info"
-                              : e.status === "BOOKED"
-                                ? "success"
-                                : "outline"
-                          }
-                        >
-                          {humanise(e.status)}
-                        </Badge>
-                        <Badge variant="outline">{humanise(e.source)}</Badge>
-                        <span className="text-xs text-muted-foreground">{where}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {who}
-                        {who && progress ? " · " : ""}
-                        {progress}
-                      </p>
-                    </div>
-                    {canManage && e.status === "ACTIVE" && (
-                      <div className="flex shrink-0 gap-2">
-                        <Button size="sm" disabled={busy} onClick={() => setFollowUp(e)}>
-                          Follow-up
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => setClosing(e)}
-                        >
-                          Close
-                        </Button>
-                      </div>
+                      )}
+                    </td>
+                    <td>
+                      <Cell
+                        value={humanise(e.source)}
+                        under={
+                          e.sourceMember && (
+                            <PersonLink
+                              personId={e.sourceMemberPersonId}
+                              name={e.sourceMember}
+                              as="member"
+                            />
+                          )
+                        }
+                      />
+                    </td>
+                    <td>
+                      <Cell
+                        value={e.lastOutcome ? humanise(e.lastOutcome) : "No follow-up yet"}
+                        under={e.nextFollowUpAt ? `next ${formatIst(e.nextFollowUpAt)}` : null}
+                      />
+                    </td>
+                    <td>{e.assignedTo || "—"}</td>
+                    {canManage && (
+                      <td className="whitespace-nowrap text-right">
+                        {/* One button, the same shape the Plot row uses when a
+                            row has more than one thing to do: a named trigger,
+                            the choice behind it. Two pills side by side at the
+                            edge of a row read as a pair fighting for the same
+                            job. What ends the Enquiry is red inside the menu. */}
+                        {e.status === "ACTIVE" && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="xs" className="w-24" disabled={busy}>
+                                Update
+                                <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onSelect={() => setFollowUp(e)}>
+                                Record follow-up
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => setClosing(e)}
+                                className="text-red-700 focus:text-red-700"
+                              >
+                                Close Enquiry
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </td>
                     )}
-                  </Card>
-                </li>
-              );
-            })}
-          </ul>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -280,7 +337,7 @@ export default function EnquiriesClient({
             Closing the Enquiry completes its Pending follow-up task. A Close reason is compulsory.
           </p>
           <form
-            className="space-y-4"
+            className="space-y-3"
             onSubmit={async (ev) => {
               ev.preventDefault();
               const reason = String(new FormData(ev.currentTarget).get("reason"));
@@ -333,12 +390,12 @@ function CreateEnquiryDialog({
 
   return (
     <Modal title="New Enquiry" onClose={onClose}>
-      <p className="text-xs text-muted-foreground">
+      <p className="-mt-1 text-xs text-muted-foreground">
         A Plot-wise Enquiry stays a separate record. Only one Active Enquiry may exist for the same
         Person, Project and Plot.
       </p>
       <form
-        className="space-y-4"
+        className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
@@ -419,7 +476,7 @@ function CreateEnquiryDialog({
               className={inputClass}
             />
           </Field>
-          <Field label="Time (IST)">
+          <Field label="Time">
             <input name="time" type="time" required defaultValue="11:00" className={inputClass} />
           </Field>
         </div>
@@ -488,7 +545,7 @@ function FollowUpDialog({
       </div>
 
       <form
-        className="space-y-4"
+        className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
@@ -518,7 +575,7 @@ function FollowUpDialog({
               className={inputClass}
             />
           </Field>
-          <Field label="Time (IST)">
+          <Field label="Time">
             <input name="time" type="time" required defaultValue="11:00" className={inputClass} />
           </Field>
         </div>
