@@ -1,6 +1,8 @@
 // Phase 2 to 6 domain checks — PHASES.md Phase 2-6 "Tests".
 // Run: node src/lib/domain/domain.check.ts
 import assert from "node:assert/strict";
+import { matchPeople, personLabel } from "./person-search.ts";
+import { capShare, shareRoom, shareSum } from "./shares.ts";
 import {
   canReopenDelivered,
   maskExportRow,
@@ -1910,5 +1912,92 @@ for (const status of [
   assert.equal(canEditPlotDetails(status), false, `${status} freezes the Plot details`);
   assert.equal(canSetRestriction(status), false, `${status} is past restricting`);
 }
+
+/* ------------------------------------------------ finding one Person, fast */
+
+// The id leads the label, because that is what staff type in full.
+assert.equal(
+  personLabel({ fullName: "Samir Sain", primaryMobile: "9876543210", customerId: "CUS-3390" }),
+  "CUS-3390 · Samir Sain · 9876543210"
+);
+// A Person with neither profile is still a name and a number, not a blank.
+assert.equal(personLabel({ fullName: "Walk In", mobileMasked: "98****3210" }), "Walk In · 98****3210");
+// mobileMasked wins over the raw number when a screen passes both.
+assert.equal(
+  personLabel({ fullName: "A", mobileMasked: "98****10", primaryMobile: "9876543210" }),
+  "A · 98****10"
+);
+
+// A field headed Member leads with the Member ID, so typing it ranks the row
+// first; a Person who is both still shows both ids either way.
+const bothIds = { fullName: "Samir Sain", mobileMasked: "98****10", customerId: "CUS-3390", memberId: "MEM-0012" };
+assert.equal(personLabel(bothIds), "CUS-3390 · MEM-0012 · Samir Sain · 98****10");
+assert.equal(personLabel(bothIds, "MEMBER"), "MEM-0012 · CUS-3390 · Samir Sain · 98****10");
+assert.equal(
+  matchPeople([{ id: "b", label: personLabel(bothIds, "MEMBER") }], "mem-0012").length,
+  1,
+  "a Member ID finds the row it leads"
+);
+
+const directory = [
+  { id: "1", label: "CUS-0001 · Anita Rao · 98****11" },
+  { id: "2", label: "CUS-3390 · Samir Sain · 98****10" },
+  { id: "3", label: "MEM-0012 · Sain Enterprises · 98****12" },
+];
+
+// Every word must appear, in any order.
+assert.deepEqual(matchPeople(directory, "sain 3390").map((o) => o.id), ["2"]);
+assert.deepEqual(matchPeople(directory, "3390 sain").map((o) => o.id), ["2"]);
+// A word nobody has matches nobody — never "everyone" by accident.
+assert.deepEqual(matchPeople(directory, "sain zzz"), []);
+// An empty query is the whole list, so opening the picker shows everyone.
+assert.equal(matchPeople(directory, "   ").length, 3);
+
+// The id typed in full ranks first even though the name matches two rows.
+assert.deepEqual(matchPeople(directory, "sain").map((o) => o.id), ["2", "3"]);
+assert.equal(matchPeople(directory, "mem-0012")[0].id, "3", "an id prefix wins the top");
+assert.equal(matchPeople(directory, "cus")[0].id, "1", "ties keep the caller's order");
+
+// The cap is a cap, not a filter: nothing below it is lost, only unlisted.
+assert.equal(matchPeople(directory, "", 2).length, 2);
+
+/* ------------------------------------------- shares a form cannot overfill */
+
+// The total is what a percentage field reads, not what a float holds.
+assert.equal(shareSum([{ sharePercent: "33.33" }, { sharePercent: "33.33" }, { sharePercent: "33.34" }]), 100);
+assert.equal(shareSum([{ sharePercent: "" }, { sharePercent: "60" }]), 60, "a blank counts as nothing");
+
+// What is left is 100 minus everyone else, never the row's own share.
+const two = [{ sharePercent: "60" }, { sharePercent: "40" }];
+assert.equal(shareRoom(two, 0), 60, "the row being edited frees its own share");
+assert.equal(shareRoom([{ sharePercent: "100" }, { sharePercent: "" }], 1), 0, "nothing left to give");
+
+// Typing past the remainder lands on the remainder, not on a total above 100.
+assert.equal(capShare([{ sharePercent: "60" }, { sharePercent: "" }], 1, "80"), "40");
+assert.equal(capShare([{ sharePercent: "60" }, { sharePercent: "" }], 1, "25"), "25", "under the cap is untouched");
+assert.equal(capShare([{ sharePercent: "100" }, { sharePercent: "" }], 1, "5"), "0");
+// Blank stays blank: a sole buyer leaves it empty and is treated as 100%.
+assert.equal(capShare([{ sharePercent: "" }], 0, ""), "");
+assert.equal(capShare([{ sharePercent: "" }], 0, "  "), "");
+// Nonsense and negatives never reach the server as a share.
+assert.equal(capShare([{ sharePercent: "" }], 0, "abc"), "");
+assert.equal(capShare([{ sharePercent: "" }], 0, "-5"), "0");
+// Editing a row down and back up is not blocked by its own old value.
+assert.equal(capShare([{ sharePercent: "40" }, { sharePercent: "60" }], 0, "40"), "40");
+
+// However many buyers there are, the cap is still the whole remainder.
+const five = [
+  { sharePercent: "20" },
+  { sharePercent: "20" },
+  { sharePercent: "20" },
+  { sharePercent: "20" },
+  { sharePercent: "" },
+];
+assert.equal(shareRoom(five, 4), 20, "four at 20% leave 20% for the fifth");
+assert.equal(capShare(five, 4, "90"), "20", "the fifth cannot take more than is left");
+assert.equal(capShare(five, 4, "20"), "20");
+assert.equal(shareSum([...five.slice(0, 4), { sharePercent: "20" }]), 100);
+// A sixth buyer added onto a full 100% can only take nothing until room is made.
+assert.equal(shareRoom([...five.slice(0, 4), { sharePercent: "20" }, { sharePercent: "" }], 5), 0);
 
 console.log("domain.check.ts OK");

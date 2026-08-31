@@ -108,6 +108,45 @@ async function main() {
     `the key and its result are retained for at least 24 hours (PRD §19) — stored gap ${retentionMs}ms`
   );
 
+  /* ============================================ Hold for a typed-in buyer */
+
+  // The Hold form may name a buyer who is not in the system yet. The Person is
+  // match-or-created inside the command, exactly as the Enquiry form does it,
+  // so a second Hold for the same name and mobile reuses the same Person.
+  const walkInPlot = await makePlot(project.id, "W1");
+  await createHold({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    plotId: walkInPlot.id,
+    newPerson: { fullName: `${TAG} Walkin`, mobile: "9500000703" },
+    responsibleStaffId: crmStaff.id,
+  });
+  const walkIn = await db.person.findFirstOrThrow({ where: { fullName: `${TAG} Walkin` } });
+
+  const walkInPlot2 = await makePlot(project.id, "W2");
+  const second = await createHold({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    plotId: walkInPlot2.id,
+    newPerson: { fullName: `${TAG} Walkin`, mobile: "9500000703" },
+    responsibleStaffId: crmStaff.id,
+  });
+  const secondHold = await db.hold.findUniqueOrThrow({ where: { id: second.holdId } });
+  assert.equal(secondHold.personId, walkIn.id, "the same name and mobile reuses the Person");
+
+  const namelessPlot = await makePlot(project.id, "W3");
+  await expectBlocked(/actual Customer\/Person/, () =>
+    createHold({
+      idempotencyKey: key(),
+      actorRef: CRM,
+      actorRole: "CRM",
+      plotId: namelessPlot.id,
+      responsibleStaffId: crmStaff.id,
+    })
+  );
+
   /* ================================================== concurrency evidence */
 
   const plotB = await makePlot(project.id, "B");

@@ -18,7 +18,7 @@ import {
   addIstDays,
   emphasis,
   filterTasks,
-  formatIst,
+  formatDue,
   istDay,
   istInstant,
   sortTasks,
@@ -202,11 +202,11 @@ export default function DashboardClient({
             </button>
           ))}
           {view === "RANGE" && (
-            <div className="inline-flex items-center gap-0 rounded-xl border border-border/60 bg-secondary/50 overflow-hidden">
+            <div className="inline-flex max-w-full items-center gap-0 overflow-hidden rounded-xl border border-border/60 bg-secondary/50">
               <input
                 type="date"
                 aria-label="Range from"
-                className="h-8 border-0 bg-transparent px-3 text-xs font-medium text-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:ring-inset"
+                className="h-8 w-[7.5rem] border-0 bg-transparent px-3 text-xs font-medium text-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:ring-inset"
                 value={range?.from ?? ""}
                 onChange={(e) =>
                   setRange((r) => ({ from: e.target.value, to: r?.to ?? e.target.value }))
@@ -218,7 +218,7 @@ export default function DashboardClient({
               <input
                 type="date"
                 aria-label="Range to"
-                className="h-8 border-0 bg-transparent px-3 text-xs font-medium text-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:ring-inset"
+                className="h-8 w-[7.5rem] border-0 bg-transparent px-3 text-xs font-medium text-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:ring-inset"
                 value={range?.to ?? ""}
                 onChange={(e) =>
                   setRange((r) => ({ from: r?.from ?? e.target.value, to: e.target.value }))
@@ -321,7 +321,7 @@ export default function DashboardClient({
 
                   <span className="w-[11rem] shrink-0 text-muted-foreground">
                     <Clock className="mr-1 inline h-3 w-3" />
-                    {formatIst(task.dueAt)}
+                    {formatDue(task.dueAt, now)}
                   </span>
                   <span className="w-[9rem] shrink-0 truncate text-muted-foreground">
                     {task.assigneeName} ({task.assigneeRole})
@@ -435,7 +435,7 @@ function ReviseDialog({
           );
         }}
       >
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Field label="New follow-up date">
             <input
               required
@@ -512,7 +512,7 @@ function AddTaskDialog({
         <Field label="Title">
           <Input name="title" required placeholder="e.g. Confirm site visit with Customer" />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Assignee">
             <Input name="assigneeName" required defaultValue="Rahul Mehta" />
           </Field>
@@ -548,7 +548,7 @@ function AddTaskDialog({
             </span>
           </Field>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Link to">
             <select name="kind" defaultValue="Customer" className={inputClass}>
               {RECORD_KINDS.map(({ kind, label }) => (
@@ -565,7 +565,7 @@ function AddTaskDialog({
             <Input name="recordName" placeholder="Vikram Shah" />
           </Field>
         </div>
-        <Field label="Remark (optional)">
+        <Field label="Remark">
           <Input name="remark" />
         </Field>
         <div className="flex justify-end gap-2 pt-2">

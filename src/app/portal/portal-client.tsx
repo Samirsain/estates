@@ -27,6 +27,7 @@ import {
   withdrawHoldRequestAction,
   type ActionResult,
 } from "./actions";
+import { PersonPicker } from "@/components/person-picker";
 
 /** PRD §23.1 — the only commission wording a Member ever sees. */
 const COMMISSION_LABEL: Record<string, string> = {
@@ -556,16 +557,12 @@ export default function PortalClient({ data }: { data: PortalData }) {
             }}
           >
             <Field label="Buyer — required">
-              <select name="personId" required defaultValue="" className={inputClass}>
-                <option value="" disabled>
-                  Select yourself or a buyer you introduced
-                </option>
-                {data.buyers.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.label}
-                  </option>
-                ))}
-              </select>
+              <PersonPicker
+                name="personId"
+                required
+                placeholder="Search yourself or a buyer you introduced"
+                options={data.buyers}
+              />
             </Field>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setRequesting(null)} className="border-border text-foreground">
@@ -628,7 +625,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                 </select>
               </Field>
             </div>
-            <Field label="Interested Plot (optional)">
+            <Field label="Interested Plot">
               <select name="plotId" defaultValue="" className={inputClass}>
                 <option value="">General Enquiry</option>
                 {data.plots.map((p) => (
@@ -638,7 +635,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                 ))}
               </select>
             </Field>
-            <Field label="Remark (optional)">
+            <Field label="Remark">
               <Input name="remark" className={inputClass} />
             </Field>
             <div className="flex justify-end gap-2 pt-2">

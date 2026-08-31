@@ -100,8 +100,9 @@ export function AppShell({
               menuOpen ? "md:opacity-100" : "md:opacity-0"
             }`}
           >
-            <p className="text-sm font-bold tracking-tight gradient-text">3% Club CRM</p>
-            <p className="text-[10px] text-muted-foreground">v3.1 baseline</p>
+            <p className="text-sm font-bold tracking-tight gradient-text">
+              3% REAL ESTATE CLUB
+            </p>
           </div>
         </div>
 

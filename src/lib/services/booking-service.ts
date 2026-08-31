@@ -2,7 +2,7 @@
 // Primary Customer change.
 // PRD.md §9, §11, §12, §13; DESIGN.md §10; ARCHITECTURE.md §6.2, §7.
 
-import type { SoldByType } from "@prisma/client";
+import type { Prisma, SoldByType } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
   assertProcessFree,
@@ -28,7 +28,8 @@ import {
 } from "./commission-service";
 import { createScheduleVersion, syncPaymentFollowUp, type ScheduleInput } from "./payment-service";
 import { closeTasksFor, ensureTask } from "./task-service";
-import { linkOrCreatePerson } from "./enquiry-service";
+import { ensureCustomerProfile, linkOrCreatePerson } from "./enquiry-service";
+import { validateSoldBy } from "./sold-by";
 
 /** PRD §11.6 — the decision/follow-up period is seven calendar days. */
 export const BOOKING_DECISION_DAYS = 7;
@@ -109,53 +110,6 @@ function primaryOf(parties: readonly BookingPartyInput[]): BookingPartyInput {
   const primaries = parties.filter((p) => p.role === "PRIMARY");
   if (primaries.length !== 1) blocked("Exactly one Primary Customer is required on a Booking.");
   return primaries[0];
-}
-
-/**
- * PRD §5.2 — the Customer ID is created when the first Booking Request is
- * submitted, and is retained even if the request is later rejected.
- */
-async function ensureCustomerProfile(tx: Tx, personId: string) {
-  const existing = await tx.customerProfile.findUnique({ where: { personId } });
-  if (existing) return existing;
-
-  // A Customer ID is permanent and never reused (PRD §5.2).
-  return tx.customerProfile.create({
-    data: { personId, customerId: await nextReference(tx, "CUS", "Customer") },
-  });
-}
-
-/**
- * PRD §6.7 — when a Person holds an Active Member capability the closing action
- * must use Sold By Member; the same action can never generate Customer Loyalty.
- */
-async function validateSoldBy(tx: Tx, soldByType: SoldByType, soldByPersonId: string | null) {
-  if (soldByType === "THREE_PERCENT_CLUB") {
-    if (soldByPersonId) blocked("A 3% Club direct close names no Sold By Person.");
-    return;
-  }
-  if (!soldByPersonId) blocked(`Select the ${soldByType === "MEMBER" ? "Member" : "Customer"} who closed the deal.`);
-
-  const person = await tx.person.findUniqueOrThrow({
-    where: { id: soldByPersonId },
-    include: { memberProfile: true },
-  });
-
-  if (soldByType === "MEMBER") {
-    if (!person.memberProfile) blocked("The selected Person has no Member profile.");
-    if (person.memberProfile.status !== "ACTIVE") {
-      blocked("A Member must be Active at Booking Request to be selected as the closer.");
-    }
-    if (!person.memberProfile.activationDate) blocked("This Member has not been activated yet.");
-    return;
-  }
-
-  if (person.memberProfile?.status === "ACTIVE") {
-    blocked(
-      "This Person holds an Active Member capability, so the close must be recorded as Sold By " +
-        "Member. An Active Member cannot close as a Customer."
-    );
-  }
 }
 
 /** Reuses the Hold's frozen snapshot, or freezes the current PLC version. */
@@ -1537,12 +1491,13 @@ export async function decideSoldByCorrection(args: {
 
 /* -------------------------------------------------------------- read model */
 
-export function listBookings() {
+export function listBookings(where?: Prisma.BookingWhereInput) {
   return db.booking.findMany({
+    where,
     include: {
       project: true,
       plot: true,
-      primaryPerson: true,
+      primaryPerson: { include: { customerProfile: { select: { customerId: true } } } },
       // The list names Sold By by their Member ID or Customer ID, so the two
       // codes ride along with the Person.
       soldByPerson: {

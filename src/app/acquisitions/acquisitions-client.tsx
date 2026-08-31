@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { PersonPicker, personLabel } from "@/components/person-picker";
 import { formatIst, istDay, type StaffRole } from "@/lib/tasks";
 import {
   cancelAcquisitionAction,
@@ -42,6 +43,10 @@ export type AcquisitionRowView = {
   type: string;
   status: string;
   property: string;
+  project: string;
+  plotNumber: string;
+  /** CONSTANT_CASE from the schema, or null for a property outside inventory. */
+  plotType: string | null;
   location: string | null;
   seller: string;
   sellerPersonId: string;
@@ -66,7 +71,14 @@ export type AcquisitionRowView = {
   } | null;
 };
 
-type PersonView = { id: string; fullName: string; mobileMasked: string };
+type PersonView = {
+  id: string;
+  fullName: string;
+  mobileMasked: string;
+  /** CUS-3390 / MEM-0012, where the Person holds that profile at all. */
+  customerId: string | null;
+  memberId: string | null;
+};
 type Permissions = {
   create: boolean;
   decide: boolean;
@@ -135,10 +147,6 @@ export default function AcquisitionsClient({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">Buyback / Resale</h1>
-            <p className="text-xs text-muted-foreground">
-              Buyback and Purchase for Resale. Accounts approves at 20% Payment Given; the property
-              shows Payment Pending until 100%.
-            </p>
           </div>
           {permissions.create && (
             <Button size="sm" variant="gradient" onClick={() => setDialog({ kind: "NEW" })}>
@@ -168,7 +176,8 @@ export default function AcquisitionsClient({
               <thead className="bg-secondary text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">Deal</th>
-                  <th className="px-4 py-3 font-medium">Property</th>
+                  <th className="px-4 py-3 font-medium">Project</th>
+                  <th className="px-4 py-3 font-medium">Plot No.</th>
                   <th className="px-4 py-3 font-medium">Seller / Arranged by</th>
                   <th className="px-4 py-3 font-medium">Payment Given</th>
                   <th className="px-4 py-3 font-medium">Status</th>
@@ -180,14 +189,21 @@ export default function AcquisitionsClient({
                   <React.Fragment key={row.id}>
                     <tr className="border-t border-border/40">
                       <td className="px-4 py-3">
-                        <div className="font-medium text-foreground">{row.acquisitionNo}</div>
-                        <div className="text-muted-foreground">
+                        <div className="font-medium text-foreground">
                           {row.type === "BUYBACK" ? "Buyback" : "Purchase for Resale"}
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        {row.property}
+                        {row.project}
                         {row.location && <div className="text-muted-foreground">{row.location}</div>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-foreground">{row.plotNumber}</div>
+                        {row.plotType && (
+                          <div className="text-muted-foreground">
+                            {row.plotType.replaceAll("_", " ").toLowerCase()}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <PersonLink personId={row.sellerPersonId} name={row.seller} />
@@ -236,7 +252,7 @@ export default function AcquisitionsClient({
                     </tr>
                     {open === row.id && (
                       <tr className="border-t border-border/40 bg-muted">
-                        <td colSpan={6} className="px-4 py-4">
+                        <td colSpan={7} className="px-4 py-4">
                           <Detail
                             row={row}
                             permissions={permissions}
@@ -399,16 +415,11 @@ export default function AcquisitionsClient({
           }
         >
           <Field label="Beneficiary">
-            <select name="beneficiaryPersonId" required className={inputClass} defaultValue="">
-              <option value="" disabled>
-                Select a Person
-              </option>
-              {people.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.fullName} · {person.mobileMasked}
-                </option>
-              ))}
-            </select>
+            <PersonPicker
+              name="beneficiaryPersonId"
+              required
+              options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+            />
           </Field>
           <Field label="Percentage (%)">
             <Input name="percent" required inputMode="decimal" />
@@ -693,7 +704,6 @@ function NewAcquisitionDialog({
             location: String(f.get("location") ?? ""),
             propertyNumber: String(f.get("propertyNumber") ?? ""),
             areaSqFt: String(f.get("areaSqFt") ?? ""),
-            plcPercent: String(f.get("plcPercent") ?? ""),
             resaleGroupId: String(f.get("resaleGroupId") ?? ""),
             acknowledgeDuplicate: acknowledge,
           });
@@ -745,9 +755,6 @@ function NewAcquisitionDialog({
             <Field label="Area (sq ft)">
               <Input name="areaSqFt" inputMode="decimal" />
             </Field>
-            <Field label="PLC %">
-              <Input name="plcPercent" inputMode="decimal" />
-            </Field>
             <Field label="External Resale Property Group">
               <select name="resaleGroupId" className={inputClass} required defaultValue="">
                 <option value="" disabled>
@@ -765,22 +772,13 @@ function NewAcquisitionDialog({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Seller / previous owner">
-            <select
+            <PersonPicker
               name="sellerPersonId"
-              className={inputClass}
               required
               defaultValue={selected?.primaryPersonId ?? ""}
               key={selected?.primaryPersonId ?? "none"}
-            >
-              <option value="" disabled>
-                Select a Person
-              </option>
-              {people.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.fullName} · {person.mobileMasked}
-                </option>
-              ))}
-            </select>
+              options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+            />
           </Field>
           <Field label="Arranged by">
             <select
@@ -795,16 +793,11 @@ function NewAcquisitionDialog({
           </Field>
           {arrangedByType !== "THREE_PERCENT_CLUB" && (
             <Field label="Arranging Person">
-              <select name="arrangedByPersonId" className={inputClass} required defaultValue="">
-                <option value="" disabled>
-                  Select a Person
-                </option>
-                {people.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.fullName} · {person.mobileMasked}
-                  </option>
-                ))}
-              </select>
+              <PersonPicker
+                name="arrangedByPersonId"
+                required
+                options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+              />
             </Field>
           )}
         </div>
@@ -820,7 +813,7 @@ function NewAcquisitionDialog({
                 {line.seq}
               </span>
               <Input
-                className="h-9 w-28 text-xs"
+                className="h-9 w-24 min-w-0 text-xs sm:w-28"
                 type="number"
                 step="0.01"
                 min="0"
@@ -838,7 +831,7 @@ function NewAcquisitionDialog({
                 }
               />
               <Input
-                className="h-9 w-44 text-xs"
+                className="h-9 w-40 min-w-0 flex-1 text-xs sm:w-44 sm:flex-none"
                 type="date"
                 min={index === 0 ? today : addDays(schedule[index - 1].dueDate, 1)}
                 required

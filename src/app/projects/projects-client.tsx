@@ -584,7 +584,7 @@ function ProjectFieldset({ row }: { row?: ProjectRowView }) {
           name="locationUrl"
           type="url"
           inputMode="url"
-          placeholder="Google Maps link — optional"
+          placeholder="Google Maps link"
           defaultValue={row?.locationUrl ?? ""}
         />
       </Field>
@@ -593,17 +593,17 @@ function ProjectFieldset({ row }: { row?: ProjectRowView }) {
           name="driveUrl"
           type="url"
           inputMode="url"
-          placeholder="Google Drive folder — optional"
+          placeholder="Google Drive folder"
           defaultValue={row?.driveUrl ?? ""}
         />
       </Field>
       <Field label="Developer / Company">
         <Input name="developer" defaultValue={row?.developer ?? ""} />
       </Field>
-      <Field label="RERA Number (Optional)">
+      <Field label="RERA Number">
         <Input
           name="reraNumber"
-          placeholder="Optional — can be added later via Edit"
+          placeholder="Can be added later via Edit"
           defaultValue={row?.reraNumber ?? ""}
         />
       </Field>

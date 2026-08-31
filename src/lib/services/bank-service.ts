@@ -31,13 +31,14 @@ export async function enterBankDetails(args: {
   personId: string;
   accountHolder: string;
   bankName: string;
+  branchName: string;
   accountNumber: string;
   ifsc: string;
 }) {
   const ifsc = args.ifsc.replace(/\s/g, "").toUpperCase();
   if (!IFSC.test(ifsc)) blocked("Enter a valid IFSC, for example HDFC0001234.");
-  if (!args.accountHolder.trim() || !args.bankName.trim()) {
-    blocked("Account Holder and Bank Name are required.");
+  if (!args.accountHolder.trim() || !args.bankName.trim() || !args.branchName?.trim()) {
+    blocked("Account Holder, Bank Name and Branch Name are all required.");
   }
 
   let accountNumber: string;
@@ -73,6 +74,7 @@ export async function enterBankDetails(args: {
           personId: args.personId,
           accountHolder: args.accountHolder.trim(),
           bankName: args.bankName.trim(),
+          branchName: args.branchName?.trim() || null,
           accountCipher: encryptSensitive(accountNumber),
           accountLastFour: accountNumber.slice(-4),
           ifsc,
@@ -190,6 +192,7 @@ export function listBankDetails(personId: string) {
       id: true,
       accountHolder: true,
       bankName: true,
+      branchName: true,
       accountLastFour: true,
       ifsc: true,
       status: true,

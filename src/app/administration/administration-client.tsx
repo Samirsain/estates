@@ -927,7 +927,7 @@ function CreateStaffModal({
               placeholder="9812345678"
             />
           </Field>
-          <Field label="City (optional)">
+          <Field label="City">
             <Input name="city" placeholder="Indore" />
           </Field>
           <Field label="Staff Account ID">
@@ -1008,7 +1008,7 @@ function ResetPasswordModal({
           <Field label="Compulsory reason">
             <Input name="reason" required minLength={3} placeholder="Forgot password, verified by phone" />
           </Field>
-          <Field label="New password (optional)">
+          <Field label="New password">
             <PasswordInput
               name="newPassword"
               autoComplete="new-password"

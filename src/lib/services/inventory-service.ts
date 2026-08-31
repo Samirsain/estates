@@ -121,6 +121,16 @@ export async function prepareInventory(args: {
         validateBoundaries(row.plotNumber, row.boundaries);
       }
 
+      // Activating a Project is what releases its inventory, and a Project that
+      // is already Active has said that once. A Plot prepared into it afterwards
+      // was arriving Not Yet Released with no way back out in bulk — Active to
+      // Active is refused, so every Plot needed its own Make Available click.
+      // Not Yet Released is not a restriction anybody chose; it is the absence
+      // of a release this Project already granted.
+      const releasedOnArrival = project.status === "ACTIVE";
+      const startStatus = releasedOnArrival ? ("AVAILABLE" as const) : ("NOT_AVAILABLE" as const);
+      const startRestriction = releasedOnArrival ? ("NONE" as const) : ("NOT_YET_RELEASED" as const);
+
       const created: string[] = [];
       for (const row of args.rows) {
         const areas = calculateAreas(areaInput(row));
@@ -136,9 +146,10 @@ export async function prepareInventory(args: {
             areaSqFt: areas.areaSqFt.toFixed(4),
             areaSqYd: areas.areaSqYd.toFixed(4),
             areaSqM: areas.areaSqM.toFixed(4),
-            // New inventory starts unreleased; Admin/MD releases it (PRD §16.1).
-            status: "NOT_AVAILABLE",
-            restriction: "NOT_YET_RELEASED",
+            // Unreleased until the Project is activated (PRD §16.1) — and
+            // already released when it activated before this Plot existed.
+            status: startStatus,
+            restriction: startRestriction,
             boundaries: { create: boundaryRows(row.boundaries) },
           },
         });
@@ -147,15 +158,15 @@ export async function prepareInventory(args: {
             plotId: plot.id,
             actorRef: args.actorRef,
             action: "PLOT_PREPARED",
-            toStatus: "NOT_AVAILABLE",
-            toRestriction: "NOT_YET_RELEASED",
+            toStatus: startStatus,
+            toRestriction: startRestriction,
           },
         });
         created.push(plot.id);
       }
 
       return {
-        result: { createdPlotIds: created, count: created.length },
+        result: { createdPlotIds: created, count: created.length, released: releasedOnArrival },
         audit: {
           entity: "Project",
           entityId: args.projectId,
@@ -462,13 +473,17 @@ export function getPlot(plotId: string) {
       boundaries: true,
       holds: {
         where: { status: { in: ["ACTIVE", "FROZEN"] } },
-        include: { person: true },
+        include: { person: { include: { customerProfile: { select: { customerId: true } } } } },
         orderBy: { createdAt: "desc" },
         take: 1,
       },
       bookings: {
         orderBy: { createdAt: "desc" },
-        include: { primaryPerson: true },
+        include: {
+          // Who bought it, as they are filed — the Plot page names the Customer
+          // by their id the way every other screen does.
+          primaryPerson: { include: { customerProfile: { select: { customerId: true } } } },
+        },
         take: 1,
       },
       // Append-only, newest first (PRD §23.5).

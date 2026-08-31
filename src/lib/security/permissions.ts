@@ -14,6 +14,10 @@ export type Action =
   | "MEMBER_ACTIVATE"
   | "MEMBER_DEACTIVATE"
   | "PERSON_MERGE"
+  // A Customer or Member is often taken down as a name and a number and
+  // nothing else. Filling the rest in later is ordinary desk work, so CRM
+  // holds it — with a compulsory reason and a before/after audit either way.
+  | "PERSON_DETAILS_EDIT"
   | "PROJECT_SETUP"
   // PLC spec §12.1 — a frozen snapshot is a critical correction, so it sits
   // with Admin/MD and not with the Project setup permission PC also holds.
@@ -93,6 +97,7 @@ const ROLE_ACTIONS: Record<Role, readonly Action[]> = {
   ],
   CRM: [
     "ENQUIRY_MANAGE",
+    "PERSON_DETAILS_EDIT",
     "HOLD_CREATE",
     "HOLD_EXTEND_FIRST",
     "HOLD_REQUEST_REVIEW",
@@ -237,6 +242,7 @@ export const ACTION_GROUPS = [
       "MEMBER_ACTIVATE",
       "MEMBER_DEACTIVATE",
       "PERSON_MERGE",
+      "PERSON_DETAILS_EDIT",
       "PROJECT_SETUP",
       "PLC_SNAPSHOT_CORRECT",
       "PLOT_SETUP",

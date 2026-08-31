@@ -44,7 +44,13 @@ export default async function AcquisitionsPage() {
     }),
     db.person.findMany({
       where: { mergeStatus: { not: "MERGED_AWAY" } },
-      select: { id: true, fullName: true, primaryMobile: true },
+      select: {
+        id: true,
+        fullName: true,
+        primaryMobile: true,
+        customerProfile: { select: { customerId: true } },
+        memberProfile: { select: { memberId: true } },
+      },
       orderBy: { fullName: "asc" },
       take: 500,
     }),
@@ -76,6 +82,11 @@ export default async function AcquisitionsPage() {
         property: a.plot
           ? `${a.plot.project.name} · ${a.plot.plotType.replaceAll("_", " ")} ${a.plot.plotNumber}`
           : `${a.propertyName ?? "—"} · ${a.propertyNumber ?? "—"}`,
+        // An outside purchase has no Plot in inventory, so its own two names
+        // stand in the same two columns.
+        project: a.plot ? a.plot.project.name : (a.propertyName ?? "—"),
+        plotNumber: a.plot ? a.plot.plotNumber : (a.propertyNumber ?? "—"),
+        plotType: a.plot ? a.plot.plotType : null,
         location: a.location,
         seller: a.sellerPerson.fullName,
         sellerPersonId: a.sellerPersonId,
@@ -127,6 +138,8 @@ export default async function AcquisitionsPage() {
         id: p.id,
         fullName: p.fullName,
         mobileMasked: maskMobile(p.primaryMobile),
+        customerId: p.customerProfile?.customerId ?? null,
+        memberId: p.memberProfile?.memberId ?? null,
       }))}
       resaleGroups={resaleGroups}
     />

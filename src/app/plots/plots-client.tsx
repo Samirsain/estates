@@ -14,13 +14,40 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, Modal } from "@/components/ui/modal";
+import type { SoldByType } from "@prisma/client";
+import { PersonPicker, personLabel } from "@/components/person-picker";
+// ponytail: the two dialogs are imported from the Bookings screen's own module,
+// so /plots ships that module too. Pull them into their own file if the
+// inventory bundle starts to matter.
+import {
+  BookingFormDialog,
+  ReviewDialog,
+  type BookableView,
+  type BookingRowView,
+  type MemberView,
+  type PersonView,
+} from "@/app/bookings/bookings-client";
+import {
+  decideBookingRequestAction,
+  loadBookingDetail,
+  submitBookingRequestAction,
+  type BookingDetail,
+} from "@/app/bookings/actions";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatIst, formatIstDate, formatPercent, formatQuantity, istDay, type StaffRole } from "@/lib/tasks";
+import {
+  formatIst,
+  formatIstDate,
+  formatPercent,
+  formatPlotSize,
+  formatQuantity,
+  istDay,
+  type StaffRole,
+} from "@/lib/tasks";
 // The grid computes Area and Location Charge live from the same domain rules
 // the server runs on save, which is the only way the two cannot disagree. It
 // costs decimal.js in the client bundle (~30 kB). Recomputing in float here
@@ -190,9 +217,21 @@ function statusReason(plot: PlotRowView, because: string | null): string | null 
 }
 
 const RESTRICTION_REASON_LABEL: Record<string, string> = {
+  // The same word the Projects screen and the Change restriction dialog use.
+  NOT_YET_RELEASED: "Unreleased",
   NOT_FOR_SALE: "Not for Sale",
   PLEDGE: "Pledge",
 };
+
+/**
+ * Why a Plot is restricted, for the tooltip on its badge. Not for Sale and
+ * Pledge carry a compulsory reason somebody typed; Unreleased is not a decision
+ * anybody made about this Plot, so it explains itself.
+ */
+const restrictionWhy = (plot: PlotRowView): string =>
+  plot.restriction === "NOT_YET_RELEASED"
+    ? "Prepared but never made Available."
+    : (plot.restrictionReason ?? "No reason recorded.");
 
 const EXTENSION_STATUS_LABEL: Record<string, string> = {
   PENDING: "waiting approval",
@@ -483,7 +522,7 @@ function SideControl({
       aria-label={
         isRoad
           ? `${boundary.side.toLowerCase()} road width in feet`
-          : `${boundary.side.toLowerCase()} side reference, optional`
+          : `${boundary.side.toLowerCase()} side reference`
       }
       value={isRoad ? (boundary.roadWidthFt ?? "") : (boundary.reference ?? "")}
       onChange={(e) =>
@@ -726,6 +765,10 @@ export default function PlotsClient({
   holdRequests,
   projects,
   people,
+  members,
+  bookable,
+  pendingBookings,
+  staffRef,
   permissions,
   initialProject,
 }: {
@@ -737,7 +780,13 @@ export default function PlotsClient({
   projects: ProjectView[];
   /** A Project id from ?project=, or "ALL". */
   initialProject: string;
-  people: Array<{ id: string; fullName: string; primaryMobile: string }>;
+  people: PersonView[];
+  /** Active Members only — the Hold By list, and the Booking form's Sold By. */
+  members: MemberView[];
+  bookable: BookableView[];
+  /** The one pending request per Plot waiting for approval, keyed by Plot id. */
+  pendingBookings: Record<string, BookingRowView>;
+  staffRef: string;
   permissions: {
     makeAvailable: boolean;
     hold: boolean;
@@ -745,6 +794,8 @@ export default function PlotsClient({
     decideExtension: boolean;
     setup: boolean;
     reviewRequests: boolean;
+    book: boolean;
+    decideBooking: boolean;
   };
 }) {
   const router = useRouter();
@@ -753,6 +804,13 @@ export default function PlotsClient({
   const [projectFilter, setProjectFilter] = React.useState(initialProject);
   const [statusFilter, setStatusFilter] = React.useState("ALL");
   const [search, setSearch] = React.useState("");
+  // "" until picked, "NEW" for a buyer typed on the form.
+  const [holdPerson, setHoldPerson] = React.useState("");
+  // Who got the Hold done, in the Booking form's own three answers. The 3%
+  // Club is the default because it is what "the company closed it" means.
+  const [holdSourceType, setHoldSourceType] =
+    React.useState<SoldByType>("THREE_PERCENT_CLUB");
+  const [holdSourcePerson, setHoldSourcePerson] = React.useState("");
   const [dialog, setDialog] = React.useState<
     | { kind: "HOLD"; plot: PlotRowView }
     | { kind: "AVAILABLE"; plot: PlotRowView }
@@ -760,8 +818,31 @@ export default function PlotsClient({
     | { kind: "EXTEND"; plot: PlotRowView }
     | { kind: "DECIDE_REQUEST"; request: HoldRequestView; approve: boolean }
     | { kind: "DECIDE_EXTENSION"; plot: PlotRowView; approve: boolean }
+    | { kind: "BOOK"; plot: PlotRowView }
+    | { kind: "REVIEW"; row: BookingRowView }
     | null
   >(null);
+
+  // The review reads the submitted snapshot, which is too much to ship with
+  // every inventory row — it is fetched when one request is actually opened.
+  const [reviewDetail, setReviewDetail] = React.useState<BookingDetail | null>(null);
+
+  /** Members are Active by construction here, so this is the whole test. */
+  const activeMemberPersonIds = React.useMemo(
+    () => new Set(members.map((m) => m.personId)),
+    [members]
+  );
+  // A Plot can read as Available and still not be bookable — a restriction, or
+  // a Project not yet active. The form is built from `bookable`, so the button
+  // only offers what the form can actually open on.
+  const bookablePlotIds = React.useMemo(() => new Set(bookable.map((p) => p.id)), [bookable]);
+  const customerOptions = React.useMemo(
+    () =>
+      people
+        .filter((p) => p.customerId)
+        .map((p) => ({ id: p.id, label: personLabel(p) })),
+    [people]
+  );
 
   const visible = rows.filter(
     (r) =>
@@ -943,7 +1024,7 @@ export default function PlotsClient({
               <thead className="text-left text-[11px] font-semibold uppercase tracking-wide text-foreground">
                 <tr>
                   <th className="px-3 py-1">Plot</th>
-                  <th className="px-3 py-1 text-center">Size</th>
+                  <th className="px-3 py-1 text-center">Size (W × L)</th>
                   <th className="px-3 py-1 text-center">Area</th>
                   <th className="px-3 py-1 text-center">Status</th>
                   <th className="px-3 py-1 text-center">Location</th>
@@ -1044,12 +1125,9 @@ export default function PlotsClient({
                         none — it carries an exact area instead, which the next
                         column already shows. */}
                     <td className="px-3 py-2 text-center tabular-nums">
-                      {plot.widthFt && plot.lengthFt ? (
-                        <span className="font-semibold text-foreground">
-                          {formatQuantity(plot.widthFt)} × {formatQuantity(plot.lengthFt)}
-                          <span className="ml-1 text-[11px] font-medium text-foreground">
-                            ft
-                          </span>
+                      {formatPlotSize(plot.widthFt, plot.lengthFt) ? (
+                        <span className="whitespace-nowrap font-semibold text-foreground">
+                          {formatPlotSize(plot.widthFt, plot.lengthFt)}
                         </span>
                       ) : (
                         <span className="text-[11px] font-medium text-foreground">Irregular</span>
@@ -1088,6 +1166,20 @@ export default function PlotsClient({
                         >
                           {STATUS_LABEL[shown.status] ?? shown.status}
                         </Badge>
+                        {plot.restriction !== "NONE" && (
+                          <Badge
+                            // Unreleased is a stage, Not for Sale and Pledge are
+                            // decisions that stop a sale — so only those two
+                            // carry the weight of the destructive tone.
+                            variant={
+                              plot.restriction === "NOT_YET_RELEASED" ? "outline" : "destructive"
+                            }
+                            title={restrictionWhy(plot)}
+                            className={`${statusBadge} cursor-help`}
+                          >
+                            {RESTRICTION_REASON_LABEL[plot.restriction] ?? plot.restriction}
+                          </Badge>
+                        )}
                         {plot.isResale && (
                           <Badge variant="outline" className={statusBadge}>
                             RESALE
@@ -1150,7 +1242,13 @@ export default function PlotsClient({
                           {/* One other action, so no menu: a menu wrapping a
                               single item is worse than the item. */}
                           {plot.status === "AVAILABLE" && permissions.hold && (
-                            <Button className={rowButton} onClick={() => setDialog({ kind: "HOLD", plot })}>
+                            <Button
+                              className={rowButton}
+                              onClick={() => {
+                                setHoldPerson("");
+                                setDialog({ kind: "HOLD", plot });
+                              }}
+                            >
                               Hold
                             </Button>
                           )}
@@ -1178,18 +1276,36 @@ export default function PlotsClient({
                             </DropdownMenu>
                           )}
 
+                        {/* Waiting on Accounts: the decision belongs on the row
+                            that is blocked by it, not one screen away. */}
+                        {plot.status === "WAITING_FOR_BOOKING_APPROVAL" &&
+                          permissions.decideBooking &&
+                          pendingBookings[plot.id] && (
+                            <Button
+                              className={rowButton}
+                              onClick={() => {
+                                const row = pendingBookings[plot.id];
+                                setReviewDetail(null);
+                                setDialog({ kind: "REVIEW", row });
+                                loadBookingDetail(row.id).then(setReviewDetail);
+                              }}
+                            >
+                              Review
+                            </Button>
+                          )}
+
                         {/* A Booking may start from an Available Plot or from a
                             Hold — submitBookingRequest takes holdId as optional
-                            and falls back to canAllocate. This was a disabled
-                            button with a note about Phase 3, which shipped. */}
-                        {/* The one row action that leaves this screen, and the
-                            only place in the app with a second accent. */}
-                        {["AVAILABLE", "HOLD"].includes(plot.status) && permissions.hold && (
+                            and falls back to canAllocate. The form opens here:
+                            every row has this button, so the Plot it starts on
+                            is the row that was clicked, and it stays changeable
+                            inside the form. */}
+                        {permissions.book && bookablePlotIds.has(plot.id) && (
                           <Button
                             className={`${rowButton} bg-[hsl(var(--accent-book))] text-white hover:bg-[hsl(var(--accent-book))]/90`}
-                            asChild
+                            onClick={() => setDialog({ kind: "BOOK", plot })}
                           >
-                            <Link href={`/bookings?plot=${plot.id}`}>Book</Link>
+                            Book
                           </Button>
                         )}
                       </div>
@@ -1207,26 +1323,77 @@ export default function PlotsClient({
         <ConfirmDialog
           title="Hold Plot"
           plot={dialog.plot}
-          consequence="A Hold runs for 72 hours from now and counts toward the Customer's three open Plot positions. The PLC snapshot is frozen at creation."
           busy={busy}
           onClose={() => setDialog(null)}
           fields={
             <>
-              <Field label="Actual Customer / Person — required">
-                <select name="personId" required className={inputClass} defaultValue="">
-                  <option value="" disabled>
-                    Select the actual Person
-                  </option>
-                  {people.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.fullName} · {p.primaryMobile}
-                    </option>
-                  ))}
-                </select>
+              <Field label="Customer">
+                {/* Customers only, because placing the Hold is what makes one:
+                    a walk-in typed here is issued a Customer ID by the same
+                    match-or-create the Enquiry form uses. */}
+                <PersonPicker
+                  required
+                  value={holdPerson}
+                  onChange={setHoldPerson}
+                  newOptionLabel="+ New Customer — enter name and mobile"
+                  placeholder="Search by Customer ID, name or mobile"
+                  options={customerOptions}
+                />
               </Field>
-              <Field label="Reason — compulsory, kept in History">
-                <Input name="remark" required minLength={3} />
+              {holdPerson === "NEW" && (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Input name="fullName" placeholder="Full name" required />
+                  <Input name="mobile" placeholder="Mobile" inputMode="numeric" required />
+                </div>
+              )}
+
+              {/* Two questions, in the order they are asked on the phone: who
+                  it is for, and who got it done — the Booking form's Sold By,
+                  asked here so the credit is on the record from the Hold. Kind
+                  and name share one row, so choosing Member does not push a
+                  second field into the form. */}
+              <Field label="Hold By">
+                <div className="flex gap-2">
+                  <select
+                    className={`${inputClass} w-36 shrink-0`}
+                    value={holdSourceType}
+                    onChange={(e) => {
+                      setHoldSourceType(e.target.value as SoldByType);
+                      setHoldSourcePerson("");
+                    }}
+                  >
+                    <option value="THREE_PERCENT_CLUB">3% Club</option>
+                    <option value="MEMBER">Member</option>
+                    <option value="CUSTOMER">Customer</option>
+                  </select>
+                  {holdSourceType !== "THREE_PERCENT_CLUB" && (
+                    <PersonPicker
+                      className="flex-1"
+                      required
+                      value={holdSourcePerson}
+                      onChange={setHoldSourcePerson}
+                      placeholder={
+                        holdSourceType === "MEMBER"
+                          ? "Search by Member ID or name"
+                          : "Search by Customer ID, name or mobile"
+                      }
+                      // Only what the choice beside it says. `members` is
+                      // Active Members by construction, and an Active Member is
+                      // kept out of the Customer list because the credit would
+                      // have to be recorded as Member anyway (PRD §6.7).
+                      options={
+                        holdSourceType === "MEMBER"
+                          ? members.map((m) => ({
+                              id: m.personId,
+                              label: `${m.memberId} · ${m.fullName}`,
+                            }))
+                          : customerOptions.filter((o) => !activeMemberPersonIds.has(o.id))
+                      }
+                    />
+                  )}
+                </div>
               </Field>
+
               <PastHolds rows={dialog.plot.pastHolds} />
             </>
           }
@@ -1234,10 +1401,55 @@ export default function PlotsClient({
             run(() =>
               createHoldAction(
                 dialog.plot.id,
-                String(f.get("personId")),
-                String(f.get("remark") ?? ""),
-                newKey()
+                holdPerson === "NEW" ? "" : holdPerson,
+                newKey(),
+                holdPerson === "NEW"
+                  ? {
+                      fullName: String(f.get("fullName") ?? ""),
+                      mobile: String(f.get("mobile") ?? ""),
+                    }
+                  : null,
+                {
+                  type: holdSourceType,
+                  personId:
+                    holdSourceType === "THREE_PERCENT_CLUB" ? null : holdSourcePerson,
+                }
               )
+            )
+          }
+        />
+      )}
+
+      {dialog?.kind === "BOOK" && (
+        <BookingFormDialog
+          title="Start Booking Request"
+          initialPlotId={dialog.plot.id}
+          // Every row has its own Book button, so clicking one has already
+          // chosen the Plot. Changing it inside the form would only ever be a
+          // way to book something other than the row that was clicked.
+          fixedPlot={{
+            project: dialog.plot.project,
+            plot: `${dialog.plot.plotType.replaceAll("_", " ")} ${dialog.plot.plotNumber}`,
+          }}
+          bookable={bookable}
+          people={people}
+          members={members}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(form) => run(() => submitBookingRequestAction(form, newKey()))}
+        />
+      )}
+
+      {dialog?.kind === "REVIEW" && (
+        <ReviewDialog
+          row={dialog.row}
+          detail={reviewDetail}
+          selfRef={staffRef}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(input) =>
+            run(() =>
+              decideBookingRequestAction({ ...input, bookingId: dialog.row.id }, newKey())
             )
           }
         />
@@ -1247,7 +1459,6 @@ export default function PlotsClient({
         <ConfirmDialog
           title="Make Available"
           plot={dialog.plot}
-          consequence="The Plot becomes Available for Hold or Booking. This action does not also place a Hold — use Hold separately."
           busy={busy}
           onClose={() => setDialog(null)}
           fields={
@@ -1407,7 +1618,7 @@ function ConfirmDialog({
 }: {
   title: string;
   plot: PlotRowView;
-  consequence: string;
+  consequence?: string;
   fields: React.ReactNode;
   busy: boolean;
   onClose: () => void;
@@ -1419,7 +1630,7 @@ function ConfirmDialog({
         <p className="font-semibold text-foreground">
           {plot.project} · {plot.plotType.replaceAll("_", " ")} {plot.plotNumber}
         </p>
-        <p className="mt-1 text-muted-foreground">{consequence}</p>
+        {consequence && <p className="mt-1 text-muted-foreground">{consequence}</p>}
       </div>
       <form
         className="space-y-4"
@@ -1863,8 +2074,8 @@ export function PrepareInventoryForm({
                     it, and an unfilled row says nothing rather than 0.00. */}
                 <div className="flex items-baseline gap-2 tabular-nums">
                   {[
+                    { value: preview.areaSqFt, unit: "sq ft", title: "Area in Square Feet" },
                     { value: preview.areaSqYd, unit: "sq yd", title: "Area in Square Yards" },
-                    { value: preview.areaSqM, unit: "sq m", title: "Area in Square Meters" },
                   ].map((area) => (
                     <span
                       key={area.unit}

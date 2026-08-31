@@ -36,6 +36,15 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  /*
+   * `next dev` and `next build` both write to .next, and a build run against a
+   * running dev server overwrites the manifests that server is reading — which
+   * it reports as "missing required error components, refreshing…" and then
+   * dies. A verification build sets NEXT_DIST_DIR and gets its own directory,
+   * so the two never share a folder. Unset in deployment, so the deploy is
+   * exactly as it was.
+   */
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
   // The CRM is internal software; the header leaks the framework version.
   poweredByHeader: false,

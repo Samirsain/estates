@@ -15,7 +15,16 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
-import { formatIst, formatIstDate, formatQuantity, istDay, type StaffRole } from "@/lib/tasks";
+import { PersonPicker, personLabel } from "@/components/person-picker";
+import { capShare, shareRoom, shareSum } from "@/lib/domain/shares";
+import {
+  formatIst,
+  formatIstDate,
+  formatPlotSize,
+  formatQuantity,
+  istDay,
+  type StaffRole,
+} from "@/lib/tasks";
 import {
   cancelBookingAction,
   changeOwnershipSharesAction,
@@ -54,7 +63,13 @@ export type BookingRowView = {
   plotNumber: string;
   /** CONSTANT_CASE from the schema — pass through `humanise` before showing it. */
   plotType: string;
+  /** Feet as stored. Both null on an irregular Plot, which has area only. */
+  plotWidthFt: string | null;
+  plotLengthFt: string | null;
+  plotAreaSqFt: string;
   primaryCustomer: string;
+  /** CUS-3390 — absent only on a Person who has not reached one yet. */
+  primaryCustomerId: string | null;
   primaryCustomerPersonId: string;
   soldByType: string;
   soldByName: string | null;
@@ -92,14 +107,15 @@ export type BookableView = {
 const filterClass =
   "h-9 w-auto rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
-type PersonView = {
+export type PersonView = {
   id: string;
   fullName: string;
   mobileMasked: string;
-  /** CUS-3390, where the Person holds a Customer profile at all. */
+  /** CUS-3390 / MEM-0012, where the Person holds that profile at all. */
   customerId: string | null;
+  memberId: string | null;
 };
-type MemberView = { personId: string; memberId: string; fullName: string };
+export type MemberView = { personId: string; memberId: string; fullName: string };
 
 type Permissions = {
   submit: boolean;
@@ -256,7 +272,6 @@ export default function BookingsClient({
   staffRef,
   rows,
   bookable,
-  openForPlot,
   focusId,
   people,
   members,
@@ -269,7 +284,6 @@ export default function BookingsClient({
   rows: BookingRowView[];
   bookable: BookableView[];
   /** A Plot id from ?plot=, so Plot Inventory's Book button lands on the form. */
-  openForPlot: string | null;
   /** Set on /bookings/[id]: one Booking, full page, instead of the list. */
   focusId: string | null;
   people: PersonView[];
@@ -286,14 +300,7 @@ export default function BookingsClient({
     () => Array.from(new Set(rows.map((r) => r.project))).sort(),
     [rows]
   );
-  // Arriving from Plot Inventory's Book button opens the form on that Plot.
-  // Initial state, not an effect: the dialog is right on the first render and
-  // never flickers shut and open again.
-  const [dialog, setDialog] = React.useState<Dialog>(
-    openForPlot && bookable.some((p) => p.id === openForPlot)
-      ? { kind: "NEW", plotId: openForPlot }
-      : null
-  );
+  const [dialog, setDialog] = React.useState<Dialog>(null);
   const [openId, setOpenId] = React.useState<string | null>(focusId);
   const [detail, setDetail] = React.useState<BookingDetail | null>(null);
 
@@ -530,7 +537,9 @@ export default function BookingsClient({
           <table className="w-full min-w-[52rem] border-collapse text-xs">
             <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr className="border-b border-border">
-                <th className="px-3 py-1.5">Plot · Project</th>
+                <th className="px-3 py-1.5">Project</th>
+                <th className="w-[9rem] px-3 py-1.5">Plot No.</th>
+                <th className="w-[10rem] px-3 py-1.5">Size (W × L)</th>
                 <th className="px-3 py-1.5">Customer</th>
                 <th className="px-3 py-1.5">Sold By</th>
                 <th className="w-[14rem] px-3 py-1.5">Status</th>
@@ -540,7 +549,7 @@ export default function BookingsClient({
             <tbody>
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">
                     No Bookings match these filters. Start one from an Available Plot or a live Hold.
                   </td>
                 </tr>
@@ -550,24 +559,44 @@ export default function BookingsClient({
                   key={row.id}
                   className="border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1"
                 >
+                  <td>{row.project}</td>
+                  {/* The Plot number is the way into the Booking, and its type
+                      qualifies it rather than competing with it. */}
                   <td>
-                    <div className="flex flex-wrap items-baseline gap-x-1.5">
-                      <button
-                        type="button"
-                        className="text-left font-semibold text-primary hover:underline"
-                        onClick={() => router.push(`/bookings/${row.id}`)}
-                      >
-                        {row.plotNumber}
-                      </button>
-                      <span className="text-[11px] text-muted-foreground">{humanise(row.plotType)}</span>
-                    </div>
-                    <span className="block text-[11px] text-muted-foreground">{row.project}</span>
+                    <button
+                      type="button"
+                      className="block text-left font-semibold text-primary hover:underline"
+                      onClick={() => router.push(`/bookings/${row.id}`)}
+                    >
+                      {row.plotNumber}
+                    </button>
+                    <span className="block text-[11px] text-muted-foreground">
+                      {humanise(row.plotType)}
+                    </span>
                   </td>
+                  {/* An irregular Plot has no width and length to print, only
+                      the area somebody measured — so it prints that instead of
+                      an empty cell. */}
+                  <td className="whitespace-nowrap tabular-nums">
+                    {formatPlotSize(row.plotWidthFt, row.plotLengthFt) ?? (
+                      <span className="text-muted-foreground">
+                        {formatQuantity(row.plotAreaSqFt)} sq ft
+                      </span>
+                    )}
+                  </td>
+                  {/* The id leads and opens the profile; the name underneath
+                      confirms it without competing for the eye. */}
                   <td>
                     <PersonLink
                       personId={row.primaryCustomerPersonId}
-                      name={row.primaryCustomer}
+                      name={row.primaryCustomerId ?? row.primaryCustomer}
+                      className={row.primaryCustomerId ? "font-mono font-semibold" : undefined}
                     />
+                    {row.primaryCustomerId && (
+                      <span className="block text-[11px] text-muted-foreground">
+                        {row.primaryCustomer}
+                      </span>
+                    )}
                   </td>
                   <td>
                     {/* MEM- is a Member and CUS- is a Customer, so the ID says
@@ -617,17 +646,8 @@ export default function BookingsClient({
           people={people}
           members={members}
           busy={busy}
-          // Arrived from Plot Inventory's Book button: closing the form — or
-          // submitting it — returns there, not to a Bookings list nobody asked
-          // for.
-          onClose={() => (openForPlot ? router.push("/plots") : setDialog(null))}
-          onSubmit={(form) =>
-            run(async () => {
-              const result = await submitBookingRequestAction(form, newKey());
-              if (result.ok && openForPlot) router.push("/plots");
-              return result;
-            })
-          }
+          onClose={() => setDialog(null)}
+          onSubmit={(form) => run(() => submitBookingRequestAction(form, newKey()))}
         />
       )}
 
@@ -638,7 +658,7 @@ export default function BookingsClient({
           people={people}
           members={members}
           busy={busy}
-          fixedPlotLabel={`${dialog.row.project} · ${dialog.row.plotNumber}`}
+          fixedPlot={{ project: dialog.row.project, plot: dialog.row.plotNumber }}
           requireReason
           onClose={() => setDialog(null)}
           onSubmit={(form) =>
@@ -745,7 +765,7 @@ export default function BookingsClient({
           <Field label="Payment Reference No.">
             <Input name="reference" required />
           </Field>
-          <Field label="Remark — optional">
+          <Field label="Remark">
             <Input name="remark" />
           </Field>
         </ActionDialog>
@@ -857,16 +877,11 @@ export default function BookingsClient({
           }
         >
           <Field label="Proposed new Primary Customer">
-            <select name="toPersonId" required className={inputClass} defaultValue="">
-              <option value="" disabled>
-                Select a Person
-              </option>
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.fullName} · {p.mobileMasked}
-                </option>
-              ))}
-            </select>
+            <PersonPicker
+              name="toPersonId"
+              required
+              options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+            />
           </Field>
           <Field label="Reason — compulsory">
             <Input name="reason" required minLength={3} />
@@ -959,7 +974,7 @@ export default function BookingsClient({
           <Field label="Payment Reference No.">
             <Input name="reference" required />
           </Field>
-          <Field label={dialog.early ? "Remarks — compulsory" : "Remarks — optional"}>
+          <Field label={dialog.early ? "Remarks — compulsory" : "Remarks"}>
             <Input name="remarks" required={dialog.early} minLength={dialog.early ? 3 : undefined} />
           </Field>
         </ActionDialog>
@@ -1828,7 +1843,7 @@ function SubmittedSnapshotView({
   );
 }
 
-function ReviewDialog({
+export function ReviewDialog({
   row,
   detail,
   selfRef,
@@ -1858,7 +1873,6 @@ function ReviewDialog({
   return (
     <Modal
       title={`Accounts Verification — Booking ${row.requestNo}`}
-      description="The submitted snapshot is read-only. There is no Revise on this decision."
       onClose={onClose}
       wide
     >
@@ -1866,9 +1880,13 @@ function ReviewDialog({
         <p className="font-semibold text-foreground">
           {row.project} · {row.plotNumber} · {row.primaryCustomer}
         </p>
+        {/* Who, when, and who sold it. The Booking Date is usually the day it
+            was submitted, so it earns its place only when it is not. */}
         <p className="mt-1 text-muted-foreground">
-          Submitted by {row.submittedByRef} on {formatIst(row.submittedAt)} · Booking Date{" "}
-          {formatIstDate(row.bookingDate)} · Sold By {SOLD_BY_LABEL[row.soldByType] ?? row.soldByType}
+          {row.submittedByRef} · {formatIstDate(row.submittedAt)}
+          {formatIstDate(row.bookingDate) !== formatIstDate(row.submittedAt) &&
+            ` · booked ${formatIstDate(row.bookingDate)}`}{" "}
+          · {SOLD_BY_LABEL[row.soldByType] ?? row.soldByType}
         </p>
       </div>
 
@@ -1963,7 +1981,7 @@ function ReviewDialog({
 
 /* ------------------------------------------------------- booking form */
 
-type FormOut = {
+export type FormOut = {
   plotId: string;
   holdId: string;
   enquiryId: string;
@@ -1978,14 +1996,14 @@ type FormOut = {
   reason?: string;
 };
 
-function BookingFormDialog({
+export function BookingFormDialog({
   title,
   initialPlotId,
   bookable,
   people,
   members,
   busy,
-  fixedPlotLabel,
+  fixedPlot,
   requireReason,
   onClose,
   onSubmit,
@@ -1995,7 +2013,8 @@ function BookingFormDialog({
   people: PersonView[];
   members: MemberView[];
   busy: boolean;
-  fixedPlotLabel?: string;
+  /** Set when the Plot is decided before the form opens, and cannot change. */
+  fixedPlot?: { project: string; plot: string };
   requireReason?: boolean;
   onClose: () => void;
   onSubmit: (form: FormOut) => void;
@@ -2021,7 +2040,7 @@ function BookingFormDialog({
   ).sort((a, b) => a[1].localeCompare(b[1]));
   const projectPlots = bookable.filter((p) => p.projectId === projectId);
   const plot = bookable.find((p) => p.id === plotId);
-  const shareTotal = parties.reduce((sum, p) => sum + (Number(p.sharePercent) || 0), 0);
+  const shareTotal = shareSum(parties);
   const patch = (index: number, next: Partial<PartyInput>) =>
     setParties(parties.map((p, i) => (i === index ? { ...p, ...next } : p)));
 
@@ -2054,80 +2073,86 @@ function BookingFormDialog({
           });
         }}
       >
-        {fixedPlotLabel ? (
-          <p className="rounded-xl border border-border/60 bg-secondary p-3 text-sm">
-            {fixedPlotLabel} — the Plot cannot change here. Cross-Plot movement uses Change Plot
-            after approval.
-          </p>
+        {fixedPlot ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Project">
+              <select className={inputClass} disabled>
+                <option>{fixedPlot.project}</option>
+              </select>
+            </Field>
+            <Field label="Plot">
+              <select className={inputClass} disabled>
+                <option>{fixedPlot.plot}</option>
+              </select>
+            </Field>
+          </div>
         ) : (
-          <>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Project">
-                <select
-                  className={inputClass}
-                  required
-                  value={projectId}
-                  onChange={(e) => {
-                    setProjectId(e.target.value);
-                    setPlotId("");
-                  }}
-                >
-                  <option value="" disabled>
-                    Select a Project
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Project">
+              <select
+                className={inputClass}
+                required
+                value={projectId}
+                onChange={(e) => {
+                  setProjectId(e.target.value);
+                  setPlotId("");
+                }}
+              >
+                <option value="" disabled>
+                  Select a Project
+                </option>
+                {projects.map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
                   </option>
-                  {projects.map(([id, name]) => (
-                    <option key={id} value={id}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+                ))}
+              </select>
+            </Field>
 
-              <Field label="Plot — Available or Hold">
-                <select
-                  className={inputClass}
-                  required
-                  disabled={!projectId}
-                  value={plotId}
-                  onChange={(e) => setPlotId(e.target.value)}
-                >
-                  <option value="" disabled>
-                    {projectId ? "Select a Plot" : "Select a Project first"}
+            <Field label="Plot — Available or Hold">
+              <select
+                className={inputClass}
+                required
+                disabled={!projectId}
+                value={plotId}
+                onChange={(e) => setPlotId(e.target.value)}
+              >
+                <option value="" disabled>
+                  {projectId ? "Select a Plot" : "Select a Project first"}
+                </option>
+                {projectPlots.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.plotType} {p.plotNumber}
                   </option>
-                  {projectPlots.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.plotType} {p.plotNumber}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
+                ))}
+              </select>
+            </Field>
+          </div>
+        )}
 
-            {plot && (
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl border border-border/60 bg-secondary/60 px-3 py-2 text-xs">
-                <dt className="text-muted-foreground">Status</dt>
-                <dd className="text-right font-medium">
-                  {plot.holdPersonName
-                    ? `On Hold for ${plot.holdPersonName}`
-                    : plot.status.replaceAll("_", " ")}
+        {plot && (
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl border border-border/60 bg-secondary/60 px-3 py-2 text-xs">
+            <dt className="text-muted-foreground">Status</dt>
+            <dd className="text-right font-medium">
+              {plot.holdPersonName
+                ? `On Hold for ${plot.holdPersonName}`
+                : plot.status.replaceAll("_", " ")}
+            </dd>
+            <dt className="text-muted-foreground">Size (W × L)</dt>
+            <dd className="text-right tabular-nums font-medium">
+              {formatPlotSize(plot.widthFt, plot.lengthFt)
+                ? `${formatPlotSize(plot.widthFt, plot.lengthFt)} (${formatQuantity(plot.areaSqFt)} sq ft)`
+                : `${formatQuantity(plot.areaSqFt)} sq ft · ${formatQuantity(plot.areaSqYd)} sq yd`}
+            </dd>
+            {plot.locationCharge.length > 0 && (
+              <>
+                <dt className="text-muted-foreground">Location Charge</dt>
+                <dd className="text-right font-semibold text-foreground">
+                  {plot.locationCharge.join(" · ")}
                 </dd>
-                <dt className="text-muted-foreground">Size</dt>
-                <dd className="text-right tabular-nums font-medium">
-                  {plot.widthFt && plot.lengthFt
-                    ? `${formatQuantity(plot.widthFt)} × ${formatQuantity(plot.lengthFt)} ft (${formatQuantity(plot.areaSqFt)} sq ft)`
-                    : `${formatQuantity(plot.areaSqFt)} sq ft · ${formatQuantity(plot.areaSqYd)} sq yd`}
-                </dd>
-                {plot.locationCharge.length > 0 && (
-                  <>
-                    <dt className="text-muted-foreground">Location Charge</dt>
-                    <dd className="text-right font-semibold text-foreground">
-                      {plot.locationCharge.join(" · ")}
-                    </dd>
-                  </>
-                )}
-              </dl>
+              </>
             )}
-          </>
+          </dl>
         )}
 
         {plot?.holdPersonName && (
@@ -2140,8 +2165,11 @@ function BookingFormDialog({
         <section className="space-y-2.5">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Customers
+              Customer
             </h3>
+            {/* With several buyers the useful number is not the running total
+                but what is still unallocated — that is the one that has to
+                reach zero before this can be submitted. */}
             {parties.length > 1 && (
               <span
                 className={`text-xs tabular-nums ${
@@ -2149,16 +2177,37 @@ function BookingFormDialog({
                 }`}
               >
                 {shareTotal}%
+                {shareTotal !== 100 && ` · ${shareSum([{ sharePercent: String(100 - shareTotal) }])}% left`}
               </span>
             )}
           </div>
 
           {parties.map((party, index) => (
-            <div key={index} className="space-y-2 rounded-xl border border-border/60 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">
-                  {index === 0 ? "Primary Customer" : `Additional Customer ${index}`}
-                </span>
+            <div key={index} className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <PersonPicker
+                  className="flex-1"
+                  required
+                  value={party.personId}
+                  onChange={(id) => patch(index, { personId: id })}
+                  newOptionLabel="+ New Customer — enter details"
+                  placeholder="Search a Customer by name, mobile or Customer ID"
+                  options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+                />
+                {parties.length > 1 && (
+                  <Input
+                    className="h-9 w-28 text-xs"
+                    placeholder="Share %"
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    max={shareRoom(parties, index)}
+                    value={party.sharePercent}
+                    onChange={(e) =>
+                      patch(index, { sharePercent: capShare(parties, index, e.target.value) })
+                    }
+                  />
+                )}
                 {index > 0 && (
                   <Button
                     type="button"
@@ -2168,37 +2217,6 @@ function BookingFormDialog({
                   >
                     Remove
                   </Button>
-                )}
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <select
-                  className={`${inputClass} flex-1`}
-                  required
-                  value={party.personId}
-                  onChange={(e) => patch(index, { personId: e.target.value })}
-                >
-                  <option value="" disabled>
-                    Select a Customer
-                  </option>
-                  <option value="NEW">+ New Customer — enter details</option>
-                  {people.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.fullName} · {p.mobileMasked}
-                    </option>
-                  ))}
-                </select>
-                {parties.length > 1 && (
-                  <Input
-                    className="h-9 w-28 text-xs"
-                    placeholder="Share %"
-                    type="number"
-                    step="0.0001"
-                    min="0"
-                    max="100"
-                    value={party.sharePercent}
-                    onChange={(e) => patch(index, { sharePercent: e.target.value })}
-                  />
                 )}
               </div>
 
@@ -2221,7 +2239,7 @@ function BookingFormDialog({
                   />
                   <Input
                     className="h-9 text-xs"
-                    placeholder="City — optional"
+                    placeholder="City"
                     value={party.city ?? ""}
                     onChange={(e) => patch(index, { city: e.target.value })}
                   />
@@ -2302,7 +2320,11 @@ function BookingFormDialog({
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Back
           </Button>
-          <Button type="submit" size="sm" disabled={busy}>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={busy || (parties.length > 1 && shareTotal !== 100)}
+          >
             {busy ? "Processing…" : "Confirm and submit"}
           </Button>
         </div>
@@ -2312,6 +2334,7 @@ function BookingFormDialog({
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
 
 /**
  * The percentages fill forward. Every row keeps exactly what was typed and the
@@ -2374,7 +2397,7 @@ function ScheduleEditor({
             {line.seq}
           </span>
           <Input
-            className="h-9 w-32 text-xs"
+            className="h-9 w-24 min-w-0 text-xs sm:w-32"
             type="number"
             step="0.01"
             min="0"
@@ -2391,7 +2414,7 @@ function ScheduleEditor({
             }
           />
           <Input
-            className="h-9 w-44 text-xs"
+            className="h-9 w-40 min-w-0 flex-1 text-xs sm:w-44 sm:flex-none"
             type="date"
             min={index === 0 ? minDate : addDays(schedule[index - 1].dueDate, 1)}
             required
@@ -2533,7 +2556,7 @@ function SharesDialog({
       sharePercent: p.sharePercent ?? "",
     }))
   );
-  const total = parties.reduce((sum, p) => sum + (Number(p.sharePercent) || 0), 0);
+  const total = shareSum(parties);
 
   return (
     <Modal
@@ -2557,23 +2580,15 @@ function SharesDialog({
         </div>
         {parties.map((party, index) => (
           <div key={index} className="flex flex-wrap gap-2">
-            <select
-              className={`${inputClass} flex-1`}
+            <PersonPicker
+              className="flex-1"
               required
               value={party.personId}
-              onChange={(e) =>
-                setParties(parties.map((p, i) => (i === index ? { ...p, personId: e.target.value } : p)))
+              onChange={(id) =>
+                setParties(parties.map((p, i) => (i === index ? { ...p, personId: id } : p)))
               }
-            >
-              <option value="" disabled>
-                Select a Person
-              </option>
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.fullName} · {p.mobileMasked}
-                </option>
-              ))}
-            </select>
+              options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+            />
             <select
               className={`${inputClass} w-40`}
               value={party.role}
@@ -2593,11 +2608,17 @@ function SharesDialog({
               type="number"
               step="0.0001"
               min="0"
-              max="100"
+              max={shareRoom(parties, index)}
               placeholder="Share %"
               value={party.sharePercent}
               onChange={(e) =>
-                setParties(parties.map((p, i) => (i === index ? { ...p, sharePercent: e.target.value } : p)))
+                setParties(
+                  parties.map((p, i) =>
+                    i === index
+                      ? { ...p, sharePercent: capShare(parties, index, e.target.value) }
+                      : p
+                  )
+                )
               }
             />
             {parties.length > 1 && (
@@ -2627,7 +2648,11 @@ function SharesDialog({
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Back
           </Button>
-          <Button type="submit" size="sm" disabled={busy}>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={busy || (parties.length > 1 && total !== 100)}
+          >
             {busy ? "Processing…" : "Confirm change"}
           </Button>
         </div>
@@ -2667,22 +2692,18 @@ function SoldByPicker({
 
   return (
     <Field label={type === "MEMBER" ? "Selling Member" : "Closing Customer"}>
-      <select
+      <PersonPicker
         name={name}
         required
-        className={inputClass}
         value={picked}
-        onChange={(e) => setPicked(e.target.value)}
-      >
-        <option value="" disabled>
-          Select
-        </option>
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.code} · {o.name}
-          </option>
-        ))}
-      </select>
+        onChange={setPicked}
+        placeholder={
+          type === "MEMBER"
+            ? "Search a Member by name or Member ID"
+            : "Search a Customer by name, mobile or Customer ID"
+        }
+        options={options.map((o) => ({ id: o.id, label: `${o.code} · ${o.name}` }))}
+      />
       {chosen && (
         <p className="mt-1 leading-tight">
           <span className="text-xs font-semibold tabular-nums">{chosen.code}</span>
@@ -2962,24 +2983,20 @@ function FinalBuyersDialog({
               className="grid gap-2 rounded-xl border border-border/50 p-3 md:grid-cols-4"
             >
               <Field label={index === 0 ? "Primary Customer" : "Additional Customer"}>
-                <select
-                  className={inputClass}
-                  value={buyer.personId}
-                  onChange={(e) => update(index, { personId: e.target.value })}
+                <PersonPicker
                   required
-                >
-                  <option value="">Select a Person</option>
-                  {people.map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.fullName} · {person.mobileMasked}
-                    </option>
-                  ))}
-                </select>
+                  value={buyer.personId}
+                  onChange={(id) => update(index, { personId: id })}
+                  options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+                />
               </Field>
               <Field label="Ownership share % (blank = sole buyer)">
                 <Input
+                  max={shareRoom(rows, index)}
                   value={buyer.sharePercent}
-                  onChange={(e) => update(index, { sharePercent: e.target.value })}
+                  onChange={(e) =>
+                    update(index, { sharePercent: capShare(rows, index, e.target.value) })
+                  }
                   inputMode="decimal"
                 />
               </Field>

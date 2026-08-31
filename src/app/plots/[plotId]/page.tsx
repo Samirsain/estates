@@ -22,8 +22,9 @@ import { buildPlcSnapshot, humaniseRestriction, isOpenSide, locationChargeLabel,
 import { getPlot } from "@/lib/services/inventory-service";
 import { plcRules } from "@/lib/services/plc-service";
 import { requireStaff } from "@/lib/security/current-actor";
+import { maskMobile } from "@/lib/security/identity";
 import { can } from "@/lib/security/permissions";
-import { formatIst, formatPercent, formatQuantity } from "@/lib/tasks";
+import { formatIst, formatPercent, formatPlotSize, formatQuantity } from "@/lib/tasks";
 import PlotActions from "./plot-actions";
 
 export const dynamic = "force-dynamic";
@@ -113,8 +114,18 @@ function Facts({ rows }: { rows: Array<{ label: string; value: React.ReactNode }
  * The Plot at its own proportions — 30 × 45 is a rectangle, 20 × 90 is a strip,
  * and that is the thing two numbers in a row hide. Scaled off the longest side.
  *
- * It is read the way a layout sheet is: the Plot names and measures itself in
- * the middle, and what it abuts is written outside the side it abuts.
+ * What it draws is the reason the Location Charge exists: which sides are open,
+ * and onto what. So each side carries the compass letter at its edge and what
+ * it abuts outside that — a Plot with two roads is a Corner Plot, and here that
+ * is something you see rather than something you read.
+ *
+ * Drawn, not boxed: no fill behind it and no frame around it, only the four
+ * sides. An open side is the single emphasis, by weight rather than by a second
+ * colour, and everything inherits `currentColor` so it holds up wherever the
+ * page puts it.
+ *
+ * Sized by its viewBox and scaled by CSS, so the same drawing serves a phone
+ * and a wide column without a second set of numbers.
  */
 function PlotShape({
   plotNumber,
@@ -131,16 +142,24 @@ function PlotShape({
   const l = Number(lengthFt);
   if (!(w > 0) || !(l > 0)) return null;
 
-  // The longest side is 96px; the short one keeps the real ratio but never
-  // collapses below 38, or a 15 × 120 Plot draws as a line with no room to name
-  // the Plot inside it.
-  const scale = 96 / Math.max(w, l);
-  const bw = Math.max(38, w * scale);
-  const bh = Math.max(38, l * scale);
-  const x = 46;
-  const y = 16;
+  // User units, not pixels — the viewBox is scaled to the column it lands in.
+  // The longest side is 200; the short one keeps the real ratio but never
+  // collapses below 76, or a 15 × 120 Plot draws as a line with no room to
+  // name the Plot inside it.
+  const scale = 200 / Math.max(w, l);
+  const bw = Math.max(76, w * scale);
+  const bh = Math.max(76, l * scale);
+  // Room outside the shape for a compass letter and, beyond it, what that side
+  // abuts. Wider left and right, where the label runs along the text baseline
+  // instead of across it.
+  const padX = 92;
+  const padY = 46;
+  const x = padX;
+  const y = padY;
   const x2 = x + bw;
   const y2 = y + bh;
+  const cx = x + bw / 2;
+  const cy = y + bh / 2;
 
   const edge = {
     NORTH: { x1: x, y1: y, x2, y2: y },
@@ -149,75 +168,97 @@ function PlotShape({
     EAST: { x1: x2, y1: y, x2, y2 },
   } as const;
 
+  /** Where each side's compass letter and its label sit, and how they align. */
+  const marks = {
+    NORTH: { letter: [cx, y - 12], label: [cx, y - 30], anchor: "middle" },
+    SOUTH: { letter: [cx, y2 + 22], label: [cx, y2 + 40], anchor: "middle" },
+    WEST: { letter: [x - 12, cy], label: [x - 28, cy], anchor: "end" },
+    EAST: { letter: [x2 + 12, cy], label: [x2 + 28, cy], anchor: "start" },
+  } as const;
+
+  const spoken = SIDES.filter((side) => sides[side])
+    .map((side) => `${side.toLowerCase()} ${sides[side]!.label}`)
+    .join(", ");
+
   return (
-    <svg
-      viewBox={`0 0 ${bw + 92} ${bh + 32}`}
-      width={bw + 92}
-      height={bh + 32}
-      className="mt-3 max-w-full overflow-visible text-foreground"
-      role="img"
-      aria-label={`Plot ${plotNumber}, ${widthFt} by ${lengthFt} feet`}
-    >
-      <rect x={x} y={y} width={bw} height={bh} rx={2} className="fill-secondary stroke-border" />
-      {/* An open side is what carries the charge, so it is the only thing in
-          the drawing that is emphasised — by weight, not by a second colour. */}
-      {SIDES.map((s) => (
-        <line
-          key={s}
-          {...edge[s]}
-          strokeWidth={sides[s]?.open ? 1.75 : 1}
-          className={sides[s]?.open ? "stroke-foreground" : "stroke-border"}
-        />
-      ))}
+    <figure className="m-0 w-full max-w-[20rem]">
+      <svg
+        viewBox={`0 0 ${bw + padX * 2} ${bh + padY * 2}`}
+        className="block h-auto w-full overflow-visible text-foreground"
+        role="img"
+        aria-label={`Plot ${plotNumber}, ${widthFt} by ${lengthFt} feet${
+          spoken ? `, bounded by ${spoken}` : ""
+        }`}
+      >
+        {/* The four sides. An open one carries the charge, so it is the only
+            thing here drawn heavier than the rest. */}
+        {SIDES.map((side) => (
+          <line
+            key={side}
+            {...edge[side]}
+            strokeWidth={sides[side]?.open ? 3 : 1.5}
+            className={sides[side]?.open ? "stroke-current" : "stroke-border"}
+          />
+        ))}
 
-      <text
-        x={x + bw / 2}
-        y={y + bh / 2 - 5}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        className="fill-current font-mono text-[11px] font-bold"
-      >
-        {plotNumber}
-      </text>
-      <text
-        x={x + bw / 2}
-        y={y + bh / 2 + 7}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        className="fill-current text-[8px] font-medium"
-      >
-        {formatQuantity(widthFt)} × {formatQuantity(lengthFt)} ft
-      </text>
+        {/* The Plot names and measures itself in the middle, the way a layout
+            sheet does. */}
+        <text
+          x={cx}
+          y={cy - 8}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          className="fill-current font-mono text-[15px] font-bold"
+        >
+          {plotNumber}
+        </text>
+        <text
+          x={cx}
+          y={cy + 10}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          className="fill-current text-[11px] font-medium"
+        >
+          {formatPlotSize(widthFt, lengthFt)}
+        </text>
 
-      {/* What the Plot abuts, on the side it abuts it. The compass letter sits
-          inside the corner, the way a plan sheet marks north. */}
-      <text x={x + 3} y={y + 8} className="fill-current text-[7px] font-bold">
-        N
-      </text>
-      <text x={x + bw / 2} y={y - 6} textAnchor="middle" className="fill-current text-[8px] font-semibold uppercase tracking-wide">
-        {sides.NORTH?.label}
-      </text>
-      <text x={x + bw / 2} y={y2 + 11} textAnchor="middle" className="fill-current text-[8px] font-semibold uppercase tracking-wide">
-        {sides.SOUTH?.label}
-      </text>
-      <text
-        x={x - 5}
-        y={y + bh / 2}
-        textAnchor="end"
-        dominantBaseline="middle"
-        className="fill-current text-[8px] font-semibold uppercase tracking-wide"
-      >
-        {sides.WEST?.label}
-      </text>
-      <text
-        x={x2 + 5}
-        y={y + bh / 2}
-        dominantBaseline="middle"
-        className="fill-current text-[8px] font-semibold uppercase tracking-wide"
-      >
-        {sides.EAST?.label}
-      </text>
-    </svg>
+        {SIDES.map((side) => {
+          const mark = marks[side];
+          return (
+            <g key={side}>
+              <text
+                x={mark.letter[0]}
+                y={mark.letter[1]}
+                textAnchor={mark.anchor}
+                dominantBaseline="middle"
+                className="fill-current text-[12px] font-bold"
+              >
+                {side.charAt(0)}
+              </text>
+              {sides[side] && (
+                <text
+                  x={mark.label[0]}
+                  y={mark.label[1]}
+                  textAnchor={mark.anchor}
+                  dominantBaseline="middle"
+                  // currentColor, so the label follows the page's own muted
+                  // ink instead of a hue picked for one background.
+                  className="text-[11px] text-muted-foreground"
+                  fill="currentColor"
+                >
+                  {sides[side]!.label}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      {/* The heading above already names this; the caption is here for a reader
+          who cannot see the drawing. */}
+      <figcaption className="sr-only">
+        Plot {plotNumber} at its own proportions, with what each side abuts.
+      </figcaption>
+    </figure>
   );
 }
 
@@ -263,9 +304,94 @@ export default async function PlotDetailPage({
   const conv = (value: { toDecimalPlaces(n: number): { toString(): string } }) =>
     formatQuantity(value.toDecimalPlaces(2).toString());
 
+  /*
+   * Who holds the Plot and who bought it, kept aside so it can sit under the
+   * drawing rather than under the measurements — the corner of the page that
+   * answers "whose is this".
+   */
+  /**
+   * A buyer, as the rest of the application prints one: the id leads and opens
+   * the profile, the name confirms it underneath, and the mobile is masked the
+   * way it is on every list.
+   */
+  const buyer = (person: {
+    id: string;
+    fullName: string;
+    primaryMobile: string;
+    customerProfile: { customerId: string } | null;
+  }) => (
+    <span className="block">
+      <PersonLink
+        personId={person.id}
+        name={person.customerProfile?.customerId ?? person.fullName}
+        className={person.customerProfile ? "font-mono font-semibold" : undefined}
+      />
+      {person.customerProfile && (
+        <span className="block text-[11px] text-muted-foreground">{person.fullName}</span>
+      )}
+      <span className="block font-mono text-[11px] text-muted-foreground">
+        {maskMobile(person.primaryMobile)}
+      </span>
+    </span>
+  );
+
+  const allocation = (
+    <Section title={booking ? "Bought by" : "Allocation"}>
+      {booking ? (
+        <Facts
+          rows={[
+            { label: "Customer", value: buyer(booking.primaryPerson) },
+            {
+              label: "Booking",
+              value: (
+                <Link href="/bookings" className="font-mono text-primary hover:underline">
+                  {booking.bookingNumber ?? booking.requestNo}
+                </Link>
+              ),
+            },
+            {
+              label: "Received",
+              value: (
+                <span className="tabular-nums">
+                  {formatPercent(booking.paymentReceivedPercent.toString())}
+                </span>
+              ),
+            },
+          ]}
+        />
+      ) : hold ? (
+        <Facts
+          rows={[
+            { label: "Held for", value: buyer(hold.person) },
+            {
+              label: "Expires",
+              value:
+                hold.status === "FROZEN" ? (
+                  <>
+                    {formatIst(hold.expiresAt)}
+                    <span className="block text-[11px] text-muted-foreground">
+                      Timer frozen — a Booking Request is under review.
+                    </span>
+                  </>
+                ) : (
+                  formatIst(hold.expiresAt)
+                ),
+            },
+            {
+              label: "Extensions",
+              value: <span className="tabular-nums">{hold.extensionCount}</span>,
+            },
+          ]}
+        />
+      ) : (
+        <p className="text-xs text-muted-foreground">Nobody holds this Plot.</p>
+      )}
+            </Section>
+  );
+
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
-      <main className="mx-auto max-w-5xl space-y-3 pb-6">
+      <main className="mx-auto max-w-4xl space-y-3 pb-6">
         <header className="space-y-3">
           <Link
             href="/plots"
@@ -329,246 +455,193 @@ export default async function PlotDetailPage({
           </div>
         </header>
 
-        {/* Derived, and the Plot's most-asked number — but the Plot is the
-            subject of the page, so it no longer outsizes the Plot's own name. */}
-        <div className="rounded-xl border border-border/60 bg-secondary p-3">
-          {plc ? (
-            <>
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">
-                  Location Charge (PLC %)
-                </span>
-                <span className="text-xl font-semibold tabular-nums tracking-tight">
-                  {formatPercent(plc.totalPercent.toString())}
-                </span>
-              </div>
-
-              {plc.components.length === 0 ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  No component applies to this Plot.
-                </p>
-              ) : (
-                <dl className="mt-2 space-y-1 border-t border-border/50 pt-2">
-                  {plc.components.map((c) => (
-                    <div key={c.category} className="grid grid-cols-[1fr_auto] gap-x-4 text-xs">
-                      {/* Park Facing, Corner, Road Facing — these are the
-                          charge, not a caption for it. They carry the same
-                          weight as the percent they earn; only the sides that
-                          evidence them step back. */}
-                      <dt className="font-semibold text-foreground">
-                        {c.label}
-                        <span className="ml-2 font-normal text-muted-foreground">
-                          {shortSides(c.evidence)}
-                        </span>
-                      </dt>
-                      <dd className="font-semibold tabular-nums text-foreground">
-                        {formatPercent(c.percent)}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-            </>
-          ) : (
-            <p className="text-xs text-amber-800">{plcIssue}</p>
-          )}
-        </div>
-
-        {/* Four short sections that were four full-width rows. Columns, not a
-            grid: a grid row is as tall as its tallest cell, so a four-side
-            Boundaries beside a two-row Status left a hole under the short one.
-            These sections are independent records — read down one column, then
-            the next. */}
-        <div className="columns-1 gap-x-8 sm:columns-2">
-        <Section title="Dimensions">
-          <Facts
-            rows={[
-              {
-                label: "Width × Length",
-                value:
-                  plot.widthFt && plot.lengthFt ? (
-                    <span className="text-sm font-semibold tabular-nums text-foreground">
-                      {num(plot.widthFt)} × {num(plot.lengthFt)}
-                      <span className="ml-1 text-[11px] font-normal text-muted-foreground">ft</span>
+        {/* Four short records and a drawing. The records read down the left,
+            the drawing sits beside them on the right, and neither is put in a
+            filled box: a section is its name and a rule, so a two-row Allocation
+            takes two rows of the page and a four-side Boundaries takes four. */}
+        <div className="grid gap-x-10 lg:grid-cols-[26rem_minmax(0,1fr)]">
+          <div className="min-w-0">
+          <Section title="Location Charge (PLC %)">
+            {plc ? (
+              <>
+                {/* One component IS the total — printing both put 10.00% on the
+                    page twice and called the second one a breakdown of the
+                    first. The total earns its own row only once there is more
+                    than one number adding up to it. */}
+                {plc.components.length > 1 && (
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                    <span className="text-xs text-muted-foreground">Total</span>
+                    <span className="text-lg font-semibold tabular-nums tracking-tight">
+                      {formatPercent(plc.totalPercent.toString())}
                     </span>
-                  ) : (
-                    <span className="text-muted-foreground">Irregular Plot</span>
-                  ),
-              },
-              {
-                label: plot.exactAreaSqFt ? "Area (exact, overridden)" : "Area",
-                value: (
-                  // The three areas are one measurement, so all three are read
-                  // at full weight; only the unit steps back, as on the list.
-                  <span className="tabular-nums">
-                    <span className="block text-sm font-semibold text-foreground">
-                      {num(plot.areaSqFt)}
-                      <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-                        sq ft
-                      </span>
-                    </span>
-                    <span className="block text-xs font-semibold text-foreground">
-                      {conv(plot.areaSqYd)}
-                      <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-                        sq yd
-                      </span>
-                    </span>
-                    <span className="block text-xs font-semibold text-foreground">
-                      {conv(plot.areaSqM)}
-                      <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-                        sq m
-                      </span>
-                    </span>
-                  </span>
-                ),
-              },
-              // A Plot can carry both sides and an override — then the Area above
-              // is the override, and what the sides multiply to is nowhere on the
-              // page unless it is put here. The gap between the two is the reason
-              // the override exists.
-              ...(plot.exactAreaSqFt && plot.widthFt && plot.lengthFt
-                ? [
-                    {
-                      label: "Width × Length area",
-                      value: (
-                        <span className="text-xs font-semibold tabular-nums text-foreground">
-                          {num(plot.widthFt.mul(plot.lengthFt))}
-                          <span className="ml-1 font-normal text-muted-foreground">sq ft</span>
-                        </span>
-                      ),
-                    },
-                  ]
-                : []),
-              ...(plot.exactAreaReason
-                ? [{ label: "Override reason", value: plot.exactAreaReason }]
-                : []),
-            ]}
-          />
-          {plot.widthFt && plot.lengthFt && (
-            <div className="mt-3 flex justify-center rounded-xl border border-border/60 p-3">
-              <PlotShape
-                plotNumber={plot.plotNumber}
-                widthFt={plot.widthFt.toString()}
-                lengthFt={plot.lengthFt.toString()}
-                sides={Object.fromEntries(
-                  SIDES.map((side) => {
-                    const b = bySide.get(side);
-                    if (!b) return [side, undefined];
-                    const kind = BOUNDARY_KIND_LABEL[b.kind] ?? b.kind;
-                    // A Road is named by its width — that width is what decides
-                    // the band. Anything else is named by what it is next to.
-                    const label =
-                      b.kind === "ROAD" && b.roadWidthFt
-                        ? `${kind} ${num(b.roadWidthFt)} ft`
-                        : b.reference
-                          ? `${kind} ${b.reference}`
-                          : kind;
-                    return [side, { label, open: isOpenSide(b.kind) }];
-                  })
+                  </div>
                 )}
-              />
-            </div>
-          )}
-        </Section>
 
-        <Section title="Boundaries">
-          <Facts
-            rows={SIDES.map((side) => {
-              const b = bySide.get(side);
-              return {
-                label: side.charAt(0) + side.slice(1).toLowerCase(),
-                value: b ? (
-                  <>
-                    {BOUNDARY_KIND_LABEL[b.kind] ?? b.kind}
-                    {b.kind === "ROAD" && b.roadWidthFt ? (
-                      <span className="tabular-nums"> · {num(b.roadWidthFt)} ft</span>
-                    ) : b.reference ? (
-                      <span className="text-muted-foreground"> · {b.reference}</span>
-                    ) : null}
-                  </>
+                {plc.components.length === 0 ? (
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                    <span className="text-xs text-muted-foreground">
+                      No component applies to this Plot.
+                    </span>
+                    <span className="text-lg font-semibold tabular-nums tracking-tight">
+                      {formatPercent(plc.totalPercent.toString())}
+                    </span>
+                  </div>
                 ) : (
-                  <span className="text-muted-foreground">Not recorded</span>
-                ),
-              };
-            })}
-          />
-          {/* The position, in the one vocabulary every screen uses — the list
-              and the Booking read it off the same function. */}
-          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-foreground">
-            {locationChargeLabel(boundaries).join(" · ")}
-          </p>
-        </Section>
+                  <dl className="mt-1 space-y-1">
+                    {plc.components.map((c) => (
+                      <div key={c.category} className="grid grid-cols-[1fr_auto] gap-x-4 text-xs">
+                        {/* Park Facing, Corner, Road Facing — these are the
+                            charge, not a caption for it. They carry the same
+                            weight as the percent they earn; only the sides that
+                            evidence them step back. */}
+                        <dt className="font-semibold text-foreground">
+                          {c.label}
+                          <span className="ml-2 font-normal text-muted-foreground">
+                            {shortSides(c.evidence)}
+                          </span>
+                        </dt>
+                        <dd
+                          className={`font-semibold tabular-nums text-foreground ${
+                            plc.components.length === 1 ? "text-lg tracking-tight" : ""
+                          }`}
+                        >
+                          {formatPercent(c.percent)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-amber-800">{plcIssue}</p>
+            )}
+          </Section>
 
-        <Section title="Allocation">
-          {hold ? (
+          <Section title="Dimensions">
             <Facts
               rows={[
                 {
-                  label: "Held for",
-                  value: <PersonLink personId={hold.person.id} name={hold.person.fullName} />,
-                },
-                {
-                  label: "Expires",
+                  label: "Width × Length",
                   value:
-                    hold.status === "FROZEN" ? (
-                      <>
-                        {formatIst(hold.expiresAt)}
-                        <span className="block text-xs text-muted-foreground">
-                          Timer frozen — a Booking Request is under review.
-                        </span>
-                      </>
+                    plot.widthFt && plot.lengthFt ? (
+                      <span className="text-sm font-semibold tabular-nums text-foreground">
+                        {formatPlotSize(plot.widthFt.toString(), plot.lengthFt.toString())}
+                      </span>
                     ) : (
-                      formatIst(hold.expiresAt)
+                      <span className="text-muted-foreground">Irregular Plot</span>
                     ),
                 },
                 {
-                  label: "Extensions",
-                  value: <span className="tabular-nums">{hold.extensionCount}</span>,
+                  label: plot.exactAreaSqFt ? "Area (exact, overridden)" : "Area",
+                  value: (
+                    // The three areas are one measurement, so all three are read
+                    // at full weight; only the unit steps back, as on the list.
+                    <span className="tabular-nums">
+                      <span className="block text-sm font-semibold text-foreground">
+                        {num(plot.areaSqFt)}
+                        <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                          sq ft
+                        </span>
+                      </span>
+                      <span className="block text-xs font-semibold text-foreground">
+                        {conv(plot.areaSqYd)}
+                        <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                          sq yd
+                        </span>
+                      </span>
+                      <span className="block text-xs font-semibold text-foreground">
+                        {conv(plot.areaSqM)}
+                        <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                          sq m
+                        </span>
+                      </span>
+                    </span>
+                  ),
                 },
+                // A Plot can carry both sides and an override — then the Area above
+                // is the override, and what the sides multiply to is nowhere on the
+                // page unless it is put here. The gap between the two is the reason
+                // the override exists.
+                ...(plot.exactAreaSqFt && plot.widthFt && plot.lengthFt
+                  ? [
+                      {
+                        label: "Width × Length area",
+                        value: (
+                          <span className="text-xs font-semibold tabular-nums text-foreground">
+                            {num(plot.widthFt.mul(plot.lengthFt))}
+                            <span className="ml-1 font-normal text-muted-foreground">sq ft</span>
+                          </span>
+                        ),
+                      },
+                    ]
+                  : []),
+                ...(plot.exactAreaReason
+                  ? [{ label: "Override reason", value: plot.exactAreaReason }]
+                  : []),
               ]}
             />
-          ) : (
-            <p className="text-sm text-muted-foreground">No active Hold.</p>
-          )}
+          </Section>
 
-          {booking && (
-            <div className="mt-4">
-              <Facts
-                rows={[
-                  {
-                    label: "Booking",
-                    value: (
-                      <Link href="/bookings" className="text-primary hover:underline">
-                        {booking.bookingNumber ?? booking.requestNo}
-                      </Link>
-                    ),
-                  },
-                  {
-                    label: "Customer",
-                    value: (
-                      <PersonLink
-                        personId={booking.primaryPerson.id}
-                        name={booking.primaryPerson.fullName}
-                      />
-                    ),
-                  },
-                  {
-                    label: "Received",
-                    value: (
-                      <span className="tabular-nums">
-                        {formatPercent(booking.paymentReceivedPercent.toString())}
-                      </span>
-                    ),
-                  },
-                ]}
-              />
-              <p className="mt-2 text-xs text-muted-foreground">
-                The payment schedule and the commission summary are on the Booking.
-              </p>
-            </div>
-          )}
-        </Section>
+          <Section title="Boundaries">
+            <Facts
+              rows={SIDES.map((side) => {
+                const b = bySide.get(side);
+                return {
+                  label: side.charAt(0) + side.slice(1).toLowerCase(),
+                  value: b ? (
+                    <>
+                      {BOUNDARY_KIND_LABEL[b.kind] ?? b.kind}
+                      {b.kind === "ROAD" && b.roadWidthFt ? (
+                        <span className="tabular-nums"> · {num(b.roadWidthFt)} ft</span>
+                      ) : b.reference ? (
+                        <span className="text-muted-foreground"> · {b.reference}</span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">Not recorded</span>
+                  ),
+                };
+              })}
+            />
+            {/* The position, in the one vocabulary every screen uses — the list
+                and the Booking read it off the same function. */}
+            <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-foreground">
+              {locationChargeLabel(boundaries).join(" · ")}
+            </p>
+          </Section>
+          </div>
 
+          <div className="min-w-0">
+            {plot.widthFt && plot.lengthFt && (
+              <Section title="Diagram">
+                <div className="flex justify-center pt-1">
+                  <PlotShape
+                    plotNumber={plot.plotNumber}
+                    widthFt={plot.widthFt.toString()}
+                    lengthFt={plot.lengthFt.toString()}
+                    sides={Object.fromEntries(
+                      SIDES.map((side) => {
+                        const b = bySide.get(side);
+                        if (!b) return [side, undefined];
+                        const kind = BOUNDARY_KIND_LABEL[b.kind] ?? b.kind;
+                        // A Road is named by its width — that width is what
+                        // decides the band. Anything else is named by what it
+                        // sits next to.
+                        const label =
+                          b.kind === "ROAD" && b.roadWidthFt
+                            ? `${kind} · ${num(b.roadWidthFt)} ft`
+                            : b.reference
+                              ? `${kind} · ${b.reference}`
+                              : kind;
+                        return [side, { label, open: isOpenSide(b.kind) }];
+                      })
+                    )}
+                  />
+                </div>
+              </Section>
+            )}
+            {allocation}
+          </div>
         </div>
 
         <Section title="History">

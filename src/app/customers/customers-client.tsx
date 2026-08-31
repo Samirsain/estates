@@ -97,8 +97,8 @@ export default function CustomersClient({
         <header>
           <h1 className="text-2xl font-bold tracking-tight">Customers</h1>
           <p className="mt-1 text-xs text-muted-foreground">
-            {visible.length} of {rows.length} · a Customer ID is created at the first Booking Request
-            and is retained even if that request is rejected
+            {visible.length} of {rows.length} · a Customer ID is created at the first Hold or
+            Booking Request and is retained even if that request is rejected
           </p>
         </header>
 
@@ -163,8 +163,8 @@ export default function CustomersClient({
               {visible.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-3 py-10 text-center text-sm text-muted-foreground">
-                    No Customers yet. A Customer ID is created when the first Booking Request is
-                    submitted.
+                    No Customers yet. A Customer ID is created when the first Hold is placed, or
+                    at the first Booking Request when no Hold came before it.
                   </td>
                 </tr>
               )}

@@ -102,6 +102,7 @@ model Person {
 
   enquiries    Enquiry[]
   holds        Hold[]
+  sourcedHolds Hold[]        @relation("HoldSourcedBy")
   holdRequests HoldRequest[]
 
   primaryBookings Booking[]      @relation("BookingPrimaryCustomer")
@@ -702,6 +703,14 @@ model Hold {
   /// Set when the Hold originated from a Member Hold Request.
   sourceMemberId String?
 
+  /// Who got the Hold done, in the Booking's own three answers (PRD 11.4):
+  /// the 3% Club, a Member, or a Customer. `sourceMemberId` above stays what it
+  /// always was - the Member Hold Request a Hold arrived through - while this
+  /// is the credit, which a walk-in Hold carries just as much as a portal one.
+  sourcedByType     SoldByType @default(THREE_PERCENT_CLUB)
+  sourcedByPersonId String?
+  sourcedByPerson   Person?    @relation("HoldSourcedBy", fields: [sourcedByPersonId], references: [id])
+
   responsibleStaffId String?
 
   startsAt  DateTime   @default(now())
@@ -729,6 +738,7 @@ model Hold {
   @@index([plotId, status])
   @@index([personId, status])
   @@index([status, expiresAt])
+  @@index([sourcedByPersonId])
 }
 
 model HoldExtensionRequest {
@@ -1420,6 +1430,10 @@ model BankDetail {
 
   accountHolder String
   bankName      String
+  /// Which branch the account sits at — compulsory on every new entry. The
+  /// column is nullable only because the rows written before it existed have
+  /// no branch and nothing may invent one for them.
+  branchName    String?
   /// Full account number is protected at rest; lists show the last four only.
   accountCipher   String
   accountLastFour String

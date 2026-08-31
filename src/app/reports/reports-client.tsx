@@ -97,7 +97,7 @@ export default function ReportsClient({
                 ))}
               </select>
             </Field>
-            <Field label="Project (optional)">
+            <Field label="Project">
               <select
                 className={inputClass}
                 value={projectId}
@@ -111,10 +111,10 @@ export default function ReportsClient({
                 ))}
               </select>
             </Field>
-            <Field label="From (optional)">
+            <Field label="From">
               <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
             </Field>
-            <Field label="To (optional)">
+            <Field label="To">
               <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
             </Field>
           </div>

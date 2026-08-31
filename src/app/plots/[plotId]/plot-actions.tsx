@@ -30,8 +30,10 @@ import { EditPlotDetailsDialog, type EditablePlot } from "../plots-client";
 type Restriction = "NONE" | "NOT_YET_RELEASED" | "NOT_FOR_SALE" | "PLEDGE";
 
 const RESTRICTIONS: { value: Restriction; label: string }[] = [
-  { value: "NONE", label: "None — unrestricted" },
-  { value: "NOT_YET_RELEASED", label: "Not Yet Released" },
+  // Named for what the Plot becomes, not for the flag being cleared — and
+  // "Unreleased" is the word a Project already uses for the same state.
+  { value: "NONE", label: "Available" },
+  { value: "NOT_YET_RELEASED", label: "Unreleased" },
   { value: "NOT_FOR_SALE", label: "Not for Sale" },
   { value: "PLEDGE", label: "Pledge" },
 ];

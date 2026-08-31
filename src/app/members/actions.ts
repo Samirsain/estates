@@ -217,6 +217,7 @@ export async function enterBankDetailsAction(
     personId: string;
     accountHolder: string;
     bankName: string;
+    branchName: string;
     accountNumber: string;
     ifsc: string;
   },
@@ -231,6 +232,7 @@ export async function enterBankDetailsAction(
       personId: input.personId,
       accountHolder: input.accountHolder,
       bankName: input.bankName,
+      branchName: input.branchName,
       accountNumber: input.accountNumber,
       ifsc: input.ifsc,
     });
@@ -317,6 +319,7 @@ export async function loadBankDetails(personId: string) {
     id: r.id,
     accountHolder: r.accountHolder,
     bankName: r.bankName,
+    branchName: r.branchName,
     accountLastFour: r.accountLastFour,
     ifsc: r.ifsc,
     status: r.status,

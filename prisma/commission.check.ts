@@ -566,6 +566,7 @@ async function main() {
     personId: banker.id,
     accountHolder: "Test Holder",
     bankName: "Test Bank",
+    branchName: "Test Branch",
     accountNumber: "9988776655",
     ifsc: "hdfc0001234",
   });

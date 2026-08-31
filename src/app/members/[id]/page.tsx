@@ -15,9 +15,23 @@ import { formatIst } from "@/lib/tasks";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { PersonDetailsEditor } from "@/components/person-details-editor";
+import { MemberActions } from "./member-actions";
 import { ArrowLeft, UserCheck, Users, Layers, ShieldCheck, Banknote, FileText, MapPin } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+/** Stored at UTC midnight, so it is read back in UTC: IST would print 11 Apr. */
+const bornOn = (d: Date | null) =>
+  d
+    ? d.toLocaleDateString("en-IN", {
+        timeZone: "UTC",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : "—";
+
 
 const RERA_LABEL: Record<string, string> = {
   REGISTERED: "Registered",
@@ -196,14 +210,52 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
       <div className="mx-auto max-w-4xl space-y-4">
-        {/* Back */}
-        <Link
-          href="/members"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Members
-        </Link>
+        {/* Back, and the one thing this page can change: the facts below it.
+            RERA, bank and commission hold keep their own guarded flows. */}
+        <div className="flex items-center justify-between gap-3">
+          <Link
+            href="/members"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to Members
+          </Link>
+          <div className="flex items-start gap-2">
+          <MemberActions
+            member={{
+              id: member.id,
+              memberId: member.memberId,
+              name: member.person.fullName,
+              status: member.status,
+              commissionHold: member.commissionHold,
+              reraStatus: member.reraStatus,
+              reraNumber: member.reraNumber,
+              reraExpiryDate: member.reraExpiryDate?.toISOString() ?? null,
+              reraNotApplicableReason: member.reraNotApplicableReason,
+            }}
+            canActivate={can(actor.role, "MEMBER_ACTIVATE", actor.extraPermissions)}
+            canDeactivate={can(actor.role, "MEMBER_DEACTIVATE", actor.extraPermissions)}
+          />
+          {can(actor.role, "PERSON_DETAILS_EDIT", actor.extraPermissions) && (
+            <PersonDetailsEditor
+              personId={member.personId}
+              bank={banks[0] ?? null}
+              canEnterBank={can(actor.role, "BANK_DETAILS_ENTER", actor.extraPermissions)}
+              person={{
+                fullName: member.person.fullName,
+                mobile: member.person.primaryMobile,
+                altMobile: member.person.altMobile ?? "",
+                email: member.person.email ?? "",
+                city: member.person.city ?? "",
+                addressLine: member.person.addressLine ?? "",
+                dateOfBirth: member.person.dateOfBirth
+                  ? member.person.dateOfBirth.toISOString().slice(0, 10)
+                  : "",
+              }}
+            />
+          )}
+          </div>
+        </div>
 
         {/* Hero */}
         <Card className="space-y-4 p-4">
@@ -249,21 +301,6 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
                   hint={member.invitedByMember.person.fullName}
                 />
               )}
-              <Stat
-                label="Portal login"
-                value={
-                  member.portalAccount
-                    ? member.portalAccount.status === "ACTIVE"
-                      ? "Enabled"
-                      : "Disabled"
-                    : "Not created"
-                }
-                hint={
-                  member.portalAccount?.lastLoginAt
-                    ? `last ${formatIst(member.portalAccount.lastLoginAt.toISOString())}`
-                    : undefined
-                }
-              />
             </div>
           </div>
 
@@ -281,6 +318,9 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
               <Row label="Alt Mobile" value={member.person.altMobile} mono />
             )}
             <Row label="Email" value={member.person.email ?? "—"} />
+            {/* A blank Date of Birth or Address is shown rather than hidden:
+                the gap is the reason Edit details exists. */}
+            <Row label="Date of Birth" value={bornOn(member.person.dateOfBirth)} />
             <Row label="City" value={member.person.city ?? "—"} />
             <Row label="Address" value={member.person.addressLine ?? "—"} />
             <Row
@@ -345,6 +385,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
                   />
                   <Row label="IFSC" value={b.ifsc} mono />
                   <Row label="Bank" value={b.bankName} />
+                  <Row label="Branch" value={b.branchName ?? "—"} />
                   <Row label="Holder" value={b.accountHolder} />
                 </div>
               ))

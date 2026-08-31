@@ -1,5 +1,6 @@
 "use server";
 
+import type { SoldByType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
 import { CommandError } from "@/lib/services/command";
@@ -73,25 +74,24 @@ export async function setRestrictionAction(
 export async function createHoldAction(
   plotId: string,
   personId: string,
-  remark: string,
-  key: string
+  key: string,
+  /** Set instead of personId when the buyer is typed on the form. */
+  newPerson?: { fullName: string; mobile: string } | null,
+  /** Who is credited for the Hold. Defaults to the 3% Club, as a Booking does. */
+  sourcedBy?: { type: SoldByType; personId: string | null }
 ): Promise<ActionResult> {
   const actor = await requireStaff("HOLD_CREATE");
-  // The reason is what a later Hold on this Plot reads back, so an empty one
-  // makes that panel useless. Checked here as well as in the form: a disabled
-  // button is not a rule.
-  if (remark.trim().length < 3) {
-    return { ok: false, error: "A compulsory reason is required to place a Hold." };
-  }
   try {
     const result = await createHold({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
       plotId,
-      personId,
+      personId: personId || null,
+      newPerson: personId ? null : newPerson,
+      sourcedByType: sourcedBy?.type ?? "THREE_PERCENT_CLUB",
+      sourcedByPersonId: sourcedBy?.personId ?? null,
       responsibleStaffId: actor.accountId,
-      remark,
     });
     revalidatePath("/plots");
     return { ok: true, message: `Hold created. Expires ${new Date(result.expiresAt).toISOString()}.` };
@@ -194,7 +194,12 @@ export async function prepareInventoryAction(
       rows,
     });
     revalidatePath("/plots");
-    return { ok: true, message: `${result.count} Plot(s) prepared as Not Available — Not Yet Released.` };
+    return {
+      ok: true,
+      message: result.released
+        ? `${result.count} Plot(s) prepared and Available — the Project is already Active.`
+        : `${result.count} Plot(s) prepared as Not Available — Not Yet Released.`,
+    };
   } catch (error) {
     return toResult(error);
   }

@@ -18,9 +18,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { PersonPicker, personLabel } from "@/components/person-picker";
 import {
   addIstDays,
-  formatDimension,
+  formatPlotSize,
   formatIst,
   formatIstDate,
   formatQuantity,
@@ -45,6 +46,8 @@ export type EnquiryRowView = {
   city: string;
   project: string;
   plot: string;
+  /** CONSTANT_CASE from the schema — `humanise` before showing it. */
+  plotType: string | null;
   plotRequirement: string | null;
   source: string;
   sourceRefId: string | null;
@@ -81,6 +84,9 @@ const OUTCOMES = [
 ] as const;
 
 /** main-PRD §9.2 — the six sources, in the words the spec uses. */
+/** What the New Enquiry form offers, in the order it offers them. */
+const SOURCE_OPTIONS = ["DIRECT", "BY_MEMBER", "BY_CUSTOMER", "EXISTING_CUSTOMER"] as const;
+
 const SOURCE_LABEL: Record<string, string> = {
   ONLINE: "Online / Advertisement / Website",
   SITE_VISIT: "Site Visit",
@@ -133,7 +139,14 @@ export default function EnquiriesClient({
   rows: EnquiryRowView[];
   projects: Array<{ id: string; name: string }>;
   plots: PlotOption[];
-  people: Array<{ id: string; fullName: string; mobileMasked: string }>;
+  people: Array<{
+    id: string;
+    fullName: string;
+    mobileMasked: string;
+    /** CUS-3390 / MEM-0012, where the Person holds that profile at all. */
+    customerId: string | null;
+    memberId: string | null;
+  }>;
   members: Array<{ id: string; label: string }>;
   customers: Array<{ id: string; label: string }>;
   staff: Array<{ id: string; label: string; isSelf: boolean }>;
@@ -185,10 +198,6 @@ export default function EnquiriesClient({
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Enquiries</h1>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {visible.length} of {rows.length} · each Active Enquiry carries one Pending follow-up task ·
-              mobile numbers masked
-            </p>
           </div>
           {canManage && (
             <Button size="sm" variant="gradient" onClick={() => setCreating(true)}>
@@ -304,7 +313,14 @@ export default function EnquiriesClient({
                           a Plot in inventory, something asked for that is not
                           in it yet, or the Project itself. */}
                       {e.plot !== "General" ? (
-                        <span className="font-mono">{e.plot}</span>
+                        <>
+                          <span className="block font-mono font-semibold">{e.plot}</span>
+                          {e.plotType && (
+                            <span className="block text-[11px] text-muted-foreground">
+                              {humanise(e.plotType)}
+                            </span>
+                          )}
+                        </>
                       ) : e.plotRequirement ? (
                         <span className="italic" title={e.plotRequirement}>
                           {e.plotRequirement}
@@ -469,40 +485,35 @@ const PLOT_STATUS_LABEL: Record<string, string> = {
  * Who the Enquiry came through — the Booking form's Sold By picker in every
  * respect: choose from the list, and what was chosen is echoed underneath as
  * the reference over the name, so a wrong pick is visible before submitting.
+ *
+ * It carries no label of its own: it sits inside the Enquiry Source field,
+ * beside the choice that asked for it, and that field is already named.
  */
 function SourcePersonPicker({
   name,
-  label,
   placeholder,
   options,
+  className,
 }: {
   name: string;
-  label: string;
   placeholder: string;
   options: Array<{ id: string; label: string }>;
+  className?: string;
 }) {
   const [picked, setPicked] = React.useState("");
   const chosen = options.find((o) => o.id === picked);
   const [code, ...rest] = (chosen?.label ?? "").split(" · ");
 
   return (
-    <Field label={label}>
-      <select
+    <div className={className}>
+      <PersonPicker
         name={name}
         required
-        className={inputClass}
         value={picked}
-        onChange={(e) => setPicked(e.target.value)}
-      >
-        <option value="" disabled>
-          {placeholder}
-        </option>
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+        onChange={setPicked}
+        placeholder={placeholder}
+        options={options}
+      />
       {chosen && (
         <p className="mt-1 leading-tight">
           <span className="text-xs font-semibold tabular-nums">{code}</span>
@@ -510,7 +521,7 @@ function SourcePersonPicker({
           <span className="text-[11px] text-muted-foreground">{rest.join(" · ")}</span>
         </p>
       )}
-    </Field>
+    </div>
   );
 }
 
@@ -533,7 +544,14 @@ function CreateEnquiryDialog({
 }: {
   projects: Array<{ id: string; name: string }>;
   plots: PlotOption[];
-  people: Array<{ id: string; fullName: string; mobileMasked: string }>;
+  people: Array<{
+    id: string;
+    fullName: string;
+    mobileMasked: string;
+    /** CUS-3390 / MEM-0012, where the Person holds that profile at all. */
+    customerId: string | null;
+    memberId: string | null;
+  }>;
   members: Array<{ id: string; label: string }>;
   customers: Array<{ id: string; label: string }>;
   staff: Array<{ id: string; label: string; isSelf: boolean }>;
@@ -599,7 +617,7 @@ function CreateEnquiryDialog({
             </select>
           </Field>
 
-          <Field label="Plot — optional">
+          <Field label="Plot">
             <select
               className={inputClass}
               disabled={!projectId}
@@ -636,65 +654,78 @@ function CreateEnquiryDialog({
             <dd className="text-right font-medium">
               {PLOT_STATUS_LABEL[plot.status] ?? plot.status.replaceAll("_", " ")}
             </dd>
-            <dt className="text-muted-foreground">Size</dt>
+            <dt className="text-muted-foreground">Size (W × L)</dt>
             <dd className="text-right font-medium tabular-nums">
-              {plot.widthFt && plot.lengthFt
-                ? `${formatDimension(plot.widthFt)} × ${formatDimension(plot.lengthFt)}`
-                : "Irregular"}
+              {formatPlotSize(plot.widthFt, plot.lengthFt) ?? "Irregular"}
             </dd>
             <dt className="text-muted-foreground">Area</dt>
             <dd className="text-right font-medium tabular-nums">
               {formatQuantity(plot.areaSqFt)} sq ft · {formatQuantity(plot.areaSqM)} sq m
             </dd>
-            <dd className="col-span-2 pt-1 text-[11px] text-muted-foreground">
-              An Enquiry never blocks a Plot — a Hold does that. Only one Active Enquiry may exist
-              for the same Person, Project and Plot.
-            </dd>
           </dl>
-        ) : (
+        ) : plotId === "CUSTOM" ? (
           <p className="rounded-xl border border-border/60 bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
-            {plotId === "CUSTOM"
-              ? "A requirement, not a Plot: it allocates nothing and blocks nothing. Raise a Plot-wise Enquiry once inventory holds one that matches."
-              : "A General Enquiry covers the Project. Only one Active General Enquiry may exist per Person and Project."}
+            A requirement, not a Plot: it allocates nothing and blocks nothing. Raise a Plot-wise
+            Enquiry once inventory holds one that matches.
           </p>
-        )}
+        ) : null}
 
         {/* One person, so no bordered card and no section heading: an empty box
             around a single select is the space the Booking form spends on
             several Customers and their shares. */}
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Customer">
-            <select
-              className={inputClass}
-              required
-              value={personId}
-              onChange={(e) => setPersonId(e.target.value)}
-            >
-              <option value="" disabled>
-                Select the Person
-              </option>
-              <option value="NEW">+ New Person — enter details</option>
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.fullName} · {p.mobileMasked}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <div className="sm:col-span-2">
+            <Field label="Customer">
+              <PersonPicker
+                required
+                value={personId}
+                onChange={setPersonId}
+                newOptionLabel="+ New Person — enter details"
+                placeholder="Search by name, mobile or Customer ID"
+                options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+              />
+            </Field>
+          </div>
 
-          <Field label="Enquiry Source">
-            <select
-              className={inputClass}
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-            >
-              {Object.entries(SOURCE_LABEL).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {/* One question, one box, the way the Hold form asks it: the kind of
+              Source and the Member or Customer behind it share a row, so
+              choosing By Member fills the space beside the choice instead of
+              pushing another field into the form. */}
+          <div className="sm:col-span-2">
+            <Field label="Enquiry Source">
+              <div className="flex gap-2">
+                <select
+                  className={`${inputClass} w-44 shrink-0`}
+                  value={source}
+                  onChange={(e) => setSource(e.target.value)}
+                >
+                  {SOURCE_OPTIONS.map((value) => (
+                    <option key={value} value={value}>
+                      {SOURCE_LABEL[value]}
+                    </option>
+                  ))}
+                </select>
+                {source === "BY_MEMBER" && (
+                  <SourcePersonPicker
+                    key="member"
+                    className="min-w-0 flex-1"
+                    name="sourceMemberId"
+                    placeholder="Search by Member ID or name"
+                    options={members}
+                  />
+                )}
+                {source === "BY_CUSTOMER" && (
+                  <SourcePersonPicker
+                    key="customer"
+                    className="min-w-0 flex-1"
+                    name="sourceCustomerId"
+                    placeholder="Search by Customer ID or name"
+                    options={customers}
+                  />
+                )}
+              </div>
+            </Field>
+          </div>
 
           {personId === "NEW" && (
             <div className="grid gap-2 sm:col-span-2 sm:grid-cols-3">
@@ -706,27 +737,8 @@ function CreateEnquiryDialog({
                 inputMode="numeric"
                 required
               />
-              <Input className="h-9 text-xs" name="city" placeholder="City — optional" />
+              <Input className="h-9 text-xs" name="city" placeholder="City" />
             </div>
-          )}
-
-          {source === "BY_MEMBER" && (
-            <SourcePersonPicker
-              key="member"
-              name="sourceMemberId"
-              label="Source Member — compulsory"
-              placeholder="Select the Member"
-              options={members}
-            />
-          )}
-          {source === "BY_CUSTOMER" && (
-            <SourcePersonPicker
-              key="customer"
-              name="sourceCustomerId"
-              label="Source Customer — compulsory"
-              placeholder="Select the Customer"
-              options={customers}
-            />
           )}
 
           <Field label="Assigned to">
@@ -755,15 +767,11 @@ function CreateEnquiryDialog({
 
           {/* A remark is a sentence, not a field width — it takes the row. */}
           <div className="sm:col-span-2">
-            <Field label="Remark — optional">
+            <Field label="Remark">
               <Input name="remark" className="h-9 text-xs" />
             </Field>
           </div>
         </div>
-
-        <p className="text-[11px] text-muted-foreground">
-          Source records how the Enquiry arrived — commission follows the Booking&rsquo;s Sold By.
-        </p>
 
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>

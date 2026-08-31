@@ -6,17 +6,11 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Eye, Plus, Share2, Copy } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, Plus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { formatIst, istDay, type StaffRole, formatIstDate } from "@/lib/tasks";
@@ -28,14 +22,11 @@ import {
   loadBankDetails,
   loadMemberDetail,
   revealBankAccountAction,
-  setCommissionHoldAction,
-  setMemberStatusAction,
-  updateMemberReraAction,
-  generateMemberAutoLoginLinkAction,
   type ActionResult,
   type BankDetailView,
   type MemberDetail,
 } from "./actions";
+import { PersonPicker } from "@/components/person-picker";
 
 /** Filters sit inline and size to their content, unlike a form field. */
 const filterClass =
@@ -129,19 +120,6 @@ export default function MembersClient({
   const [openId, setOpenId] = React.useState<string | null>(null);
   const [detail, setDetail] = React.useState<MemberDetail | null>(null);
   const [banks, setBanks] = React.useState<BankDetailView[]>([]);
-
-  async function copyInviteText(memberId: string, name: string) {
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const res = await generateMemberAutoLoginLinkAction(memberId);
-
-    const link = res.ok && res.linkPath ? `${origin}${res.linkPath}` : `${origin}/portal/login?loginId=${memberId}`;
-    const text = `🌟 Welcome to 3% Real Estate Club Member Portal!\n\nHi ${name}, your Member account (${memberId}) is active.\n\n🔗 Instant Auto-Login Link (Direct Portal Access):\n${link}\n\n🆔 Member ID: ${memberId}\n🔑 Initial Password: ChangeMe#2026\n\nClick the link above to log in automatically and access your portal!`;
-
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(text);
-      setNotice({ kind: "ok", text: `Copied instant auto-login link for ${memberId} (${name}) to clipboard!` });
-    }
-  }
 
   const visible = rows.filter(
     (r) =>
@@ -258,26 +236,32 @@ export default function MembersClient({
           <table className="w-full min-w-[62rem] border-collapse text-xs">
             <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr className="border-b border-border">
-                <th className="px-3 py-1.5">Member</th>
-                <th className="w-[8rem] px-3 py-1.5">Mobile · City</th>
+                <th className="w-[11rem] px-3 py-1.5">Member</th>
+                <th className="w-[9rem] px-3 py-1.5">Mobile · City</th>
                 <th className="w-[11rem] px-3 py-1.5">Invited by</th>
-                <th className="w-[9rem] px-3 py-1.5">Position</th>
+                <th className="w-[10rem] px-3 py-1.5">Position</th>
+                <th className="px-3 py-1.5">Member since</th>
                 <th className="w-[10rem] px-3 py-1.5">RERA</th>
-                <th className="w-[8rem] px-3 py-1.5">Status</th>
-                <th className="w-[6.5rem] px-3 py-1.5 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={6} className="px-3 py-10 text-center text-sm text-muted-foreground">
                     No Members match these filters.
                   </td>
                 </tr>
               )}
               {visible.map((row) => (
                 <React.Fragment key={row.id}>
-                  <tr className="border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1">
+                  <tr
+                    className={`border-b border-border/60 align-middle leading-tight last:border-0 [&>td]:px-3 [&>td]:py-1 ${
+                      row.status === "ACTIVE"
+                        ? "hover:bg-secondary/50"
+                        : "bg-red-500/5 text-red-700 hover:bg-red-500/10"
+                    }`}
+                    title={row.status === "ACTIVE" ? undefined : "Deactivated"}
+                  >
                     <td>
                       <button
                         type="button"
@@ -292,6 +276,14 @@ export default function MembersClient({
                           {row.name}
                         </Link>
                       </span>
+                      {row.commissionHold && (
+                        <span className="block text-[11px] text-amber-800">Commission Hold</span>
+                      )}
+                      {row.portalStatus === "DISABLED" && (
+                        <span className="block text-[11px] text-muted-foreground">
+                          Portal disabled
+                        </span>
+                      )}
                     </td>
                     <td className="whitespace-nowrap font-mono">
                       {row.mobile}
@@ -321,6 +313,20 @@ export default function MembersClient({
                         {row.invitedCount} invited · {row.introducedCount} introduced
                       </span>
                     </td>
+                    <td className="whitespace-nowrap">
+                      {row.activationDate ? (
+                        <>
+                          {formatIstDate(row.activationDate)}
+                          {row.experience && (
+                            <span className="block text-[11px] text-muted-foreground">
+                              {row.experience}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">Not activated</span>
+                      )}
+                    </td>
                     <td>
                       <Badge
                         variant={
@@ -332,74 +338,11 @@ export default function MembersClient({
                       >
                         {RERA_LABEL[row.reraStatus] ?? row.reraStatus}
                       </Badge>
-                      {row.reraExpiryDate && (
-                        <span className="block text-[11px] text-muted-foreground">
-                          Expires {formatIstDate(row.reraExpiryDate)}
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      <Badge variant={row.status === "ACTIVE" ? "success" : "outline"}>
-                        {row.status === "ACTIVE" ? "Active" : "Deactivated"}
-                      </Badge>
-                      {row.commissionHold && (
-                        <span className="block text-[11px] text-amber-800">Commission Hold</span>
-                      )}
-                      {row.portalStatus === "DISABLED" && (
-                        <span className="block text-[11px] text-muted-foreground">
-                          Portal disabled
-                        </span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap text-right">
-                      {/* Four ghost labels in a row read as a sentence, not as
-                          four things you can do. One named trigger, the choices
-                          behind it — the shape the Plot and Enquiry rows use. */}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="xs" className="w-20">
-                            Update
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {row.status === "ACTIVE" && (
-                            <DropdownMenuItem onSelect={() => copyInviteText(row.memberId, row.name)}>
-                              Copy invite link
-                            </DropdownMenuItem>
-                          )}
-                          {permissions.activate && (
-                            <DropdownMenuItem onSelect={() => setDialog({ kind: "RERA", row })}>
-                              Update RERA
-                            </DropdownMenuItem>
-                          )}
-                          {permissions.deactivate && (
-                            <DropdownMenuItem
-                              onSelect={() =>
-                                setDialog({ kind: "HOLD", row, hold: !row.commissionHold })
-                              }
-                            >
-                              {row.commissionHold ? "Remove Commission Hold" : "Apply Commission Hold"}
-                            </DropdownMenuItem>
-                          )}
-                          {permissions.deactivate && (
-                            <DropdownMenuItem
-                              onSelect={() =>
-                                setDialog({ kind: "STATUS", row, active: row.status !== "ACTIVE" })
-                              }
-                              className={
-                                row.status === "ACTIVE" ? "text-red-700 focus:text-red-700" : ""
-                              }
-                            >
-                              {row.status === "ACTIVE" ? "Deactivate Member" : "Reactivate Member"}
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
                     </td>
                   </tr>
                   {openId === row.id && (
                     <tr>
-                      <td colSpan={7} className="px-1 pb-3">
+                      <td colSpan={6} className="px-1 pb-3">
                         <MemberDetailPanel
                           row={row}
                           detail={detail}
@@ -428,82 +371,6 @@ export default function MembersClient({
         />
       )}
 
-      {dialog?.kind === "STATUS" && (
-        <MemberDialog
-          title={dialog.active ? "Reactivate Member" : "Deactivate Member"}
-          row={dialog.row}
-          consequence={
-            dialog.active
-              ? "Portal access is restored, the Member may act again, and unpaid commission eligibility is rechecked rather than assumed. Network positions are unchanged."
-              : "Portal access stops immediately, no new Member Enquiries, Hold Requests or Member-linked Booking Requests may be created, and every unpaid commission goes On Hold — Member Deactivated. Paid and Paid Early records stay historical, and Network positions stay exactly as they are."
-          }
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(f) =>
-            run(() =>
-              setMemberStatusAction(dialog.row.id, dialog.active, String(f.get("reason")), newKey())
-            )
-          }
-        />
-      )}
-
-      {dialog?.kind === "HOLD" && (
-        <MemberDialog
-          title={dialog.hold ? "Apply Commission Hold" : "Remove Commission Hold"}
-          row={dialog.row}
-          consequence={
-            dialog.hold
-              ? "Every unpaid commission record for this Member goes On Hold. Paid and Paid Early history is untouched."
-              : "Affected records are reassessed and the same Accounts task resumes rather than a duplicate being created."
-          }
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(f) =>
-            run(() =>
-              setCommissionHoldAction(dialog.row.id, dialog.hold, String(f.get("reason")), newKey())
-            )
-          }
-        />
-      )}
-
-      {dialog?.kind === "RERA" && (
-        <Modal
-          title={`RERA — ${dialog.row.memberId}`}
-          description="Registered or Not Applicable satisfies the commission condition. Pending and Expired hold it."
-          onClose={() => setDialog(null)}
-        >
-          <form
-            className="space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              run(() =>
-                updateMemberReraAction(
-                  {
-                    memberProfileId: dialog.row.id,
-                    status: String(f.get("reraStatus")) as "PENDING",
-                    reraNumber: String(f.get("reraNumber") ?? ""),
-                    expiryDate: String(f.get("reraExpiryDate") ?? ""),
-                    notApplicableReason: String(f.get("reraNotApplicableReason") ?? ""),
-                  },
-                  newKey()
-                )
-              );
-            }}
-          >
-            <ReraFields row={dialog.row} />
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setDialog(null)}>
-                Back
-              </Button>
-              <Button type="submit" size="sm" disabled={busy}>
-                {busy ? "Processing…" : "Save"}
-              </Button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
       {dialog?.kind === "BANK_ENTER" && (
         <Modal
           title={`Bank Details — ${dialog.row.memberId}`}
@@ -521,6 +388,7 @@ export default function MembersClient({
                     personId: dialog.row.personId,
                     accountHolder: String(f.get("accountHolder")),
                     bankName: String(f.get("bankName")),
+                    branchName: String(f.get("branchName") ?? ""),
                     accountNumber: String(f.get("accountNumber")),
                     ifsc: String(f.get("ifsc")),
                   },
@@ -532,15 +400,20 @@ export default function MembersClient({
             <Field label="Account Holder">
               <Input name="accountHolder" required />
             </Field>
-            <Field label="Bank Name">
-              <Input name="bankName" required />
-            </Field>
-            <Field label="Account Number">
-              <Input name="accountNumber" required inputMode="numeric" />
-            </Field>
-            <Field label="IFSC">
-              <Input name="ifsc" required placeholder="HDFC0001234" />
-            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Bank Name">
+                <Input name="bankName" required />
+              </Field>
+              <Field label="Branch Name">
+                <Input name="branchName" required />
+              </Field>
+              <Field label="Account Number">
+                <Input name="accountNumber" required inputMode="numeric" />
+              </Field>
+              <Field label="IFSC">
+                <Input name="ifsc" required placeholder="HDFC0001234" />
+              </Field>
+            </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setDialog(null)}>
                 Back
@@ -864,7 +737,7 @@ function MemberDetailPanel({
 /* ---------------------------------------------------------------- dialogs */
 
 /** DESIGN §5.1 — record identifier, exact action, consequences, compulsory reason. */
-function MemberDialog({
+export function MemberDialog({
   title,
   row,
   consequence,
@@ -873,7 +746,7 @@ function MemberDialog({
   onSubmit,
 }: {
   title: string;
-  row: MemberRowView;
+  row: { memberId: string; name: string };
   consequence: string;
   busy: boolean;
   onClose: () => void;
@@ -910,8 +783,16 @@ function MemberDialog({
   );
 }
 
+/** What a Member's RERA state is made of, wherever it is edited. */
+export type MemberRera = {
+  reraStatus: string;
+  reraNumber: string | null;
+  reraExpiryDate: string | null;
+  reraNotApplicableReason: string | null;
+};
+
 /** The RERA block, shared by activation and the standalone update. */
-function ReraFields({ row }: { row?: MemberRowView }) {
+export function ReraFields({ row }: { row?: MemberRera }) {
   const [status, setStatus] = React.useState(row?.reraStatus ?? "PENDING");
 
   return (
@@ -1038,27 +919,23 @@ function ActivateMemberDialogForm({
       >
         {personMode === "existing" ? (
           <Field label="Person">
-            <select name="personId" required className={inputClass} defaultValue="">
-              <option value="" disabled>
-                Select a Person
-              </option>
-              {activatable.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+            <PersonPicker
+              name="personId"
+              required
+              placeholder="Search a Person by name or mobile"
+              options={activatable}
+            />
           </Field>
         ) : (
           <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
             <Field label="Full Name">
               <Input name="fullName" required placeholder="e.g. Samir Sain" />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Primary Mobile">
                 <Input name="mobile" required placeholder="9876543210" inputMode="tel" />
               </Field>
-              <Field label="City (optional)">
+              <Field label="City">
                 <Input name="city" placeholder="Jaipur" />
               </Field>
             </div>
@@ -1066,16 +943,13 @@ function ActivateMemberDialogForm({
         )}
 
         <Field label="Invited By — position and rate band are taken under this Member">
-          <select name="invitedByMemberId" className={inputClass} defaultValue="">
-            <option value="">No inviting Member (Root Member)</option>
-            {rows
+          <PersonPicker
+            name="invitedByMemberId"
+            placeholder="Root Member — or search by name or Member ID"
+            options={rows
               .filter((r) => r.status === "ACTIVE")
-              .map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.memberId} · {r.name}
-                </option>
-              ))}
-          </select>
+              .map((r) => ({ id: r.id, label: `${r.memberId} · ${r.name}` }))}
+          />
         </Field>
         <ReraFields />
         <div className="flex justify-end gap-2 pt-2">

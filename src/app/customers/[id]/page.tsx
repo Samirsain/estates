@@ -5,12 +5,14 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
+import { can } from "@/lib/security/permissions";
 import { maskAadhaar, maskMobile, maskPan } from "@/lib/security/identity";
 import { experienceSince } from "@/lib/domain/commission";
 import { formatIst } from "@/lib/tasks";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { PersonDetailsEditor } from "@/components/person-details-editor";
 import {
   ArrowLeft,
   ShieldCheck,
@@ -22,6 +24,18 @@ import {
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+/** Stored at UTC midnight, so it is read back in UTC: IST would print 11 Apr. */
+const bornOn = (d: Date | null) =>
+  d
+    ? d.toLocaleDateString("en-IN", {
+        timeZone: "UTC",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : "—";
+
 
 /**
  * PENDING → "Pending", NOT_AVAILABLE → "Not available". AVAILABLE says
@@ -214,14 +228,35 @@ export default async function CustomerDetailPage({
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
       <div className="mx-auto max-w-4xl space-y-4">
-        {/* Back */}
-        <Link
-          href="/customers"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Customers
-        </Link>
+        {/* Back, and the one thing this page can change: the facts below it.
+            Aadhaar, PAN and bank keep their own guarded flows. */}
+        <div className="flex items-center justify-between gap-3">
+          <Link
+            href="/customers"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to Customers
+          </Link>
+          {can(actor.role, "PERSON_DETAILS_EDIT", actor.extraPermissions) && (
+            <PersonDetailsEditor
+              personId={customer.personId}
+              bank={banks[0] ?? null}
+              canEnterBank={can(actor.role, "BANK_DETAILS_ENTER", actor.extraPermissions)}
+              person={{
+                fullName: customer.person.fullName,
+                mobile: customer.person.primaryMobile,
+                altMobile: customer.person.altMobile ?? "",
+                email: customer.person.email ?? "",
+                city: customer.person.city ?? "",
+                addressLine: customer.person.addressLine ?? "",
+                dateOfBirth: customer.person.dateOfBirth
+                  ? customer.person.dateOfBirth.toISOString().slice(0, 10)
+                  : "",
+              }}
+            />
+          )}
+        </div>
 
         {/* Hero */}
         <Card className="p-4 space-y-4">
@@ -284,7 +319,11 @@ export default async function CustomerDetailPage({
               <Row label="Alt Mobile" value={maskMobile(customer.person.altMobile)} mono />
             )}
             <Row label="Email" value={customer.person.email ?? "—"} />
+            {/* A blank Date of Birth or Address is shown rather than hidden:
+                the gap is the reason Edit details exists. */}
+            <Row label="Date of Birth" value={bornOn(customer.person.dateOfBirth)} />
             <Row label="City" value={customer.person.city ?? "—"} />
+            <Row label="Address" value={customer.person.addressLine ?? "—"} />
           </Section>
 
           <Section title="Identity" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
@@ -350,6 +389,7 @@ export default async function CustomerDetailPage({
                   />
                   <Row label="IFSC" value={b.ifsc} mono />
                   <Row label="Bank" value={b.bankName} />
+                  <Row label="Branch" value={b.branchName ?? "—"} />
                   <Row label="Holder" value={b.accountHolder} />
                 </div>
               ))

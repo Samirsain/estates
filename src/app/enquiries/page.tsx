@@ -45,7 +45,14 @@ export default async function EnquiriesPage() {
     }),
     db.person.findMany({
       where: { mergeStatus: { not: "MERGED_AWAY" } },
-      select: { id: true, fullName: true, primaryMobile: true, city: true },
+      select: {
+        id: true,
+        fullName: true,
+        primaryMobile: true,
+        city: true,
+        customerProfile: { select: { customerId: true } },
+        memberProfile: { select: { memberId: true } },
+      },
       orderBy: { fullName: "asc" },
       take: 300,
     }),
@@ -78,7 +85,8 @@ export default async function EnquiriesPage() {
     mobileMasked: maskMobile(e.person.primaryMobile),
     city: e.person.city ?? "—",
     project: e.project.name,
-    plot: e.plot ? `${e.plot.plotType.replaceAll("_", " ")} ${e.plot.plotNumber}` : "General",
+    plot: e.plot ? e.plot.plotNumber : "General",
+    plotType: e.plot ? e.plot.plotType : null,
     plotRequirement: e.plotRequirement,
     source: e.source,
     // Whoever the Enquiry came through, read the way an ID column reads: the
@@ -120,6 +128,8 @@ export default async function EnquiriesPage() {
         id: p.id,
         fullName: p.fullName,
         mobileMasked: maskMobile(p.primaryMobile),
+        customerId: p.customerProfile?.customerId ?? null,
+        memberId: p.memberProfile?.memberId ?? null,
       }))}
       members={members.map((m) => ({ id: m.id, label: `${m.memberId} · ${m.person.fullName}` }))}
       customers={customers.map((c) => ({ id: c.id, label: `${c.customerId} · ${c.person.fullName}` }))}

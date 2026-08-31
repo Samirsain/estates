@@ -1,6 +1,7 @@
 // Customers — DESIGN.md §12; main-PRD §6.
-// The Customer ID is created at the first Booking Request (PRD §5.2), so this
-// list is exactly the people who have reached that point.
+// The Customer ID is created at the first Hold, or at the first Booking Request
+// when no Hold came before it (PRD §5.2), so this list is exactly the people
+// who have reached that point.
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";

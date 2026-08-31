@@ -105,6 +105,37 @@
     letter-spacing: -0.374px;
   }
 
+  /*
+   * A field must never be wider than the box it is in.
+   *
+   * A flex or grid child sizes to `min-width: auto` — its own intrinsic width —
+   * before any `w-full` is applied, and a date input's intrinsic width is the
+   * rendered date plus its calendar button. WebKit makes that noticeably wider
+   * than the same field in Chrome on Windows, so a two-column row of fields
+   * that fits on the machine it was written on pushes past the dialog on a
+   * MacBook. Setting the floor to zero lets every field shrink to its share of
+   * the row, which is what the widths above already say it should be.
+   */
+  input,
+  select,
+  textarea {
+    min-width: 0;
+  }
+
+  /*
+   * Safari renders the value inside a date field with its own padding and
+   * centres it, which both widens the field and makes a row of them look
+   * ragged against the text fields beside them.
+   */
+  input::-webkit-date-and-time-value {
+    text-align: left;
+    min-width: 0;
+  }
+
+  input::-webkit-datetime-edit {
+    padding: 0;
+  }
+
   /* Headlines take the Display face and its negative tracking. */
   h1 {
     font-size: 40px;

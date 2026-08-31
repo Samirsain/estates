@@ -6,7 +6,9 @@ import { can } from "@/lib/security/permissions";
 import { buildPlcSnapshot, shortSides } from "@/lib/domain/inventory";
 import { plcRules } from "@/lib/services/plc-service";
 import { listPendingHoldRequests } from "@/lib/services/hold-service";
+import { listBookings } from "@/lib/services/booking-service";
 import { listPlots } from "@/lib/services/inventory-service";
+import { bookingRow, loadBookingFormData } from "@/app/bookings/load";
 import PlotsClient, { type HoldRequestView, type PlotRowView } from "./plots-client";
 
 export const dynamic = "force-dynamic";
@@ -22,20 +24,24 @@ export default async function PlotsPage({
   // followed it.
   const { project: initialProject } = await searchParams;
 
-  const [plots, projects, people, requests] = await Promise.all([
+  const [plots, projects, requests, bookingForm, awaitingApproval] = await Promise.all([
     listPlots(),
     db.project.findMany({
       include: { plcRuleVersions: { where: { status: "PUBLISHED" }, include: { components: true }, take: 1 } },
       orderBy: { name: "asc" },
     }),
-    db.person.findMany({
-      where: { mergeStatus: { not: "MERGED_AWAY" } },
-      select: { id: true, fullName: true, primaryMobile: true },
-      orderBy: { fullName: "asc" },
-      take: 200,
-    }),
     listPendingHoldRequests(),
+    // Booking starts here now, so what the Booking form needs arrives here too
+    // — the same loader the Bookings screen uses, so one bookable-Plot rule.
+    loadBookingFormData(),
+    listBookings({ status: "REQUEST_PENDING" }),
   ]);
+
+  // A Plot waiting for approval has exactly one pending request, so the row can
+  // carry it and Accounts can decide without leaving the inventory.
+  const pendingBookings = Object.fromEntries(
+    awaitingApproval.map((b) => [b.plotId, bookingRow(b)])
+  );
 
   // PLC spec §15.2 — the effective PLC for Available / Not Active inventory is
   // derived on read from the published version, never stored, so publishing a
@@ -182,7 +188,11 @@ export default async function PlotsPage({
           remark: c.remark || null,
         })),
       }))}
-      people={people}
+      people={bookingForm.people}
+      members={bookingForm.members}
+      bookable={bookingForm.bookable}
+      pendingBookings={pendingBookings}
+      staffRef={actor.staffAccountId}
       permissions={{
         makeAvailable: can(actor.role, "PLOT_MAKE_AVAILABLE"),
         hold: can(actor.role, "HOLD_CREATE"),
@@ -190,6 +200,8 @@ export default async function PlotsPage({
         decideExtension: can(actor.role, "HOLD_EXTEND_FURTHER"),
         setup: can(actor.role, "PLOT_SETUP"),
         reviewRequests: can(actor.role, "HOLD_REQUEST_REVIEW"),
+        book: can(actor.role, "BOOKING_REQUEST_SUBMIT"),
+        decideBooking: can(actor.role, "BOOKING_DECIDE"),
       }}
     />
   );

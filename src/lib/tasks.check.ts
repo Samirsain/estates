@@ -6,6 +6,8 @@ import {
   filterTasks,
   findPendingDuplicate,
   formatDimension,
+  formatDue,
+  formatPlotSize,
   istDay,
   istInstant,
   summarise,
@@ -131,5 +133,36 @@ assert.equal(formatDimension("24"), "24'");
 assert.equal(formatDimension("24.000"), "24'");
 // A rounding that lands on twelve inches is the next foot, not 24'12".
 assert.equal(formatDimension("24.999"), "25'");
+
+// One size, one shape, wherever a Plot size is printed. Width first — which is
+// which is said in the column heading, not in every row.
+assert.equal(formatPlotSize("30.250", "20.750"), "30.25 × 20.75 ft");
+assert.equal(formatPlotSize("30", "45.5"), "30 × 45.5 ft");
+// Three stored decimals must not claim a precision the tape never had.
+assert.equal(formatPlotSize("40.000", "23.000"), "40 × 23 ft");
+assert.equal(formatPlotSize("1200.500", "20"), "1,200.5 × 20 ft");
+// An irregular Plot has an area and no sides — the caller prints that instead.
+assert.equal(formatPlotSize(null, "23"), null);
+assert.equal(formatPlotSize("40", null), null);
+assert.equal(formatPlotSize("", ""), null);
+assert.equal(formatPlotSize(undefined, undefined), null);
+// Numbers and Decimal-ish objects arrive from the loaders as either.
+assert.equal(formatPlotSize(40, 23), "40 × 23 ft");
+
+// A due date, as a list has room for it. Fixed instants, so the assertions do
+// not drift with the clock.
+const noon = new Date("2026-08-31T06:30:00.000Z"); // 12:00 PM IST, 31 Aug 2026
+// Due today: the date is the one thing every row of a Today view already says.
+assert.equal(formatDue(new Date("2026-08-31T13:33:00.000Z"), noon), "07:03 PM");
+// Another day this year: the day and the month, no year and no clock.
+assert.equal(formatDue(new Date("2026-09-02T13:33:00.000Z"), noon), "2 Sep");
+assert.equal(formatDue(new Date("2026-08-21T04:00:00.000Z"), noon), "21 Aug");
+// Another year earns the year.
+assert.equal(formatDue(new Date("2025-12-31T09:00:00.000Z"), noon), "31 Dec 2025");
+// The day is the IST day, not the UTC one: 18:35 UTC on the 31st is already
+// past midnight in Kolkata, so it is tomorrow and prints as a date.
+assert.equal(formatDue(new Date("2026-08-31T18:35:00.000Z"), noon), "1 Sep");
+// And the last minute that is still today prints as a time.
+assert.equal(formatDue(new Date("2026-08-31T18:29:00.000Z"), noon), "11:59 PM");
 
 console.log("tasks.check.ts OK");

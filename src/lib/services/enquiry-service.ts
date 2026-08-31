@@ -67,6 +67,24 @@ export async function linkOrCreatePerson(
   });
 }
 
+/**
+ * PRD §5.2 — the Customer ID is permanent, never reused, and retained even if
+ * whatever created it is later rejected. It is issued at the first moment the
+ * company commits inventory to a Person: a Hold, or a Booking Request where no
+ * Hold came first.
+ *
+ * It sits here rather than in booking-service because hold-service needs it and
+ * cannot import that module — booking-service already imports hold-service.
+ */
+export async function ensureCustomerProfile(tx: Tx, personId: string) {
+  const existing = await tx.customerProfile.findUnique({ where: { personId } });
+  if (existing) return existing;
+
+  return tx.customerProfile.create({
+    data: { personId, customerId: await nextReference(tx, "CUS", "Customer") },
+  });
+}
+
 /** PRD §23.2 — a Member-submitted Enquiry is assigned to CRM, never to the Member. */
 export async function defaultCrmAssignee(tx: Tx) {
   // ponytail: first active CRM account. Swap for a real round-robin or a

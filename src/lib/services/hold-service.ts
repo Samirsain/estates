@@ -1,6 +1,7 @@
 // Hold, Hold extension and Member Hold Request services.
 // PRD.md §8, §15; ARCHITECTURE.md §7.
 
+import type { SoldByType } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
   DEFAULT_CALENDAR,
@@ -13,8 +14,10 @@ import {
 } from "@/lib/domain/holds";
 import { canAllocate, plotReturnState } from "@/lib/domain/inventory";
 import { blocked, lockPlot, runCommand, type Tx } from "./command";
+import { ensureCustomerProfile, linkOrCreatePerson } from "./enquiry-service";
 import { freezePlcSnapshot, loadPlotForPlc } from "./plc-service";
 import { closeTasksFor } from "./task-service";
+import { validateSoldBy } from "./sold-by";
 
 /** PRD §8.2 — counts Active Holds, Waiting for Booking Approval and Pending requests. */
 export async function countOpenPositions(tx: Tx, personId: string) {
@@ -52,9 +55,21 @@ export type CreateHoldInput = {
   actorRole: string;
   plotId: string;
   /** The actual Person. Anonymous Member Holds are prohibited (PRD §8.1). */
-  personId: string;
+  personId?: string | null;
+  /**
+   * A buyer who is not in the system yet, typed on the Hold form. Resolved
+   * inside the transaction by the same match-or-create the Enquiry form uses,
+   * so a Hold never invents a second Person for an existing name and mobile.
+   */
+  newPerson?: { fullName: string; mobile: string; city?: string } | null;
   enquiryId?: string | null;
   sourceMemberId?: string | null;
+  /**
+   * Who is credited for the Hold - the Booking's Sold By, asked at the Hold.
+   * The 3% Club names nobody; a Member or a Customer names one Person.
+   */
+  sourcedByType?: SoldByType;
+  sourcedByPersonId?: string | null;
   responsibleStaffId?: string | null;
   remark?: string;
 };
@@ -66,7 +81,7 @@ export type CreateHoldInput = {
  */
 async function placeHold(
   tx: Tx,
-  input: Omit<CreateHoldInput, "idempotencyKey" | "actorRole">
+  input: Omit<CreateHoldInput, "idempotencyKey" | "actorRole"> & { personId: string }
 ) {
   if (!input.personId) blocked("A Hold must identify the actual Customer/Person.");
   await lockPlot(tx, input.plotId);
@@ -75,6 +90,14 @@ async function placeHold(
   const plot = await loadPlotForPlc(tx, input.plotId);
   const allocatable = canAllocate(plot.status, plot.restriction, plot.project.status);
   if (!allocatable.ok) blocked(allocatable.reason);
+
+  // A Hold is the first moment inventory is committed to somebody, so this is
+  // where they become a Customer — including a walk-in typed on the form and a
+  // buyer arriving through a Member Hold Request, since both land here.
+  await ensureCustomerProfile(tx, input.personId);
+
+  const sourcedByType = input.sourcedByType ?? "THREE_PERCENT_CLUB";
+  await validateSoldBy(tx, sourcedByType, input.sourcedByPersonId ?? null);
 
   const positions = await countOpenPositions(tx, input.personId);
   const room = checkOpenPositions(positions);
@@ -89,6 +112,8 @@ async function placeHold(
       personId: input.personId,
       enquiryId: input.enquiryId ?? null,
       sourceMemberId: input.sourceMemberId ?? null,
+      sourcedByType,
+      sourcedByPersonId: input.sourcedByPersonId ?? null,
       responsibleStaffId: input.responsibleStaffId ?? null,
       startsAt,
       expiresAt: holdExpiry(startsAt),
@@ -122,17 +147,34 @@ export async function createHold(input: CreateHoldInput) {
       operation: "HOLD_CREATE",
       actorRef: input.actorRef,
       actorRole: input.actorRole,
-      payload: { plotId: input.plotId, personId: input.personId },
+      payload: {
+        plotId: input.plotId,
+        personId: input.personId ?? input.newPerson?.mobile ?? null,
+        sourcedByType: input.sourcedByType ?? "THREE_PERCENT_CLUB",
+        sourcedByPersonId: input.sourcedByPersonId ?? null,
+      },
     },
     async (tx) => {
-      const hold = await placeHold(tx, input);
+      if (!input.personId && !input.newPerson) {
+        blocked("A Hold must identify the actual Customer/Person.");
+      }
+      const personId = input.personId
+        ? input.personId
+        : (await linkOrCreatePerson(tx, input.newPerson!)).id;
+      const hold = await placeHold(tx, { ...input, personId });
       return {
         result: { holdId: hold.id, expiresAt: hold.expiresAt.toISOString() },
         audit: {
           entity: "Hold",
           entityId: hold.id,
           action: "HOLD_CREATED",
-          after: { plotId: input.plotId, personId: input.personId, expiresAt: hold.expiresAt },
+          after: {
+            plotId: input.plotId,
+            personId,
+            sourcedByType: hold.sourcedByType,
+            sourcedByPersonId: hold.sourcedByPersonId,
+            expiresAt: hold.expiresAt,
+          },
           reason: input.remark,
         },
       };
@@ -518,11 +560,19 @@ export async function decideHoldRequest(args: {
         };
       }
 
+      // A request that came through the portal was got done by that Member,
+      // so it is credited to them instead of defaulting to the 3% Club.
+      const member = await tx.memberProfile.findUniqueOrThrow({
+        where: { id: request.memberId },
+        select: { personId: true },
+      });
       const hold = await placeHold(tx, {
         actorRef: args.actorRef,
         plotId: request.plotId,
         personId: request.personId,
         sourceMemberId: request.memberId,
+        sourcedByType: "MEMBER",
+        sourcedByPersonId: member.personId,
         remark: `Approved Member Hold Request — ${args.note}`,
       });
 

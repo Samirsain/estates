@@ -10,11 +10,13 @@ import { listBookings } from "@/lib/services/booking-service";
 import { locationChargeLabel } from "@/lib/domain/inventory";
 import type { BookableView, BookingRowView } from "./bookings-client";
 
-export async function loadBookingsProps(openForPlot: string | null) {
-  const actor = await requireStaff();
-
-  const [bookings, bookable, people, members] = await Promise.all([
-    listBookings(),
+/**
+ * What the Booking form needs wherever it opens — the Bookings screen, and Plot
+ * Inventory's own Book button. It lives here rather than in two loaders so the
+ * bookable-Plot rule is written once.
+ */
+export async function loadBookingFormData() {
+  const [bookable, people, members] = await Promise.all([
     // A Booking Request starts from an Available Plot or from a live Hold
     // (PRD §11.1). Anything else is already committed.
     db.plot.findMany({
@@ -38,6 +40,7 @@ export async function loadBookingsProps(openForPlot: string | null) {
         fullName: true,
         primaryMobile: true,
         customerProfile: { select: { customerId: true } },
+        memberProfile: { select: { memberId: true } },
       },
       orderBy: { fullName: "asc" },
       take: 300,
@@ -48,33 +51,6 @@ export async function loadBookingsProps(openForPlot: string | null) {
       orderBy: { memberId: "asc" },
     }),
   ]);
-
-  const rows: BookingRowView[] = bookings.map((b) => ({
-    id: b.id,
-    requestNo: b.requestNo,
-    bookingNumber: b.bookingNumber,
-    project: b.project.name,
-    plotNumber: b.plot.plotNumber,
-    plotType: b.plot.plotType,
-    primaryCustomer: b.primaryPerson.fullName,
-    primaryCustomerPersonId: b.primaryPersonId,
-    soldByType: b.soldByType,
-    soldByName: b.soldByPerson?.fullName ?? null,
-    soldByCode:
-      b.soldByType === "MEMBER"
-        ? (b.soldByPerson?.memberProfile?.memberId ?? null)
-        : b.soldByType === "CUSTOMER"
-          ? (b.soldByPerson?.customerProfile?.customerId ?? null)
-          : null,
-    soldByPersonId: b.soldByPersonId ?? null,
-    status: b.status,
-    activeProcess: b.activeProcess,
-    paymentReceivedPercent: b.paymentReceivedPercent.toFixed(2),
-    bookingDate: b.bookingDate.toISOString(),
-    submittedAt: b.submittedAt.toISOString(),
-    submittedByRef: b.submittedByRef,
-    pendingReviewVersion: b.reviewVersions[0]?.version ?? null,
-  }));
 
   const bookablePlots: BookableView[] = bookable.map((p) => ({
     id: p.id,
@@ -94,24 +70,65 @@ export async function loadBookingsProps(openForPlot: string | null) {
   }));
 
   return {
-    role: actor.role,
-    actorName: actor.name,
-    staffAccountId: actor.staffAccountId,
-    staffRef: actor.staffAccountId,
-    rows,
-    openForPlot,
     bookable: bookablePlots,
     people: people.map((p) => ({
       id: p.id,
       fullName: p.fullName,
       mobileMasked: maskMobile(p.primaryMobile),
       customerId: p.customerProfile?.customerId ?? null,
+      memberId: p.memberProfile?.memberId ?? null,
     })),
     members: members.map((m) => ({
       personId: m.personId,
       memberId: m.memberId,
       fullName: m.person.fullName,
     })),
+  };
+}
+
+/** One Booking as every list prints it. */
+export const bookingRow = (b: Awaited<ReturnType<typeof listBookings>>[number]): BookingRowView => ({
+    id: b.id,
+    requestNo: b.requestNo,
+    bookingNumber: b.bookingNumber,
+    project: b.project.name,
+    plotNumber: b.plot.plotNumber,
+    plotType: b.plot.plotType,
+    plotWidthFt: b.plot.widthFt?.toString() ?? null,
+    plotLengthFt: b.plot.lengthFt?.toString() ?? null,
+    plotAreaSqFt: b.plot.areaSqFt.toString(),
+    primaryCustomer: b.primaryPerson.fullName,
+    primaryCustomerId: b.primaryPerson.customerProfile?.customerId ?? null,
+    primaryCustomerPersonId: b.primaryPersonId,
+    soldByType: b.soldByType,
+    soldByName: b.soldByPerson?.fullName ?? null,
+    soldByCode:
+      b.soldByType === "MEMBER"
+        ? (b.soldByPerson?.memberProfile?.memberId ?? null)
+        : b.soldByType === "CUSTOMER"
+          ? (b.soldByPerson?.customerProfile?.customerId ?? null)
+          : null,
+    soldByPersonId: b.soldByPersonId ?? null,
+    status: b.status,
+    activeProcess: b.activeProcess,
+    paymentReceivedPercent: b.paymentReceivedPercent.toFixed(2),
+    bookingDate: b.bookingDate.toISOString(),
+    submittedAt: b.submittedAt.toISOString(),
+    submittedByRef: b.submittedByRef,
+    pendingReviewVersion: b.reviewVersions[0]?.version ?? null,
+});
+
+export async function loadBookingsProps() {
+  const actor = await requireStaff();
+  const [bookings, form] = await Promise.all([listBookings(), loadBookingFormData()]);
+
+  return {
+    role: actor.role,
+    actorName: actor.name,
+    staffAccountId: actor.staffAccountId,
+    staffRef: actor.staffAccountId,
+    rows: bookings.map(bookingRow),
+    ...form,
     permissions: {
       submit: can(actor.role, "BOOKING_REQUEST_SUBMIT"),
       decide: can(actor.role, "BOOKING_DECIDE"),

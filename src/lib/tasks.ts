@@ -80,6 +80,31 @@ export function formatIstDate(at: Date | string): string {
   return dateFmt.format(new Date(at));
 }
 
+/*
+ * Month names spelled out rather than formatted. Intl's short month is not
+ * stable across ICU versions — the same en-GB build that printed "Sep"
+ * prints "Sept" a Node release later — and a date that changes shape when the
+ * runtime is upgraded is not a date anyone can write a check against.
+ */
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * When a task is due, as a list has room for it.
+ *
+ * Due today, the date says nothing the list has not already said — every row
+ * of a Today view carries it — so only the clock time is printed. Any other
+ * day prints the day and month, and the year only when it is not this one.
+ * The full instant stays on the record itself.
+ */
+export function formatDue(at: Date | string, now: Date): string {
+  const d = new Date(at);
+  const day = istDay(d);
+  if (day === istDay(now)) return timeFmt.format(d).replace(/ /g, " ");
+  const [year, month, date] = day.split("-");
+  const dayMonth = `${Number(date)} ${MONTHS[Number(month) - 1]}`;
+  return year === istDay(now).slice(0, 4) ? dayMonth : `${dayMonth} ${year}`;
+}
+
 /** DD/MM/YYYY hh:mm AM/PM — DESIGN §18, read on a 12-hour clock. */
 export function formatIst(at: Date | string): string {
   const d = new Date(at);
@@ -132,6 +157,33 @@ export function formatDimension(value: string | number): string {
   const inches = Math.round((Number(value) - ft) * 12);
   if (inches === 12) return `${ft + 1}'`;
   return inches ? `${ft}'${inches}"` : `${ft}'`;
+}
+
+/**
+ * One Plot size, everywhere a Plot size is printed: 30.25 × 20.75 ft.
+ *
+ * Width first, always. Which is which is said once in the column heading
+ * rather than twice in every row — fifty rows carrying "W" and "L" is fifty
+ * repetitions of something the header already settled.
+ *
+ * The column stores three decimal places, so a 30 ft side arrives as "30.000";
+ * the trailing zeros are dropped because they claim a precision the tape never
+ * had.
+ *
+ * Null for an irregular Plot, which has an area and no sides. What to print
+ * instead is the caller's call: a table cell has room for one word, a detail
+ * panel for the area itself.
+ */
+const trimZeros = (value: string | number): string =>
+  formatQuantity(`${value}`.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, ""));
+
+export function formatPlotSize(
+  widthFt: string | number | null | undefined,
+  lengthFt: string | number | null | undefined
+): string | null {
+  if (widthFt === null || widthFt === undefined || widthFt === "") return null;
+  if (lengthFt === null || lengthFt === undefined || lengthFt === "") return null;
+  return `${trimZeros(widthFt)} × ${trimZeros(lengthFt)} ft`;
 }
 
 export function addIstDays(day: string, days: number): string {
