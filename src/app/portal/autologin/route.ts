@@ -4,7 +4,6 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { recordSecurityEvent } from "@/lib/security/audit";
 import {
   SESSION_COOKIE_MEMBER,
   sessionExpiry,
@@ -61,12 +60,6 @@ export async function GET(request: NextRequest) {
     }
   );
 
-  await recordSecurityEvent({
-    type: "LOGIN_SUCCESS",
-    identifier: account.loginId,
-    ip: request.headers.get("x-forwarded-for") ?? null,
-    detail: "Direct Auto-Login via Magic Link",
-  });
 
   // Check if Terms Acceptance is completed
   const termsAccepted = await db.memberTermsAcceptance.findUnique({

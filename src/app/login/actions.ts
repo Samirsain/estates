@@ -6,7 +6,6 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { recordSecurityEvent } from "@/lib/security/audit";
 import {
   burnPasswordTime,
   hashPassword,
@@ -64,7 +63,6 @@ async function attemptStaffLogin(form: FormData): Promise<Outcome> {
 
   // Rate limiting applies to IP and account identifier (PRD §17.1).
   if ((ip && !rateLimit(`ip:${ip}`, now)) || !rateLimit(`staff:${loginId}`, now)) {
-    await recordSecurityEvent({ type: "LOGIN_FAILURE", identifier: loginId, ip, detail: "Rate limited" });
     return { ok: false, reason: "RATE" };
   }
 
@@ -73,12 +71,10 @@ async function attemptStaffLogin(form: FormData): Promise<Outcome> {
   // Unknown account, disabled account, lockout and wrong password all look the same.
   if (!account || account.status !== "ACTIVE") {
     burnPasswordTime(password);
-    await recordSecurityEvent({ type: "LOGIN_FAILURE", identifier: loginId, ip, detail: "Unknown or disabled account" });
     return { ok: false, reason: "GENERIC" };
   }
   if (isLocked({ failedAttempts: account.failedAttempts, lockedUntil: account.lockedUntil }, now)) {
     burnPasswordTime(password);
-    await recordSecurityEvent({ type: "ACCOUNT_LOCKED", identifier: loginId, ip });
     return { ok: false, reason: "GENERIC" };
   }
 
@@ -88,11 +84,6 @@ async function attemptStaffLogin(form: FormData): Promise<Outcome> {
       now
     );
     await db.staffAccount.update({ where: { id: account.id }, data: next });
-    await recordSecurityEvent({
-      type: next.lockedUntil && next.lockedUntil > now ? "ACCOUNT_LOCKED" : "LOGIN_FAILURE",
-      identifier: loginId,
-      ip,
-    });
     return { ok: false, reason: "GENERIC" };
   }
 
@@ -114,7 +105,6 @@ async function attemptStaffLogin(form: FormData): Promise<Outcome> {
       expiresAt: sessionExpiry(now),
     })
   );
-  await recordSecurityEvent({ type: "LOGIN_SUCCESS", identifier: loginId, ip });
   return { ok: true, to: "/dashboard" };
 }
 
@@ -168,7 +158,6 @@ async function attemptMemberLogin(form: FormData): Promise<Outcome> {
     isLocked({ failedAttempts: account.failedAttempts, lockedUntil: account.lockedUntil }, now)
   ) {
     burnPasswordTime(password);
-    await recordSecurityEvent({ type: "LOGIN_FAILURE", identifier: loginId, ip, detail: "Portal login refused" });
     return { ok: false, reason: "GENERIC" };
   }
 
@@ -178,7 +167,6 @@ async function attemptMemberLogin(form: FormData): Promise<Outcome> {
       now
     );
     await db.portalAccount.update({ where: { id: account.id }, data: next });
-    await recordSecurityEvent({ type: "LOGIN_FAILURE", identifier: loginId, ip });
     return { ok: false, reason: "GENERIC" };
   }
 
@@ -208,12 +196,6 @@ async function attemptMemberLogin(form: FormData): Promise<Outcome> {
         ip,
       },
     });
-    await recordSecurityEvent({
-      type: "LOGIN_SUCCESS",
-      identifier: loginId,
-      ip,
-      detail: `Accepted Terms ${MEMBER_TERMS_VERSION}`,
-    });
   }
 
   await db.portalAccount.update({
@@ -231,7 +213,6 @@ async function attemptMemberLogin(form: FormData): Promise<Outcome> {
       expiresAt: sessionExpiry(now),
     })
   );
-  await recordSecurityEvent({ type: "LOGIN_SUCCESS", identifier: loginId, ip });
   return { ok: true, to: "/portal" };
 }
 
@@ -255,8 +236,7 @@ export async function memberLogin(form: FormData): Promise<void> {
  *
  * The shared recovery phrase stands in for the identity check. A wrong phrase
  * and an unknown Staff Account ID answer identically, or the page becomes an
- * account-name oracle. Same rate-limit buckets as login, and the reset is
- * written to the security log like any other session invalidation.
+ * account-name oracle. Same rate-limit buckets as login.
  */
 export async function forgotStaffPassword(form: FormData): Promise<void> {
   const loginId = String(form.get("loginId") ?? "").trim();
@@ -270,7 +250,6 @@ export async function forgotStaffPassword(form: FormData): Promise<void> {
     redirect(`/login/forgot?error=${reason}&loginId=${encodeURIComponent(loginId)}`);
 
   if ((ip && !rateLimit(`ip:${ip}`, now)) || !rateLimit(`forgot:${loginId}`, now)) {
-    await recordSecurityEvent({ type: "LOGIN_FAILURE", identifier: loginId, ip, detail: "Recovery rate limited" });
     back("RATE");
   }
   if (newPassword !== confirmPassword) back("MATCH");
@@ -283,12 +262,6 @@ export async function forgotStaffPassword(form: FormData): Promise<void> {
   // the two failures cannot be told apart by how long the answer takes.
   const keyOk = verifyRecoveryKey(recoveryKey);
   if (!keyOk || !account || account.status !== "ACTIVE") {
-    await recordSecurityEvent({
-      type: "LOGIN_FAILURE",
-      identifier: loginId,
-      ip,
-      detail: keyOk ? "Recovery refused — unknown or disabled account" : "Recovery refused — wrong recovery key",
-    });
     back("GENERIC");
   }
 
@@ -300,12 +273,6 @@ export async function forgotStaffPassword(form: FormData): Promise<void> {
       sessionVersion: account.sessionVersion + 1,
       ...registerSuccess(),
     },
-  });
-  await recordSecurityEvent({
-    type: "SESSION_INVALIDATED",
-    identifier: account.staffAccountId,
-    ip,
-    detail: "Password set from Forgot password using the recovery key",
   });
 
   redirect(`/login?notice=RESET&loginId=${encodeURIComponent(loginId)}`);

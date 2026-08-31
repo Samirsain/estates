@@ -8,7 +8,7 @@
 
 import { cookies } from "next/headers";
 import { db } from "@/lib/db";
-import { recordAudit, recordSecurityEvent } from "@/lib/security/audit";
+import { recordAudit } from "@/lib/security/audit";
 import { hashPassword, validatePassword, verifyPassword } from "@/lib/security/auth";
 import { currentMember, currentStaff } from "@/lib/security/current-actor";
 import {
@@ -43,11 +43,6 @@ export async function changeOwnPasswordAction(
   if (staff) {
     const account = await db.staffAccount.findUniqueOrThrow({ where: { id: staff.accountId } });
     if (!verifyPassword(currentPassword, account.passwordHash)) {
-      await recordSecurityEvent({
-        type: "LOGIN_FAILURE",
-        identifier: account.staffAccountId,
-        detail: "Password change refused — current password incorrect.",
-      });
       return { ok: false, error: "The current password is incorrect." };
     }
 
@@ -70,11 +65,6 @@ export async function changeOwnPasswordAction(
       action: "PASSWORD_CHANGED",
       reason: "Changed by the account holder.",
     });
-    await recordSecurityEvent({
-      type: "SESSION_INVALIDATED",
-      identifier: account.staffAccountId,
-      detail: "Password changed — every other session signed out.",
-    });
 
     await reissue(SESSION_COOKIE_STAFF, {
       context: "STAFF",
@@ -91,11 +81,6 @@ export async function changeOwnPasswordAction(
     where: { memberProfileId: member!.memberProfileId },
   });
   if (!verifyPassword(currentPassword, portal.passwordHash)) {
-    await recordSecurityEvent({
-      type: "LOGIN_FAILURE",
-      identifier: portal.loginId,
-      detail: "Password change refused — current password incorrect.",
-    });
     return { ok: false, error: "The current password is incorrect." };
   }
 
@@ -116,11 +101,6 @@ export async function changeOwnPasswordAction(
     entityId: portal.id,
     action: "PASSWORD_CHANGED",
     reason: "Changed by the account holder.",
-  });
-  await recordSecurityEvent({
-    type: "SESSION_INVALIDATED",
-    identifier: portal.loginId,
-    detail: "Password changed — every other session signed out.",
   });
 
   await reissue(SESSION_COOKIE_MEMBER, {

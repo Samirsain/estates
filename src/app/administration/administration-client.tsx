@@ -108,15 +108,6 @@ export type AuditView = {
   reason: string | null;
 };
 
-export type SecurityLogView = {
-  id: string;
-  at: string;
-  type: string;
-  identifier: string;
-  ip: string;
-  detail: string;
-};
-
 const newKey = () => `admin-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 export default function AdministrationClient(props: {
@@ -133,7 +124,6 @@ export default function AdministrationClient(props: {
   queuedEnquiries: QueuedEnquiryView[];
   merges: MergeView[];
   audit: AuditView[];
-  securityLogs: SecurityLogView[];
 }) {
   const router = useRouter();
   const [tab, setTab] = React.useState("staff");
@@ -177,9 +167,6 @@ export default function AdministrationClient(props: {
             </TabsTrigger>
             <TabsTrigger value="identity">Aadhaar / PAN</TabsTrigger>
             <TabsTrigger value="audit">Activity History</TabsTrigger>
-            {(props.role === "MD" || props.role === "ADMIN") && (
-              <TabsTrigger value="security">Security Logs</TabsTrigger>
-            )}
           </TabsList>
         </Tabs>
 
@@ -212,9 +199,6 @@ export default function AdministrationClient(props: {
         )}
         {tab === "identity" && <IdentityTab canReveal={props.canRevealIdentity} />}
         {tab === "audit" && <AuditTab rows={props.audit} />}
-        {(props.role === "MD" || props.role === "ADMIN") && tab === "security" && (
-          <SecurityTab rows={props.securityLogs} />
-        )}
       </div>
     </AppShell>
   );
@@ -858,53 +842,6 @@ function AuditTab({ rows }: { rows: AuditView[] }) {
   );
 }
 
-/* ------------------------------------------------------------- security */
-
-function SecurityTab({ rows }: { rows: SecurityLogView[] }) {
-  if (rows.length === 0) {
-    return <Card className="p-4 text-sm text-muted-foreground">No security logs recorded yet.</Card>;
-  }
-
-  return (
-    <Card className="space-y-3 p-4">
-      <h2 className="flex items-center gap-2 text-sm font-semibold">
-        <ShieldOff className="h-4 w-4 text-red-500" /> Security Logs & Alerts
-      </h2>
-      <p className="text-xs text-muted-foreground">
-        Incidents including failed logins, sensitive identity reveals, session invalidations, and emergency account lockouts.
-      </p>
-      <div className="max-h-[32rem] overflow-auto">
-        <table className="w-full text-left text-xs">
-          <thead className="sticky top-0 bg-card text-muted-foreground">
-            <tr>
-              <th className="py-1.5 pr-3 font-medium">When</th>
-              <th className="py-1.5 pr-3 font-medium">Event Type</th>
-              <th className="py-1.5 pr-3 font-medium">Target Identity</th>
-              <th className="py-1.5 pr-3 font-medium">IP Address</th>
-              <th className="py-1.5 pr-3 font-medium">Details</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} className="border-t border-border/40 hover:bg-muted/10">
-                <td className="whitespace-nowrap py-2 pr-4">{formatIst(row.at)}</td>
-                <td className="py-1.5 pr-3">
-                  <Badge variant={row.type.includes("FAILURE") || row.type.includes("LOCKED") || row.type.includes("DENIED") ? "destructive" : "secondary"}>
-                    {row.type.replaceAll("_", " ")}
-                  </Badge>
-                </td>
-                <td className="py-2 pr-4 font-mono font-medium">{row.identifier}</td>
-                <td className="py-2 pr-4 font-mono text-muted-foreground">{row.ip}</td>
-                <td className="py-2 pr-4 text-muted-foreground">{row.detail}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  );
-}
-
 /* ------------------------------------------------ staff create / reset */
 
 /** The one-time password is shown once, here, and never stored in clear. */
@@ -1268,7 +1205,7 @@ function StaffDetailModal({
               </Button>
             )}
             <p className="text-[11px] text-muted-foreground">
-              Every reveal is written to the security log against this Person, with who read it and
+              Every reveal is written to the Activity History against this Person, with who read it and
               when (PRD RD-05).
             </p>
           </section>
@@ -1438,7 +1375,7 @@ function PermissionsModal({
           </ul>
           <p className="text-[11px] text-muted-foreground">
             These cannot be granted here. Only a role change moves them, and every reveal is written
-            to the security log.
+            to the Activity History.
           </p>
         </section>
 
@@ -1497,7 +1434,7 @@ function PermissionsModal({
 
 /**
  * PRD RD-05 — MD and Admin may read a full Aadhaar or PAN. The list stays
- * masked and each reveal is its own logged security event, so "who looked at
+ * masked and each reveal is its own audit row, so "who looked at
  * whose Aadhaar, and when" is always answerable.
  */
 function IdentityTab({ canReveal }: { canReveal: boolean }) {
@@ -1549,7 +1486,7 @@ function IdentityTab({ canReveal }: { canReveal: boolean }) {
 
       <p className="text-xs text-muted-foreground">
         {canReveal
-          ? "Values are masked until you reveal them. Every reveal is written to the security log with your account and the Person it was read for (PRD RD-05)."
+          ? "Values are masked until you reveal them. Every reveal is written to the Activity History with your account and the Person it was read for (PRD RD-05)."
           : "Your role sees masked values only. Full Aadhaar and PAN are limited to MD and Admin."}
       </p>
 

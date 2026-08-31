@@ -5,7 +5,7 @@
 
 import { requireStaff } from "@/lib/security/current-actor";
 import { canViewField } from "@/lib/security/permissions";
-import { recordSecurityEvent } from "@/lib/security/audit";
+import { recordAudit } from "@/lib/security/audit";
 import { decryptSensitive, maskAadhaar, maskPan } from "@/lib/security/identity";
 import { db } from "@/lib/db";
 
@@ -18,10 +18,12 @@ export async function revealAadhaarAction(
 ): Promise<{ ok: true; aadhaar: string } | { ok: false; error: string }> {
   const actor = await requireStaff();
   if (!canViewField(actor.role, "AADHAAR_FULL")) {
-    await recordSecurityEvent({
-      type: "PERMISSION_DENIED",
-      identifier: actor.staffAccountId,
-      detail: `${actor.role} attempted AADHAAR_FULL`,
+    await recordAudit({
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      entity: "Person",
+      entityId: personId,
+      action: "AADHAAR_REVEAL_DENIED",
     });
     return { ok: false, error: `${actor.role} is not permitted to view a full Aadhaar number.` };
   }
@@ -32,10 +34,12 @@ export async function revealAadhaarAction(
   });
   if (!person?.aadhaarCipher) return { ok: false, error: "No Aadhaar is recorded." };
 
-  await recordSecurityEvent({
-    type: "SENSITIVE_ACCESS",
-    identifier: actor.staffAccountId,
-    detail: `AADHAAR_FULL on Person ${personId}`,
+  await recordAudit({
+    actorRef: actor.staffAccountId,
+    actorRole: actor.role,
+    entity: "Person",
+    entityId: personId,
+    action: "AADHAAR_REVEALED",
   });
   return { ok: true, aadhaar: decryptSensitive(person.aadhaarCipher) };
 }

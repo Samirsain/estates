@@ -5,7 +5,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { recordSecurityEvent } from "./audit";
+import { recordAudit } from "./audit";
 import {
   PermissionError,
   can,
@@ -93,10 +93,13 @@ export async function requireStaff(action?: Action): Promise<StaffActor> {
   if (!actor) redirect("/login");
 
   if (action && !can(actor.role, action, actor.extraPermissions)) {
-    await recordSecurityEvent({
-      type: "PERMISSION_DENIED",
-      identifier: actor.staffAccountId,
-      detail: `${actor.role} attempted ${action}`,
+    await recordAudit({
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      entity: "StaffAccount",
+      entityId: actor.accountId,
+      action: "PERMISSION_DENIED",
+      reason: ` attempted `,
     });
     throw new PermissionError(actor.role, action);
   }

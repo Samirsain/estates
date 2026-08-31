@@ -35,14 +35,6 @@ const account = await db.staffAccount.update({
   },
 });
 
-await db.securityEvent.create({
-  data: {
-    type: "SESSION_INVALIDATED",
-    identifier: account.staffAccountId,
-    detail: "Password reset from the command line (break-glass)",
-  },
-});
-
 console.log(`${account.staffAccountId} reset. Every existing session is signed out. Sign in and change it under My Account.`);
 
 await db.$disconnect();

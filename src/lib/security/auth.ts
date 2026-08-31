@@ -132,5 +132,3 @@ export function resetRateLimit(): void {
   buckets.clear();
 }
 
-export { recordSecurityEvent } from "./audit.ts";
-

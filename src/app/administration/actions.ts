@@ -18,7 +18,7 @@ import {
 } from "@/lib/security/permissions";
 import { hashPassword, validatePassword } from "@/lib/security/auth";
 import { decryptSensitive, maskAadhaar, maskMobile } from "@/lib/security/identity";
-import { recordSecurityEvent } from "@/lib/security/audit";
+import { recordAudit } from "@/lib/security/audit";
 import { CommandError, blocked, runCommand } from "@/lib/services/command";
 import { disableStaffAccount, reassignWork } from "@/lib/services/admin-service";
 import { decidePersonMerge, requestPersonMerge } from "@/lib/services/merge-service";
@@ -542,14 +542,6 @@ export async function resetStaffPasswordAction(
           },
         });
 
-        await tx.securityEvent.create({
-          data: {
-            type: "SESSION_INVALIDATED",
-            identifier: account.staffAccountId,
-            detail: `Password reset by ${actor.staffAccountId} — ${reason}`,
-          },
-        });
-
         return {
           result: { staffAccountId: account.staffAccountId },
           audit: {
@@ -767,7 +759,7 @@ export type IdentityReveal = {
 /**
  * PRD RD-05, §14 — Aadhaar and PAN are stored as fields, never as uploads, and
  * are masked everywhere by default. The full value is available to MD and Admin
- * only, and **every** access is written to the security log with the Person it
+ * only, and **every** access is written to the Activity History with the Person it
  * was read for. Nothing here is cached: each look-up is its own logged event.
  */
 export async function revealIdentityAction(
@@ -776,10 +768,12 @@ export async function revealIdentityAction(
   const actor = await requireStaff();
 
   if (!canViewField(actor.role, "AADHAAR_FULL")) {
-    await recordSecurityEvent({
-      type: "PERMISSION_DENIED",
-      identifier: actor.staffAccountId,
-      detail: `${actor.role} attempted AADHAAR_FULL on Person ${personId}`,
+    await recordAudit({
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      entity: "Person",
+      entityId: personId,
+      action: "IDENTITY_REVEAL_DENIED",
     });
     return {
       ok: false,
@@ -800,10 +794,12 @@ export async function revealIdentityAction(
   });
   if (!person) return { ok: false, error: "Person not found." };
 
-  await recordSecurityEvent({
-    type: "SENSITIVE_ACCESS",
-    identifier: actor.staffAccountId,
-    detail: `AADHAAR_FULL + PAN_FULL on Person ${person.id} (${person.fullName})`,
+  await recordAudit({
+    actorRef: actor.staffAccountId,
+    actorRole: actor.role,
+    entity: "Person",
+    entityId: person.id,
+    action: "IDENTITY_REVEALED",
   });
 
   return {

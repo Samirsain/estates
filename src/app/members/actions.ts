@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
 import { canViewField } from "@/lib/security/permissions";
 import { decryptSensitive } from "@/lib/security/identity";
-import { recordSecurityEvent } from "@/lib/security/audit";
+import { recordAudit } from "@/lib/security/audit";
 import { CommandError } from "@/lib/services/command";
 import { decideBankDetails, enterBankDetails, listBankDetails } from "@/lib/services/bank-service";
 import { applyMemberCommissionHold } from "@/lib/services/commission-service";
@@ -283,10 +283,12 @@ export async function revealBankAccountAction(
 ): Promise<{ ok: true; accountNumber: string } | { ok: false; error: string }> {
   const actor = await requireStaff();
   if (!canViewField(actor.role, "BANK_FULL")) {
-    await recordSecurityEvent({
-      type: "PERMISSION_DENIED",
-      identifier: actor.staffAccountId,
-      detail: `${actor.role} attempted BANK_FULL`,
+    await recordAudit({
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      entity: "BankDetail",
+      entityId: bankDetailId,
+      action: "BANK_REVEAL_DENIED",
     });
     return { ok: false, error: `${actor.role} is not permitted to view a full bank account number.` };
   }
@@ -297,10 +299,12 @@ export async function revealBankAccountAction(
   });
   if (!detail) return { ok: false, error: "Bank details not found." };
 
-  await recordSecurityEvent({
-    type: "SENSITIVE_ACCESS",
-    identifier: actor.staffAccountId,
-    detail: `BANK_FULL on Person ${detail.personId}`,
+  await recordAudit({
+    actorRef: actor.staffAccountId,
+    actorRole: actor.role,
+    entity: "Person",
+    entityId: detail.personId,
+    action: "BANK_REVEALED",
   });
   return { ok: true, accountNumber: decryptSensitive(detail.accountCipher) };
 }

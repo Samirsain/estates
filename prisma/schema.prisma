@@ -59,17 +59,6 @@ enum MergeStatus {
   MERGED_AWAY
 }
 
-enum SecurityEventType {
-  LOGIN_SUCCESS
-  LOGIN_FAILURE
-  ACCOUNT_LOCKED
-  SESSION_INVALIDATED
-  /// PRD §17.2 — planned or emergency staff disable.
-  ACCOUNT_DISABLED
-  PERMISSION_DENIED
-  SENSITIVE_ACCESS
-}
-
 /// Immutable human identity. One Person, many capabilities (ARCHITECTURE §3.1).
 model Person {
   id           String  @id @default(uuid())
@@ -308,19 +297,6 @@ model AuditEvent {
 
   @@index([entity, entityId])
   @@index([at])
-}
-
-model SecurityEvent {
-  id         String            @id @default(uuid())
-  at         DateTime          @default(now())
-  type       SecurityEventType
-  /// Masked login identifier — never a full Aadhaar, PAN or password.
-  identifier String?
-  ip         String?
-  detail     String?
-
-  @@index([at])
-  @@index([identifier])
 }
 
 // ===========================================================================

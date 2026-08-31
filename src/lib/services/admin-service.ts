@@ -88,14 +88,6 @@ export async function disableStaffAccount(args: {
         });
       }
 
-      await tx.securityEvent.create({
-        data: {
-          type: "ACCOUNT_DISABLED",
-          identifier: account.staffAccountId,
-          detail: args.emergency ? `Emergency disable — ${args.reason}` : args.reason,
-        },
-      });
-
       return {
         result: {
           staffAccountId: args.staffAccountId,
