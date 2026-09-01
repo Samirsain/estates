@@ -1153,31 +1153,38 @@ export default function PlotsClient({
                       </span>
                     </td>
                     <td className="px-3 py-2 text-center">
-                      {/* The status and the resale tag are two pills on one
-                          line, not a pill, a sentence and then another pill
-                          hanging off its side. */}
+                      {/* One pill, not two. A restricted Plot is Not Available
+                          by rule — plotReturnState keeps it there — so "Not
+                          Available · Not for Sale" said the same thing twice
+                          and buried the half that explains it. The restriction
+                          takes the pill and the status is what it implies; the
+                          reason is on hover. A Plot that is allocated keeps its
+                          own status, because a Hold is not something a
+                          restriction may hide.
+
+                          Unreleased is a stage, Not for Sale and Pledge are
+                          decisions that stop a sale — so only those two carry
+                          the weight of the destructive tone. */}
                       <div className="flex flex-wrap items-center justify-center gap-1">
-                        <Badge
-                          variant={statusVariant(shown.status)}
-                          title={why ?? undefined}
-                          className={`${statusBadge} ${
-                            why ? "cursor-help decoration-dotted underline-offset-4 hover:underline" : ""
-                          }`}
-                        >
-                          {STATUS_LABEL[shown.status] ?? shown.status}
-                        </Badge>
-                        {plot.restriction !== "NONE" && (
+                        {plot.restriction !== "NONE" && shown.status === "NOT_AVAILABLE" ? (
                           <Badge
-                            // Unreleased is a stage, Not for Sale and Pledge are
-                            // decisions that stop a sale — so only those two
-                            // carry the weight of the destructive tone.
                             variant={
                               plot.restriction === "NOT_YET_RELEASED" ? "outline" : "destructive"
                             }
                             title={restrictionWhy(plot)}
-                            className={`${statusBadge} cursor-help`}
+                            className={`${statusBadge} cursor-help decoration-dotted underline-offset-4 hover:underline`}
                           >
                             {RESTRICTION_REASON_LABEL[plot.restriction] ?? plot.restriction}
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant={statusVariant(shown.status)}
+                            title={why ?? undefined}
+                            className={`${statusBadge} ${
+                              why ? "cursor-help decoration-dotted underline-offset-4 hover:underline" : ""
+                            }`}
+                          >
+                            {STATUS_LABEL[shown.status] ?? shown.status}
                           </Badge>
                         )}
                         {plot.isResale && (
