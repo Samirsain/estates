@@ -15,6 +15,7 @@ import {
   Settings,
   Search,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signOut } from "@/app/login/actions";
 import type { StaffRole } from "@/lib/security/permissions";
@@ -230,12 +231,9 @@ export function AppShell({
               </p>
             </a>
             <form action={signOut}>
-              <button
-                type="submit"
-                className="rounded-xl border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
-              >
+              <Button type="submit" variant="outline" size="sm">
                 Sign out
-              </button>
+              </Button>
             </form>
           </div>
         </header>

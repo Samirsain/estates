@@ -188,13 +188,16 @@ export default function PortalClient({ data }: { data: PortalData }) {
             </button>
 
             <form action={signOut}>
-              <button
+              <Button
                 type="submit"
+                variant="outline"
+                size="icon"
                 title="Sign out"
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                aria-label="Sign out"
+                className="h-9 w-9"
               >
                 <LogOut className="h-4 w-4" />
-              </button>
+              </Button>
             </form>
           </div>
         </header>
