@@ -7,6 +7,7 @@
 import React from "react";
 import { usePathname } from "next/navigation";
 import {
+  Calculator,
   LayoutDashboard,
   Building2,
   Users,
@@ -37,6 +38,11 @@ const NAV = [
   },
   { label: "Customers", icon: Users, href: "/customers", phase: null },
   { label: "Members", icon: Network, href: "/members", phase: null },
+  // DESIGN §3.1 lists six top-level areas and §1 says not to reintroduce a
+  // standalone calculator. The owner asked for it at the top level anyway, so
+  // this is a deliberate seventh — recorded here rather than left to look like
+  // a slip. It reads Plot dimensions and stores nothing.
+  { label: "Calculator", icon: Calculator, href: "/calculator", phase: null },
   { label: "Reports", icon: BarChart3, href: "/reports", phase: null },
   { label: "Administration", icon: Settings, href: "/administration", phase: null, admin: true },
 ] as const;
