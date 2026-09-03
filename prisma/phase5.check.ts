@@ -464,6 +464,135 @@ async function main() {
     "the original payment entry and its reference stay with the same Booking"
   );
 
+  /* ===== Test plan §16.5 / §19 — Change Plot must not double-count commission =
+     phase5's own bookAndApprove closes through 3% Club, which earns nothing at
+     all, so the existing Change Plot coverage above could never have caught a
+     duplicated commission. This closes it with a Member-closed sale that really
+     does carry one. */
+
+  const closer = await db.person.create({
+    data: {
+      fullName: `${TAG} Closer`,
+      primaryMobile: "9500000090",
+      aadhaarCipher: encryptSensitive("250000000190"),
+      aadhaarLastFour: "0190",
+      aadhaarStatus: "AVAILABLE",
+    },
+  });
+  await db.memberProfile.create({
+    data: {
+      memberId: `${TAG}-M1`,
+      personId: closer.id,
+      activationDate: day(-300),
+      reraStatus: "NOT_APPLICABLE",
+      reraNotApplicableReason: "Individual referrer",
+    },
+  });
+
+  const buyerD = await db.person.create({
+    data: {
+      fullName: `${TAG} Buyer D`,
+      primaryMobile: "9500000091",
+      aadhaarCipher: encryptSensitive("250000000191"),
+      aadhaarLastFour: "0191",
+      aadhaarStatus: "AVAILABLE",
+    },
+  });
+
+  const plotD = await makePlot(project.id, "D");
+  const plotE = await makePlot(project.id, "E");
+
+  const submittedD = await submitBookingRequest({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    plotId: plotD.id,
+    parties: [{ personId: buyerD.id, role: "PRIMARY" }],
+    soldByType: "MEMBER",
+    soldByPersonId: closer.id,
+    bookingDate: today,
+    schedule: SCHEDULE,
+  });
+  const bookingD = submittedD.bookingId;
+  await decideBookingRequest({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    bookingId: bookingD,
+    approve: true,
+    note: "Verified.",
+  });
+  await confirmPaymentReceived({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    bookingId: bookingD,
+    percent: "40",
+    paidOn: today,
+    reference: `${TAG} UTR D1`,
+  });
+
+  const commissionBefore = await db.commissionRecord.findMany({
+    where: { bookingId: bookingD, isCurrent: true },
+  });
+  assert.equal(commissionBefore.length, 1, "a Member close earns one Direct component");
+  assert.equal(commissionBefore[0].type, "DIRECT");
+  assert.equal(commissionBefore[0].percent.toFixed(2), "3.00");
+
+  await submitChangePlot({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    bookingId: bookingD,
+    toPlotId: plotE.id,
+    remark: "Buyer moved to the wider frontage.",
+  });
+  await decideChangePlot({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    bookingId: bookingD,
+    approve: true,
+    note: "Verified against the agreement.",
+    appliedPercent: "40",
+    schedule: [
+      { seq: 1, percent: "40", dueDate: today },
+      { seq: 2, percent: "60", dueDate: day(45) },
+    ],
+  });
+
+  const commissionAfter = await db.commissionRecord.findMany({
+    where: { bookingId: bookingD, isCurrent: true },
+  });
+  assert.equal(commissionAfter.length, 1, "Change Plot creates no second commission record");
+  assert.equal(
+    commissionAfter[0].id,
+    commissionBefore[0].id,
+    "the same record continues — an unchanged combination is not regenerated"
+  );
+  assert.equal(commissionAfter[0].percent.toFixed(2), "3.00", "and the percentage did not double");
+  assert.equal(
+    await db.commissionRecord.count({ where: { bookingId: bookingD } }),
+    1,
+    "nothing was superseded either, so History shows one record and not two"
+  );
+
+  // The Booking moved Plot; the commission still belongs to the same Booking
+  // and the same beneficiary (PRD §5.3 — one Booking Number continues).
+  assert.equal(
+    (await db.booking.findUniqueOrThrow({ where: { id: bookingD } })).plotId,
+    plotE.id
+  );
+  assert.equal(commissionAfter[0].beneficiaryPersonId, closer.id, "and to the same closer");
+
+  // AC-01 — the classification frozen at approval survives the regeneration a
+  // Change Plot triggers.
+  assert.equal(
+    (await db.booking.findUniqueOrThrow({ where: { id: bookingD } })).originalClassification,
+    "CUSTOMER",
+    "Change Plot does not reclassify an approved Booking"
+  );
+
   await cleanup();
   console.log("phase5.check.ts OK");
 }

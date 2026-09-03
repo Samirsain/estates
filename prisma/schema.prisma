@@ -211,6 +211,9 @@ model MemberProfile {
   introducedCustomers  CustomerProfile[] @relation("IntroducedCustomers")
   sourcedEnquiries     Enquiry[]         @relation("MemberSourcedEnquiries")
   holdRequests         HoldRequest[]
+  /// AC-02 — the annual counter windows, stored so a cycle's progress and
+  /// achievement can be shown and audited rather than recomputed on a screen.
+  performanceCycles    PerformanceCycle[]
 }
 
 model StaffAccount {
@@ -870,6 +873,14 @@ enum BookingProcess {
   MANAGEMENT_ACTION_REQUIRED
 }
 
+/// AC-01 — the buyer's standing at Accounts approval, frozen for the life of the
+/// Booking. A Customer who later activates as a Member never turns their earlier
+/// approved Bookings into Member business.
+enum BookingClassification {
+  CUSTOMER
+  MEMBER
+}
+
 /// PRD §11.3 — separate from Enquiry Source. The closer controls commission.
 enum SoldByType {
   THREE_PERCENT_CLUB
@@ -961,6 +972,11 @@ model Booking {
   bookingDate  DateTime
   customerType String?
   remark       String?
+
+  /// AC-01 — frozen when commission is first generated at Accounts approval and
+  /// never rewritten afterwards. Null only on rows written before it existed and
+  /// on requests that were never approved.
+  originalClassification BookingClassification?
 
   /// Set when the request came from a Hold, so a rejection can restore the
   /// frozen remainder to the exact Hold it paused (PRD §10.5).
@@ -1289,6 +1305,8 @@ enum CommissionHoldReason {
   PAYMENT_PENDING
   /// RD-03 — no sale-commission record is Ready or Paid while the total is above 4%.
   COMMISSION_CONFLICT_ABOVE_4
+  /// AC-02 — Royalty waits for its performance cycle to be complete.
+  PERFORMANCE_CYCLE_INCOMPLETE
 }
 
 /// PRD §6.8 — the entitlements that must never be consumed twice.
@@ -1363,6 +1381,29 @@ model CommissionRecord {
   opportunityId String?               @unique
   opportunity   CommissionOpportunity? @relation(fields: [opportunityId], references: [id])
 
+  /// AC-02 — the performance cycle this record's qualifying transaction was
+  /// counted into. Royalty only; null for every other type and until the
+  /// milestone is first reached.
+  performanceCycleId String?
+  performanceCycle   PerformanceCycle? @relation(fields: [performanceCycleId], references: [id])
+
+  /// AC-02 — when this record's qualifying transaction reached legal completion.
+  ///
+  /// Stored rather than derived from the Booking's status on every read, because
+  /// the two diverge on purpose: main-PRD §14.12 and PRD §6.3 keep a legally
+  /// completed sale's entitlement consumed even after a later Buyback moves the
+  /// Booking to BUYBACK_COMPLETED. Reading the live status would silently
+  /// un-complete a cycle the Member had already earned. Cleared only by
+  /// reopening the delivery, which genuinely reverses the legal completion.
+  cycleCompletedAt DateTime?
+
+  /// AC-03 — Paid Early needs a recorded MD approval before Accounts may
+  /// process it. Approver, timestamp and note are kept on the record itself so
+  /// the approval can never be separated from the transaction it approved.
+  earlyApprovedByRef String?
+  earlyApprovedAt    DateTime?
+  earlyApprovalNote  String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1371,6 +1412,7 @@ model CommissionRecord {
   @@index([bookingId, isCurrent])
   @@index([beneficiaryPersonId, payment])
   @@index([eligibility, payment])
+  @@index([performanceCycleId])
 }
 
 /// PRD §6.8 — atomic entitlement tracking. One Invite opportunity per invited
@@ -1403,6 +1445,66 @@ model CommissionOpportunity {
   record CommissionRecord?
 
   @@index([kind, subjectPersonId, status])
+}
+
+/// AC-02 — Royalty is earned through a completed performance cycle, not merely
+/// by a transaction being recorded (Approved Changes §1 "Royalty").
+///
+/// The cycle window is the Member's own annual counter year (RD-02): it opens on
+/// the Member Activation Date anniversary and runs to the day before the next
+/// one, so a Member activated on 29 February rolls on 28 February in a non-leap
+/// year — the same day their Introduced Customer Counter rolls.
+///
+/// "Completed qualifying activity" is not a count. PRD §6.3 and main-PRD §14.4
+/// define the qualifying activity for Royalty and its terminal state: "A
+/// legally completed qualifying purchase consumes it", against "Cancellation
+/// before legal completion restores the opportunity". Legally completed means
+/// the sale reached final delivery (COMMISSION-TEST-PLAN §1 glossary).
+///
+/// So a qualifying transaction that has reached its 100% payment milestone but
+/// not yet final delivery is exactly a *partially* completed cycle: recorded,
+/// but not completed. That is the state Approved Changes §1 refuses to treat as
+/// complete, and the state the test plan's TC-ROY-002 exercises.
+///
+/// The cycle is COMPLETED when every qualifying transaction inside it is legally
+/// completed — the test plan's "satisfy all cycle conditions" (TC-ROY-001)
+/// against "only part of the qualifying conditions are met" (TC-ROY-002).
+enum PerformanceCycleStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+model PerformanceCycle {
+  id              String        @id @default(uuid())
+  memberProfileId String
+  memberProfile   MemberProfile @relation(fields: [memberProfileId], references: [id])
+
+  /// Inclusive IST start and end instants of the counter year.
+  cycleStart DateTime
+  cycleEnd   DateTime
+
+  status PerformanceCycleStatus @default(IN_PROGRESS)
+
+  /// Approved Changes §1 requires the cycle to store its qualifying
+  /// transactions. The rows themselves are the CommissionRecords in `records`;
+  /// these two are the derived counts the Dashboard reads, and both are
+  /// recomputed from those rows rather than incremented, so they cannot drift.
+  qualifyingCount Int @default(0)
+  /// Of `qualifyingCount`, how many reached legal completion.
+  completedCount  Int @default(0)
+
+  completedAt DateTime?
+  /// The entitlement the completed cycle confers, derived from the qualifying
+  /// records themselves rather than a fixed label.
+  entitlement String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  records CommissionRecord[]
+
+  @@unique([memberProfileId, cycleStart])
+  @@index([memberProfileId, status])
 }
 
 /// Append-only commission history for the record timeline (DESIGN §14.3).

@@ -8,7 +8,7 @@
 // CRM and Accounts, not something a script should silently overwrite.
 
 import { Prisma } from "@prisma/client";
-import { db } from "@/lib/db";
+import { db, inWaves } from "@/lib/db";
 import { SALE_CAP_PERCENT } from "@/lib/domain/commission";
 import { rebuildLoyaltyCount } from "@/lib/domain/completion";
 
@@ -53,24 +53,24 @@ export async function recordCounts(): Promise<Record<string, number>> {
     commissions,
     tasks,
     auditEvents,
-  ] = await Promise.all([
-    db.person.count(),
-    db.customerProfile.count(),
-    db.memberProfile.count(),
-    db.staffAccount.count(),
-    db.portalAccount.count(),
-    db.project.count(),
-    db.plot.count(),
-    db.enquiry.count(),
-    db.hold.count(),
-    db.booking.count(),
-    db.bookingCompletion.count(),
-    db.paymentReceivedEntry.count(),
-    db.paymentGivenEntry.count(),
-    db.acquisition.count(),
-    db.commissionRecord.count(),
-    db.task.count(),
-    db.auditEvent.count(),
+  ] = await inWaves([
+    () => db.person.count(),
+    () => db.customerProfile.count(),
+    () => db.memberProfile.count(),
+    () => db.staffAccount.count(),
+    () => db.portalAccount.count(),
+    () => db.project.count(),
+    () => db.plot.count(),
+    () => db.enquiry.count(),
+    () => db.hold.count(),
+    () => db.booking.count(),
+    () => db.bookingCompletion.count(),
+    () => db.paymentReceivedEntry.count(),
+    () => db.paymentGivenEntry.count(),
+    () => db.acquisition.count(),
+    () => db.commissionRecord.count(),
+    () => db.task.count(),
+    () => db.auditEvent.count(),
   ]);
 
   return {

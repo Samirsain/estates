@@ -8,6 +8,8 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Clock, Plus, CheckCircle2, Link2 } from "lucide-react";
 import { addTaskAction, completeTaskAction, reviseTaskAction, type ActionResult } from "./actions";
 import { AppShell } from "@/components/app-shell";
+import { BusinessStatePanel } from "./business-state";
+import type { BusinessState } from "@/lib/services/report-service";
 import { STAFF_ROLES } from "@/lib/security/permissions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -74,6 +76,7 @@ export default function DashboardClient({
   staffAccountId,
   initialTasks,
   seesAllWork,
+  businessState,
 }: {
   role: StaffRole;
   actorName: string;
@@ -81,6 +84,8 @@ export default function DashboardClient({
   initialTasks: Task[];
   /** PRD §3.2 — only MD and Admin are served other people's work at all. */
   seesAllWork: boolean;
+  /** AC-07 — null for the roles that are not served the business figures. */
+  businessState: BusinessState | null;
 }) {
   const tasks = initialTasks;
   const [now, setNow] = React.useState<Date | null>(null);
@@ -112,24 +117,6 @@ export default function DashboardClient({
     return sortTasks(filterTasks(scoped, view, now, range), now);
   }, [tasks, view, now, range, role, showAllAssignees]);
 
-  /**
-   * The same tasks, under their own title. sortTasks has already put the most
-   * pressing first, so a Map keeps that order inside each group, and the groups
-   * themselves follow whichever holds the earliest due date — the ordering the
-   * flat list had, one level up.
-   */
-  const groups = React.useMemo(() => {
-    const byTitle = new Map<string, Task[]>();
-    for (const task of visible) {
-      const list = byTitle.get(task.title);
-      if (list) list.push(task);
-      else byTitle.set(task.title, [task]);
-    }
-    const earliest = (list: Task[]) =>
-      Math.min(...list.map((t) => new Date(t.dueAt).getTime()));
-    return [...byTitle].sort((a, b) => earliest(a[1]) - earliest(b[1]));
-  }, [visible]);
-
   const stats = now ? summarise(tasks.filter((t) => showAllAssignees || t.assigneeRole === role), now) : null;
 
   /** Every write carries a fresh idempotency key, so a double click writes once. */
@@ -151,7 +138,7 @@ export default function DashboardClient({
 
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="mx-auto max-w-6xl space-y-4">
+      <div className="mx-auto max-w-7xl space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
@@ -185,6 +172,8 @@ export default function DashboardClient({
             </Button>
           </div>
         </header>
+
+        {businessState && <BusinessStatePanel state={businessState} />}
 
         <div className="flex flex-wrap items-center gap-2">
           {VIEWS.map((v) => (
@@ -245,10 +234,11 @@ export default function DashboardClient({
           </Card>
         )}
 
-        {/* Twenty-eight cards, each repeating the same title, is a list you
-            scroll rather than read. The title becomes the heading it already
-            was, once per group, and the card underneath carries only what is
-            different about that one task. */}
+        {/* One table, and the columns the work is actually filed under: which
+            Project, which Plot, whose Member or Customer ID, whose name, and
+            what the task is. The task title used to be a heading over a group
+            of rows that repeated everything else about the record; as a column
+            it lines up and scans with the rest of the row. */}
         {!now ? (
           <Card className="p-10 text-center text-sm text-muted-foreground">
             Loading tasks…
@@ -265,115 +255,122 @@ export default function DashboardClient({
             </p>
           </Card>
         ) : (
-          <div className="space-y-6">
-            {groups.map(([title, tasks]) => {
-              const overdue = tasks.filter((t) => emphasis(t, now) === "overdue").length;
-              return (
-                <section key={title} className="space-y-2">
-                  <h2 className="flex flex-wrap items-baseline gap-2 border-b border-border pb-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {title}
-                    </span>
-                    <span className="text-[11px] tabular-nums text-muted-foreground">
-                      {tasks.length}
-                    </span>
-                    {overdue > 0 && (
-                      <span className="text-[11px] tabular-nums text-red-700">
-                        {overdue} overdue
-                      </span>
-                    )}
-                  </h2>
-                  <ul className="space-y-2">
-            {tasks.map((task) => {
-              const state = EMPHASIS_STYLE[emphasis(task, now)];
-              return (
-                // One row, spread across the width the page already has. The
-                // card put every fact hard against the left edge and the two
-                // buttons hard against the right, with the middle third of
-                // every row empty.
-                <li
-                  key={task.id}
-                  className={`flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border/60 py-1.5 pl-3 text-xs last:border-b-0 hover:bg-secondary/50 ${state.row}`}
-                >
-                  {state.label && (
-                    <Badge variant={state.label === "Overdue" ? "destructive" : "warning"}>
-                      {state.label}
-                    </Badge>
-                  )}
-                  {task.revisions > 0 && (
-                    <Badge variant="outline">Revised ×{task.revisions}</Badge>
-                  )}
+          // A wide table on a narrow screen scrolls inside its own card rather
+          // than taking the page sideways with it.
+          <Card className="overflow-x-auto">
+            <table className="w-full min-w-[62rem] text-xs">
+              <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr className="border-b border-border">
+                  <th className="py-2 pl-3 pr-2 font-semibold">Project</th>
+                  <th className="px-2 py-2 font-semibold">Plot</th>
+                  <th className="px-2 py-2 font-semibold">Member / Customer</th>
+                  <th className="px-2 py-2 font-semibold">Name</th>
+                  <th className="px-2 py-2 font-semibold">Task</th>
+                  <th className="px-2 py-2 font-semibold">Due</th>
+                  <th className="px-2 py-2 font-semibold">Assignee</th>
+                  <th className="py-2 pl-2 pr-3 text-right font-semibold">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((task) => {
+                  const state = EMPHASIS_STYLE[emphasis(task, now)];
+                  // Where the record resolved, its own reference is the one
+                  // thing the columns do not already carry. Where it did not —
+                  // a manual task typed against free text — the stored line is
+                  // all there is, so it stands in.
+                  const detail = [
+                    task.subject
+                      ? task.subject.reference
+                      : (recordReference(task.record) ?? task.record.name),
+                    task.latestResult,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
 
-                  <span className="min-w-0 flex-1 truncate">
-                    {recordReference(task.record) && (
-                      <span className="mr-1.5 font-mono text-primary">
-                        {recordReference(task.record)}
-                      </span>
-                    )}
-                    {task.record.kind} · {task.record.name}
-                  </span>
-
-                  {task.latestResult && (
-                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                      {task.latestResult}
-                    </span>
-                  )}
-
-                  <span className="w-[11rem] shrink-0 text-muted-foreground">
-                    <Clock className="mr-1 inline h-3 w-3" />
-                    {formatDue(task.dueAt, now)}
-                  </span>
-                  <span className="w-[9rem] shrink-0 truncate text-muted-foreground">
-                    {task.assigneeName} ({task.assigneeRole})
-                  </span>
-
-                  <span className="flex shrink-0 items-center justify-end gap-1.5">
-                    {task.status === "COMPLETED" ? (
-                      <span className="flex items-center gap-1 text-emerald-700">
-                        <CheckCircle2 className="h-4 w-4" /> Completed
-                      </span>
-                    ) : task.decision ? (
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        className={taskButton}
-                        disabled
-                        title="Approve / Reject happens on the record's review snapshot."
-                      >
-                        Open Review
-                      </Button>
-                    ) : (
-                      <>
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          className={taskButton}
-                          disabled={readOnly || busy}
-                          title={readOnly ? "MIS is read-only." : undefined}
-                          onClick={() => setRevising(task)}
-                        >
-                          Revise
-                        </Button>
-                        <Button
-                          size="xs"
-                          className={taskButton}
-                          disabled={readOnly || busy}
-                          title={readOnly ? "MIS is read-only." : undefined}
-                          onClick={() => run(() => completeTaskAction(task.id, newKey()))}
-                        >
-                          Done
-                        </Button>
-                      </>
-                    )}
-                  </span>
-                </li>
-              );
-            })}
-                  </ul>
-                </section>
-              );
-            })}
-          </div>
+                  return (
+                    <tr
+                      key={task.id}
+                      className="border-b border-border/60 align-top last:border-b-0 hover:bg-secondary/50"
+                    >
+                      <td className={`py-2 pl-3 pr-2 ${state.row}`}>
+                        {task.subject?.project ?? "—"}
+                      </td>
+                      <td className="px-2 py-2">{task.subject?.plot ?? "—"}</td>
+                      <td className="px-2 py-2 text-primary">{task.subject?.partyRef ?? "—"}</td>
+                      <td className="px-2 py-2">{task.subject?.partyName ?? "—"}</td>
+                      <td className="px-2 py-2">
+                        <span className="font-medium">{task.title}</span>
+                        <span className="ml-1.5 text-muted-foreground">({task.record.kind})</span>
+                        {detail && (
+                          <span className="block text-[11px] text-muted-foreground">{detail}</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2 text-muted-foreground">
+                        <span className="flex items-center gap-1.5">
+                          {state.label && (
+                            <Badge variant={state.label === "Overdue" ? "destructive" : "warning"}>
+                              {state.label}
+                            </Badge>
+                          )}
+                          <span>
+                            <Clock className="mr-1 inline h-3 w-3" />
+                            {formatDue(task.dueAt, now)}
+                          </span>
+                        </span>
+                        {task.revisions > 0 && (
+                          <span className="block text-[11px]">Revised ×{task.revisions}</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2 text-muted-foreground">
+                        {task.assigneeName} ({task.assigneeRole})
+                      </td>
+                      <td className="py-2 pl-2 pr-3">
+                        <span className="flex items-center justify-end gap-1.5">
+                          {task.status === "COMPLETED" ? (
+                            <span className="flex items-center gap-1 whitespace-nowrap text-emerald-700">
+                              <CheckCircle2 className="h-4 w-4" /> Completed
+                            </span>
+                          ) : task.decision ? (
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              className={taskButton}
+                              disabled
+                              title="Approve / Reject happens on the record's review snapshot."
+                            >
+                              Open Review
+                            </Button>
+                          ) : (
+                            <>
+                              <Button
+                                size="xs"
+                                variant="outline"
+                                className={taskButton}
+                                disabled={readOnly || busy}
+                                title={readOnly ? "MIS is read-only." : undefined}
+                                onClick={() => setRevising(task)}
+                              >
+                                Revise
+                              </Button>
+                              <Button
+                                size="xs"
+                                className={taskButton}
+                                disabled={readOnly || busy}
+                                title={readOnly ? "MIS is read-only." : undefined}
+                                onClick={() => run(() => completeTaskAction(task.id, newKey()))}
+                              >
+                                Done
+                              </Button>
+                            </>
+                          )}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Card>
         )}
       </div>
 

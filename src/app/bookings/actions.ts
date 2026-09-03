@@ -27,7 +27,11 @@ import { locationChargeLabel } from "@/lib/domain/inventory";
 import { decideCancellation } from "@/lib/services/cancellation-service";
 import { plcSnapshotHistory } from "@/lib/services/project-service";
 import { decideChangePlot, submitChangePlot } from "@/lib/services/change-plot-service";
-import { listCommissionForBooking, markCommissionPaid } from "@/lib/services/commission-service";
+import {
+  approveCommissionPaidEarly,
+  listCommissionForBooking,
+  markCommissionPaid,
+} from "@/lib/services/commission-service";
 import {
   recordCompletion,
   recordFinalBuyers,
@@ -424,8 +428,32 @@ export async function decidePrimaryCustomerChangeAction(
 }
 
 /**
- * PRD §6.11 — Accounts records Paid, or Paid Early with compulsory remarks. No
- * additional MD/Admin approval is required.
+ * AC-03 — MD approves a Paid Early payment before Accounts may process it. The
+ * approver and the time are stored on the commission record itself.
+ */
+export async function approveCommissionPaidEarlyAction(
+  input: { recordId: string; note: string },
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("COMMISSION_PROCESS");
+  try {
+    await approveCommissionPaidEarly({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      recordId: input.recordId,
+      note: input.note,
+    });
+    refresh();
+    return { ok: true, message: "Paid Early approved by MD. Accounts may now process the payment." };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/**
+ * PRD §6.11 with AC-03 — Accounts records Paid, or Paid Early with compulsory
+ * remarks once MD has approved it.
  */
 export async function markCommissionPaidAction(
   input: { recordId: string; early: boolean; paidOn: string; reference: string; remarks: string },
@@ -530,6 +558,10 @@ export type FinalBuyerRowInput = {
   sharePercent: string;
   dateOfBirth: string;
   address: string;
+  /** Blank where the Person already has one on file; never overwrites. */
+  aadhaar?: string;
+  /** Blank is the "PAN Not Available" decision, which blocks nothing. */
+  pan?: string;
 };
 
 export async function recordFinalBuyersAction(
@@ -549,6 +581,8 @@ export async function recordFinalBuyersAction(
         sharePercent: row.sharePercent.trim() === "" ? null : row.sharePercent.trim(),
         dateOfBirth: new Date(row.dateOfBirth),
         address: row.address,
+        aadhaar: row.aadhaar?.trim() || null,
+        pan: row.pan?.trim() || null,
       })),
     });
     refresh();
@@ -701,6 +735,15 @@ export async function loadBookingDetail(bookingId: string) {
       name: p.person.fullName,
       role: p.role,
       kind: p.kind,
+      // Final buyer details are mostly the Person record already on file. They
+      // travel so the form arrives filled rather than asking for a date of
+      // birth and an address the CRM is holding two tables away.
+      dateOfBirth: p.person.dateOfBirth ? p.person.dateOfBirth.toISOString().slice(0, 10) : "",
+      address: p.person.addressLine ?? "",
+      // Whether it is on file, never the number. The form asks only when it
+      // has to, and an Aadhaar is not sent to a browser to be re-displayed.
+      aadhaarRecorded: p.person.aadhaarStatus !== "PENDING",
+      panRecorded: p.person.panStatus !== "NOT_AVAILABLE",
       sharePercent: p.sharePercent?.toFixed(2) ?? null,
       effectiveFrom: p.effectiveFrom.toISOString(),
       effectiveTo: p.effectiveTo?.toISOString() ?? null,
@@ -770,6 +813,11 @@ export async function loadBookingDetail(bookingId: string) {
       ruleVersion: c.ruleVersion,
       isCurrent: c.isCurrent,
       closedReason: c.closedReason,
+      // AC-03 — the stored MD approval, so the screen shows who approved a
+      // Paid Early and when, rather than only that it happened.
+      earlyApprovedByRef: c.earlyApprovedByRef,
+      earlyApprovedAt: c.earlyApprovedAt?.toISOString() ?? null,
+      earlyApprovalNote: c.earlyApprovalNote,
     })),
     soldByCorrections: booking.soldByCorrections.map((c) => ({
       status: c.status,

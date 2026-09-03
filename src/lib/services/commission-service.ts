@@ -10,9 +10,14 @@ import { db } from "@/lib/db";
 import {
   afterAffectingChange,
   canMarkPaid,
+  classifyApprovedBooking,
+  cycleAchieved,
+  cycleWindow,
   generateCommission,
+  MAX_LOYALTY_SLOTS,
   needsPaymentTask,
   opportunityReopens,
+  qualifyingActivityComplete,
   resolveEligibility,
   totalOf,
   type CommissionInput,
@@ -20,6 +25,7 @@ import {
   type Component,
   type NetworkLink,
 } from "@/lib/domain/commission";
+import { istInstant } from "@/lib/tasks";
 import { normaliseReference, notFutureDated } from "@/lib/domain/booking";
 import { hasVerifiedBank } from "./bank-service";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
@@ -107,7 +113,29 @@ async function consumeOpportunity(
       consumedAt: new Date(),
     },
   });
+  await syncLoyaltyCount(tx, args.kind, args.subjectPersonId);
   return { ok: true, opportunityId: opportunity.id };
+}
+
+/**
+ * PRD §6.5 — `CustomerProfile.loyaltySlotsConsumed` is the lifetime count of
+ * three, and the opportunity ledger is what it counts.
+ *
+ * Nothing but a Person merge used to write it, so it drifted from the ledger the
+ * moment any Loyalty was consumed: the engine reads the ledger and never
+ * noticed, while the reconciliation report and the Customer screen read the
+ * field and were wrong. Maintaining it here, where every consumption and reopen
+ * already passes, is the only place it cannot be forgotten.
+ */
+async function syncLoyaltyCount(tx: Tx, kind: OpportunityKind, subjectPersonId: string) {
+  if (kind !== "LOYALTY") return;
+  const consumed = await tx.commissionOpportunity.count({
+    where: { kind: "LOYALTY", subjectPersonId, status: "CONSUMED" },
+  });
+  await tx.customerProfile.updateMany({
+    where: { personId: subjectPersonId },
+    data: { loyaltySlotsConsumed: Math.min(consumed, MAX_LOYALTY_SLOTS) },
+  });
 }
 
 /**
@@ -116,7 +144,7 @@ async function consumeOpportunity(
  * deleted, only reopened with its reason.
  */
 async function reopenOpportunity(tx: Tx, opportunityId: string, reason: string) {
-  await tx.commissionOpportunity.update({
+  const opportunity = await tx.commissionOpportunity.update({
     where: { id: opportunityId },
     data: {
       status: "OPEN",
@@ -126,6 +154,7 @@ async function reopenOpportunity(tx: Tx, opportunityId: string, reason: string) 
       reopenedAt: new Date(),
     },
   });
+  await syncLoyaltyCount(tx, opportunity.kind, opportunity.subjectPersonId);
 }
 
 /* ------------------------------------------------------------ engine input */
@@ -145,7 +174,13 @@ export async function commissionInputFor(tx: Tx, bookingId: string): Promise<Com
   });
 
   const buyer = booking.primaryPerson;
-  const buyerIsActiveMember = buyer.memberProfile?.status === "ACTIVE";
+  // AC-01 — the frozen classification wins wherever one exists. Only a Booking
+  // that has never been approved falls back to the buyer's standing today,
+  // which is exactly what a pre-approval preview should show.
+  const buyerIsActiveMember =
+    booking.originalClassification !== null
+      ? booking.originalClassification === "MEMBER"
+      : buyer.memberProfile?.status === "ACTIVE";
 
   /**
    * PRD §14.5 — "first personal purchase receives no repeat-purchase Loyalty",
@@ -251,6 +286,373 @@ export async function raiseCommissionConflict(
   });
 }
 
+/* ------------------------------------------------ historical classification */
+
+/**
+ * AC-01 — everything `classifyApprovedBooking()` needs about one Booking.
+ *
+ * Shared with the backfill on purpose. Two copies of "which record decides the
+ * classification" would be two rules the day one of them is edited, and this one
+ * decides who a commission belongs to.
+ */
+export async function classificationEvidence(tx: Tx, bookingId: string) {
+  const booking = await tx.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    select: {
+      approvedAt: true,
+      primaryPerson: { select: { memberProfile: { select: { activationDate: true } } } },
+    },
+  });
+
+  // The earliest DIRECT ever created, superseded ones included: that is the one
+  // written at approval, and a later Sold By Correction must not stand in for it.
+  const direct = await tx.commissionRecord.findFirst({
+    where: { bookingId, type: "DIRECT" },
+    orderBy: { createdAt: "asc" },
+    select: { ruleVersion: true },
+  });
+  const anyCommission = direct
+    ? 1
+    : await tx.commissionRecord.count({ where: { bookingId } });
+
+  return {
+    earliestDirectRuleVersion: direct?.ruleVersion ?? null,
+    hasAnyCommission: anyCommission > 0,
+    approvedAt: booking.approvedAt,
+    memberActivationDate: booking.primaryPerson.memberProfile?.activationDate ?? null,
+  };
+}
+
+/**
+ * AC-01 — the buyer's standing is frozen the first time commission is generated,
+ * which is Accounts approval, and is never rewritten afterwards.
+ *
+ * This is the whole of the "Customer → Member activation" rule. Without it, a
+ * Sold By correction or a Change Plot on an old Booking would call
+ * `generateForBooking` again, read the buyer's *current* Member status, and
+ * quietly turn a settled Customer Booking into a Member self-purchase — a
+ * different beneficiary, a different milestone and a retrospectively different
+ * commission on business that was already approved and paid.
+ *
+ * A frozen value is also what lets a report answer the question the pack asks:
+ * why an older Booking is still shown as Customer business after the same
+ * person became a Member.
+ */
+async function freezeClassification(tx: Tx, bookingId: string, actorRef: string) {
+  const booking = await tx.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    select: {
+      originalClassification: true,
+      bookingNumber: true,
+      primaryPerson: { select: { memberProfile: { select: { status: true } } } },
+    },
+  });
+  if (booking.originalClassification !== null) return booking.originalClassification;
+
+  // A Booking approved before this column existed must not be classified from
+  // the buyer's status *today* — for a Customer who has since been activated as
+  // a Member that would write MEMBER onto settled Customer business, which is
+  // the exact reclassification Approved Changes §1 forbids. It is recovered from
+  // what the Booking already holds, by the one rule the backfill also uses.
+  if (booking.bookingNumber !== null) {
+    const decision = classifyApprovedBooking(await classificationEvidence(tx, bookingId));
+    if (decision.resolved) {
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: { originalClassification: decision.classification },
+      });
+      await tx.bookingEvent.create({
+        data: {
+          bookingId,
+          actorRef,
+          action: "CLASSIFICATION_FROZEN",
+          detail: {
+            originalClassification: decision.classification,
+            source: decision.source,
+            note: decision.note,
+          },
+          reason: `Recovered from ${decision.source}, not from the buyer's Member status today.`,
+        },
+      });
+      return decision.classification;
+    }
+    // Unresolvable: fall through rather than guess, and leave it null so the
+    // Dashboard reports it as unclassified and the backfill lists it.
+    return null;
+  }
+
+  const classification =
+    booking.primaryPerson.memberProfile?.status === "ACTIVE" ? "MEMBER" : "CUSTOMER";
+  await tx.booking.update({ where: { id: bookingId }, data: { originalClassification: classification } });
+  await tx.bookingEvent.create({
+    data: {
+      bookingId,
+      actorRef,
+      action: "CLASSIFICATION_FROZEN",
+      detail: { originalClassification: classification },
+      reason:
+        classification === "MEMBER"
+          ? "Buyer held an Active Member capability at approval — Member business."
+          : "Buyer was not an Active Member at approval — Customer business, permanently.",
+    },
+  });
+  return classification;
+}
+
+/* ----------------------------------------------------- performance cycles */
+
+/**
+ * AC-02 — legal completion, as the approved corpus defines it:
+ * "the sale reached final delivery" (COMMISSION-TEST-PLAN §1), which in this
+ * system is a Booking at DELIVERED carrying a completion record that has not
+ * been reopened.
+ *
+ * Both halves are checked. A reopened completion leaves the Booking on its way
+ * back to PAYMENT_COMPLETED, and a delivery that was recorded in error and
+ * reopened must not leave a cycle standing as complete behind it.
+ */
+export async function isLegallyCompleted(tx: Tx, bookingId: string): Promise<boolean> {
+  const booking = await tx.booking.findUnique({
+    where: { id: bookingId },
+    select: { status: true },
+  });
+  if (booking?.status !== "DELIVERED") return false;
+  const live = await tx.bookingCompletion.findFirst({
+    where: { bookingId, reopenedAt: null },
+    select: { id: true },
+  });
+  return !!live;
+}
+
+/**
+ * AC-02 — the cycle a Royalty's qualifying transaction falls into, created on
+ * first use. The window is the introducing Member's own counter year (RD-02),
+ * so the row is found by (member, cycle start) and two concurrent qualifying
+ * transactions cannot create two cycles for the same year.
+ */
+async function cycleFor(tx: Tx, memberProfileId: string, at: Date) {
+  const member = await tx.memberProfile.findUniqueOrThrow({ where: { id: memberProfileId } });
+  if (!member.activationDate) return null;
+
+  const window = cycleWindow(member.activationDate, at);
+  const cycleStart = new Date(istInstant(window.start, "00:00"));
+  const cycleEnd = new Date(istInstant(window.end, "23:59"));
+
+  await lockKey(tx, `performance-cycle:${memberProfileId}:${window.start}`);
+  const existing = await tx.performanceCycle.findUnique({
+    where: { memberProfileId_cycleStart: { memberProfileId, cycleStart } },
+  });
+  if (existing) return existing;
+
+  return tx.performanceCycle.create({ data: { memberProfileId, cycleStart, cycleEnd } });
+}
+
+/**
+ * AC-02 — recomputes a cycle's stored figures from the qualifying records
+ * actually attached to it, and returns the refreshed row.
+ *
+ * Recomputing rather than incrementing is the whole reliability story here: a
+ * reassessment can run any number of times from any number of triggers, and a
+ * counter that is stepped up and down by each of them drifts the first time one
+ * path is missed. Counting the rows cannot drift, and it makes every caller
+ * below idempotent for free.
+ */
+async function refreshCycle(tx: Tx, cycleId: string, actorRef: string) {
+  const attached = await tx.commissionRecord.findMany({
+    where: { performanceCycleId: cycleId },
+    select: { id: true, percent: true, cycleCompletedAt: true },
+  });
+
+  const qualifyingCount = attached.length;
+  const completedCount = attached.filter((r) => r.cycleCompletedAt !== null).length;
+  const achieved = cycleAchieved(qualifyingCount, completedCount);
+
+  const before = await tx.performanceCycle.findUniqueOrThrow({ where: { id: cycleId } });
+
+  // Approved Changes §1 — "resulting entitlement". Derived from the qualifying
+  // records themselves rather than a fixed label, so the cycle says what it
+  // actually earned rather than that it earned something.
+  const entitled = attached.filter((r) => r.cycleCompletedAt !== null);
+  const totalPercent = entitled.reduce((sum, r) => sum.add(r.percent), new D(0));
+  const entitlement = achieved
+    ? `ROYALTY ${totalPercent.toFixed(2)}% across ${entitled.length} qualifying ` +
+      `transaction${entitled.length === 1 ? "" : "s"}`
+    : null;
+
+  const cycle = await tx.performanceCycle.update({
+    where: { id: cycleId },
+    data: {
+      qualifyingCount,
+      completedCount,
+      status: achieved ? "COMPLETED" : "IN_PROGRESS",
+      // The first completion timestamp is kept across later qualifying
+      // transactions entering the same window; only losing achievement clears it.
+      completedAt: achieved ? (before.completedAt ?? new Date()) : null,
+      entitlement,
+    },
+  });
+
+  if (before.status !== cycle.status) {
+    for (const record of attached) {
+      await tx.commissionEvent.create({
+        data: {
+          recordId: record.id,
+          actorRef,
+          action: cycle.status === "COMPLETED" ? "CYCLE_COMPLETED" : "CYCLE_REOPENED",
+          fromState: before.status,
+          toState: `${cycle.status} ${completedCount}/${qualifyingCount}`,
+          reason: entitlement,
+        },
+      });
+    }
+  }
+  return cycle;
+}
+
+/**
+ * AC-02 — records one qualifying transaction against the beneficiary Member's
+ * cycle, and returns whether **this record's own** qualifying activity is
+ * complete.
+ *
+ * The per-record answer is what gates eligibility, not the cycle's aggregate
+ * status. One Member's cycle can hold qualifying transactions from several
+ * different introduced Customers in the same counter year, and PRD §6.3 gives
+ * each introduced Customer their own single Royalty entitlement. Gating on the
+ * aggregate would let one Customer's completed purchase release another
+ * Customer's Royalty, which is a different person's entitlement entirely.
+ *
+ * The cycle row is the stored record of that activity — start, end, qualifying
+ * transactions, achievement and entitlement — which is what Approved Changes §1
+ * requires the CRM to keep and §4 requires the Dashboard to show.
+ */
+async function recordCycleQualification(
+  tx: Tx,
+  record: {
+    id: string;
+    performanceCycleId: string | null;
+    cycleCompletedAt: Date | null;
+    beneficiaryPersonId: string;
+  },
+  legallyCompleted: boolean,
+  actorRef: string
+): Promise<boolean | null> {
+  let cycleId = record.performanceCycleId;
+
+  if (!cycleId) {
+    const member = await tx.memberProfile.findUnique({
+      where: { personId: record.beneficiaryPersonId },
+    });
+    if (!member) return null;
+
+    const cycle = await cycleFor(tx, member.id, new Date());
+    if (!cycle) return null;
+    cycleId = cycle.id;
+
+    await tx.commissionRecord.update({
+      where: { id: record.id },
+      data: { performanceCycleId: cycleId },
+    });
+    await tx.commissionEvent.create({
+      data: {
+        recordId: record.id,
+        actorRef,
+        action: "CYCLE_QUALIFIED",
+        toState: "RECORDED",
+        reason:
+          `Qualifying transaction recorded in the performance cycle ` +
+          `${cycle.cycleStart.toISOString().slice(0, 10)} to ` +
+          `${cycle.cycleEnd.toISOString().slice(0, 10)}. It is not complete until the ` +
+          `sale is legally completed.`,
+      },
+    });
+  }
+
+  // The milestone has been reached by the time this runs, so the remaining half
+  // of the qualifying activity is legal completion (PRD §6.3).
+  const complete = qualifyingActivityComplete({ milestoneReached: true, legallyCompleted });
+
+  if (complete && !record.cycleCompletedAt) {
+    await tx.commissionRecord.update({
+      where: { id: record.id },
+      data: { cycleCompletedAt: new Date() },
+    });
+    await tx.commissionEvent.create({
+      data: {
+        recordId: record.id,
+        actorRef,
+        action: "CYCLE_ACTIVITY_COMPLETED",
+        toState: "LEGALLY_COMPLETED",
+        reason: "The qualifying sale reached final delivery.",
+      },
+    });
+  }
+
+  await refreshCycle(tx, cycleId, actorRef);
+  // Re-read rather than trusting the local flag: a completion recorded on an
+  // earlier pass counts just as much as one recorded on this one.
+  const current = await tx.commissionRecord.findUniqueOrThrow({
+    where: { id: record.id },
+    select: { cycleCompletedAt: true },
+  });
+  return current.cycleCompletedAt !== null;
+}
+
+/**
+ * AC-02 — the qualifying activity's legal completion is reversed.
+ *
+ * Only reopening the delivery reaches this. A Buyback does not: PRD §6.3 and
+ * main-PRD §14.12 both keep a legally completed sale's entitlement earned after
+ * a later Buyback, so the completion it already achieved stands.
+ */
+async function reverseCycleCompletion(tx: Tx, bookingId: string, actorRef: string, reason: string) {
+  const records = await tx.commissionRecord.findMany({
+    where: { bookingId, type: "ROYALTY", cycleCompletedAt: { not: null } },
+    select: { id: true, performanceCycleId: true },
+  });
+
+  for (const record of records) {
+    await tx.commissionRecord.update({
+      where: { id: record.id },
+      data: { cycleCompletedAt: null },
+    });
+    await tx.commissionEvent.create({
+      data: {
+        recordId: record.id,
+        actorRef,
+        action: "CYCLE_ACTIVITY_REOPENED",
+        fromState: "LEGALLY_COMPLETED",
+        reason,
+      },
+    });
+    if (record.performanceCycleId) await refreshCycle(tx, record.performanceCycleId, actorRef);
+  }
+  return { affected: records.length };
+}
+
+/**
+ * AC-02 — a qualifying transaction that no longer stands leaves the cycle, and
+ * the cycle's figures are recomputed without it.
+ *
+ * The cycle row is never deleted and keeps its window; only its membership
+ * changes, and the record's own timeline says why it left.
+ */
+async function releaseFromCycle(tx: Tx, recordId: string, actorRef: string, reason: string) {
+  const record = await tx.commissionRecord.findUniqueOrThrow({
+    where: { id: recordId },
+    select: { performanceCycleId: true },
+  });
+  if (!record.performanceCycleId) return;
+
+  await tx.commissionRecord.update({
+    where: { id: recordId },
+    data: { performanceCycleId: null, cycleCompletedAt: null },
+  });
+  await tx.commissionEvent.create({
+    data: { recordId, actorRef, action: "CYCLE_RELEASED", reason },
+  });
+  await refreshCycle(tx, record.performanceCycleId, actorRef);
+}
+
 /* ------------------------------------------------------------- generation */
 
 /**
@@ -260,6 +662,7 @@ export async function raiseCommissionConflict(
  * milestone, in `reassessCommission`.
  */
 export async function generateForBooking(tx: Tx, bookingId: string, actorRef: string) {
+  await freezeClassification(tx, bookingId, actorRef);
   const outcome = await previewCommission(tx, bookingId);
   if (!outcome.ok) {
     await raiseCommissionConflict(tx, bookingId, outcome.conflict, actorRef);
@@ -365,6 +768,8 @@ async function supersedeRecord(tx: Tx, recordId: string, actorRef: string, reaso
     await reopenOpportunity(tx, record.opportunityId, `Superseded — ${reason}`);
     await tx.commissionRecord.update({ where: { id: recordId }, data: { opportunityId: null } });
   }
+  // AC-02 — and its qualifying transaction leaves the cycle with it.
+  await releaseFromCycle(tx, recordId, actorRef, `Superseded — ${reason}`);
 }
 
 /* ------------------------------------------------------------- reassessment */
@@ -392,19 +797,6 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
 
   for (const record of records) {
     const member = record.beneficiaryPerson.memberProfile;
-    const next = resolveEligibility({
-      type: record.type as "DIRECT" | "INVITE" | "ROYALTY" | "LOYALTY",
-      progressPercent: booking.paymentReceivedPercent.toString(),
-      milestonePercent: record.milestonePercent.toString(),
-      beneficiaryAadhaarAvailable: record.beneficiaryPerson.aadhaarStatus !== "PENDING",
-      beneficiaryBankVerified: await hasVerifiedBank(tx, record.beneficiaryPersonId),
-      memberStatus: member?.status ?? null,
-      memberCommissionHold: member?.commissionHold ?? false,
-      reraStatus: member?.reraStatus ?? null,
-      bookingProcess: booking.activeProcess,
-      acquisitionPaymentPending: false, // Phase 5 sets this from the acquisition.
-      commissionConflictAbove4: conflictAbove4,
-    });
 
     // The milestone is reached: take the one-shot entitlement, atomically.
     const kind = OPPORTUNITY_FOR[record.type];
@@ -457,6 +849,52 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
         },
       });
     }
+
+    // AC-02 — Royalty's qualifying transaction is counted into the introducing
+    // Member's performance cycle at the milestone, and released again if the
+    // milestone is lost. Counting before eligibility is resolved is deliberate:
+    // otherwise the record would hold for one extra reassessment after the very
+    // transaction that completed the cycle.
+    let performanceCycleComplete: boolean | null = null;
+    if (record.type === "ROYALTY") {
+      if (milestoneReached && payment !== "CANCELLED") {
+        performanceCycleComplete = await recordCycleQualification(
+          tx,
+          {
+            id: record.id,
+            performanceCycleId: record.performanceCycleId,
+            cycleCompletedAt: record.cycleCompletedAt,
+            beneficiaryPersonId: record.beneficiaryPersonId,
+          },
+          await isLegallyCompleted(tx, bookingId),
+          actorRef
+        );
+      } else if (record.performanceCycleId) {
+        await releaseFromCycle(
+          tx,
+          record.id,
+          actorRef,
+          milestoneReached
+            ? "The commission record was cancelled."
+            : "Payment fell below the milestone."
+        );
+      }
+    }
+
+    const next = resolveEligibility({
+      type: record.type as "DIRECT" | "INVITE" | "ROYALTY" | "LOYALTY",
+      progressPercent: booking.paymentReceivedPercent.toString(),
+      milestonePercent: record.milestonePercent.toString(),
+      beneficiaryAadhaarAvailable: record.beneficiaryPerson.aadhaarStatus !== "PENDING",
+      beneficiaryBankVerified: await hasVerifiedBank(tx, record.beneficiaryPersonId),
+      memberStatus: member?.status ?? null,
+      memberCommissionHold: member?.commissionHold ?? false,
+      reraStatus: member?.reraStatus ?? null,
+      bookingProcess: booking.activeProcess,
+      acquisitionPaymentPending: false, // Phase 5 sets this from the acquisition.
+      commissionConflictAbove4: conflictAbove4,
+      performanceCycleComplete,
+    });
 
     if (next.state !== record.eligibility || next.holdReason !== record.holdReason) {
       await tx.commissionRecord.update({
@@ -518,9 +956,86 @@ function subjectFor(
 /* -------------------------------------------------------- payment processing */
 
 /**
- * PRD §6.11 — Accounts records Paid, or Paid Early with compulsory remarks. No
- * additional MD/Admin approval is required and a Paid Early record is never
- * marked Paid again.
+ * AC-03 — MD approval for processing one commission before eligibility is Ready.
+ *
+ * The approval lives on the commission record itself rather than in a separate
+ * approvals table, because the pack requires the approver, the date/time and the
+ * related transaction/member to be stored together: on the record they cannot
+ * drift apart, and the record already carries the beneficiary and the Booking.
+ *
+ * Only MD may approve. Admin cannot, and Accounts — who processes the payment —
+ * certainly cannot approve their own early payment.
+ */
+export async function approveCommissionPaidEarly(args: {
+  idempotencyKey: string;
+  actorRef: string;
+  actorRole: string;
+  recordId: string;
+  note: string;
+}) {
+  if (args.actorRole !== "MD") blocked("Only MD may approve a Paid Early commission payment.");
+  if (!args.note.trim()) blocked("A compulsory approval note is required for Paid Early.");
+
+  return runCommand(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "COMMISSION_PAID_EARLY_APPROVE",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { recordId: args.recordId },
+    },
+    async (tx) => {
+      const record = await tx.commissionRecord.findUniqueOrThrow({ where: { id: args.recordId } });
+      if (!record.isCurrent) blocked("This commission record has been superseded.");
+      if (record.payment === "PAID" || record.payment === "PAID_EARLY") {
+        blocked("This commission has already been processed.");
+      }
+      if (record.payment === "CANCELLED") blocked("A cancelled commission cannot be approved.");
+      if (record.earlyApprovedAt) blocked("Paid Early is already approved for this commission.");
+
+      const approvedAt = new Date();
+      await tx.commissionRecord.update({
+        where: { id: record.id },
+        data: {
+          earlyApprovedByRef: args.actorRef,
+          earlyApprovedAt: approvedAt,
+          earlyApprovalNote: args.note.trim(),
+        },
+      });
+      await tx.commissionEvent.create({
+        data: {
+          recordId: record.id,
+          actorRef: args.actorRef,
+          action: "PAID_EARLY_APPROVED",
+          toState: "MD_APPROVED",
+          reason: args.note.trim(),
+        },
+      });
+
+      return {
+        result: { recordId: record.id, approvedAt },
+        audit: {
+          entity: "CommissionRecord",
+          entityId: record.id,
+          action: "PAID_EARLY_APPROVED",
+          after: {
+            approver: args.actorRef,
+            approvedAt: approvedAt.toISOString(),
+            beneficiaryPersonId: record.beneficiaryPersonId,
+            bookingId: record.bookingId,
+            acquisitionId: record.acquisitionId,
+          },
+          reason: args.note.trim(),
+        },
+      };
+    }
+  );
+}
+
+/**
+ * PRD §6.11 with AC-03 — Accounts records Paid, or Paid Early with compulsory
+ * remarks and a recorded MD approval. A Paid Early record is never marked Paid
+ * again.
  */
 export async function markCommissionPaid(args: {
   idempotencyKey: string;
@@ -548,7 +1063,13 @@ export async function markCommissionPaid(args: {
       const record = await tx.commissionRecord.findUniqueOrThrow({ where: { id: args.recordId } });
       if (!record.isCurrent) blocked("This commission record has been superseded.");
 
-      const allowed = canMarkPaid(record.payment, record.eligibility, args.early);
+      // AC-03 — the stored approval is the only thing that unlocks Paid Early.
+      const allowed = canMarkPaid(
+        record.payment,
+        record.eligibility,
+        args.early,
+        record.earlyApprovedAt !== null
+      );
       if (!allowed.ok) blocked(allowed.reason);
 
       const dated = notFutureDated("Commission Paid Date", args.paidOn);
@@ -611,7 +1132,12 @@ export async function markCommissionPaid(args: {
           entity: "CommissionRecord",
           entityId: record.id,
           action: payment,
-          after: { percent: record.percent.toFixed(4), reference: reference.rawValue },
+          after: {
+            percent: record.percent.toFixed(4),
+            reference: reference.rawValue,
+            earlyApprovedByRef: record.earlyApprovedByRef,
+            earlyApprovedAt: record.earlyApprovedAt?.toISOString() ?? null,
+          },
           reason: args.remarks.trim() || null,
         },
       };
@@ -621,20 +1147,67 @@ export async function markCommissionPaid(args: {
 
 /* ------------------------------------------------- cancellation and holds */
 
+/** The Accounts review a Buyback's commission impact needs (main-PRD §14.12). */
+export const BUYBACK_COMMISSION_PURPOSE = "BUYBACK_COMMISSION_REVIEW";
+
 /**
- * PRD §6.5, §14.12 — a cancellation before legal completion cancels the unpaid
- * records and reopens their slots, while a paid one becomes Accounts Adjustment
- * Required. A legally completed sale keeps its slots consumed.
+ * AC-05 — the commission side of an unwind, following main-PRD §14.12, which
+ * treats three cases differently rather than one:
+ *
+ *  - **Cancellation before legal completion** — unpaid records are Cancelled and
+ *    their slots reopen; a Paid or Paid Early record becomes Accounts Adjustment
+ *    Required. Nothing is deleted.
+ *  - **Buyback before legal completion** — "Unpaid old-sale commission:
+ *    CRM/management decision, then Accounts approval". The records step back the
+ *    same way, and the decision §14.12 requires is raised as an Accounts task
+ *    rather than being skipped.
+ *  - **Buyback after legal completion** — "Original sale commission normally
+ *    remains earned unless the written arrangement states otherwise". The sale
+ *    really did complete, so the records keep their payment state, their
+ *    consumed entitlements and their completed performance cycle. Accounts still
+ *    get the review, because "normally" is not "always" and the written
+ *    arrangement is a human judgement, not a rule the system can hold.
+ *
+ * The third case is the one the ordinary cancellation path gets wrong if it is
+ * reused: it would cancel a commission that the approved rule says stays earned.
  */
 export async function cancelCommissionForBooking(
   tx: Tx,
   bookingId: string,
   actorRef: string,
-  args: { legallyCompleted: boolean; reason: string }
+  args: {
+    legallyCompleted: boolean;
+    reason: string;
+    /** Defaults to a cancellation; a Buyback says so, because §14.12 differs. */
+    unwind?: "CANCELLATION" | "BUYBACK";
+  }
 ) {
   const records = await tx.commissionRecord.findMany({ where: { bookingId, isCurrent: true } });
+  const isBuyback = args.unwind === "BUYBACK";
+
+  // main-PRD §14.12 — the only case where the commission is left standing.
+  const remainsEarned = isBuyback && args.legallyCompleted;
 
   for (const record of records) {
+    if (remainsEarned) {
+      // Nothing about the record changes: not its payment state, not its
+      // consumed entitlement, not its completed cycle. Only the history gains
+      // the fact that a Buyback happened after the sale legally completed.
+      await tx.commissionEvent.create({
+        data: {
+          recordId: record.id,
+          actorRef,
+          action: "BUYBACK_AFTER_COMPLETION",
+          fromState: record.payment,
+          toState: record.payment,
+          reason:
+            `${args.reason}. The sale was legally completed before the Buyback, so this ` +
+            `commission remains earned (main-PRD §14.12).`,
+        },
+      });
+      continue;
+    }
+
     const payment = afterAffectingChange(record.payment, "CANCELLED_BEFORE_COMPLETION");
     await tx.commissionRecord.update({
       where: { id: record.id },
@@ -644,7 +1217,7 @@ export async function cancelCommissionForBooking(
       data: {
         recordId: record.id,
         actorRef,
-        action: "BOOKING_CANCELLED",
+        action: isBuyback ? "BUYBACK_BEFORE_COMPLETION" : "BOOKING_CANCELLED",
         fromState: record.payment,
         toState: payment,
         reason: args.reason,
@@ -655,9 +1228,62 @@ export async function cancelCommissionForBooking(
       await reopenOpportunity(tx, record.opportunityId, args.reason);
       await tx.commissionRecord.update({ where: { id: record.id }, data: { opportunityId: null } });
     }
+    // AC-02 — the qualifying transaction leaves its cycle only where the sale
+    // had not legally completed. PRD §6.3 and §6.5 hold the entitlement
+    // consumed for a completed sale that is later bought back, so releasing it
+    // here would un-complete a cycle the Member had already earned.
+    if (opportunityReopens(args.legallyCompleted)) {
+      await releaseFromCycle(tx, record.id, actorRef, args.reason);
+    }
     await closeTasksFor(tx, "Commission", record.id, actorRef, args.reason, COMMISSION_PAYMENT_PURPOSE);
   }
-  return { affected: records.length };
+
+  // main-PRD §14.12 — a Buyback's commission impact is decided by
+  // CRM/management and approved by Accounts on both sides of legal completion.
+  // The system does not make that call; it makes sure it is asked for.
+  if (isBuyback && records.length > 0) {
+    const booking = await tx.booking.findUniqueOrThrow({
+      where: { id: bookingId },
+      include: { project: true, plot: true },
+    });
+    await ensureTask(tx, {
+      recordKind: "Booking",
+      recordId: bookingId,
+      recordName: `${booking.bookingNumber ?? booking.requestNo} · ${booking.project.name} ${booking.plot.plotNumber}`,
+      purpose: BUYBACK_COMMISSION_PURPOSE,
+      title: remainsEarned
+        ? "Accounts Verification — commission after a Buyback on a completed sale"
+        : "Accounts Verification — commission after a Buyback before completion",
+      assigneeRole: "ACCOUNTS",
+      dueAt: new Date(),
+      decision: true,
+      latestResult: remainsEarned
+        ? `${records.length} commission record(s) remain earned under main-PRD §14.12. Confirm ` +
+          `against the written arrangement, or raise a correction.`
+        : `${records.length} commission record(s) stepped back. Confirm the CRM/management ` +
+          `decision on the unpaid old-sale commission.`,
+    });
+  }
+
+  return { affected: records.length, remainsEarned };
+}
+
+/**
+ * AC-02 — the commission side of reaching, or losing, legal completion.
+ *
+ * Delivery is what completes a Royalty's qualifying activity, so the completion
+ * service has to tell the commission engine when it happens. Without this the
+ * Royalty would sit on PERFORMANCE_CYCLE_INCOMPLETE forever: nothing else in the
+ * system changes after the final payment.
+ */
+export async function onLegalCompletionChanged(
+  tx: Tx,
+  bookingId: string,
+  actorRef: string,
+  args: { completed: boolean; reason: string }
+) {
+  if (!args.completed) await reverseCycleCompletion(tx, bookingId, actorRef, args.reason);
+  await reassessCommission(tx, bookingId, actorRef);
 }
 
 /**

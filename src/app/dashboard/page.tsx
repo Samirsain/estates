@@ -3,6 +3,8 @@
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
+import { taskSubjects } from "@/lib/services/task-service";
+import { businessState } from "@/lib/services/report-service";
 import type { RecordKind, Recurrence, Task } from "@/lib/tasks";
 import DashboardClient from "./dashboard-client";
 
@@ -17,6 +19,12 @@ export default async function DashboardPage() {
   // would already be in the page payload, remarks and all.
   const seesAllWork = actor.role === "MD" || actor.role === "ADMIN";
 
+  // AC-07 — the business-state figures go to the roles that answer for them.
+  // CRM and PC work Plot and Enquiry queues and have no reason to be served
+  // commission and royalty totals on their own dashboard.
+  const seesBusinessState =
+    seesAllWork || actor.role === "ACCOUNTS" || actor.role === "MIS";
+
   const rows = await db.task.findMany({
     where: seesAllWork
       ? undefined
@@ -26,11 +34,16 @@ export default async function DashboardPage() {
     take: 300,
   });
 
+  // What each task is actually about, in columns rather than in one line of
+  // display text (DESIGN §6.2).
+  const subjects = await taskSubjects(rows);
+
   const tasks: Task[] = rows.map((row) => ({
     id: row.id,
     purpose: row.purpose,
     title: row.title,
     record: { kind: row.recordKind as RecordKind, id: row.recordId, name: row.recordName },
+    subject: subjects.get(row.recordId),
     assigneeRole: row.assigneeRole,
     assigneeName: row.assigneeStaff?.person.fullName ?? "Unassigned",
     dueAt: row.dueAt.toISOString(),
@@ -49,6 +62,7 @@ export default async function DashboardPage() {
       staffAccountId={actor.staffAccountId}
       initialTasks={tasks}
       seesAllWork={seesAllWork}
+      businessState={seesBusinessState ? await businessState() : null}
     />
   );
 }

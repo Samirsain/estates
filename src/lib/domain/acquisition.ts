@@ -18,6 +18,13 @@ const fail = (reason: string): Check => ({ ok: false, reason });
 export const MIN_PAYMENT_GIVEN_FOR_APPROVAL = new D(20);
 export const FULL_PAYMENT_GIVEN = new D(100);
 
+/**
+ * AC-04 — Buying Commission is capped at 5%. The cap is enforced here, in the
+ * domain, so that every path into an acquisition meets it: a dashboard that
+ * only displayed the cap would leave the stored figure wrong.
+ */
+export const BUYING_CAP_PERCENT = new D(5);
+
 /** PRD §11.1 — the approved visible message while Payment Given is below 100%. */
 export const PAYMENT_PENDING_MESSAGE = "Payment Pending";
 /** PRD §11.4 — a cancelled deal is not sellable. */
@@ -231,8 +238,8 @@ export function resolvePaymentGivenCorrection(args: {
 /**
  * PRD §11.7 — one beneficiary per acquisition, and neither the seller nor a
  * Customer of that Buyback may earn Buying Commission for arranging the return
- * of their own property. It sits outside the 4% sale cap and settles at 100%
- * Payment Given.
+ * of their own property. It sits outside the 4% sale cap, carries its own 5% cap
+ * (AC-04) and settles at 100% Payment Given.
  */
 export function validateBuyingCommission(args: {
   beneficiaryPersonId: string;
@@ -243,7 +250,14 @@ export function validateBuyingCommission(args: {
 }): Check {
   const percent = new D(args.percent);
   if (percent.lte(0)) return fail("Buying Commission must be greater than 0%.");
-  if (percent.gt(100)) return fail("Buying Commission cannot exceed 100%.");
+  // AC-04 — never trimmed to fit, exactly as RD-03 treats the sale cap: an
+  // over-cap figure is refused so the entered value is corrected at source.
+  if (percent.gt(BUYING_CAP_PERCENT)) {
+    return fail(
+      `Buying Commission is capped at ${BUYING_CAP_PERCENT.toFixed(0)}%. ` +
+        `${percent.toFixed(2)}% exceeds the cap — correct the percentage before approval.`
+    );
+  }
 
   if (args.beneficiaryPersonId === args.sellerPersonId) {
     return fail(

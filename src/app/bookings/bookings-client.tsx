@@ -20,9 +20,11 @@ import { capShare, shareRoom, shareSum } from "@/lib/domain/shares";
 import {
   formatIst,
   formatIstDate,
+  formatDimension,
   formatPlotSize,
   formatQuantity,
   istDay,
+  remainingPercent,
   type StaffRole,
 } from "@/lib/tasks";
 import {
@@ -35,6 +37,7 @@ import {
   decideScheduleRevisionAction,
   decideSoldByCorrectionAction,
   loadBookingDetail,
+  approveCommissionPaidEarlyAction,
   markCommissionPaidAction,
   requestPrimaryCustomerChangeAction,
   recordCompletionAction,
@@ -132,6 +135,7 @@ type Permissions = {
   raiseCustomerChange: boolean;
   approveCustomerChange: boolean;
   processCommission: boolean;
+  approvePaidEarly: boolean;
   raiseSoldBy: boolean;
   approveSoldBy: boolean;
   recordFinalBuyers: boolean;
@@ -205,6 +209,7 @@ const HOLD_LABEL: Record<string, string> = {
   BUYBACK_PENDING: "Buyback Pending",
   PAYMENT_PENDING: "Payment Pending",
   COMMISSION_CONFLICT_ABOVE_4: "Commission Conflict — Above 4%",
+  PERFORMANCE_CYCLE_INCOMPLETE: "Performance Cycle Incomplete",
 };
 
 const SOLD_BY_LABEL: Record<string, string> = {
@@ -242,6 +247,43 @@ function statusVariant(status: string) {
   return "info" as const;
 }
 
+/**
+ * A payment percentage with its ceiling enforced in the box.
+ *
+ * `max` on a number input only blocks the submit — it does nothing to the
+ * digits going in, so a field capped at 70 still let 100 be typed and only
+ * argued about it afterwards. Clamping on input means the number in the box is
+ * always one the record can actually take. The server still decides: this is
+ * the courtesy, not the rule (progressAfter refuses anything above 100%).
+ *
+ * Payment Received and Payment Given are separate datasets and must never be
+ * totalled together (main-PRD §1) — but the ceiling on one entry is the same
+ * arithmetic on both, so the field is shared and the caller passes its own max.
+ */
+export function PaymentPercentInput({
+  max,
+  defaultValue,
+}: {
+  max: string;
+  defaultValue?: string;
+}) {
+  return (
+    <Input
+      name="percent"
+      type="number"
+      step="0.0001"
+      min="0.0001"
+      max={max}
+      defaultValue={defaultValue}
+      required
+      onInput={(event) => {
+        const field = event.currentTarget;
+        if (Number(field.value) > Number(max)) field.value = max;
+      }}
+    />
+  );
+}
+
 type Dialog =
   | { kind: "NEW"; plotId?: string }
   | { kind: "REVISE"; row: BookingRowView }
@@ -255,6 +297,7 @@ type Dialog =
   | { kind: "CUSTOMER_CHANGE"; row: BookingRowView }
   | { kind: "CUSTOMER_CHANGE_DECIDE"; row: BookingRowView; approve: boolean }
   | { kind: "COMMISSION_PAY"; row: BookingRowView; recordId: string; label: string; early: boolean }
+  | { kind: "COMMISSION_EARLY_APPROVE"; row: BookingRowView; recordId: string; label: string }
   | { kind: "SOLD_BY"; row: BookingRowView }
   | { kind: "SOLD_BY_DECIDE"; row: BookingRowView; approve: boolean }
   | { kind: "FINAL_BUYERS"; row: BookingRowView }
@@ -379,16 +422,22 @@ export default function BookingsClient({
             Revise request
           </Button>
         )}
-        {["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) && permissions.confirmPayment && (
-          <Button
-            size="sm"
-            variant="outline"
-            className={headerButton}
-            onClick={() => openDialog({ kind: "PAY", row })}
-          >
-            Confirm Payment
-          </Button>
-        )}
+        {/* Fully paid is the end of this button, not a form that opens and
+            then refuses. Payment Completed still qualifies while anything
+            remains — a correction can step the total back below 100 — so the
+            gate is what is left, not the status. */}
+        {["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
+          permissions.confirmPayment &&
+          Number(remainingPercent(row.paymentReceivedPercent)) > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className={headerButton}
+              onClick={() => openDialog({ kind: "PAY", row })}
+            >
+              Confirm Payment
+            </Button>
+          )}
         {["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
           permissions.cancel && (
             // Outline, not ghost: three actions on one line, and the third had
@@ -539,7 +588,7 @@ export default function BookingsClient({
               <tr className="border-b border-border">
                 <th className="px-3 py-1.5">Project</th>
                 <th className="w-[9rem] px-3 py-1.5">Plot No.</th>
-                <th className="w-[10rem] px-3 py-1.5">Size (W × L)</th>
+                <th className="w-[10rem] px-3 py-1.5 text-center">Size (W × L)</th>
                 <th className="px-3 py-1.5">Customer</th>
                 <th className="px-3 py-1.5">Sold By</th>
                 <th className="w-[14rem] px-3 py-1.5">Status</th>
@@ -557,7 +606,7 @@ export default function BookingsClient({
               {visible.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1"
+                  className="h-14 border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1"
                 >
                   <td>{row.project}</td>
                   {/* The Plot number is the way into the Booking, and its type
@@ -577,8 +626,18 @@ export default function BookingsClient({
                   {/* An irregular Plot has no width and length to print, only
                       the area somebody measured — so it prints that instead of
                       an empty cell. */}
-                  <td className="whitespace-nowrap tabular-nums">
-                    {formatPlotSize(row.plotWidthFt, row.plotLengthFt) ?? (
+                  <td className="whitespace-nowrap text-center tabular-nums">
+                    {/* Same three columns as the Plot Inventory list: a side
+                        with inches is wider than one without, so the cross is
+                        pinned to the middle rather than left to wander down
+                        the column. */}
+                    {formatPlotSize(row.plotWidthFt, row.plotLengthFt) ? (
+                      <span className="grid grid-cols-[1fr_auto_1fr] items-baseline gap-1.5">
+                        <span className="text-right">{formatDimension(row.plotWidthFt!)}</span>
+                        <span className="text-muted-foreground">×</span>
+                        <span className="text-left">{formatDimension(row.plotLengthFt!)}</span>
+                      </span>
+                    ) : (
                       <span className="text-muted-foreground">
                         {formatQuantity(row.plotAreaSqFt)} sq ft
                       </span>
@@ -590,7 +649,7 @@ export default function BookingsClient({
                     <PersonLink
                       personId={row.primaryCustomerPersonId}
                       name={row.primaryCustomerId ?? row.primaryCustomer}
-                      className={row.primaryCustomerId ? "font-mono font-semibold" : undefined}
+                      className={row.primaryCustomerId ? "font-semibold" : undefined}
                     />
                     {row.primaryCustomerId && (
                       <span className="block text-[11px] text-muted-foreground">
@@ -738,7 +797,7 @@ export default function BookingsClient({
         <ActionDialog
           title="Confirm Payment Received"
           row={dialog.row}
-          consequence={`Payment Received This Time is incremental, not cumulative. It lands on the oldest unpaid instalment first. Current progress is ${dialog.row.paymentReceivedPercent}%.`}
+          consequence={`Payment Received This Time is incremental, not cumulative. It lands on the oldest unpaid instalment first. Received so far is ${dialog.row.paymentReceivedPercent}%, so at most ${remainingPercent(dialog.row.paymentReceivedPercent)}% remains.`}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -756,8 +815,10 @@ export default function BookingsClient({
             )
           }
         >
-          <Field label="Payment Received This Time (%)">
-            <Input name="percent" type="number" step="0.0001" min="0.0001" max="100" required />
+          {/* Not max 100: 100 is the whole Booking, and this field is one
+              payment against what is left of it. */}
+          <Field label={`Payment Received This Time (%) — ${remainingPercent(dialog.row.paymentReceivedPercent)}% remaining`}>
+            <PaymentPercentInput max={remainingPercent(dialog.row.paymentReceivedPercent)} />
           </Field>
           <Field label="Payment Date">
             <Input name="paidOn" type="date" defaultValue={istDay(new Date())} max={istDay(new Date())} required />
@@ -948,7 +1009,7 @@ export default function BookingsClient({
           row={dialog.row}
           consequence={
             dialog.early
-              ? `${dialog.label}. Eligibility is not Ready, so this is Paid Early: remarks are compulsory, no MD or Admin approval is required, eligibility keeps updating separately, and no second payment task is raised at the normal milestone. It can never be marked Paid again.`
+              ? `${dialog.label}. Eligibility is not Ready, so this is Paid Early: MD has approved it, remarks are compulsory, eligibility keeps updating separately, and no second payment task is raised at the normal milestone. It can never be marked Paid again.`
               : `${dialog.label}. The record is Ready and is recorded as Paid against the reference below.`
           }
           busy={busy}
@@ -976,6 +1037,28 @@ export default function BookingsClient({
           </Field>
           <Field label={dialog.early ? "Remarks — compulsory" : "Remarks"}>
             <Input name="remarks" required={dialog.early} minLength={dialog.early ? 3 : undefined} />
+          </Field>
+        </ActionDialog>
+      )}
+
+      {dialog?.kind === "COMMISSION_EARLY_APPROVE" && (
+        <ActionDialog
+          title="Approve Paid Early"
+          row={dialog.row}
+          consequence={`${dialog.label}. Approving lets Accounts process this commission before its eligibility conditions are met. Your name and the time are stored on the commission record permanently.`}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(f) =>
+            run(() =>
+              approveCommissionPaidEarlyAction(
+                { recordId: dialog.recordId, note: String(f.get("note")) },
+                newKey()
+              )
+            )
+          }
+        >
+          <Field label="Approval note — compulsory">
+            <Input name="note" required minLength={3} />
           </Field>
         </ActionDialog>
       )}
@@ -1207,11 +1290,18 @@ function BookingDetailPanel({
                   <span>
                     <PersonLink personId={p.personId} name={p.name} />
                     <span className="ml-2 text-[11px] text-muted-foreground">
-                      {p.role === "PRIMARY" ? "Primary Customer" : "Additional Customer"}
+                      {/* One buyer is the Customer. "Primary" only says
+                          something when there is a second one to be primary
+                          over, and otherwise sends the reader looking. */}
+                      {currentParties.length === 1
+                        ? "Customer"
+                        : p.role === "PRIMARY"
+                          ? "Primary Customer"
+                          : "Additional Customer"}
                     </span>
                   </span>
                   <span className="tabular-nums">
-                    {p.sharePercent ? `${p.sharePercent}%` : "100% (sole buyer)"}
+                    {p.sharePercent ? `${p.sharePercent}%` : "100%"}
                   </span>
                 </li>
               ))}
@@ -1626,6 +1716,11 @@ function BookingDetailPanel({
                             Paid Early — {c.paymentRemarks}
                           </span>
                         )}
+                        {c.earlyApprovedAt && (
+                          <span className="block text-[11px] text-muted-foreground">
+                            Early approved by {c.earlyApprovedByRef} · {formatIst(c.earlyApprovedAt)}
+                          </span>
+                        )}
                         {c.reference && (
                           <span className="block text-[11px] text-muted-foreground">
                             {c.reference}
@@ -1637,24 +1732,59 @@ function BookingDetailPanel({
                         )}
                       </td>
                       <td className="whitespace-nowrap text-right">
-                        {c.isCurrent && permissions.processCommission && c.payment === "NOT_PAID" && (
-                          <Button
-                            size="xs"
-                            className="w-24"
-                            variant={c.eligibility === "READY" ? "default" : "outline"}
-                            onClick={() =>
-                              onAction({
-                                kind: "COMMISSION_PAY",
-                                row,
-                                recordId: c.id,
-                                label: `${c.type} ${c.percent}% to ${c.beneficiary}`,
-                                early: c.eligibility !== "READY",
-                              })
-                            }
-                          >
-                            {c.eligibility === "READY" ? "Mark Paid" : "Paid Early"}
-                          </Button>
-                        )}
+                        {/* AC-03 — an unready record needs MD's approval before
+                            Accounts sees a Paid Early button at all. */}
+                        {c.isCurrent &&
+                          c.payment === "NOT_PAID" &&
+                          c.eligibility !== "READY" &&
+                          !c.earlyApprovedAt &&
+                          permissions.approvePaidEarly && (
+                            <Button
+                              size="xs"
+                              className="w-24"
+                              variant="outline"
+                              onClick={() =>
+                                onAction({
+                                  kind: "COMMISSION_EARLY_APPROVE",
+                                  row,
+                                  recordId: c.id,
+                                  label: `${c.type} ${c.percent}% to ${c.beneficiary}`,
+                                })
+                              }
+                            >
+                              Approve Early
+                            </Button>
+                          )}
+                        {c.isCurrent &&
+                          permissions.processCommission &&
+                          c.payment === "NOT_PAID" &&
+                          (c.eligibility === "READY" || c.earlyApprovedAt) && (
+                            <Button
+                              size="xs"
+                              className="w-24"
+                              variant={c.eligibility === "READY" ? "default" : "outline"}
+                              onClick={() =>
+                                onAction({
+                                  kind: "COMMISSION_PAY",
+                                  row,
+                                  recordId: c.id,
+                                  label: `${c.type} ${c.percent}% to ${c.beneficiary}`,
+                                  early: c.eligibility !== "READY",
+                                })
+                              }
+                            >
+                              {c.eligibility === "READY" ? "Mark Paid" : "Paid Early"}
+                            </Button>
+                          )}
+                        {c.isCurrent &&
+                          c.payment === "NOT_PAID" &&
+                          c.eligibility !== "READY" &&
+                          !c.earlyApprovedAt &&
+                          !permissions.approvePaidEarly && (
+                            <span className="text-[11px] text-muted-foreground">
+                              Awaiting MD approval
+                            </span>
+                          )}
                       </td>
                     </tr>
                   ))}
@@ -1782,11 +1912,15 @@ function SubmittedSnapshotView({
               <span>
                 {nameFor(p.personId)}
                 <span className="ml-2 text-[11px] text-muted-foreground">
-                  {p.role === "PRIMARY" ? "Primary Customer" : "Additional Customer"}
+                  {parties.length === 1
+                    ? "Customer"
+                    : p.role === "PRIMARY"
+                      ? "Primary Customer"
+                      : "Additional Customer"}
                 </span>
               </span>
               <span className="tabular-nums">
-                {p.sharePercent ? `${p.sharePercent}%` : "100% (sole buyer)"}
+                {p.sharePercent ? `${p.sharePercent}%` : "100%"}
               </span>
             </li>
           ))}
@@ -2847,7 +2981,7 @@ function CompletionSection({
                       </span>
                     </span>
                     <span className="tabular-nums">
-                      {buyer.sharePercent ? `${buyer.sharePercent}%` : "100% (sole buyer)"}
+                      {buyer.sharePercent ? `${buyer.sharePercent}%` : "100%"}
                     </span>
                   </li>
                 ))}
@@ -2915,14 +3049,18 @@ function CompletionSection({
   );
 }
 
-type FinalBuyerRow = {
+export type FinalBuyerRow = {
   personId: string;
   sharePercent: string;
   dateOfBirth: string;
   address: string;
+  /** Asked only where the Person has none on file; blank otherwise. */
+  aadhaar: string;
+  /** Same, and blank is a decision here — "PAN Not Available" (§18.2). */
+  pan: string;
 };
 
-function FinalBuyersDialog({
+export function FinalBuyersDialog({
   row,
   detail,
   people,
@@ -2943,16 +3081,34 @@ function FinalBuyersDialog({
     (p) => p.kind === "COMMERCIAL" && !p.effectiveTo
   );
 
-  const [rows, setRows] = React.useState<FinalBuyerRow[]>(
+  // Most sales register to the Customer who bought, with the details the CRM
+  // already holds — so the form opens answered and is confirmed, not retyped.
+  // It stays editable because the registry buyer may be somebody else, and
+  // because a Person record can be missing the date or the address.
+  const seed = (): FinalBuyerRow[] =>
     commercial.length > 0
       ? commercial.map((p) => ({
           personId: p.personId,
           sharePercent: p.sharePercent ?? "",
-          dateOfBirth: "",
-          address: "",
+          dateOfBirth: p.dateOfBirth ?? "",
+          address: p.address ?? "",
+          aadhaar: "",
+          pan: "",
         }))
-      : [{ personId: "", sharePercent: "", dateOfBirth: "", address: "" }]
-  );
+      : [{ personId: "", sharePercent: "", dateOfBirth: "", address: "", aadhaar: "", pan: "" }];
+
+  const [rows, setRows] = React.useState<FinalBuyerRow[]>(seed);
+  // The Booking detail is fetched after the dialog opens, so the first render
+  // has no parties to seed from. Re-seed once it lands, unless it has been
+  // edited already.
+  const seeded = React.useRef(commercial.length > 0);
+  React.useEffect(() => {
+    if (!seeded.current && commercial.length > 0) {
+      seeded.current = true;
+      setRows(seed());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail]);
 
   const update = (index: number, patch: Partial<FinalBuyerRow>) =>
     setRows((list) => list.map((r, i) => (i === index ? { ...r, ...patch } : r)));
@@ -2982,7 +3138,15 @@ function FinalBuyersDialog({
               key={index}
               className="grid gap-2 rounded-xl border border-border/50 p-3 md:grid-cols-4"
             >
-              <Field label={index === 0 ? "Primary Customer" : "Additional Customer"}>
+              <Field
+                label={
+                  rows.length === 1
+                    ? "Customer"
+                    : index === 0
+                      ? "Primary Customer"
+                      : "Additional Customer"
+                }
+              >
                 <PersonPicker
                   required
                   value={buyer.personId}
@@ -2990,16 +3154,28 @@ function FinalBuyersDialog({
                   options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
                 />
               </Field>
-              <Field label="Ownership share % (blank = sole buyer)">
-                <Input
-                  max={shareRoom(rows, index)}
-                  value={buyer.sharePercent}
-                  onChange={(e) =>
-                    update(index, { sharePercent: capShare(rows, index, e.target.value) })
-                  }
-                  inputMode="decimal"
-                />
-              </Field>
+              {/* One buyer owns the whole Plot, so there is no share to type —
+                  the field said "blank = sole buyer" and asked the reader to
+                  work out that an empty box meant everything. It states 100%
+                  instead, and only becomes a field when a second buyer makes
+                  the split a real question (PRD §12.1). */}
+              {rows.length === 1 ? (
+                <Field label="Ownership share">
+                  <p className="px-1 py-2 text-sm font-medium">100%</p>
+                </Field>
+              ) : (
+                <Field label="Ownership share % — all buyers must total 100%">
+                  <Input
+                    max={shareRoom(rows, index)}
+                    value={buyer.sharePercent}
+                    onChange={(e) =>
+                      update(index, { sharePercent: capShare(rows, index, e.target.value) })
+                    }
+                    inputMode="decimal"
+                    required
+                  />
+                </Field>
+              )}
               <Field label="Date of Birth">
                 <Input
                   type="date"
@@ -3028,7 +3204,7 @@ function FinalBuyersDialog({
               onClick={() =>
                 setRows((list) => [
                   ...list,
-                  { personId: "", sharePercent: "", dateOfBirth: "", address: "" },
+                  { personId: "", sharePercent: "", dateOfBirth: "", address: "", aadhaar: "", pan: "" },
                 ])
               }
             >
@@ -3059,7 +3235,341 @@ function FinalBuyersDialog({
   );
 }
 
-function CompletionDialog({
+/**
+ * Delivery in one dialog: who the papers go to, then the route that transfers
+ * them. main-PRD §18 splits these into two tasks and the Bookings screen still
+ * shows them that way — but on an inventory row there is one thing left to do
+ * to a paid-off Plot, and asking for it in two visits is two visits.
+ *
+ * It runs the two commands in order and stops if the first fails, so the
+ * server-side rules are untouched: readyForCompletion() still refuses a route
+ * whose final buyers are incomplete.
+ */
+export function DeliverDialog({
+  row,
+  detail,
+  people,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  row: BookingRowView;
+  detail: BookingDetail | null;
+  people: PersonView[];
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (input: { buyers: FinalBuyerRow[]; completion: CompletionRouteInput }) => void;
+}) {
+  // The Booking is fetched after the dialog opens, and `detail` is shared with
+  // whatever was opened before — so it is only this Booking's when the ids
+  // agree. Same guard the review dialog uses.
+  const ready = detail?.id === row.id;
+  const commercial = (ready ? detail.parties : []).filter(
+    (p) => p.kind === "COMMERCIAL" && !p.effectiveTo
+  );
+  const seed = (): FinalBuyerRow[] =>
+    commercial.length > 0
+      ? commercial.map((p) => ({
+          personId: p.personId,
+          sharePercent: p.sharePercent ?? "",
+          dateOfBirth: p.dateOfBirth ?? "",
+          address: p.address ?? "",
+          aadhaar: "",
+          pan: "",
+        }))
+      : [{ personId: "", sharePercent: "", dateOfBirth: "", address: "", aadhaar: "", pan: "" }];
+
+  const [rows, setRows] = React.useState<FinalBuyerRow[]>(seed);
+  // The Booking detail is fetched after the dialog opens, so the first render
+  // has nothing to seed from. Re-seed once it lands, and only once.
+  const seeded = React.useRef(commercial.length > 0);
+  React.useEffect(() => {
+    if (!seeded.current && commercial.length > 0) {
+      seeded.current = true;
+      setRows(seed());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail]);
+
+  const [route, setRoute] = React.useState<"ALLOTMENT" | "REGISTRY">("ALLOTMENT");
+  const [pattaIssued, setPattaIssued] = React.useState<"YES" | "DONT_KNOW">("YES");
+
+  const update = (index: number, patch: Partial<FinalBuyerRow>) =>
+    setRows((list) => list.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+
+  const parties = ready ? detail.parties : [];
+
+  /** Whether this buyer's Aadhaar is already on file, so the form stops asking. */
+  const onFile = (personId: string) =>
+    parties.some((p) => p.personId === personId && p.aadhaarRecorded);
+
+  /** The Booking's parties say this Person has no Aadhaar — so it must be typed. */
+  const knownMissing = (personId: string) =>
+    parties.some((p) => p.personId === personId && !p.aadhaarRecorded);
+
+  /** Whether this buyer's PAN is on file. Blank stays a valid decision. */
+  const panOnFile = (personId: string) =>
+    parties.some((p) => p.personId === personId && p.panRecorded);
+
+  /** The Booking's own name for a party, so the row can state it, not offer it. */
+  const buyerName = (personId: string) =>
+    parties.find((p) => p.personId === personId)?.name ?? null;
+
+  /**
+   * "Primary" only means something once there is a second buyer to be primary
+   * over. One buyer is the Customer, and calling them the Primary Customer asks
+   * the reader to look for the other one.
+   */
+  const customerLabel = (index: number) =>
+    rows.length === 1 ? "Customer" : index === 0 ? "Primary Customer" : "Additional Customer";
+
+  // The Customer, the date and the address all come from the Booking, which is
+  // fetched after the dialog opens. Drawn before it lands, the form appears
+  // with an empty Customer and then rewrites itself under whoever is reading
+  // it. Wait for it, then draw once.
+  if (!ready) {
+    return (
+      <Modal title="Deliver" onClose={onClose}>
+        <p className="py-8 text-center text-sm text-muted-foreground">Loading the Booking…</p>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal
+      title="Deliver"
+      description="Final buyer details and one completion route. Recording it sets the Booking and Plot to Delivered."
+      wide
+      onClose={onClose}
+    >
+      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
+        <p className="font-semibold text-foreground">
+          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber}
+        </p>
+        <p className="mt-1 text-muted-foreground">
+          One buyer owns 100%. Add a Customer to split it, and the shares must then total exactly
+          100%. Delivered is recorded once, and only MD or Admin can reopen it.
+        </p>
+      </div>
+
+      <form
+        className="space-y-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const f = new FormData(e.currentTarget);
+          onSubmit({
+            buyers: rows,
+            completion:
+              route === "ALLOTMENT"
+                ? {
+                    route: "ALLOTMENT",
+                    allotmentDate: String(f.get("allotmentDate")),
+                    allotmentNumber: String(f.get("allotmentNumber")),
+                    allotmentGivenTo: String(f.get("allotmentGivenTo")),
+                    pattaIssued,
+                    pattaDate: String(f.get("pattaDate") ?? ""),
+                  }
+                : {
+                    route: "REGISTRY",
+                    advocateName: String(f.get("advocateName")),
+                    registryDate: String(f.get("registryDate")),
+                  },
+          });
+        }}
+      >
+        <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Final buyer details
+          </p>
+          {rows.map((buyer, index) => (
+            <div
+              key={index}
+              className="grid gap-2 rounded-xl border border-border/50 p-3 md:grid-cols-4"
+            >
+              {/* The Booking already names who bought the Plot, so the first
+                  row states it rather than offering it back as a choice — a
+                  picker here reads as "pick the buyer" on a sale that has one.
+                  Changing the Customer is its own reviewed action. Additional
+                  Customers are the ones actually being added, so they pick. */}
+              {index === 0 && buyerName(buyer.personId) ? (
+                <Field label={customerLabel(index)}>
+                  <p className="px-1 py-2 text-sm font-medium">{buyerName(buyer.personId)}</p>
+                </Field>
+              ) : (
+                <Field label={customerLabel(index)}>
+                  <PersonPicker
+                    required
+                    value={buyer.personId}
+                    onChange={(id) => update(index, { personId: id })}
+                    options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+                  />
+                </Field>
+              )}
+              {/* One buyer owns the whole Plot, so there is no share to type —
+                  the field said "blank = sole buyer" and asked the reader to
+                  work out that an empty box meant everything. It states 100%
+                  instead, and only becomes a field when a second buyer makes
+                  the split a real question (PRD §12.1). */}
+              {rows.length === 1 ? (
+                <Field label="Ownership share">
+                  <p className="px-1 py-2 text-sm font-medium">100%</p>
+                </Field>
+              ) : (
+                <Field label="Ownership share % — all buyers must total 100%">
+                  <Input
+                    max={shareRoom(rows, index)}
+                    value={buyer.sharePercent}
+                    onChange={(e) =>
+                      update(index, { sharePercent: capShare(rows, index, e.target.value) })
+                    }
+                    inputMode="decimal"
+                    required
+                  />
+                </Field>
+              )}
+              <Field label="Date of Birth">
+                <Input
+                  type="date"
+                  value={buyer.dateOfBirth}
+                  onChange={(e) => update(index, { dateOfBirth: e.target.value })}
+                  required
+                />
+              </Field>
+              <Field label="Address">
+                <Input
+                  value={buyer.address}
+                  onChange={(e) => update(index, { address: e.target.value })}
+                  required
+                />
+              </Field>
+              {/* Asked only where there is none on file. An Aadhaar or PAN
+                  already recorded is never re-asked and never overwritten from
+                  here. The Aadhaar is required because a registry cannot be
+                  recorded without one; the PAN is a decision, and leaving it
+                  blank is "PAN Not Available" (§18.2). */}
+              {buyer.personId && !onFile(buyer.personId) && (
+                <Field label="Aadhaar Number">
+                  <Input
+                    value={buyer.aadhaar}
+                    onChange={(e) => update(index, { aadhaar: e.target.value })}
+                    inputMode="numeric"
+                    placeholder={knownMissing(buyer.personId) ? "12 digits" : "12 digits, if not on file"}
+                    // Required only where the Booking's own parties say this
+                    // Person has none. An Additional Customer picked here may
+                    // already have one on file, and demanding a number nobody
+                    // has to hand would be a dead end — the server refuses a
+                    // completion without one anyway, and says so.
+                    required={knownMissing(buyer.personId)}
+                  />
+                </Field>
+              )}
+              {buyer.personId && !panOnFile(buyer.personId) && (
+                <Field label="PAN — blank means not available">
+                  <Input
+                    value={buyer.pan}
+                    onChange={(e) => update(index, { pan: e.target.value.toUpperCase() })}
+                    placeholder="ABCDE1234F"
+                    maxLength={10}
+                  />
+                </Field>
+              )}
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                setRows((list) => [
+                  ...list,
+                  { personId: "", sharePercent: "", dateOfBirth: "", address: "", aadhaar: "", pan: "" },
+                ])
+              }
+            >
+              Add Additional Customer
+            </Button>
+            {rows.length > 1 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setRows((list) => list.slice(0, -1))}
+              >
+                Remove last
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-3 border-t border-border/60 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Completion route — one only, there is no Allotment-then-Registry sequence
+          </p>
+          <Field label="Route">
+            <select
+              className={inputClass}
+              value={route}
+              onChange={(e) => setRoute(e.target.value as "ALLOTMENT" | "REGISTRY")}
+            >
+              <option value="ALLOTMENT">Allotment</option>
+              <option value="REGISTRY">Registry</option>
+            </select>
+          </Field>
+
+          {route === "ALLOTMENT" ? (
+            <div className="grid gap-2 md:grid-cols-2">
+              <Field label="Allotment Date">
+                <Input type="date" name="allotmentDate" required />
+              </Field>
+              <Field label="Allotment Number">
+                <Input name="allotmentNumber" required />
+              </Field>
+              <Field label="Allotment Given To">
+                <Input name="allotmentGivenTo" required />
+              </Field>
+              <Field label="Patta Issued">
+                <select
+                  className={inputClass}
+                  value={pattaIssued}
+                  onChange={(e) => setPattaIssued(e.target.value as "YES" | "DONT_KNOW")}
+                >
+                  <option value="YES">Yes</option>
+                  <option value="DONT_KNOW">Do not know</option>
+                </select>
+              </Field>
+              {pattaIssued === "YES" && (
+                <Field label="Patta Date">
+                  <Input type="date" name="pattaDate" required />
+                </Field>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2">
+              <Field label="Advocate Name">
+                <Input name="advocateName" required />
+              </Field>
+              <Field label="Registry Date">
+                <Input type="date" name="registryDate" required />
+              </Field>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+            Back
+          </Button>
+          <Button type="submit" size="sm" disabled={busy}>
+            {busy ? "Recording…" : "Record and mark Delivered"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function CompletionDialog({
   row,
   busy,
   onClose,

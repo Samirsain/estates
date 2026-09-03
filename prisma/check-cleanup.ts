@@ -172,6 +172,13 @@ export async function purgeCheckData(
     where: { personId: { in: personIds } },
     data: { invitedByMemberId: null },
   });
+  // AC-02 — a Member's performance cycles hold a foreign key to the profile, so
+  // they go before it. Missing this is exactly the failure mode this file's
+  // header warns about: the profile delete fails, cleanup aborts, and the run's
+  // rows stay behind looking like real operating data.
+  await db.performanceCycle.deleteMany({
+    where: { memberProfile: { personId: { in: personIds } } },
+  });
   await db.memberProfile.deleteMany({ where: { personId: { in: personIds } } });
   await db.customerProfile.deleteMany({ where: { personId: { in: personIds } } });
   await db.personMergeRequest.deleteMany({
