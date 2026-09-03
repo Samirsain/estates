@@ -84,10 +84,10 @@ export type CalcPersonView = {
   } | null;
   customer: {
     customerId: string;
-    introducedByPersonId: string | null;
-    introducedBy: string | null;
-    introducedPosition: number | null;
-    introducedRatePercent: string | null;
+    royaltyMemberPersonId: string | null;
+    royaltyMember: string | null;
+    royaltyPosition: number | null;
+    royaltyRatePercent: string | null;
     royaltyUsed: boolean;
     loyaltyUsed: number;
   } | null;
@@ -240,13 +240,13 @@ export default function CalculatorClient({
           : null,
       inviteUsed: p.member?.inviteUsed ?? false,
       royalty:
-        p.customer?.introducedByPersonId &&
-        p.customer.introducedPosition &&
-        p.customer.introducedRatePercent
+        p.customer?.royaltyMemberPersonId &&
+        p.customer.royaltyPosition &&
+        p.customer.royaltyRatePercent
           ? {
-              beneficiaryPersonId: p.customer.introducedByPersonId,
-              position: p.customer.introducedPosition,
-              ratePercent: p.customer.introducedRatePercent,
+              beneficiaryPersonId: p.customer.royaltyMemberPersonId,
+              position: p.customer.royaltyPosition,
+              ratePercent: p.customer.royaltyRatePercent,
             }
           : null,
       royaltyUsed: p.customer?.royaltyUsed ?? false,
@@ -964,11 +964,11 @@ export default function CalculatorClient({
                           {beneficiary.customer.customerId} · Loyalty{" "}
                           {beneficiary.customer.loyaltyUsed} of {maxLoyaltySlots} used · Royalty{" "}
                           {beneficiary.customer.royaltyUsed ? "consumed" : "open"}
-                          {beneficiary.customer.introducedBy
-                            ? ` · introduced by ${beneficiary.customer.introducedBy}, position ${
-                                beneficiary.customer.introducedPosition ?? "—"
-                              } → ${beneficiary.customer.introducedRatePercent ?? "—"}%`
-                            : " · no introducing Member"}
+                          {beneficiary.customer.royaltyMember
+                            ? ` · Royalty linked to ${beneficiary.customer.royaltyMember}, position ${
+                                beneficiary.customer.royaltyPosition ?? "—"
+                              } → ${beneficiary.customer.royaltyRatePercent ?? "—"}%`
+                            : " · no Royalty Linked Member"}
                         </p>
                       )}
 

@@ -89,7 +89,7 @@ export type PortalData = {
    * PRD §23.1 — positions and bands only. A Customer's name and Customer ID are
    * buyer-private and never reach the portal.
    */
-  introducedCustomers: Array<{
+  royaltyLinkedCustomers: Array<{
     position: number | null;
     ratePercent: string | null;
     loyaltySlotsConsumed: number;
@@ -422,10 +422,10 @@ export default function PortalClient({ data }: { data: PortalData }) {
 
           <div className="border-t border-border/50 pt-4 space-y-3">
             <h3 className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-emerald-700">
-              <Layers className="h-3 w-3" /> Customers you introduced
+              <Layers className="h-3 w-3" /> Customers linked to you for Royalty
             </h3>
-            {data.introducedCustomers.length === 0 ? (
-              <p className="text-muted-foreground">You have not introduced any Customer yet.</p>
+            {data.royaltyLinkedCustomers.length === 0 ? (
+              <p className="text-muted-foreground">No Customer has bought their first property through you yet.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[24rem] text-xs">
@@ -437,7 +437,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/50">
-                    {data.introducedCustomers.map((c, index) => (
+                    {data.royaltyLinkedCustomers.map((c, index) => (
                       <tr key={index}>
                         <td className="py-2.5 text-right tabular-nums text-foreground">{c.position ?? "—"}</td>
                         <td className="py-2.5 text-right tabular-nums font-semibold text-primary">
@@ -455,8 +455,8 @@ export default function PortalClient({ data }: { data: PortalData }) {
           </div>
 
           <p className="pt-2 text-[11px] leading-relaxed text-muted-foreground">
-            Introduced Customers are shown as positions and bands only. The portal never shows a
-            Customer&apos;s name, Customer ID or contact details.
+            Royalty Linked Customers are shown as positions and bands only. The portal never shows
+            a Customer&apos;s name, Customer ID or contact details.
           </p>
         </div>
       )}

@@ -39,9 +39,10 @@ export type CustomerRowView = {
   plotType: string | null;
   plotId: string | null;
   otherBookings: number;
-  introducedBy: string | null;
-  introducedByName: string | null;
-  introducedByMemberId: string | null;
+  royaltyMember: string | null;
+  royaltyMemberName: string | null;
+  royaltyMemberProfileId: string | null;
+  royaltyLinkProvisional: boolean;
   loyaltySlotsConsumed: number;
 };
 
@@ -156,7 +157,7 @@ export default function CustomersClient({
                 <th className="w-[7rem] px-3 py-1.5">Type</th>
                 <th className="px-3 py-1.5">Project</th>
                 <th className="w-[7rem] px-3 py-1.5">Plot</th>
-                <th className="w-[8.5rem] px-3 py-1.5">Introduced by</th>
+                <th className="w-[8.5rem] px-3 py-1.5">Royalty linked to</th>
                 <th className="w-[5rem] px-3 py-1.5 text-right">Loyalty</th>
               </tr>
             </thead>
@@ -218,19 +219,21 @@ export default function CustomersClient({
                     {/* The Member ID leads and opens the Member; the name under
                         it confirms who that is without competing for the eye —
                         the same shape the Members list uses for Invited by. */}
-                    {row.introducedBy && row.introducedByMemberId ? (
-                      <Link href={`/members/${row.introducedByMemberId}`} className="group">
+                    {row.royaltyMember && row.royaltyMemberProfileId ? (
+                      <Link href={`/members/${row.royaltyMemberProfileId}`} className="group">
                         <span className="block text-primary group-hover:underline">
-                          {row.introducedBy}
+                          {row.royaltyMember}
                         </span>
-                        {row.introducedByName && (
+                        {row.royaltyMemberName && (
                           <span className="block text-[11px] text-muted-foreground">
-                            {row.introducedByName}
+                            {row.royaltyLinkProvisional
+                              ? `${row.royaltyMemberName} · provisional`
+                              : row.royaltyMemberName}
                           </span>
                         )}
                       </Link>
                     ) : (
-                      (row.introducedBy ?? "—")
+                      (row.royaltyMember ?? "—")
                     )}
                   </td>
                   <td className="whitespace-nowrap text-right tabular-nums">

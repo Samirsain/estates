@@ -1,17 +1,19 @@
-// Member activation and the two annual network counters.
-// PRD.md RD-02, §6.2, §6.3, §6.4; main-PRD §7.1, §14.3, §14.4.
+// Member activation and the two network counters.
+// PRD.md RD-02, §6.2, §6.3, §6.4; main-PRD §7.1, §14.3, §14.4;
+// Approved Changes (2) CR-001 – CR-004.
 //
-// A position is assigned once, at activation or at the first valid
-// introduction, and is then permanently fixed with the band rate it earned.
-// Existing positions never reset, renumber or move; at each anniversary only
-// newly introduced Members or Customers enter the new annual counter.
+// An Invite position is assigned once, at activation. A Royalty position is
+// assigned once, when the Customer's first qualifying purchase reaches its
+// milestone — never from an Enquiry (CR-001). Both are then permanently fixed
+// with the band rate they earned: existing positions never reset, renumber or
+// move.
 
 import { db } from "@/lib/db";
 import { bandRate, counterYearStart, nextNetworkPosition } from "@/lib/domain/commission";
 import { hashPassword } from "@/lib/security/auth";
 import { istDay, istInstant } from "@/lib/tasks";
 import { blocked, lockKey, nextReference, runCommand, type Tx } from "./command";
-import { reassessCommission } from "./commission-service";
+import { generateForBooking, reassessCommission } from "./commission-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
 /** The counter year as an instant, so it can be stored and compared. */
@@ -59,48 +61,188 @@ export async function assignInvitePosition(
 }
 
 /**
- * RD-02, PRD §6.4 — the introduced Customer takes the next free position in the
- * introducing Member's separate annual Introduced Customer Counter. Called when
- * Original Introduced By Member freezes, and again after an authorised
- * correction, where the Customer receives the next available position under the
- * corrected Member and the old one stays historical.
+ * CR-002 — the Customer takes the next free position in the Royalty Linked
+ * Member's Royalty counter. Called only when the link becomes final, because
+ * that is the moment the pack says the position is taken: a provisional link
+ * consumes nothing.
  */
-export async function assignIntroducedPosition(
+async function assignRoyaltyPosition(
   tx: Tx,
-  args: { customerProfileId: string; introducingMemberId: string; at?: Date }
+  args: { customerProfileId: string; royaltyMemberId: string; at: Date }
 ) {
-  const at = args.at ?? new Date();
-  const introducer = await tx.memberProfile.findUniqueOrThrow({
-    where: { id: args.introducingMemberId },
-  });
-  if (!introducer.activationDate) {
-    blocked("The introducing Member is not activated, so no Network position can be assigned.");
+  const member = await tx.memberProfile.findUniqueOrThrow({ where: { id: args.royaltyMemberId } });
+  if (!member.activationDate) {
+    blocked("The Royalty Linked Member is not activated, so no Royalty position can be assigned.");
   }
 
-  const yearStart = yearStartInstant(introducer.activationDate, at);
-  await lockKey(tx, `introduced-counter:${introducer.id}:${istDay(yearStart)}`);
+  const yearStart = yearStartInstant(member.activationDate, args.at);
+  await lockKey(tx, `royalty-counter:${member.id}:${istDay(yearStart)}`);
 
   const taken = await tx.customerProfile.findMany({
     where: {
-      originalIntroducedByMemberId: introducer.id,
-      introducedYearStart: yearStart,
-      introducedPosition: { not: null },
+      royaltyLinkedMemberId: member.id,
+      royaltyYearStart: yearStart,
+      royaltyPosition: { not: null },
     },
-    select: { introducedPosition: true },
+    select: { royaltyPosition: true },
   });
-  const position = nextNetworkPosition(taken.map((t) => t.introducedPosition!));
-  const ratePercent = bandRate(position);
+  const position = nextNetworkPosition(taken.map((t) => t.royaltyPosition!));
+  return { position, ratePercent: bandRate(position), yearStart };
+}
+
+/**
+ * CR-001 – CR-004 — the Royalty Linked Member, recomputed from the Bookings
+ * themselves.
+ *
+ * One idempotent function rather than an establish/finalise/remove trio: every
+ * event that could move the link (approval, a payment reaching 100%, an
+ * approved Buyback, a cancellation) just calls this, and the answer is derived
+ * from current state. That is what makes "a cancelled first Booking consumes no
+ * position, and a later valid first purchase may establish a new link" fall out
+ * rather than needing its own path.
+ *
+ * The rules, in the order they apply:
+ *
+ * - the first qualifying purchase is the Customer's earliest approved Booking
+ *   as Primary Customer; an exact tie goes to the lower Booking Number;
+ * - Sold By Member on it stores that Member as the provisional link; Sold By
+ *   3% CLUB or Sold By Customer stores no Member at all (CR-003);
+ * - the link becomes final — and only then takes a Royalty position — at 100%
+ *   verified Payment Received or an Approved Buyback on that same Booking;
+ * - a final link is never recomputed. Not by a later sale, not by a later
+ *   cancellation: CR-003's "no Royalty Member" is as final as a named one.
+ */
+export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string) {
+  const customer = await tx.customerProfile.findUnique({ where: { personId } });
+  if (!customer) return null;
+  if (customer.royaltyLinkFinalAt) return customer.royaltyLinkedMemberId;
+
+  const first = await tx.booking.findFirst({
+    where: {
+      primaryPersonId: personId,
+      bookingNumber: { not: null },
+      approvedAt: { not: null },
+      status: { notIn: ["CANCELLED", "REQUEST_REJECTED", "REQUEST_CANCELLED"] },
+    },
+    // CR-002 — "if qualifying timestamps are equal, lower permanent Booking
+    // Number wins".
+    orderBy: [{ approvedAt: "asc" }, { bookingNumber: "asc" }],
+  });
+
+  if (!first) {
+    // Every candidate is gone, so the provisional link goes with them. History
+    // stays on the Booking events; nothing was ever consumed.
+    if (customer.royaltyLinkFirstBookingId) {
+      await tx.bookingEvent.create({
+        data: {
+          bookingId: customer.royaltyLinkFirstBookingId,
+          actorRef,
+          action: "ROYALTY_LINK_REMOVED",
+          reason:
+            "The Booking that held the provisional Royalty link is no longer a qualifying first " +
+            "purchase. No Royalty position was consumed (CR-002).",
+        },
+      });
+      await tx.customerProfile.update({
+        where: { id: customer.id },
+        data: { royaltyLinkedMemberId: null, royaltyLinkFirstBookingId: null },
+      });
+    }
+    return null;
+  }
+
+  const linkedMember =
+    first.soldByType === "MEMBER" && first.soldByPersonId
+      ? await tx.memberProfile.findUnique({ where: { personId: first.soldByPersonId } })
+      : null;
+
+  if (
+    customer.royaltyLinkFirstBookingId !== first.id ||
+    customer.royaltyLinkedMemberId !== (linkedMember?.id ?? null)
+  ) {
+    await tx.customerProfile.update({
+      where: { id: customer.id },
+      data: { royaltyLinkFirstBookingId: first.id, royaltyLinkedMemberId: linkedMember?.id ?? null },
+    });
+    await tx.bookingEvent.create({
+      data: {
+        bookingId: first.id,
+        actorRef,
+        action: "ROYALTY_LINK_PROVISIONAL",
+        reason: linkedMember
+          ? `Provisional Royalty Linked Member — ${linkedMember.memberId}, Sold By Member on this ` +
+            `first qualifying purchase (CR-002).`
+          : `No Royalty Linked Member — this first qualifying purchase was ${
+              first.soldByType === "CUSTOMER" ? "Sold By Customer" : "Sold By 3% CLUB"
+            } (CR-003).`,
+      },
+    });
+  }
+
+  // CR-002 — the two milestones that make the link final.
+  const paidInFull = first.paymentReceivedPercent.gte(100);
+  const approvedBuyback = paidInFull
+    ? 0
+    : await tx.acquisition.count({
+        where: { sourceBookingId: first.id, type: "BUYBACK", status: "APPROVED" },
+      });
+  if (!paidInFull && approvedBuyback === 0) return linkedMember?.id ?? null;
+
+  const at = new Date();
+  const position = linkedMember
+    ? await assignRoyaltyPosition(tx, {
+        customerProfileId: customer.id,
+        royaltyMemberId: linkedMember.id,
+        at,
+      })
+    : null;
 
   await tx.customerProfile.update({
-    where: { id: args.customerProfileId },
+    where: { id: customer.id },
     data: {
-      originalIntroducedByMemberId: introducer.id,
-      introducedPosition: position,
-      introducedRatePercent: ratePercent,
-      introducedYearStart: yearStart,
+      royaltyLinkFinalAt: at,
+      royaltyPosition: position?.position ?? null,
+      royaltyRatePercent: position?.ratePercent ?? null,
+      royaltyYearStart: position?.yearStart ?? null,
     },
   });
-  return { position, ratePercent, yearStart };
+  await tx.bookingEvent.create({
+    data: {
+      bookingId: first.id,
+      actorRef,
+      action: "ROYALTY_LINK_FINAL",
+      reason: linkedMember
+        ? `Royalty Linked Member final — ${linkedMember.memberId} at Royalty position ` +
+          `${position!.position} (${position!.ratePercent}%), on ${
+            paidInFull ? "100% Payment Received" : "an Approved Buyback"
+          } (CR-002).`
+        : `No Royalty Linked Member, now final on ${
+            paidInFull ? "100% Payment Received" : "an Approved Buyback"
+          }. No later sale can create one (CR-003).`,
+    },
+  });
+
+  // The link can go final after a later purchase was already approved — a first
+  // Booking still being paid off while a second one is booked is ordinary. That
+  // later Booking's commission was generated when there was no final link, so
+  // without this its Royalty would never be created by anything.
+  if (linkedMember) {
+    const later = await tx.booking.findMany({
+      where: {
+        primaryPersonId: personId,
+        id: { not: first.id },
+        bookingNumber: { not: null },
+        approvedAt: { not: null },
+        status: { notIn: ["CANCELLED", "REQUEST_REJECTED", "REQUEST_CANCELLED"] },
+      },
+      select: { id: true },
+    });
+    for (const booking of later) {
+      await generateForBooking(tx, booking.id, actorRef);
+      await reassessCommission(tx, booking.id, actorRef);
+    }
+  }
+  return linkedMember?.id ?? null;
 }
 
 /**

@@ -16,7 +16,7 @@ export default async function CustomersPage() {
   const customers = await db.customerProfile.findMany({
     include: {
       person: true,
-      originalIntroducedByMember: { include: { person: true } },
+      royaltyLinkedMember: { include: { person: true } },
     },
     orderBy: { customerId: "asc" },
     take: 300,
@@ -84,11 +84,12 @@ export default async function CustomersPage() {
     plotType: latest.get(c.personId)?.plot.plotType.replaceAll("_", " ") ?? null,
     plotId: latest.get(c.personId)?.plot.id ?? null,
     otherBookings: Math.max((bookingCount.get(c.personId) ?? 0) - 1, 0),
-    // The Member ID is what the introduction is filed under; the name under it
-    // is who that is, the same way the Members list reads Invited by.
-    introducedBy: c.originalIntroducedByMember?.memberId ?? null,
-    introducedByName: c.originalIntroducedByMember?.person.fullName ?? null,
-    introducedByMemberId: c.originalIntroducedByMemberId,
+    // CR-002 — the Member ID the Royalty link is filed under; the name under
+    // it is who that is, the same way the Members list reads Invited by.
+    royaltyMember: c.royaltyLinkedMember?.memberId ?? null,
+    royaltyMemberName: c.royaltyLinkedMember?.person.fullName ?? null,
+    royaltyMemberProfileId: c.royaltyLinkedMemberId,
+    royaltyLinkProvisional: c.royaltyLinkFinalAt === null,
     loyaltySlotsConsumed: c.loyaltySlotsConsumed,
   }));
 

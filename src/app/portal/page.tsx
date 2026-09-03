@@ -21,7 +21,7 @@ export default async function PortalPage() {
         person: true,
         invitedByMember: { include: { person: true } },
         invitedMembers: { include: { person: true }, orderBy: { invitePosition: "asc" } },
-        introducedCustomers: { orderBy: { introducedPosition: "asc" } },
+        royaltyLinkedCustomers: { orderBy: { royaltyPosition: "asc" } },
       },
     }),
     db.plot.findMany({
@@ -71,11 +71,11 @@ export default async function PortalPage() {
       status: m.status,
       activationDate: m.activationDate?.toISOString() ?? null,
     })),
-    // PRD §23.1 / DESIGN §13.2 — the Member sees their own introduced positions
+    // PRD §23.1 / DESIGN §13.2 — the Member sees their own Royalty positions
     // and bands, never the Customer's name or Customer ID.
-    introducedCustomers: profile.introducedCustomers.map((c) => ({
-      position: c.introducedPosition,
-      ratePercent: c.introducedRatePercent?.toFixed(2) ?? null,
+    royaltyLinkedCustomers: profile.royaltyLinkedCustomers.map((c) => ({
+      position: c.royaltyPosition,
+      ratePercent: c.royaltyRatePercent?.toFixed(2) ?? null,
       loyaltySlotsConsumed: c.loyaltySlotsConsumed,
     })),
     projects: [...new Map(availablePlots.map((p) => [p.projectId, p.project.name])).entries()].map(

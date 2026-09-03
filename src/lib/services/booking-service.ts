@@ -20,6 +20,7 @@ import { canAllocate, plotReturnState, type PlotRestriction } from "@/lib/domain
 import { blocked, lockBooking, lockPlot, nextReference, runCommand, type Tx } from "./command";
 import { freezePlcSnapshot, loadPlotForPlc, type PlotForPlc } from "./plc-service";
 import { countOpenPositions } from "./hold-service";
+import { syncRoyaltyLink } from "./network-service";
 import {
   generateForBooking,
   previewCommission,
@@ -703,6 +704,11 @@ export async function decideBookingRequest(args: {
 
       await closeTasksFor(tx, "Booking", args.bookingId, args.actorRef, `Approved — ${args.note}`, "BOOKING_REVIEW");
       await syncPaymentFollowUp(tx, args.bookingId, args.actorRef);
+      // CR-002 — the earliest approved Booking is the Customer's first
+      // qualifying purchase, so approval is where the provisional Royalty
+      // Linked Member is stored. It runs before generation because it is what
+      // decides whether this buyer has a Royalty band at all.
+      await syncRoyaltyLink(tx, booking.primaryPersonId, args.actorRef);
       // main-PRD §11.5 — the payment and commission engines start on approval.
       await generateForBooking(tx, args.bookingId, args.actorRef);
       await reassessCommission(tx, args.bookingId, args.actorRef);
@@ -1205,6 +1211,11 @@ export async function decidePrimaryCustomerChange(args: {
           where: { id: args.bookingId },
           data: { primaryPersonId: request.toPersonId, activeProcess: "NONE" },
         });
+        // CR-002 — the Booking changed hands, so it may now be the incoming
+        // Customer's first qualifying purchase and is no longer the outgoing
+        // one's. Both sides are recomputed.
+        await syncRoyaltyLink(tx, request.fromPersonId, args.actorRef);
+        await syncRoyaltyLink(tx, request.toPersonId, args.actorRef);
       } else {
         await tx.booking.update({ where: { id: args.bookingId }, data: { activeProcess: "NONE" } });
       }
@@ -1444,6 +1455,11 @@ export async function decideSoldByCorrection(args: {
           activeProcess: "NONE",
         },
       });
+
+      // CR-002 — a corrected Sold By on a first qualifying purchase corrects
+      // who the provisional Royalty Linked Member is. A link already made final
+      // by its milestone is left alone, exactly as a paid commission is.
+      await syncRoyaltyLink(tx, booking.primaryPersonId, args.actorRef);
 
       const regenerated = await generateForBooking(tx, args.bookingId, args.actorRef);
       await reassessCommission(tx, args.bookingId, args.actorRef);

@@ -523,13 +523,13 @@ function MemberDetailPanel({
 
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Introduced Customers — separate annual Introduced Customer Counter
+              Royalty Linked Customers — the Member was Sold By on their first purchase
             </h3>
-            {detail.introducedCustomers.length === 0 ? (
+            {detail.royaltyLinkedCustomers.length === 0 ? (
               <p className="mt-2 text-muted-foreground">None yet.</p>
             ) : (
               <ul className="mt-2 space-y-1">
-                {detail.introducedCustomers.map((c) => (
+                {detail.royaltyLinkedCustomers.map((c) => (
                   <li key={c.customerId} className="flex flex-wrap justify-between gap-2">
                     <span>
                       <Link href={`/customers/${c.id}`} className="text-primary hover:underline">
@@ -540,7 +540,9 @@ function MemberDetailPanel({
                       </span>
                     </span>
                     <span className="tabular-nums text-muted-foreground">
-                      Position {c.position} · {c.ratePercent}%
+                      {c.position === null
+                        ? "Provisional — no position until the first purchase completes"
+                        : `Position ${c.position} · ${c.ratePercent}%`}
                     </span>
                   </li>
                 ))}

@@ -34,6 +34,7 @@ import {
   type ScheduleInput,
 } from "./payment-service";
 import { cancelCommissionForBooking, reassessCommission } from "./commission-service";
+import { syncRoyaltyLink } from "./network-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
 const D = Prisma.Decimal;
@@ -817,6 +818,10 @@ export async function decideAcquisition(args: {
           unwind: "BUYBACK",
           reason: `Buyback ${acquisition.acquisitionNo} approved`,
         });
+        // CR-002 — an Approved Buyback is the alternative milestone that makes
+        // the Royalty Linked Member of that first purchase final, without
+        // waiting for 100% Payment Received.
+        await syncRoyaltyLink(tx, acquisition.sourceBooking.primaryPersonId, args.actorRef);
         await closeTasksFor(
           tx,
           "Booking",

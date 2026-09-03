@@ -151,7 +151,7 @@ export default async function CustomerDetailPage({
     where: { id },
     include: {
       person: true,
-      originalIntroducedByMember: { include: { person: true } },
+      royaltyLinkedMember: { include: { person: true } },
     },
   });
 
@@ -285,20 +285,27 @@ export default async function CustomerDetailPage({
                 label="Loyalty slots"
                 value={`${customer.loyaltySlotsConsumed} of 3 used`}
               />
-              {customer.originalIntroducedByMember && (
+              {customer.royaltyLinkedMember && (
                 <Stat
-                  label="Introduced by"
-                  // The Member ID is what the introduction is filed under, so
-                  // it leads and the name confirms it.
+                  // CR-002 — the Member who was Sold By on this Customer's first
+                  // qualifying purchase. The Member ID is what it is filed
+                  // under, so it leads and the name confirms it.
+                  label="Royalty linked to"
                   value={
                     <Link
-                      href={`/members/${customer.originalIntroducedByMember.id}`}
+                      href={`/members/${customer.royaltyLinkedMember.id}`}
                       className="text-primary hover:underline"
                     >
-                      {customer.originalIntroducedByMember.memberId}
+                      {customer.royaltyLinkedMember.memberId}
                     </Link>
                   }
-                  hint={customer.originalIntroducedByMember.person.fullName}
+                  hint={
+                    customer.royaltyLinkFinalAt
+                      ? `${customer.royaltyLinkedMember.person.fullName} · position ${
+                          customer.royaltyPosition ?? "—"
+                        } at ${customer.royaltyRatePercent?.toFixed(2) ?? "—"}%`
+                      : `${customer.royaltyLinkedMember.person.fullName} · provisional until the first purchase reaches 100% Payment Received or an Approved Buyback`
+                  }
                 />
               )}
             </div>

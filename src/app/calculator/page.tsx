@@ -89,9 +89,10 @@ export default async function CalculatorPage() {
           customerProfile: {
             select: {
               customerId: true,
-              introducedPosition: true,
-              introducedRatePercent: true,
-              originalIntroducedByMember: {
+              royaltyPosition: true,
+              royaltyRatePercent: true,
+              royaltyLinkFinalAt: true,
+              royaltyLinkedMember: {
                 select: { memberId: true, personId: true, person: { select: { fullName: true } } },
               },
             },
@@ -222,12 +223,17 @@ export default async function CalculatorPage() {
       customer: customer
         ? {
             customerId: customer.customerId,
-            introducedByPersonId: customer.originalIntroducedByMember?.personId ?? null,
-            introducedBy: customer.originalIntroducedByMember
-              ? `${customer.originalIntroducedByMember.memberId} · ${customer.originalIntroducedByMember.person.fullName}`
+            // CR-002 — a provisional link earns nothing, so the calculator must
+            // not preview a Royalty from it.
+            royaltyMemberPersonId: customer.royaltyLinkFinalAt
+              ? customer.royaltyLinkedMember?.personId ?? null
               : null,
-            introducedPosition: customer.introducedPosition,
-            introducedRatePercent: customer.introducedRatePercent?.toString() ?? null,
+            royaltyMember: customer.royaltyLinkedMember
+              ? `${customer.royaltyLinkedMember.memberId} · ${customer.royaltyLinkedMember.person.fullName}` +
+                (customer.royaltyLinkFinalAt ? "" : " (provisional)")
+              : null,
+            royaltyPosition: customer.royaltyPosition,
+            royaltyRatePercent: customer.royaltyRatePercent?.toString() ?? null,
             royaltyUsed: used("ROYALTY", p.id) > 0,
             loyaltyUsed: used("LOYALTY", p.id),
           }

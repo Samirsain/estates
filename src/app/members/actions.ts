@@ -342,7 +342,7 @@ export async function loadMemberDetail(memberProfileId: string) {
       person: true,
       invitedByMember: { include: { person: true } },
       invitedMembers: { include: { person: true }, orderBy: { invitePosition: "asc" } },
-      introducedCustomers: { include: { person: true }, orderBy: { introducedPosition: "asc" } },
+      royaltyLinkedCustomers: { include: { person: true }, orderBy: { royaltyPosition: "asc" } },
     },
   });
   if (!member) return null;
@@ -370,13 +370,14 @@ export async function loadMemberDetail(memberProfileId: string) {
       yearStart: m.inviteYearStart?.toISOString() ?? null,
       status: m.status,
     })),
-    introducedCustomers: member.introducedCustomers.map((c) => ({
+    royaltyLinkedCustomers: member.royaltyLinkedCustomers.map((c) => ({
       id: c.id,
       customerId: c.customerId,
       name: c.person.fullName,
-      position: c.introducedPosition,
-      ratePercent: c.introducedRatePercent?.toFixed(2) ?? null,
-      yearStart: c.introducedYearStart?.toISOString() ?? null,
+      position: c.royaltyPosition,
+      ratePercent: c.royaltyRatePercent?.toFixed(2) ?? null,
+      yearStart: c.royaltyYearStart?.toISOString() ?? null,
+      provisional: c.royaltyLinkFinalAt === null,
       loyaltySlotsConsumed: c.loyaltySlotsConsumed,
     })),
     commissions: commissions.map((c) => ({

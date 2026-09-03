@@ -179,7 +179,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
 
   if (!member) notFound();
 
-  const [commissions, banks, introducedCustomers] = await Promise.all([
+  const [commissions, banks, royaltyLinkedCustomers] = await Promise.all([
     db.commissionRecord.findMany({
       where: { beneficiaryPersonId: member.personId },
       include: {
@@ -194,9 +194,9 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
       orderBy: { createdAt: "desc" },
     }),
     db.customerProfile.findMany({
-      where: { originalIntroducedByMemberId: member.id },
+      where: { royaltyLinkedMemberId: member.id },
       include: { person: true },
-      orderBy: { introducedPosition: "asc" },
+      orderBy: { royaltyPosition: "asc" },
     }),
   ]);
 
@@ -415,14 +415,14 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
           </Section>
 
           <Section
-            title={`Customers Introduced (${introducedCustomers.length})`}
+            title={`Royalty Linked Customers (${royaltyLinkedCustomers.length})`}
             icon={<Users className="h-3.5 w-3.5" />}
           >
-            {introducedCustomers.length === 0 ? (
+            {royaltyLinkedCustomers.length === 0 ? (
               <p className="text-xs text-muted-foreground">None yet.</p>
             ) : (
               <ul className="divide-y divide-border/50 text-xs">
-                {introducedCustomers.map((c) => (
+                {royaltyLinkedCustomers.map((c) => (
                   <NetworkRow
                     key={c.id}
                     href={`/customers/${c.id}`}
@@ -430,9 +430,9 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
                     name={c.person.fullName}
                     note={`${c.loyaltySlotsConsumed}/3 Loyalty slots used`}
                     band={
-                      c.introducedPosition
-                        ? `Pos ${c.introducedPosition} · ${c.introducedRatePercent?.toFixed(2)}%`
-                        : "—"
+                      c.royaltyPosition
+                        ? `Pos ${c.royaltyPosition} · ${c.royaltyRatePercent?.toFixed(2)}%`
+                        : "Provisional"
                     }
                   />
                 ))}

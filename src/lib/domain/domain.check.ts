@@ -50,9 +50,7 @@ import { parseTerms } from "../terms.ts";
 import {
   duplicateKey,
   enquiryStatusAfterBookingCancelled,
-  resolveOriginalIntroducer,
   validateSource,
-  assertIntroducerCorrectionAllowed,
 } from "./enquiry.ts";
 import {
   FROZEN_REVIEW_FIELDS,
@@ -589,32 +587,8 @@ assert.equal(
 
 /* -------------------------------------------------------------- enquiry */
 
-const claims = [
-  { enquiryId: "ENQ-2", memberId: "MEM-B", at: new Date("2026-01-02T00:00:00Z") },
-  { enquiryId: "ENQ-1", memberId: "MEM-A", at: new Date("2026-01-01T00:00:00Z") },
-];
-assert.equal(resolveOriginalIntroducer(null, claims).memberId, "MEM-A", "earliest valid claim wins");
-assert.equal(
-  resolveOriginalIntroducer("MEM-Z", claims).memberId,
-  "MEM-Z",
-  "a frozen relationship is never silently overwritten"
-);
-assert.equal(resolveOriginalIntroducer("MEM-Z", claims).frozen, true);
-// Exact timestamp tie -> lower Enquiry ID.
-const same = new Date("2026-01-01T00:00:00Z");
-assert.equal(
-  resolveOriginalIntroducer(null, [
-    { enquiryId: "ENQ-9", memberId: "MEM-X", at: same },
-    { enquiryId: "ENQ-3", memberId: "MEM-Y", at: same },
-  ]).memberId,
-  "MEM-Y"
-);
-assert.equal(resolveOriginalIntroducer(null, []).memberId, null);
-
-assert.throws(() => assertIntroducerCorrectionAllowed("CRM", "typo"), /Only Admin or MD/);
-assert.throws(() => assertIntroducerCorrectionAllowed("ADMIN", "   "), /compulsory reason/);
-assert.doesNotThrow(() => assertIntroducerCorrectionAllowed("MD", "Documented dispute 14/08/2026"));
-
+// CR-001 — an Enquiry no longer resolves anything to freeze, so the only
+// attribution left on it is that its Source Person is recorded correctly.
 assert.equal(validateSource("BY_MEMBER", null, null), "Select the Member who sourced this Enquiry.");
 assert.equal(validateSource("BY_MEMBER", "MEM-1", null), null);
 assert.equal(validateSource("DIRECT", "MEM-1", null), "Source Member applies only to a By Member Enquiry.");

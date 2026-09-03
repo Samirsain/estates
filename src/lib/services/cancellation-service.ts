@@ -12,6 +12,7 @@ import { enquiryStatusAfterBookingCancelled } from "@/lib/domain/enquiry";
 import { normaliseReference, notFutureDated } from "@/lib/domain/booking";
 import { blocked, lockBooking, runCommand } from "./command";
 import { cancelCommissionForBooking, reassessCommission } from "./commission-service";
+import { syncRoyaltyLink } from "./network-service";
 import { syncPaymentFollowUp } from "./payment-service";
 import { closeTasksFor } from "./task-service";
 
@@ -228,6 +229,12 @@ export async function decideCancellation(args: {
         legallyCompleted: false,
         reason: `Booking cancelled — ${args.note}`,
       });
+
+      // CR-002 — a first Booking cancelled before 100% Payment Received or an
+      // Approved Buyback consumes no Royalty position. The provisional link
+      // goes with it, and the buyer's next approved Booking may establish a new
+      // one.
+      await syncRoyaltyLink(tx, booking.primaryPersonId, args.actorRef);
 
       await closeTasksFor(
         tx,

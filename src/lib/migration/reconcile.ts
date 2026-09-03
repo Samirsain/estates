@@ -346,12 +346,12 @@ async function annualPositions(): Promise<RuleResult> {
     select: { memberId: true, invitedByMemberId: true, invitePosition: true, inviteYearStart: true },
   });
   const customers = await db.customerProfile.findMany({
-    where: { introducedPosition: { not: null } },
+    where: { royaltyPosition: { not: null } },
     select: {
       customerId: true,
-      originalIntroducedByMemberId: true,
-      introducedPosition: true,
-      introducedYearStart: true,
+      royaltyLinkedMemberId: true,
+      royaltyPosition: true,
+      royaltyYearStart: true,
     },
   });
 
@@ -370,11 +370,11 @@ async function annualPositions(): Promise<RuleResult> {
   }
 
   for (const customer of customers) {
-    const key = `introduced:${customer.originalIntroducedByMemberId}:${customer.introducedYearStart?.toISOString() ?? "none"}:${customer.introducedPosition}`;
+    const key = `royalty:${customer.royaltyLinkedMemberId}:${customer.royaltyYearStart?.toISOString() ?? "none"}:${customer.royaltyPosition}`;
     if (seen.has(key)) {
       exceptions.push({
         record: customer.customerId,
-        detail: `Introduced position ${customer.introducedPosition} is issued twice in the same counter year`,
+        detail: `Royalty position ${customer.royaltyPosition} is issued twice in the same counter year`,
       });
     }
     seen.add(key);

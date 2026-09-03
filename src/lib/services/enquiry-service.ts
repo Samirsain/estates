@@ -2,42 +2,11 @@
 
 import type { EnquirySource, FollowUpOutcome } from "@prisma/client";
 import { db } from "@/lib/db";
-import { resolveOriginalIntroducer, validateSource } from "@/lib/domain/enquiry";
+import { validateSource } from "@/lib/domain/enquiry";
 import { blocked, nextReference, runCommand, type Tx } from "./command";
-import { assignIntroducedPosition } from "./network-service";
 import { completeTask, ensureTask, reviseTask } from "./task-service";
 
 export const ENQUIRY_FOLLOW_UP_PURPOSE = "ENQUIRY_FOLLOW_UP";
-
-/**
- * PRD §6.4 — freezes Original Introduced By Member from the earliest valid
- * Member-sourced Enquiry. An existing relationship is never overwritten.
- */
-export async function applyIntroducerFreeze(tx: Tx, personId: string) {
-  const customer = await tx.customerProfile.findUnique({ where: { personId } });
-  if (!customer) return null; // The claim stays on the Enquiry until a Customer exists.
-
-  const claims = await tx.enquiry.findMany({
-    where: { personId, source: "BY_MEMBER", sourceMemberId: { not: null } },
-    select: { enquiryNo: true, sourceMemberId: true, createdAt: true },
-    orderBy: { createdAt: "asc" },
-  });
-
-  const resolved = resolveOriginalIntroducer(
-    customer.originalIntroducedByMemberId,
-    claims.map((c) => ({ enquiryId: c.enquiryNo, memberId: c.sourceMemberId!, at: c.createdAt }))
-  );
-  if (resolved.frozen || !resolved.memberId) return customer.originalIntroducedByMemberId;
-
-  // RD-02 — freezing the relationship also takes the Customer's position in the
-  // introducing Member's annual Introduced Customer Counter. Without it the
-  // Royalty band would have no position to read.
-  await assignIntroducedPosition(tx, {
-    customerProfileId: customer.id,
-    introducingMemberId: resolved.memberId,
-  });
-  return resolved.memberId;
-}
 
 /**
  * PRD §23.2 — the Person duplicate check runs, but an existing Person's
@@ -80,24 +49,13 @@ export async function ensureCustomerProfile(tx: Tx, personId: string) {
   const existing = await tx.customerProfile.findUnique({ where: { personId } });
   if (existing) return existing;
 
-  const created = await tx.customerProfile.create({
+  // CR-001 — nothing about Royalty happens here any more. The Royalty Linked
+  // Member comes from the Sold By Member of the first qualifying purchase
+  // (`syncRoyaltyLink`), so a Customer created by a Hold, a Booking Request or
+  // a Primary Customer change starts with no earning relationship at all.
+  return tx.customerProfile.create({
     data: { personId, customerId: await nextReference(tx, "CUS", "Customer") },
   });
-
-  // PRD §6.4 — "Freeze Original Introduced By Member at the earliest valid
-  // Member-sourced Enquiry for that Person."
-  //
-  // createEnquiry already tries, but for a first-time enquirer there is no
-  // Customer yet, so the claim is left waiting on the Enquiry. Nothing used to
-  // come back for it once the Customer did exist, so a Person whose first
-  // contact was a Member-sourced Enquiry — the ordinary path — never had an
-  // introducing Member frozen, and their introducer could never earn Royalty.
-  //
-  // Resolving it here catches every route that creates a Customer: a Booking, a
-  // Hold, or a Primary Customer change. It is idempotent, because an already
-  // frozen relationship is left exactly as it is.
-  await applyIntroducerFreeze(tx, personId);
-  return created;
 }
 
 /** PRD §23.2 — a Member-submitted Enquiry is assigned to CRM, never to the Member. */
@@ -205,7 +163,8 @@ export async function createEnquiry(input: CreateEnquiryInput) {
         },
       });
 
-      await applyIntroducerFreeze(tx, personId);
+      // CR-001 — the Enquiry Source is history and follow-up. It decides no
+      // Direct, Invite, Royalty or Loyalty, so nothing is frozen here.
 
       // Each Active Enquiry carries exactly one Pending follow-up task.
       await ensureTask(tx, {

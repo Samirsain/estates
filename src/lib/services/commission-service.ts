@@ -209,18 +209,22 @@ export async function commissionInputFor(tx: Tx, bookingId: string): Promise<Com
         }
       : null;
 
-  // The Royalty band belongs to the buyer's position under the Member who
-  // originally introduced them (PRD §6.4).
+  // CR-002, CR-004 — the Royalty band belongs to the buyer's position under
+  // their Royalty Linked Member: the Member who was Sold By on the buyer's
+  // first qualifying purchase. A provisional link has no position and earns
+  // nothing, which is the whole of "no position is consumed" for a first
+  // Booking cancelled before its milestone.
   const customer = buyer.customerProfile;
-  const introducer = customer?.originalIntroducedByMemberId
-    ? await tx.memberProfile.findUnique({ where: { id: customer.originalIntroducedByMemberId } })
-    : null;
+  const royaltyMember =
+    customer?.royaltyLinkFinalAt && customer.royaltyLinkedMemberId
+      ? await tx.memberProfile.findUnique({ where: { id: customer.royaltyLinkedMemberId } })
+      : null;
   const royalty: NetworkLink | null =
-    introducer && customer?.introducedPosition && customer.introducedRatePercent
+    royaltyMember && customer?.royaltyPosition && customer.royaltyRatePercent
       ? {
-          beneficiaryPersonId: introducer.personId,
-          position: customer.introducedPosition,
-          ratePercent: customer.introducedRatePercent.toString(),
+          beneficiaryPersonId: royaltyMember.personId,
+          position: customer.royaltyPosition,
+          ratePercent: customer.royaltyRatePercent.toString(),
         }
       : null;
 

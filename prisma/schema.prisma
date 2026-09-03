@@ -7,7 +7,7 @@
 // acquisition and Payment Given) complete the transactional model.
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
   // Runtime traffic goes through the Supabase transaction pooler.
   url       = env("DATABASE_URL")
   // Schema changes need a direct (non-pooled) connection.
@@ -61,18 +61,18 @@ enum MergeStatus {
 
 /// Immutable human identity. One Person, many capabilities (ARCHITECTURE §3.1).
 model Person {
-  id           String  @id @default(uuid())
-  fullName     String
+  id            String    @id @default(uuid())
+  fullName      String
   /// main-PRD §18.2 — part of the final buyer details collected before
   /// Allotment or Registry. Never a document upload.
-  dateOfBirth  DateTime?
+  dateOfBirth   DateTime?
   /// Contact only. Deliberately NOT unique — a mobile may be shared across
   /// Persons; a Member logs in with Member ID, never with a mobile (PRD §17.1).
   primaryMobile String
-  altMobile    String?
-  email        String?
-  city         String?
-  addressLine  String?
+  altMobile     String?
+  email         String?
+  city          String?
+  addressLine   String?
 
   // Aadhaar — protected field, never an uploaded document (PRD RD-05).
   aadhaarCipher     String? // AES-256-GCM payload
@@ -109,11 +109,11 @@ model Person {
   soldBookings    Booking[]      @relation("BookingSoldBy")
   bookingParties  BookingParty[]
 
-  commissions            CommissionRecord[]      @relation("CommissionBeneficiary")
-  acquisitionsAsSeller   Acquisition[]           @relation("AcquisitionSeller")
-  acquisitionsArranged   Acquisition[]           @relation("AcquisitionArranger")
+  commissions             CommissionRecord[]      @relation("CommissionBeneficiary")
+  acquisitionsAsSeller    Acquisition[]           @relation("AcquisitionSeller")
+  acquisitionsArranged    Acquisition[]           @relation("AcquisitionArranger")
   commissionOpportunities CommissionOpportunity[] @relation("OpportunitySubject")
-  bankDetails            BankDetail[]
+  bankDetails             BankDetail[]
   mergeRequestsAsSurvivor PersonMergeRequest[]    @relation("MergeSurvivor")
   mergeRequestsAsMerged   PersonMergeRequest[]    @relation("MergeMerged")
 
@@ -130,12 +130,30 @@ model CustomerProfile {
 
   customerType String?
 
-  /// PRD §6.4 — frozen at the earliest valid Member-sourced Enquiry.
+  /// History only. CR-001 — an Enquiry decides no Direct, Invite, Royalty or
+  /// Loyalty, so this Enquiry-era relationship is preserved and never read by
+  /// the commission engine. Nothing writes it any more.
   originalIntroducedByMemberId String?
   originalIntroducedByMember   MemberProfile? @relation("IntroducedCustomers", fields: [originalIntroducedByMemberId], references: [id])
   introducedPosition           Int?
   introducedRatePercent        Decimal?       @db.Decimal(7, 4)
   introducedYearStart          DateTime?
+
+  /// CR-002 — the Royalty Linked Member: whoever was Sold By Member on this
+  /// Customer's first qualifying purchase. Provisional while
+  /// `royaltyLinkFinalAt` is null; final at 100% Payment Received or an
+  /// Approved Buyback on that purchase, which is also when the position in the
+  /// Member's Royalty counter is taken. Null against a set
+  /// `royaltyLinkFirstBookingId` is CR-003's permanent "no Royalty Member":
+  /// the first purchase was Sold By 3% CLUB or Sold By Customer.
+  royaltyLinkedMemberId     String?
+  royaltyLinkedMember       MemberProfile? @relation("RoyaltyLinkedCustomers", fields: [royaltyLinkedMemberId], references: [id])
+  royaltyLinkFirstBookingId String?
+  royaltyLinkFirstBooking   Booking?       @relation("RoyaltyFirstPurchase", fields: [royaltyLinkFirstBookingId], references: [id])
+  royaltyLinkFinalAt        DateTime?
+  royaltyPosition           Int?
+  royaltyRatePercent        Decimal?       @db.Decimal(7, 4)
+  royaltyYearStart          DateTime?
 
   /// PRD §6.5 — combined lifetime maximum of three; the limit never resets.
   loyaltySlotsConsumed Int @default(0)
@@ -147,6 +165,9 @@ model CustomerProfile {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// The Royalty counter is read per Member per counter year on every link.
+  @@index([royaltyLinkedMemberId, royaltyYearStart])
 }
 
 /// Terms §2.1 — "The person accepts the applicable Terms and Privacy Notice".
@@ -188,15 +209,15 @@ model MemberProfile {
 
   /// A new Member has provided nothing yet, so Pending is the honest default:
   /// Not Applicable is a decision that carries a compulsory reason (PRD §19.5).
-  reraStatus           ReraStatus @default(PENDING)
-  reraNumber           String?
-  reraExpiryDate       DateTime?
+  reraStatus              ReraStatus @default(PENDING)
+  reraNumber              String?
+  reraExpiryDate          DateTime?
   /// Compulsory when the status is Not Applicable (PRD §19.5).
   reraNotApplicableReason String?
 
   /// Terms §2.1 — acceptance is part of becoming a Member, so it is recorded
   /// rather than re-asked. A new version asks again and adds its own row.
-  termsAcceptances     MemberTermsAcceptance[]
+  termsAcceptances MemberTermsAcceptance[]
 
   /// PRD §14.11 — a Member-level hold affects every unpaid record.
   commissionHold       Boolean @default(false)
@@ -207,13 +228,15 @@ model MemberProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  portalAccount        PortalAccount?
-  introducedCustomers  CustomerProfile[] @relation("IntroducedCustomers")
-  sourcedEnquiries     Enquiry[]         @relation("MemberSourcedEnquiries")
-  holdRequests         HoldRequest[]
+  portalAccount          PortalAccount?
+  introducedCustomers    CustomerProfile[]  @relation("IntroducedCustomers")
+  /// CR-002 — the Customers whose first qualifying purchase this Member closed.
+  royaltyLinkedCustomers CustomerProfile[]  @relation("RoyaltyLinkedCustomers")
+  sourcedEnquiries       Enquiry[]          @relation("MemberSourcedEnquiries")
+  holdRequests           HoldRequest[]
   /// AC-02 — the annual counter windows, stored so a cycle's progress and
   /// achievement can be shown and audited rather than recomputed on a screen.
-  performanceCycles    PerformanceCycle[]
+  performanceCycles      PerformanceCycle[]
 }
 
 model StaffAccount {
@@ -222,9 +245,9 @@ model StaffAccount {
   personId       String @unique
   person         Person @relation(fields: [personId], references: [id])
 
-  role StaffRole
+  role             StaffRole
   /// Extra scoped grants on top of the role baseline. Deny by default.
-  extraPermissions String[] @default([])
+  extraPermissions String[]  @default([])
 
   status       AccountStatus @default(ACTIVE)
   passwordHash String
@@ -439,8 +462,8 @@ enum TaskStatus {
 }
 
 model Project {
-  id          String           @id @default(uuid())
-  projectCode String           @unique
+  id          String        @id @default(uuid())
+  projectCode String        @unique
   name        String
   developer   String?
   location    String?
@@ -452,7 +475,7 @@ model Project {
   /// One amenity per line. Rendered as bullets on the Project card.
   amenities   String?
   type        ProjectType
-  status   ProjectStatus @default(SETUP_NOT_ACTIVE)
+  status      ProjectStatus @default(SETUP_NOT_ACTIVE)
 
   /// External acquisition container (PRD §11.6). A normal development Project is false.
   isExternalResaleGroup Boolean @default(false)
@@ -462,11 +485,11 @@ model Project {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  plots           Plot[]
-  plcRuleVersions PlcRuleVersion[]
-  enquiries       Enquiry[]
-  bookings        Booking[]
-  externalAcquisitions Acquisition[] @relation("ExternalResaleGroup")
+  plots                Plot[]
+  plcRuleVersions      PlcRuleVersion[]
+  enquiries            Enquiry[]
+  bookings             Booking[]
+  externalAcquisitions Acquisition[]    @relation("ExternalResaleGroup")
 }
 
 /// PLC spec §3.1 — a version is Draft until it is published. Publishing
@@ -550,8 +573,8 @@ model PlcSnapshot {
   correctionReason String?
   correctedBy      String?
 
-  holds    Hold[]
-  bookings Booking[]
+  holds              Hold[]
+  bookings           Booking[]
   changePlotRequests ChangePlotRequest[]
 
   @@index([plotId, isCurrent])
@@ -566,21 +589,21 @@ model Plot {
 
   // Dimensions. Width and Length are required for a regular Plot; an irregular
   // Plot uses the override and a compulsory reason (PRD §16.2).
-  widthFt           Decimal? @db.Decimal(10, 3)
-  lengthFt          Decimal? @db.Decimal(10, 3)
-  exactAreaSqFt     Decimal? @db.Decimal(12, 4)
-  exactAreaReason   String?
+  widthFt         Decimal? @db.Decimal(10, 3)
+  lengthFt        Decimal? @db.Decimal(10, 3)
+  exactAreaSqFt   Decimal? @db.Decimal(12, 4)
+  exactAreaReason String?
   /// Persisted so inventory lists and reports never recompute inconsistently.
-  areaSqFt          Decimal  @db.Decimal(12, 4)
-  areaSqYd          Decimal  @db.Decimal(12, 4)
-  areaSqM           Decimal  @db.Decimal(12, 4)
+  areaSqFt        Decimal  @db.Decimal(12, 4)
+  areaSqYd        Decimal  @db.Decimal(12, 4)
+  areaSqM         Decimal  @db.Decimal(12, 4)
 
   /// No PLC applicability is stored here. It derives from the Plot's own
   /// boundaries every time it is read (PLC spec §4.1, §4.3), so correcting a
   /// boundary corrects the PLC with it. Park Facing is one of those boundaries
   /// rather than a separate flag that could contradict them.
 
-  status         PlotStatus   @default(NOT_AVAILABLE)
+  status            PlotStatus      @default(NOT_AVAILABLE)
   restriction       PlotRestriction @default(NOT_YET_RELEASED)
   restrictionReason String?
   /// Buyback / Purchase for Resale tag. Independent of availability (PRD §15).
@@ -589,14 +612,14 @@ model Plot {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  boundaries   PlotBoundary[]
-  holds        Hold[]
-  holdRequests HoldRequest[]
-  plcSnapshots PlcSnapshot[]
-  events       PlotEvent[]
-  enquiries    Enquiry[]
-  bookings     Booking[]
-  acquisitions Acquisition[]
+  boundaries     PlotBoundary[]
+  holds          Hold[]
+  holdRequests   HoldRequest[]
+  plcSnapshots   PlcSnapshot[]
+  events         PlotEvent[]
+  enquiries      Enquiry[]
+  bookings       Booking[]
+  acquisitions   Acquisition[]
   changePlotFrom ChangePlotRequest[] @relation("ChangePlotFrom")
   changePlotTo   ChangePlotRequest[] @relation("ChangePlotTo")
 
@@ -606,16 +629,16 @@ model Plot {
 }
 
 model PlotBoundary {
-  id                 String       @id @default(uuid())
-  plotId             String
-  plot               Plot         @relation(fields: [plotId], references: [id], onDelete: Cascade)
-  side               BoundarySide
-  kind               BoundaryKind
+  id          String       @id @default(uuid())
+  plotId      String
+  plot        Plot         @relation(fields: [plotId], references: [id], onDelete: Cascade)
+  side        BoundarySide
+  kind        BoundaryKind
   /// Required when kind = ROAD — it decides the PLC band.
-  roadWidthFt        Decimal?     @db.Decimal(8, 2)
+  roadWidthFt Decimal?     @db.Decimal(8, 2)
   /// What is on that side, when it is worth naming: the adjacent Plot Number,
   /// the park or facility number, and so on. Optional for every kind.
-  reference          String?
+  reference   String?
 
   @@unique([plotId, side])
 }
@@ -629,8 +652,8 @@ model PlotEvent {
   at              DateTime         @default(now())
   actorRef        String
   action          String
-  fromStatus   PlotStatus?
-  toStatus     PlotStatus?
+  fromStatus      PlotStatus?
+  toStatus        PlotStatus?
   fromRestriction PlotRestriction?
   toRestriction   PlotRestriction?
   reason          String?
@@ -639,34 +662,34 @@ model PlotEvent {
 }
 
 model Enquiry {
-  id        String  @id @default(uuid())
-  enquiryNo String  @unique
-  personId  String
-  person    Person  @relation(fields: [personId], references: [id])
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id])
+  id              String  @id @default(uuid())
+  enquiryNo       String  @unique
+  personId        String
+  person          Person  @relation(fields: [personId], references: [id])
+  projectId       String
+  project         Project @relation(fields: [projectId], references: [id])
   /// Optional — a Plot-wise Enquiry stays a separate record (PRD §7.1).
-  plotId    String?
-  plot      Plot?   @relation(fields: [plotId], references: [id])
+  plotId          String?
+  plot            Plot?   @relation(fields: [plotId], references: [id])
   /// What they asked for when no Plot in inventory matches it — "40 × 60
   /// corner, west facing". Free text on purpose: it is a requirement, not a
   /// record, and it never allocates or blocks anything.
   plotRequirement String?
 
-  source                EnquirySource
-  sourceMemberId        String?
-  sourceMember          MemberProfile?   @relation("MemberSourcedEnquiries", fields: [sourceMemberId], references: [id])
-  sourceCustomerId      String?
-  sourceCustomer        CustomerProfile? @relation("CustomerSourcedEnquiries", fields: [sourceCustomerId], references: [id])
+  source           EnquirySource
+  sourceMemberId   String?
+  sourceMember     MemberProfile?   @relation("MemberSourcedEnquiries", fields: [sourceMemberId], references: [id])
+  sourceCustomerId String?
+  sourceCustomer   CustomerProfile? @relation("CustomerSourcedEnquiries", fields: [sourceCustomerId], references: [id])
 
   assignedStaffId String?
   assignedStaff   StaffAccount? @relation(fields: [assignedStaffId], references: [id])
 
-  status      EnquiryStatus @default(ACTIVE)
-  closeReason String?
-  remark      String?
+  status            EnquiryStatus @default(ACTIVE)
+  closeReason       String?
+  remark            String?
   /// PRD §17.2 — awaiting reassignment after an emergency disable.
-  needsReassignment Boolean @default(false)
+  needsReassignment Boolean       @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -694,15 +717,15 @@ model EnquiryFollowUp {
 }
 
 model Hold {
-  id     String @id @default(uuid())
-  plotId String
-  plot   Plot   @relation(fields: [plotId], references: [id])
+  id       String @id @default(uuid())
+  plotId   String
+  plot     Plot   @relation(fields: [plotId], references: [id])
   /// The actual Person. Anonymous Member Holds are prohibited (PRD §8.1).
   personId String
   person   Person @relation(fields: [personId], references: [id])
 
-  enquiryId String?
-  enquiry   Enquiry? @relation(fields: [enquiryId], references: [id])
+  enquiryId      String?
+  enquiry        Enquiry? @relation(fields: [enquiryId], references: [id])
   /// Set when the Hold originated from a Member Hold Request.
   sourceMemberId String?
 
@@ -716,10 +739,10 @@ model Hold {
 
   responsibleStaffId String?
 
-  startsAt  DateTime   @default(now())
-  expiresAt DateTime
-  status    HoldStatus @default(ACTIVE)
-  closedAt  DateTime?
+  startsAt    DateTime   @default(now())
+  expiresAt   DateTime
+  status      HoldStatus @default(ACTIVE)
+  closedAt    DateTime?
   closeReason String?
 
   plcSnapshotId String?
@@ -775,13 +798,13 @@ model HoldRequest {
   plotId   String
   plot     Plot          @relation(fields: [plotId], references: [id])
 
-  createdAt DateTime          @default(now())
+  createdAt       DateTime          @default(now())
   /// End of the working day, or the next working day when created after cut-off.
-  expiresAt DateTime
-  status    HoldRequestStatus @default(PENDING)
-  decidedAt DateTime?
-  decidedByRef String?
-  decisionNote String?
+  expiresAt       DateTime
+  status          HoldRequestStatus @default(PENDING)
+  decidedAt       DateTime?
+  decidedByRef    String?
+  decisionNote    String?
   resultingHoldId String?
 
   @@index([plotId, status])
@@ -803,17 +826,17 @@ model Task {
   assigneeStaff   StaffAccount? @relation("TaskAssignee", fields: [assigneeStaffId], references: [id])
   assigneeRole    StaffRole
 
-  dueAt        DateTime
-  urgent       Boolean    @default(false)
-  status       TaskStatus @default(PENDING)
-  latestResult String?
+  dueAt             DateTime
+  urgent            Boolean    @default(false)
+  status            TaskStatus @default(PENDING)
+  latestResult      String?
   /// Approve / Reject happens on the record's review snapshot, not on the row.
-  decision     Boolean    @default(false)
-  revisions    Int        @default(0)
-  recurrence   String     @default("NONE")
-  origin       String     @default("SYSTEM")
+  decision          Boolean    @default(false)
+  revisions         Int        @default(0)
+  recurrence        String     @default("NONE")
+  origin            String     @default("SYSTEM")
   /// PRD §17.2 — in the Unassigned Review queue after an emergency disable.
-  needsReassignment Boolean @default(false)
+  needsReassignment Boolean    @default(false)
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -827,10 +850,10 @@ model Task {
 
 /// Assignment, revision, escalation and automatic closure are all audited (PRD §20).
 model TaskEvent {
-  id       String   @id @default(uuid())
+  id       String    @id @default(uuid())
   taskId   String
-  task     Task     @relation(fields: [taskId], references: [id])
-  at       DateTime @default(now())
+  task     Task      @relation(fields: [taskId], references: [id])
+  at       DateTime  @default(now())
   actorRef String
   action   String
   detail   String?
@@ -949,9 +972,9 @@ enum ReferenceStatus {
 }
 
 model Booking {
-  id String @id @default(uuid())
+  id            String  @id @default(uuid())
   /// Temporary pre-approval identifier, e.g. REQ-000123 (PRD §5.2).
-  requestNo String @unique
+  requestNo     String  @unique
   /// Permanent, created only on Accounts approval. Never reused.
   bookingNumber String? @unique
 
@@ -967,7 +990,7 @@ model Booking {
   soldByType     SoldByType
   /// Required for MEMBER and CUSTOMER; null for a 3% Club direct close.
   soldByPersonId String?
-  soldByPerson   Person? @relation("BookingSoldBy", fields: [soldByPersonId], references: [id])
+  soldByPerson   Person?    @relation("BookingSoldBy", fields: [soldByPersonId], references: [id])
 
   bookingDate  DateTime
   customerType String?
@@ -1005,18 +1028,19 @@ model Booking {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  reviewVersions   BookingReviewVersion[]
-  parties          BookingParty[]
-  commissions      CommissionRecord[]
-  scheduleVersions PaymentScheduleVersion[]
-  paymentEntries   PaymentReceivedEntry[]
-  events            BookingEvent[]
-  customerChanges   PrimaryCustomerChange[]
-  soldByCorrections SoldByCorrection[]
-  cancellations     CancellationRequest[]
-  changePlotRequests ChangePlotRequest[]
-  buybacks          Acquisition[]        @relation("BuybackSource")
-  completions       BookingCompletion[]
+  reviewVersions         BookingReviewVersion[]
+  parties                BookingParty[]
+  commissions            CommissionRecord[]
+  scheduleVersions       PaymentScheduleVersion[]
+  paymentEntries         PaymentReceivedEntry[]
+  events                 BookingEvent[]
+  customerChanges        PrimaryCustomerChange[]
+  soldByCorrections      SoldByCorrection[]
+  cancellations          CancellationRequest[]
+  changePlotRequests     ChangePlotRequest[]
+  buybacks               Acquisition[]            @relation("BuybackSource")
+  royaltyLinkedCustomers CustomerProfile[]        @relation("RoyaltyFirstPurchase")
+  completions            BookingCompletion[]
 
   @@index([status])
   @@index([primaryPersonId, status])
@@ -1059,10 +1083,10 @@ model BookingParty {
   personId  String
   person    Person  @relation(fields: [personId], references: [id])
 
-  role PartyRole
-  kind PartyKind @default(COMMERCIAL)
+  role         PartyRole
+  kind         PartyKind @default(COMMERCIAL)
   /// Null only where this is the sole buyer of its kind (treated as 100%).
-  sharePercent Decimal? @db.Decimal(7, 4)
+  sharePercent Decimal?  @db.Decimal(7, 4)
 
   effectiveFrom DateTime  @default(now())
   /// Null means current. A superseded row keeps its old share for History.
@@ -1081,13 +1105,13 @@ model BookingParty {
 /// that would drift. The entries stay in separate tables, which is what the
 /// separate-datasets boundary in PRD §1.2 and §21 is about.
 model PaymentScheduleVersion {
-  id        String   @id @default(uuid())
-  bookingId String?
-  booking   Booking? @relation(fields: [bookingId], references: [id])
+  id            String       @id @default(uuid())
+  bookingId     String?
+  booking       Booking?     @relation(fields: [bookingId], references: [id])
   /// Exactly one of bookingId or acquisitionId is set (see constraints.sql).
   acquisitionId String?
   acquisition   Acquisition? @relation(fields: [acquisitionId], references: [id])
-  version   Int
+  version       Int
 
   status       ScheduleStatus @default(PENDING)
   reason       String?
@@ -1126,9 +1150,9 @@ model PaymentReceivedEntry {
   bookingId String
   booking   Booking @relation(fields: [bookingId], references: [id])
 
-  percent Decimal  @db.Decimal(7, 4)
+  percent    Decimal  @db.Decimal(7, 4)
   /// Operator-entered action date. Cannot be future-dated (PRD §10.5).
-  paidOn  DateTime
+  paidOn     DateTime
   /// System entry timestamp, kept separate from the action date (PRD §24).
   recordedAt DateTime @default(now())
 
@@ -1138,11 +1162,11 @@ model PaymentReceivedEntry {
   /// [{ instalmentId, percent }] — allocation is oldest unpaid first (PRD §12.1).
   allocations Json
 
-  status EntryStatus @default(CONFIRMED)
+  status          EntryStatus           @default(CONFIRMED)
   /// Set on the replacement entry, pointing at the entry it corrects.
   correctsEntryId String?               @unique
-  correctsEntry   PaymentReceivedEntry?  @relation("PaymentCorrection", fields: [correctsEntryId], references: [id])
-  correctedBy     PaymentReceivedEntry?  @relation("PaymentCorrection")
+  correctsEntry   PaymentReceivedEntry? @relation("PaymentCorrection", fields: [correctsEntryId], references: [id])
+  correctedBy     PaymentReceivedEntry? @relation("PaymentCorrection")
 
   confirmedByRef String
   reason         String?
@@ -1154,17 +1178,17 @@ model PaymentReceivedEntry {
 /// PRD §24 / §10.3 — one active reference value is globally unique across
 /// Payment Received and Payment Given after normalisation.
 model ExternalReference {
-  id       String @id @default(uuid())
-  rawValue String
+  id            String           @id @default(uuid())
+  rawValue      String
   /// Trimmed, collapsed whitespace, upper-cased.
   normalisedKey String
-  purpose  ReferencePurpose
+  purpose       ReferencePurpose
 
   /// Operator-entered action date, separate from the system entry timestamp.
   actionDate DateTime
   recordedAt DateTime @default(now())
 
-  status ReferenceStatus @default(ACTIVE)
+  status     ReferenceStatus    @default(ACTIVE)
   /// The superseded reference this one replaces.
   replacesId String?            @unique
   replaces   ExternalReference? @relation("ReferenceSupersession", fields: [replacesId], references: [id])
@@ -1336,40 +1360,40 @@ enum BankStatus {
 }
 
 model CommissionRecord {
-  id        String   @id @default(uuid())
+  id            String       @id @default(uuid())
   /// Sale commission hangs off the Booking; Buying Commission off the
   /// Acquisition. Exactly one is set (see constraints.sql).
-  bookingId String?
-  booking   Booking? @relation(fields: [bookingId], references: [id])
+  bookingId     String?
+  booking       Booking?     @relation(fields: [bookingId], references: [id])
   acquisitionId String?
   acquisition   Acquisition? @relation(fields: [acquisitionId], references: [id])
 
-  type            CommissionType
-  beneficiaryRole BeneficiaryRole
+  type                CommissionType
+  beneficiaryRole     BeneficiaryRole
   beneficiaryPersonId String
-  beneficiaryPerson   Person @relation("CommissionBeneficiary", fields: [beneficiaryPersonId], references: [id])
+  beneficiaryPerson   Person          @relation("CommissionBeneficiary", fields: [beneficiaryPersonId], references: [id])
 
-  percent Decimal @db.Decimal(7, 4)
+  percent          Decimal @db.Decimal(7, 4)
   /// The band and rule the percentage came from, frozen for traceability.
-  ruleVersion String
+  ruleVersion      String
   /// Verified Payment Received the record becomes eligible at: 25 or 100.
   milestonePercent Decimal @db.Decimal(7, 4)
 
-  eligibility EligibilityState      @default(MILESTONE_PENDING)
+  eligibility EligibilityState       @default(MILESTONE_PENDING)
   holdReason  CommissionHoldReason?
   payment     CommissionPaymentState @default(NOT_PAID)
 
-  paidOn        DateTime?
-  paidByRef     String?
+  paidOn              DateTime?
+  paidByRef           String?
   /// Compulsory for Paid Early (PRD §6.11).
-  paymentRemarks String?
+  paymentRemarks      String?
   externalReferenceId String?            @unique
   externalReference   ExternalReference? @relation(fields: [externalReferenceId], references: [id])
 
   /// PRD §6.9 — old records are superseded, never deleted.
-  externalProcessingCompleted Boolean   @default(false)
-  isCurrent                   Boolean   @default(true)
-  effectiveFrom               DateTime  @default(now())
+  externalProcessingCompleted Boolean           @default(false)
+  isCurrent                   Boolean           @default(true)
+  effectiveFrom               DateTime          @default(now())
   effectiveTo                 DateTime?
   closedReason                String?
   supersededById              String?           @unique
@@ -1378,7 +1402,7 @@ model CommissionRecord {
 
   /// Set when the record consumed a one-shot entitlement, so a cancellation
   /// before legal completion can reopen exactly that slot (PRD §6.1, §6.5).
-  opportunityId String?               @unique
+  opportunityId String?                @unique
   opportunity   CommissionOpportunity? @relation(fields: [opportunityId], references: [id])
 
   /// AC-02 — the performance cycle this record's qualifying transaction was
@@ -1424,8 +1448,8 @@ model CommissionOpportunity {
   kind OpportunityKind
 
   /// The invited Member, the introduced Customer, or the Loyalty Customer.
-  subjectPersonId String
-  subjectPerson   Person @relation("OpportunitySubject", fields: [subjectPersonId], references: [id])
+  subjectPersonId     String
+  subjectPerson       Person  @relation("OpportunitySubject", fields: [subjectPersonId], references: [id])
   /// The Member the entitlement belongs to. Null for a Customer's own Loyalty.
   beneficiaryPersonId String?
 
@@ -1436,8 +1460,8 @@ model CommissionOpportunity {
   consumedByBookingId String?
   consumedAt          DateTime?
   /// Why a consumed slot was reopened — cancellation before legal completion.
-  reopenedReason String?
-  reopenedAt     DateTime?
+  reopenedReason      String?
+  reopenedAt          DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1509,15 +1533,15 @@ model PerformanceCycle {
 
 /// Append-only commission history for the record timeline (DESIGN §14.3).
 model CommissionEvent {
-  id           String           @id @default(uuid())
-  recordId     String
-  record       CommissionRecord @relation(fields: [recordId], references: [id])
-  at           DateTime         @default(now())
-  actorRef     String
-  action       String
-  fromState    String?
-  toState      String?
-  reason       String?
+  id        String           @id @default(uuid())
+  recordId  String
+  record    CommissionRecord @relation(fields: [recordId], references: [id])
+  at        DateTime         @default(now())
+  actorRef  String
+  action    String
+  fromState String?
+  toState   String?
+  reason    String?
 
   @@index([recordId, at])
 }
@@ -1530,12 +1554,12 @@ model BankDetail {
   personId String
   person   Person @relation(fields: [personId], references: [id])
 
-  accountHolder String
-  bankName      String
+  accountHolder   String
+  bankName        String
   /// Which branch the account sits at — compulsory on every new entry. The
   /// column is nullable only because the rows written before it existed have
   /// no branch and nothing may invent one for them.
-  branchName    String?
+  branchName      String?
   /// Full account number is protected at rest; lists show the last four only.
   accountCipher   String
   accountLastFour String
@@ -1625,7 +1649,7 @@ model ChangePlotRequest {
   replacementPlcSnapshotId String?
   replacementPlcSnapshot   PlcSnapshot? @relation(fields: [replacementPlcSnapshotId], references: [id])
   /// The Plot state to put back if the request is rejected.
-  restoreSnapshot Json
+  restoreSnapshot          Json
 
   /// PRD §5.3 — Accounts manually records the percentage applicable to the
   /// replacement Plot; no rupee conversion happens anywhere.
@@ -1642,15 +1666,15 @@ model ChangePlotRequest {
 /// main-PRD §17 — Buyback and Purchase for Resale. Payment Given progress is a
 /// percentage; no rupee value is stored anywhere.
 model Acquisition {
-  id             String          @id @default(uuid())
-  acquisitionNo  String          @unique
-  type           AcquisitionType
-  status         AcquisitionStatus @default(PENDING_APPROVAL)
+  id            String            @id @default(uuid())
+  acquisitionNo String            @unique
+  type          AcquisitionType
+  status        AcquisitionStatus @default(PENDING_APPROVAL)
 
   /// Set from the start for a Buyback; created on approval for a Purchase for
   /// Resale, when the property enters normal Plot Inventory (main-PRD §17.4).
-  plotId String?
-  plot   Plot?   @relation(fields: [plotId], references: [id])
+  plotId          String?
+  plot            Plot?    @relation(fields: [plotId], references: [id])
   /// The Buyback's original Booking. Its history is never overwritten.
   sourceBookingId String?
   sourceBooking   Booking? @relation("BuybackSource", fields: [sourceBookingId], references: [id])
@@ -1663,17 +1687,17 @@ model Acquisition {
   arrangedByPerson   Person?    @relation("AcquisitionArranger", fields: [arrangedByPersonId], references: [id])
 
   // External property details, for a Purchase for Resale (main-PRD §17.4).
-  propertyName     String?
-  location         String?
-  projectType      ProjectType?
-  propertyNumber   String?
-  areaSqFt         Decimal?     @db.Decimal(12, 4)
-  plcPercent       Decimal?     @db.Decimal(7, 4)
+  propertyName   String?
+  location       String?
+  projectType    ProjectType?
+  propertyNumber String?
+  areaSqFt       Decimal?     @db.Decimal(12, 4)
+  plcPercent     Decimal?     @db.Decimal(7, 4)
   /// Normalised duplicate key across name, location and property number.
-  duplicateKey     String?
+  duplicateKey   String?
   /// PRD §11.6 — the External Resale Property Group the property lands in.
-  resaleGroupId    String?
-  resaleGroup      Project?     @relation("ExternalResaleGroup", fields: [resaleGroupId], references: [id])
+  resaleGroupId  String?
+  resaleGroup    Project?     @relation("ExternalResaleGroup", fields: [resaleGroupId], references: [id])
 
   purchaseDate DateTime
   remark       String
@@ -1707,8 +1731,8 @@ model PaymentGivenEntry {
   acquisitionId String
   acquisition   Acquisition @relation(fields: [acquisitionId], references: [id])
 
-  percent Decimal  @db.Decimal(7, 4)
-  paidOn  DateTime
+  percent    Decimal  @db.Decimal(7, 4)
+  paidOn     DateTime
   recordedAt DateTime @default(now())
 
   externalReferenceId String            @unique
@@ -1717,10 +1741,10 @@ model PaymentGivenEntry {
   /// [{ instalmentId, percent }] — oldest unpaid first.
   allocations Json
 
-  status EntryStatus @default(CONFIRMED)
-  correctsEntryId String?             @unique
-  correctsEntry   PaymentGivenEntry?  @relation("GivenCorrection", fields: [correctsEntryId], references: [id])
-  correctedBy     PaymentGivenEntry?  @relation("GivenCorrection")
+  status          EntryStatus        @default(CONFIRMED)
+  correctsEntryId String?            @unique
+  correctsEntry   PaymentGivenEntry? @relation("GivenCorrection", fields: [correctsEntryId], references: [id])
+  correctedBy     PaymentGivenEntry? @relation("GivenCorrection")
 
   confirmedByRef String
   reason         String?
@@ -1808,9 +1832,9 @@ model BookingCompletion {
   deliveredAt              DateTime @default(now())
   completedByRef           String
 
-  reopenedAt     DateTime?
-  reopenedByRef  String?
-  reopenReason   String?
+  reopenedAt    DateTime?
+  reopenedByRef String?
+  reopenReason  String?
 
   createdAt DateTime @default(now())
 
@@ -1820,13 +1844,13 @@ model BookingCompletion {
 /// PRD §21 — the export log stores report, filters, timestamp, user and row
 /// count. The exported rows themselves are not retained.
 model ExportLog {
-  id        String   @id @default(uuid())
-  at        DateTime @default(now())
-  actorRef  String
-  actorRole String?
-  report    String
-  filters   Json
-  rowCount  Int
+  id          String   @id @default(uuid())
+  at          DateTime @default(now())
+  actorRef    String
+  actorRole   String?
+  report      String
+  filters     Json
+  rowCount    Int
   /// Optional integrity hash of the masked payload (PRD §21).
   contentHash String?
 

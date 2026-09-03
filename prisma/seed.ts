@@ -105,9 +105,13 @@ async function main() {
     create: {
       customerId: "CUS-3390",
       personId: customerPerson.id,
-      originalIntroducedByMemberId: member.id,
-      introducedPosition: 1,
-      introducedRatePercent: "1.000",
+      // CR-002 — seeded as a Royalty link that has already gone final, which is
+      // what a Customer whose first purchase completed under this Member looks
+      // like. Nothing is seeded from an Enquiry any more (CR-001).
+      royaltyLinkedMemberId: member.id,
+      royaltyLinkFinalAt: new Date(),
+      royaltyPosition: 1,
+      royaltyRatePercent: "1.000",
     },
     update: {},
   });

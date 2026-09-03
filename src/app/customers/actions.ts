@@ -55,7 +55,7 @@ export async function loadCustomerDetail(customerProfileId: string) {
     where: { id: customerProfileId },
     include: {
       person: true,
-      originalIntroducedByMember: { include: { person: true } },
+      royaltyLinkedMember: { include: { person: true } },
     },
   });
   if (!customer) return null;
@@ -109,11 +109,12 @@ export async function loadCustomerDetail(customerProfileId: string) {
     aadhaarStatus: customer.person.aadhaarStatus,
     panMasked: customer.person.panMasked ? maskPan(customer.person.panMasked) : null,
     panStatus: customer.person.panStatus,
-    introducedBy: customer.originalIntroducedByMember
-      ? `${customer.originalIntroducedByMember.memberId} · ${customer.originalIntroducedByMember.person.fullName}`
+    royaltyLinkedMember: customer.royaltyLinkedMember
+      ? `${customer.royaltyLinkedMember.memberId} · ${customer.royaltyLinkedMember.person.fullName}`
       : null,
-    introducedPosition: customer.introducedPosition,
-    introducedRatePercent: customer.introducedRatePercent?.toFixed(2) ?? null,
+    royaltyLinkProvisional: customer.royaltyLinkFinalAt === null,
+    royaltyPosition: customer.royaltyPosition,
+    royaltyRatePercent: customer.royaltyRatePercent?.toFixed(2) ?? null,
     loyaltySlots: loyalty.map((o) => ({
       slotIndex: o.slotIndex,
       status: o.status,

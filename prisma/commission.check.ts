@@ -15,6 +15,7 @@ import {
   submitBookingRequest,
 } from "@/lib/services/booking-service";
 import { confirmPaymentReceived } from "@/lib/services/payment-service";
+import { decideCancellation } from "@/lib/services/cancellation-service";
 import {
   applyMemberCommissionHold,
   approveCommissionPaidEarly,
@@ -817,14 +818,19 @@ async function main() {
      "not simply by recording a transaction"). */
 
   const royaltyBuyer = await makeEligiblePerson("RoyaltyBuyer", "9600000022");
+  // CR-002 — a Royalty link that has already gone final, which is what a
+  // Customer whose first qualifying purchase completed under this Member looks
+  // like. How the link is *established* is AC-06's subject, below; this block
+  // is about what a final link then earns.
   await db.customerProfile.create({
     data: {
       customerId: `${TAG}-C-ROY`,
       personId: royaltyBuyer.id,
-      originalIntroducedByMemberId: inviterMember.id,
-      introducedPosition: 1,
-      introducedRatePercent: "1",
-      introducedYearStart: day(-30),
+      royaltyLinkedMemberId: inviterMember.id,
+      royaltyLinkFinalAt: day(-30),
+      royaltyPosition: 1,
+      royaltyRatePercent: "1",
+      royaltyYearStart: day(-30),
     },
   });
 
@@ -1018,6 +1024,236 @@ async function main() {
     }),
     "and §14.12's CRM/management decision is raised for Accounts"
   );
+
+  /* ======= AC-06 — Royalty ownership: CR-001 – CR-004, acceptance 1 – 6 =======
+
+     The Enquiry no longer decides anything. Royalty belongs to the Member who
+     was Sold By on the Customer's first qualifying purchase, it is provisional
+     until that purchase reaches 100% Payment Received or an Approved Buyback,
+     and only then does it take a position. */
+
+  const royMemAPerson = await makeEligiblePerson("RoyMemA", "9600000041");
+  const royMemBPerson = await makeEligiblePerson("RoyMemB", "9600000042");
+  const royMemCPerson = await makeEligiblePerson("RoyMemC", "9600000045");
+  const makeMember = (suffix: string, personId: string, activatedDaysAgo: number) =>
+    db.memberProfile.create({
+      data: {
+        memberId: `${TAG}-M-${suffix}`,
+        personId,
+        activationDate: day(-activatedDaysAgo),
+        reraStatus: "NOT_APPLICABLE",
+        reraNotApplicableReason: "Individual referrer",
+      },
+    });
+  const royMemA = await makeMember("A", royMemAPerson.id, 400);
+  const royMemB = await makeMember("B", royMemBPerson.id, 300);
+  const royMemC = await makeMember("C", royMemCPerson.id, 250);
+
+  const linkOf = (personId: string) => db.customerProfile.findFirstOrThrow({ where: { personId } });
+
+  /* Acceptance 1, 2 — "Enquiry by Member A + first qualifying sale by Member B
+     = future Royalty belongs to B." */
+
+  const linkBuyer = await makeEligiblePerson("LinkBuyer", "9600000043");
+  await db.enquiry.create({
+    data: {
+      enquiryNo: `${TAG}-ENQ-ROY`,
+      personId: linkBuyer.id,
+      projectId: project.id,
+      source: "BY_MEMBER",
+      sourceMemberId: royMemA.id,
+      remark: "Member A sourced the Enquiry and closes nothing.",
+    },
+  });
+
+  const plotR1 = await makePlot(project.id, "ROY1");
+  const firstSale = await bookAndApprove({
+    plotId: plotR1.id,
+    buyerPersonId: linkBuyer.id,
+    soldByType: "MEMBER",
+    soldByPersonId: royMemBPerson.id,
+  });
+
+  let link = await linkOf(linkBuyer.id);
+  assert.equal(
+    link.royaltyLinkedMemberId,
+    royMemB.id,
+    "acceptance 1, 2 — the Sold By Member of the first approved Booking is the Royalty Linked Member, not the Enquiry Member"
+  );
+  assert.equal(link.royaltyLinkFinalAt, null, "and it is provisional until the milestone");
+  assert.equal(link.royaltyPosition, null, "a provisional link takes no Royalty position");
+  assert.ok(
+    await db.bookingEvent.findFirst({
+      where: { bookingId: firstSale, action: "ROYALTY_LINK_PROVISIONAL" },
+    }),
+    "the link is on the Booking's own history"
+  );
+
+  await pay(firstSale, "100", `${TAG} UTR ROY1`);
+  link = await linkOf(linkBuyer.id);
+  assert.ok(link.royaltyLinkFinalAt, "100% verified Payment Received makes the link final");
+  assert.equal(link.royaltyPosition, 1, "and that is when the Royalty position is taken");
+  assert.equal(link.royaltyRatePercent?.toFixed(2), "1.00", "at the band rate of the position it took");
+
+  // The future qualifying purchase: same Customer, direct, Sold By 3% CLUB.
+  const plotR2 = await makePlot(project.id, "ROY2");
+  const royaltyRepeat = await bookAndApprove({
+    plotId: plotR2.id,
+    buyerPersonId: linkBuyer.id,
+    soldByType: "THREE_PERCENT_CLUB",
+  });
+  const repeatRoyalty = await db.commissionRecord.findFirst({
+    where: { bookingId: royaltyRepeat, type: "ROYALTY", isCurrent: true },
+  });
+  assert.equal(
+    repeatRoyalty?.beneficiaryPersonId,
+    royMemBPerson.id,
+    "acceptance 2 — the future direct purchase pays Royalty to the Member who closed the first sale"
+  );
+  assert.equal(
+    await db.commissionRecord.count({
+      where: { bookingId: royaltyRepeat, type: "ROYALTY", beneficiaryPersonId: royMemAPerson.id },
+    }),
+    0,
+    "acceptance 1 — the Enquiry Member earns nothing from having sourced the Enquiry"
+  );
+
+  /* Acceptance 6 — a Member-closed repeat purchase does not consume Royalty. */
+
+  const plotR3 = await makePlot(project.id, "ROY3");
+  const memberClosedRepeat = await bookAndApprove({
+    plotId: plotR3.id,
+    buyerPersonId: linkBuyer.id,
+    soldByType: "MEMBER",
+    soldByPersonId: royMemCPerson.id,
+  });
+  assert.equal(
+    await db.commissionRecord.count({
+      where: {
+        bookingId: memberClosedRepeat,
+        type: { in: ["ROYALTY", "LOYALTY"] },
+        isCurrent: true,
+      },
+    }),
+    0,
+    "acceptance 6 — a Member-closed repeat purchase creates no Royalty and no Loyalty"
+  );
+  assert.equal(
+    await db.commissionOpportunity.count({
+      where: { kind: "ROYALTY", subjectPersonId: linkBuyer.id, status: "CONSUMED" },
+    }),
+    0,
+    "and leaves the unused Royalty available"
+  );
+
+  /* Acceptance 3 — a first Booking cancelled before its milestone consumes no
+     Royalty position, and a later valid first purchase may establish a new
+     link. */
+
+  const cancelBuyer = await makeEligiblePerson("CancelBuyer", "9600000044");
+  const plotR4 = await makePlot(project.id, "ROY4");
+  const cancelledFirst = await bookAndApprove({
+    plotId: plotR4.id,
+    buyerPersonId: cancelBuyer.id,
+    soldByType: "MEMBER",
+    soldByPersonId: royMemBPerson.id,
+  });
+  assert.equal(
+    (await linkOf(cancelBuyer.id)).royaltyLinkedMemberId,
+    royMemB.id,
+    "the cancelled Booking held a provisional link while it stood"
+  );
+
+  await cancelBooking({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    bookingId: cancelledFirst,
+    reason: "Buyer withdrew before any payment.",
+  });
+  await decideCancellation({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    bookingId: cancelledFirst,
+    approve: true,
+    note: "No payment was received.",
+  });
+
+  const afterCancelledFirst = await linkOf(cancelBuyer.id);
+  assert.equal(
+    afterCancelledFirst.royaltyLinkedMemberId,
+    null,
+    "acceptance 3 — the provisional link goes with the cancelled first Booking"
+  );
+  assert.equal(afterCancelledFirst.royaltyLinkFinalAt, null, "nothing became final");
+  assert.equal(afterCancelledFirst.royaltyPosition, null, "and no Royalty position was consumed");
+
+  const plotR5 = await makePlot(project.id, "ROY5");
+  await bookAndApprove({
+    plotId: plotR5.id,
+    buyerPersonId: cancelBuyer.id,
+    soldByType: "MEMBER",
+    soldByPersonId: royMemCPerson.id,
+  });
+  assert.equal(
+    (await linkOf(cancelBuyer.id)).royaltyLinkedMemberId,
+    royMemC.id,
+    "a later valid first purchase establishes a new link"
+  );
+
+  /* Acceptance 4 — a first purchase Sold By 3% CLUB never gains a Royalty
+     Member, however many Members sell to that Customer afterwards. */
+
+  const clubBuyer = await makeEligiblePerson("ClubBuyer", "9600000046");
+  const plotR6 = await makePlot(project.id, "ROY6");
+  const clubFirst = await bookAndApprove({
+    plotId: plotR6.id,
+    buyerPersonId: clubBuyer.id,
+    soldByType: "THREE_PERCENT_CLUB",
+  });
+  await pay(clubFirst, "100", `${TAG} UTR ROY6`);
+  assert.equal(
+    (await linkOf(clubBuyer.id)).royaltyLinkedMemberId,
+    null,
+    "Sold By 3% CLUB creates no Royalty Linked Member"
+  );
+  assert.ok(
+    (await linkOf(clubBuyer.id)).royaltyLinkFinalAt,
+    "and at the milestone that answer is itself final"
+  );
+
+  const plotR7 = await makePlot(project.id, "ROY7");
+  await bookAndApprove({
+    plotId: plotR7.id,
+    buyerPersonId: clubBuyer.id,
+    soldByType: "MEMBER",
+    soldByPersonId: royMemBPerson.id,
+  });
+  assert.equal(
+    (await linkOf(clubBuyer.id)).royaltyLinkedMemberId,
+    null,
+    "acceptance 4 — a Member selling later acquires no Royalty ownership"
+  );
+
+  /* Acceptance 5 — the same, for a first purchase Sold By Customer. */
+
+  const custBuyer = await makeEligiblePerson("CustBuyer", "9600000047");
+  const plotR8 = await makePlot(project.id, "ROY8");
+  const custFirst = await bookAndApprove({
+    plotId: plotR8.id,
+    buyerPersonId: custBuyer.id,
+    soldByType: "CUSTOMER",
+    soldByPersonId: linkBuyer.id,
+  });
+  await pay(custFirst, "100", `${TAG} UTR ROY8`);
+  const custLink = await linkOf(custBuyer.id);
+  assert.equal(
+    custLink.royaltyLinkedMemberId,
+    null,
+    "acceptance 5 — Sold By Customer creates no Royalty Linked Member"
+  );
+  assert.ok(custLink.royaltyLinkFinalAt, "and that is final at the milestone too");
 
   /* AC-03 — Paid Early needs a recorded MD approval */
 

@@ -17,6 +17,7 @@ import {
 } from "@/lib/domain/booking";
 import { blocked, lockBooking, runCommand, type Tx } from "./command";
 import { reassessCommission } from "./commission-service";
+import { syncRoyaltyLink } from "./network-service";
 import { closeCompletionTasks, ensureCompletionTasks } from "./completion-service";
 import { closeTasksFor, ensureTask, reviseTask } from "./task-service";
 
@@ -340,6 +341,9 @@ export async function confirmPaymentReceived(args: {
       });
       await syncPaymentFollowUp(tx, args.bookingId, args.actorRef);
       await reassessCommission(tx, args.bookingId, args.actorRef);
+      // CR-002 — 100% verified Payment Received on a first qualifying purchase
+      // is what makes its Royalty Linked Member final.
+      await syncRoyaltyLink(tx, booking.primaryPersonId, args.actorRef);
 
       return {
         result: {
@@ -503,6 +507,7 @@ export async function correctPaymentReceived(args: {
       });
       await syncPaymentFollowUp(tx, original.bookingId, args.actorRef);
       await reassessCommission(tx, original.bookingId, args.actorRef);
+      await syncRoyaltyLink(tx, booking.primaryPersonId, args.actorRef);
 
       return {
         result: {

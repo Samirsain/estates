@@ -11,7 +11,6 @@ import { blocked, CommandError, nextReference, runCommand } from "@/lib/services
 import { submitHoldRequest, withdrawHoldRequest } from "@/lib/services/hold-service";
 import {
   ENQUIRY_FOLLOW_UP_PURPOSE,
-  applyIntroducerFreeze,
   defaultCrmAssignee,
   linkOrCreatePerson,
 } from "@/lib/services/enquiry-service";
@@ -80,8 +79,8 @@ export async function addMemberEnquiryAction(
           },
         });
 
-        // Freezes Original Introduced By Member only if it is not already set.
-        await applyIntroducerFreeze(tx, person.id);
+        // CR-001 — a Member-sourced Enquiry has no earning effect. The Member
+        // keeps the follow-up relationship and nothing else.
 
         await ensureTask(tx, {
           recordKind: "Enquiry",

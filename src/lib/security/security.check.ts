@@ -276,7 +276,7 @@ assert.ok(decoyMs > 0 && realMs > 0, "both paths perform scrypt work");
 // built in a server component that no unit test can call.
 const portalSource = readFileSync(new URL("../../app/portal/page.tsx", import.meta.url), "utf8");
 assert.ok(
-  portalSource.includes("introducedCustomers"),
+  portalSource.includes("royaltyLinkedCustomers"),
   "the portal payload builds the Member's own Network (DESIGN §3.2, §13.2)"
 );
 

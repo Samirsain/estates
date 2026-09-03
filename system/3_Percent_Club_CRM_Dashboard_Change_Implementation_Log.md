@@ -744,3 +744,59 @@ governs the rest: where an implementation choice would change who earns, when,
 whether an opportunity is consumed, whether a cycle upgrades or whether a payment
 becomes recoverable, it is asked rather than invented, and the question is
 recorded here.
+
+## 15. Step 1 built — Royalty ownership (CR-001 – CR-004)
+
+The Enquiry no longer decides anything. `applyIntroducerFreeze`,
+`assignIntroducedPosition` and `resolveOriginalIntroducer` are gone, and the
+three places that called the freeze — `createEnquiry`, `ensureCustomerProfile`
+and the Member Portal's own Enquiry — now record a follow-up relationship and
+nothing else. `CustomerProfile.originalIntroducedByMemberId` and its position
+stay in the schema as Enquiry-era history, unread by the engine and unwritten by
+anything, which is what §30 asks for: preserve old, new, history and reason.
+
+In its place `CustomerProfile` carries the Royalty Linked Member:
+`royaltyLinkedMemberId`, `royaltyLinkFirstBookingId`, `royaltyLinkFinalAt`, and
+the position it takes — `royaltyPosition`, `royaltyRatePercent`,
+`royaltyYearStart`. A null Member against a set first Booking is CR-003's
+permanent "no Royalty Member", not a missing value.
+
+One function owns all of it. `syncRoyaltyLink(tx, personId, actorRef)` recomputes
+the link from the Bookings themselves rather than being told what changed, so
+every rule in CR-002 falls out of one derivation instead of an
+establish/finalise/remove trio:
+
+| Called from | Because |
+| --- | --- |
+| Booking approval | the earliest approved Booking is the first qualifying purchase |
+| 100% Payment Received, and a payment correction | the normal milestone |
+| Approved Buyback | CR-002's alternative milestone |
+| Approved cancellation | a cancelled first Booking consumes no position |
+| Sold By Correction | a corrected closer corrects a provisional link |
+| Primary Customer change | the Booking may now be someone else's first purchase |
+
+A final link is never recomputed — not by a later sale, not by a later
+cancellation. The position is taken only at the milestone, so "no position is
+consumed" needs no special case: a provisional link has no position, and the
+engine reads a position, not a name. When a link goes final after a later
+Booking was already approved, that Booking's commission is regenerated, because
+its Royalty would otherwise never be created by anything.
+
+`commissionInputFor` reads the final link instead of the Enquiry freeze; the
+pure engine is untouched. The Customer, Member, portal and calculator screens
+now name the Royalty Linked Member and say when it is provisional.
+
+`commission.check.ts` gains AC-06, which proves acceptance 1 – 6 end to end
+against the database: an Enquiry by Member A followed by a first sale by Member B
+gives the Royalty to B; the link is provisional and positionless until 100%
+Payment Received; a cancelled first Booking leaves no position consumed and lets
+the next Booking establish a new link; a first purchase Sold By 3% CLUB or Sold
+By Customer never gains a Royalty Member however many Members sell to that
+Customer afterwards; and a Member-closed repeat purchase leaves the unused
+Royalty available. All eight suites pass.
+
+Still to build, in the order §14 gives: position 10+ visible and consuming, the
+two performance cycles, Buyback as an alternative milestone for Invite, Royalty
+and Loyalty, self-purchase by Primary Customer only, Loyalty exhaustion and the
+two conversion routes, Recovery, portal and report visibility, and the v2
+dataset.

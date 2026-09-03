@@ -9,41 +9,13 @@ export type EnquirySource =
   | "EXISTING_CUSTOMER"
   | "DIRECT";
 
-export type EnquiryClaim = {
-  enquiryId: string;
-  memberId: string;
-  /** Submission instant of the Member-sourced Enquiry. */
-  at: Date;
-};
-
 /**
- * PRD §6.4 — Original Introduced By Member freezes at the earliest valid
- * Member-sourced Enquiry for that Person. Later duplicate Enquiries never
- * overwrite it. Exact-timestamp ties go to the lower Enquiry ID unless
- * Admin/MD resolves a documented dispute.
+ * CR-001 — Enquiry Source is history and follow-up only. It decides no Direct,
+ * Invite, Royalty or Loyalty, so there is no claim to resolve and no
+ * Original Introduced By Member to freeze. Royalty ownership now comes from the
+ * Sold By Member of the Customer's first qualifying purchase
+ * (`syncRoyaltyLink`).
  */
-export function resolveOriginalIntroducer(
-  existingMemberId: string | null,
-  claims: readonly EnquiryClaim[]
-): { memberId: string | null; frozen: boolean } {
-  if (existingMemberId) return { memberId: existingMemberId, frozen: true };
-  if (claims.length === 0) return { memberId: null, frozen: false };
-
-  const winner = [...claims].sort(
-    (a, b) => a.at.getTime() - b.at.getTime() || (a.enquiryId < b.enquiryId ? -1 : 1)
-  )[0];
-  return { memberId: winner.memberId, frozen: false };
-}
-
-/** A correction is an Admin/MD action with a compulsory reason (PRD §6.4). */
-export function assertIntroducerCorrectionAllowed(role: string, reason: string): void {
-  if (role !== "ADMIN" && role !== "MD") {
-    throw new Error("Only Admin or MD may correct Original Introduced By Member.");
-  }
-  if (!reason.trim()) {
-    throw new Error("A compulsory reason is required to correct Original Introduced By Member.");
-  }
-}
 
 /** DESIGN §8.2 — Source Person is required for By Member and By Customer. */
 export function validateSource(
