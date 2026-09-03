@@ -18,12 +18,13 @@ import {
   RATE_BASIS_LABEL,
   RECEIVED_FROM_LABEL,
   STAGE_LABEL,
+  humanise,
+  inr,
   metricViews,
+  stageVariant,
 } from "@/lib/domain/land-inquiry";
 import { getLandInquiry } from "@/lib/services/land-inquiry-service";
 import InquiryActions from "../inquiry-actions";
-import { humanise } from "../land-inquiry-form";
-import { inr, stageVariant } from "../land-inquiries-client";
 
 export const dynamic = "force-dynamic";
 
@@ -214,7 +215,7 @@ export default async function LandInquiryDetailPage({
                 label={`Row ${entry.sortOrder}`}
                 value={[
                   entry.murbbaNo && `Murbba ${entry.murbbaNo}`,
-                  entry.patwarNo && `Patwar ${entry.patwarNo}`,
+                  entry.patharNo && `Pathar ${entry.patharNo}`,
                   entry.khasraNo && `Khasra ${entry.khasraNo}`,
                 ]
                   .filter(Boolean)

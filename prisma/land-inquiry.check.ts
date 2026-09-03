@@ -229,8 +229,8 @@ async function main() {
       { ownerName: "   ", mobile: "", isPrimary: false },
     ],
     jamabandiEntries: [
-      { murbbaNo: "12", patwarNo: "", khasraNo: `${TAG}-145/2` },
-      { murbbaNo: " ", patwarNo: "", khasraNo: "" },
+      { murbbaNo: "12", patharNo: "", khasraNo: `${TAG}-145/2` },
+      { murbbaNo: " ", patharNo: "", khasraNo: "" },
     ],
   });
   const owners = await db.landInquiryOwner.findMany({

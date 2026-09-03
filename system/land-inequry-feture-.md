@@ -125,21 +125,25 @@ Main workflow:
 ## 2.2 Received From
 
 ### Member
+
 - Search/select existing Member.
 - Link existing Person record.
 - Existing displayed data comes from current database.
 - No duplicate person is created.
 
 ### Customer
+
 - Search/select existing Customer.
 - Link existing Person record.
 - No duplicate person is created.
 
 ### 3% Club
+
 - Search/select an existing record already classified by the current project as an eligible 3% Club/dealer/source record.
 - Do not create a new “3% Club database” merely for this feature.
 
 ### Another Dealer
+
 - Only manual Mobile Number is stored for the source.
 - No name is required.
 - No `people` row is created or modified.
@@ -176,6 +180,7 @@ Section title must be exactly:
 > **Jamabandi Details**
 
 Repeatable rows:
+
 - Murbba No.
 - Patwar No.
 - Khasra No.
@@ -183,6 +188,7 @@ Repeatable rows:
 ## 2.6 Land Details
 
 Available:
+
 - Bigha
 - Biswa
 - Hectare
@@ -199,6 +205,7 @@ Metric values are synchronized. Bigha/Biswa are not universally auto-converted.
 ## 2.7 Land Category / Use
 
 Category:
+
 - Residential
 - Commercial
 - Industrial
@@ -206,6 +213,7 @@ Category:
 - Other
 
 Additional:
+
 - Current Land Use
 - Master Plan / Zonal Use
 
@@ -253,6 +261,7 @@ Rate fields require a rate basis so the number is meaningful.
 ## 2.12 Development Potential
 
 Optional multi-select:
+
 - Residential
 - Commercial
 - Warehouse
@@ -262,6 +271,7 @@ Optional multi-select:
 ## 2.13 Documents Received
 
 Optional multi-select:
+
 - Jamabandi
 - Registry
 - Mutation
@@ -278,11 +288,13 @@ Zero selection is valid. These are presence/status checkboxes, not uploads.
 ## 2.14 Evaluation
 
 Optional multi-select:
+
 - Site Visit Required
 - Legal Verification Required
 - Revenue Verification Required
 
 Remove:
+
 - Management Interest
 - Negotiation Status
 
@@ -381,6 +393,7 @@ Status and Stage remain separate.
 ## 4.1 Reuse
 
 Reuse existing:
+
 - `people`
 - staff/auth/session model
 - audit log infrastructure
@@ -578,6 +591,7 @@ WHERE is_primary = true;
 No hard delete.
 
 Use archive:
+
 - `archived_at`
 - `archived_by_id`
 
@@ -591,11 +605,13 @@ Default queries exclude archived.
 Use a segmented select/dropdown.
 
 When Member/Customer/3% Club:
+
 - show existing search/select component;
 - populate read-only current database data;
 - store selected Person ID.
 
 When Another Dealer:
+
 - hide person search;
 - show only Mobile Number.
 
@@ -625,6 +641,7 @@ Revalidate source capability. Never trust client labels.
 Enforce the source pair with CHECK constraint.
 
 ## Duplicates
+
 - Person-backed sources do not duplicate because they are FKs.
 - Another Dealer mobile is **not unique**.
 - A matching existing Person mobile may generate an informational warning only; it must not auto-convert the inquiry.
@@ -644,11 +661,13 @@ CREATE SEQUENCE land_inquiry_no_seq START 1;
 ```
 
 Creation transaction:
+
 1. get `nextval`;
 2. format with 6 digits;
 3. insert with unique constraint.
 
 Never use:
+
 - frontend generation;
 - record count;
 - `MAX + 1`.
@@ -672,11 +691,13 @@ Frontend shows “Generated after Save” until successful create.
 Owners are inquiry-child records, not automatically Persons.
 
 Add:
+
 - Add Owner
 - Remove Owner
 - Make Primary
 
 Rules:
+
 - first owner becomes Primary;
 - only one Primary;
 - if Primary deleted, promote lowest `sort_order`;
@@ -691,6 +712,7 @@ Owner operations and primary changes are audited.
 # 9. Location
 
 Store:
+
 - District
 - Tehsil
 - Exact Location
@@ -702,6 +724,7 @@ District/Tehsil should not be Prisma enums.
 Reuse an existing location master/autocomplete if present; otherwise use searchable text.
 
 Map:
+
 - reuse existing map component;
 - otherwise implement a minimal Google Maps pin picker;
 - coordinates are authoritative;
@@ -715,6 +738,7 @@ Map:
 Use repeatable child rows because one land inquiry can involve multiple references.
 
 A row may have one, two or all three:
+
 - Murbba
 - Patwar
 - Khasra
@@ -748,15 +772,18 @@ const SQ_FT_PER_SQ_M = 10.763910416709722;
 ```
 
 When user enters Hectare/Sq Mtr/Sq Ft:
+
 - convert to canonical Sq Mtr;
 - derive other metric displays;
 - store original input value/unit to avoid conversion drift.
 
 When user enters Bigha/Biswa:
+
 - store them as entered;
 - do not create metric values unless metric area is independently known.
 
 Precision:
+
 - stored metric/Bigha/Biswa: Decimal(20,6)
 - display Sq Ft: normally 2 decimals
 - Hectare: up to 6 decimals
@@ -768,6 +795,7 @@ Dimensions, Frontage, Road Width, Shape and Boundaries remain independent descri
 # 12. Land Category / Use
 
 Land Category enum:
+
 - Residential
 - Commercial
 - Industrial
@@ -775,6 +803,7 @@ Land Category enum:
 - Other
 
 Additional optional text:
+
 - Current Land Use
 - Master Plan / Zonal Use
 
@@ -794,6 +823,7 @@ Use one tracking vocabulary for all four fields:
 - Rejected
 
 Fields:
+
 - 90A Status
 - Land Conversion Status
 - Change of Land Use Status
@@ -810,10 +840,12 @@ Important:
 Use tri-state `Unknown / Yes / No`.
 
 Positive-document fields:
+
 - Registry / Sale Deed Available
 - Mutation Complete
 
 Risk fields:
+
 - Mortgage / Bank Charge
 - Court Case / Stay
 - Family Dispute
@@ -829,6 +861,7 @@ Never prefill Unknown as No.
 # 15. Access & Site Condition
 
 Use `Unknown / Yes / No` for:
+
 - Approach Road
 - Electricity
 - Water
@@ -837,6 +870,7 @@ Use `Unknown / Yes / No` for:
 - Encroachment
 
 Use free text for:
+
 - Road Type
 - Possession Status
 
@@ -857,6 +891,7 @@ Do not persist money using JavaScript floating-point arithmetic.
 ## Rate basis
 
 When these fields have a numeric value:
+
 - Owner Asking Rate
 - DLC Rate
 - Expected Purchase Rate
@@ -877,6 +912,7 @@ A value with no basis is invalid.
 Independent user-entered field.
 
 Do **not** auto-overwrite it using Area × Rate because:
+
 - Bigha conversion may be locally variable;
 - negotiated total may differ;
 - source information must be preserved as stated.
@@ -893,6 +929,7 @@ A UI calculation hint may be displayed only when the basis/area conversion is de
 ## Payment Expectation
 
 Text area, e.g.:
+
 - token expectation;
 - balance timeline;
 - registry-linked payment;
@@ -915,6 +952,7 @@ Optional multi-select:
 Store as enum array.
 
 Rules:
+
 - zero allowed;
 - one allowed;
 - multiple allowed;
@@ -944,6 +982,7 @@ This means:
 > “The inquiry record says this item was received/available.”
 
 It does **not** mean:
+
 - upload a file;
 - create Person KYC;
 - use `kyc_documents`;
@@ -968,6 +1007,7 @@ Optional multi-select:
 Zero selection is valid.
 
 Do not create:
+
 - Management Interest
 - Negotiation Status
 
@@ -1020,6 +1060,7 @@ Reason compulsory.
 ## Rejected / Closed
 
 Setting Stage = Rejected / Closed:
+
 - requires close reason;
 - automatically sets Status = Closed;
 - audits both fields.
@@ -1037,6 +1078,7 @@ Only Admin/MD may reopen a Closed inquiry.
 Reason compulsory.
 
 If Stage was Rejected / Closed:
+
 - reopening must choose a valid Working stage.
 
 ---
@@ -1055,9 +1097,11 @@ If Stage was Rejected / Closed:
 ## Valid Closed combinations
 
 Normal:
+
 - Closed + Rejected / Closed
 
 Also permitted:
+
 - Closed + Approved for Acquisition, after an explicit hand-off/completion action when management chooses to close the inquiry record.
 
 ## Invalid
@@ -1067,6 +1111,7 @@ Also permitted:
 ## Close Inquiry action
 
 If a user closes an inquiry from:
+
 - New
 - Documents Pending
 - Site Visit
@@ -1074,6 +1119,7 @@ If a user closes an inquiry from:
 - Negotiation
 
 the action:
+
 1. asks reason;
 2. Status → Closed;
 3. Stage → Rejected / Closed;
@@ -1104,20 +1150,19 @@ Recommended App Router routes:
 /land-inquiries/[id]/edit
 ```
 
-If the repository has a consistent modal edit/create convention, Claude Code may preserve that convention while keeping the `/land-inquiries` module boundary.
+If the repository has a consistent modal edit/create convention, Claude Code may preserve thHeader:
 
-## 23.3 List page
-
-Header:
 - `Land Inquiries`
 - `+ New Land Inquiry`
 
 Optional existing-pattern summary cards:
+
 - Working
 - Closed
 - Approved for Acquisition
 
 Below:
+
 - search
 - filters
 - server-side table/list
@@ -1142,10 +1187,12 @@ Use exactly the 14 business sections:
 14. Inquiry Stage
 
 Desktop:
+
 - 2 columns for short fields;
 - long text full width.
 
 Mobile/tablet:
+
 - 1 column;
 - Owner/Jamabandi rows become stacked cards;
 - map full-width;
@@ -1154,6 +1201,7 @@ Mobile/tablet:
 ## 23.5 Create screen
 
 Read-only display:
+
 - Inquiry No.: `Generated after Save`
 - Date: current India date
 
@@ -1166,6 +1214,7 @@ The form may be saved with all optional business sections blank.
 ## 23.6 Detail screen
 
 Top summary:
+
 - Inquiry No.
 - Status badge
 - Stage badge
@@ -1181,13 +1230,25 @@ Empty optional values display `—` or remain visually de-emphasized according t
 ## 23.7 Edit screen
 
 Working inquiry:
+
 - authorized users can edit.
 
 Closed:
+
 - read-only by default;
 - Admin/MD must Reopen first for normal edits.
 
 ## 23.8 Archive
+
+No normal Delete button.
+
+Admin/MD:
+
+> Archive Inquiry
+
+Requirements:
+
+- confirmation;ive
 
 No normal Delete button.
 
@@ -1209,15 +1270,18 @@ Use explicit Save/Update.
 ## 23.10 Loading / empty / errors
 
 Reuse current:
+
 - loading skeleton/spinner;
 - toast;
 - field error;
 - confirmation modal.
 
 Empty example:
+
 > No land inquiries found.
 
 Provide:
+
 - Clear Filters
 - New Land Inquiry, if user is authorized.
 
@@ -1246,11 +1310,13 @@ Default sort:
 > Inquiry Date DESC, then Inquiry No. DESC
 
 Pagination:
+
 - server-side;
 - reuse current page-size convention;
 - recommended default 25.
 
 Land Area display:
+
 1. if canonical metric exists, display source metric + optional secondary conversion;
 2. else display recorded Bigha/Biswa;
 3. else `—`.
@@ -1266,6 +1332,7 @@ Do not fetch the whole dataset to the browser.
 ## Global search
 
 Search across authorized fields:
+
 - Inquiry No.
 - Owner Name
 - Owner Mobile
@@ -1298,6 +1365,7 @@ Use App Router query params so filter state survives refresh and is server-rende
 ## Database indexes
 
 Required:
+
 - unique Inquiry No.
 - Inquiry Date
 - Received From
@@ -1322,6 +1390,7 @@ The project uses **Server Actions**, not a REST CRUD layer.
 Therefore do not introduce `/api/land-inquiries/*` merely to satisfy a generic API format.
 
 Use:
+
 - server query functions for reads;
 - React Server Actions for writes.
 
@@ -1382,6 +1451,7 @@ type LandInquiryListFilters = {
 ```
 
 Response:
+
 ```ts
 {
   rows: LandInquiryListRow[];
@@ -1393,10 +1463,12 @@ Response:
 ```
 
 Authorization:
+
 - authenticated staff;
 - field visibility follows RBAC.
 
 Errors:
+
 - invalid filter;
 - unauthorized archived filter;
 - invalid date range.
@@ -1404,6 +1476,7 @@ Errors:
 ## 26.4 Read: `getLandInquiry(id)`
 
 Returns:
+
 - inquiry;
 - ordered owners;
 - ordered Jamabandi entries;
@@ -1452,10 +1525,12 @@ Steps inside one transaction:
 11. return `{ id, inquiryNo }`.
 
 Idempotency:
+
 - `create_request_id` is unique;
 - retry with same key returns original successful result rather than creating duplicate.
 
 Common error codes:
+
 - `UNAUTHORIZED`
 - `VALIDATION_ERROR`
 - `SOURCE_PERSON_NOT_FOUND`
@@ -1479,9 +1554,11 @@ Use optimistic locking.
 Update only if submitted `version` equals current `version`.
 
 On success:
+
 - version += 1.
 
 On mismatch:
+
 > This inquiry was updated by another user. Refresh and review the latest information.
 
 Update parent + owner rows + Jamabandi rows in one transaction.
@@ -1498,6 +1575,7 @@ changeLandInquiryStageAction({
 ```
 
 Server:
+
 - validates role;
 - validates status/stage compatibility;
 - requires reason on skip/backward movement;
@@ -1517,10 +1595,12 @@ changeLandInquiryStatusAction({
 ```
 
 Closing intermediate Working inquiry:
+
 - Status Closed
 - Stage RejectedClosed
 
 Reopen:
+
 - Admin/MD only;
 - reason;
 - restored Working stage required if currently RejectedClosed.
@@ -1563,6 +1643,7 @@ only if the current codebase contains a compatible external acquisition/Purchase
 The hand-off may prefill data.
 
 It must not:
+
 - silently alter Land Inquiry values;
 - automatically create acquisition on stage selection;
 - build a duplicate acquisition subsystem.
@@ -1591,6 +1672,7 @@ Recommended matrix:
 | Commercial values | Yes | Yes | Yes | acquisition need-based | read if authorized | No by default | No |
 
 Critical:
+
 - no Member portal access;
 - no Customer portal access;
 - Another Dealer has no account or portal rights;
@@ -1646,6 +1728,7 @@ Critical:
 Reuse the project’s current helper.
 
 Accept common human formatting:
+
 - spaces;
 - hyphens;
 - `+91`.
@@ -1661,6 +1744,7 @@ Hard prevent duplicate technical submissions via `createRequestId`.
 Do **not** hard-block two land inquiries merely because they may describe the same land. The same land may reach the company from different sources.
 
 Optional warning may compare:
+
 - District
 - Tehsil
 - Khasra
@@ -1700,6 +1784,7 @@ Audit at minimum:
 - archive.
 
 Each audit event should follow current infrastructure:
+
 - entity type;
 - entity ID;
 - actor;
@@ -1776,6 +1861,7 @@ Do not seed a universal Rajasthan Bigha conversion.
 ## Maps environment
 
 Only if an existing map integration cannot be reused:
+
 - add Google Maps browser key using current env naming practice;
 - restrict origins in Google Cloud;
 - do not commit secrets.
@@ -1798,6 +1884,7 @@ Only if an existing map integration cannot be reused:
 Prefer forward-fix after database migration.
 
 If UI release must be rolled back:
+
 - keep Land Inquiry tables/data;
 - remove route/nav access temporarily;
 - do not drop tables containing production inquiry data.
@@ -1954,6 +2041,7 @@ npm run build
 ```
 
 Extend `scripts/check-rules.ts` (or current equivalent) for:
+
 - Received From discriminated-union rule;
 - Status/Stage compatibility;
 - exact metric conversion constants;

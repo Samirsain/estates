@@ -31,6 +31,50 @@ export type LandRateBasis =
 
 export type LandMetricSourceUnit = "SQ_M" | "HECTARE" | "SQ_FT";
 
+export type LandCategory =
+  | "RESIDENTIAL"
+  | "COMMERCIAL"
+  | "INDUSTRIAL"
+  | "AGRICULTURAL"
+  | "OTHER";
+
+export type LandApprovalStatus =
+  | "UNKNOWN"
+  | "NOT_APPLICABLE"
+  | "NOT_STARTED"
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED";
+
+export type LandCheckState = "UNKNOWN" | "YES" | "NO";
+
+export type LandDevelopmentPotential =
+  | "RESIDENTIAL"
+  | "COMMERCIAL"
+  | "WAREHOUSE"
+  | "AGRICULTURE"
+  | "OTHER";
+
+export type LandDocumentType =
+  | "JAMABANDI"
+  | "REGISTRY"
+  | "MUTATION"
+  | "BHU_NAKSHA"
+  | "KHASRA_MAP"
+  | "CONVERSION_ORDER_90A"
+  | "PATTA"
+  | "OWNER_ID"
+  | "SITE_PHOTOS"
+  | "LOCATION_MAP";
+
+export type LandEvaluationType =
+  | "SITE_VISIT_REQUIRED"
+  | "LEGAL_VERIFICATION_REQUIRED"
+  | "REVENUE_VERIFICATION_REQUIRED";
+
+export type LinearUnit = "FT" | "MTR";
+
+
 /** Spec §21 — the working ladder, in displayed order. */
 export const WORKING_STAGES: readonly LandInquiryStage[] = [
   "NEW",
@@ -192,16 +236,16 @@ export function ownerError(rows: readonly OwnerRow[]): string | null {
 
 /* --------------------------------------------------------- jamabandi (§10) */
 
-export type JamabandiRow = { murbbaNo: string; patwarNo: string; khasraNo: string };
+export type JamabandiRow = { murbbaNo: string; patharNo: string; khasraNo: string };
 
 export function normaliseJamabandi(rows: readonly JamabandiRow[]) {
   return rows
     .map((r) => ({
       murbbaNo: r.murbbaNo.trim() || null,
-      patwarNo: r.patwarNo.trim() || null,
+      patharNo: r.patharNo.trim() || null,
       khasraNo: r.khasraNo.trim() || null,
     }))
-    .filter((r) => r.murbbaNo || r.patwarNo || r.khasraNo);
+    .filter((r) => r.murbbaNo || r.patharNo || r.khasraNo);
 }
 
 /* ------------------------------------------- status and stage (spec §21, §22) */
@@ -320,4 +364,168 @@ export function mapPinError(latitude: string, longitude: string): string | null 
     return "Longitude must be between -180 and 180.";
   }
   return null;
+}
+
+/* --------------------------------------------------- shape and formatting */
+
+/**
+ * Everything the create and update forms hold. Strings throughout: the form
+ * gives strings, and money must never pass through a JavaScript float.
+ *
+ * It lives beside the rules rather than in the service because both the server
+ * and the browser build one, and a type owned by the service would drag the
+ * service's imports across that boundary.
+ */
+export type LandInquiryInput = {
+  receivedFrom: LandInquiryReceivedFrom;
+  sourcePersonId: string | null;
+  anotherDealerMobile: string | null;
+  assignedToId: string | null;
+
+  district: string;
+  tehsil: string;
+  exactLocation: string;
+  latitude: string;
+  longitude: string;
+
+  areaBigha: string;
+  areaBiswa: string;
+  /** The metric unit the user actually typed in, with its value. */
+  areaSourceUnit: LandMetricSourceUnit | null;
+  areaSourceValue: string;
+
+  dimensions: string;
+  frontageValue: string;
+  frontageUnit: LinearUnit | null;
+  roadWidthValue: string;
+  roadWidthUnit: LinearUnit | null;
+  shape: string;
+  boundaries: string;
+
+  landCategory: LandCategory | null;
+  currentLandUse: string;
+  masterPlanZonalUse: string;
+
+  status90A: LandApprovalStatus;
+  landConversionStatus: LandApprovalStatus;
+  changeLandUseStatus: LandApprovalStatus;
+  pattaLeaseStatus: LandApprovalStatus;
+
+  registrySaleDeedAvailable: LandCheckState;
+  mutationComplete: LandCheckState;
+  mortgageBankCharge: LandCheckState;
+  courtCaseStay: LandCheckState;
+  familyDispute: LandCheckState;
+  acquisitionNotice: LandCheckState;
+  governmentRestriction: LandCheckState;
+
+  approachRoad: LandCheckState;
+  roadType: string;
+  electricity: LandCheckState;
+  water: LandCheckState;
+  sewerage: LandCheckState;
+  existingConstruction: LandCheckState;
+  encroachment: LandCheckState;
+  possessionStatus: string;
+
+  ownerAskingRate: string;
+  ownerAskingRateBasis: LandRateBasis | null;
+  totalAskingValue: string;
+  negotiable: boolean | null;
+  dlcRate: string;
+  dlcRateBasis: LandRateBasis | null;
+  expectedPurchaseRate: string;
+  expectedPurchaseRateBasis: LandRateBasis | null;
+  paymentExpectation: string;
+
+  developmentPotential: LandDevelopmentPotential[];
+  documentsReceived: LandDocumentType[];
+  evaluation: LandEvaluationType[];
+
+  owners: OwnerRow[];
+  jamabandiEntries: JamabandiRow[];
+};
+
+/** A blank inquiry: Working, stage New, and every optional section empty. */
+export const emptyInput = (): LandInquiryInput => ({
+  receivedFrom: "MEMBER",
+  sourcePersonId: null,
+  anotherDealerMobile: null,
+  assignedToId: null,
+  district: "",
+  tehsil: "",
+  exactLocation: "",
+  latitude: "",
+  longitude: "",
+  areaBigha: "",
+  areaBiswa: "",
+  areaSourceUnit: "SQ_M",
+  areaSourceValue: "",
+  dimensions: "",
+  frontageValue: "",
+  frontageUnit: "FT",
+  roadWidthValue: "",
+  roadWidthUnit: "FT",
+  shape: "",
+  boundaries: "",
+  landCategory: null,
+  currentLandUse: "",
+  masterPlanZonalUse: "",
+  status90A: "UNKNOWN",
+  landConversionStatus: "UNKNOWN",
+  changeLandUseStatus: "UNKNOWN",
+  pattaLeaseStatus: "UNKNOWN",
+  registrySaleDeedAvailable: "UNKNOWN",
+  mutationComplete: "UNKNOWN",
+  mortgageBankCharge: "UNKNOWN",
+  courtCaseStay: "UNKNOWN",
+  familyDispute: "UNKNOWN",
+  acquisitionNotice: "UNKNOWN",
+  governmentRestriction: "UNKNOWN",
+  approachRoad: "UNKNOWN",
+  roadType: "",
+  electricity: "UNKNOWN",
+  water: "UNKNOWN",
+  sewerage: "UNKNOWN",
+  existingConstruction: "UNKNOWN",
+  encroachment: "UNKNOWN",
+  possessionStatus: "",
+  ownerAskingRate: "",
+  ownerAskingRateBasis: null,
+  totalAskingValue: "",
+  negotiable: null,
+  dlcRate: "",
+  dlcRateBasis: null,
+  expectedPurchaseRate: "",
+  expectedPurchaseRateBasis: null,
+  paymentExpectation: "",
+  developmentPotential: [],
+  documentsReceived: [],
+  evaluation: [],
+  owners: [],
+  jamabandiEntries: [],
+});
+
+/** An enum value as a person reads it. */
+export const humanise = (value: string) =>
+  value
+    .split("_")
+    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+    .join(" ")
+    .replace("Bhu Naksha", "Bhu-Naksha")
+    .replace("Conversion Order 90a", "90A / Conversion Order")
+    .replace("Owner Id", "Owner ID")
+    .replace("Sq M", "Sq. Mtr.")
+    .replace("Sq Ft", "Sq. Ft.");
+
+/** Indian grouping, so a rate reads the way it is spoken (spec §16). */
+export const inr = (value: string) =>
+  `\u20b9${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+
+/** Which badge a stage wears. Rejected reads as a stop, Approved as a pass. */
+export function stageVariant(stage: LandInquiryStage) {
+  if (stage === "REJECTED_CLOSED") return "destructive" as const;
+  if (stage === "APPROVED_FOR_ACQUISITION") return "success" as const;
+  if (stage === "NEW") return "outline" as const;
+  return "info" as const;
 }

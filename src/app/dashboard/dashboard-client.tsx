@@ -8,8 +8,6 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Clock, Plus, CheckCircle2, Link2 } from "lucide-react";
 import { addTaskAction, completeTaskAction, reviseTaskAction, type ActionResult } from "./actions";
 import { AppShell } from "@/components/app-shell";
-import { BusinessStatePanel } from "./business-state";
-import type { BusinessState } from "@/lib/services/report-service";
 import { STAFF_ROLES } from "@/lib/security/permissions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,7 +74,6 @@ export default function DashboardClient({
   staffAccountId,
   initialTasks,
   seesAllWork,
-  businessState,
 }: {
   role: StaffRole;
   actorName: string;
@@ -84,8 +81,6 @@ export default function DashboardClient({
   initialTasks: Task[];
   /** PRD §3.2 — only MD and Admin are served other people's work at all. */
   seesAllWork: boolean;
-  /** AC-07 — null for the roles that are not served the business figures. */
-  businessState: BusinessState | null;
 }) {
   const tasks = initialTasks;
   const [now, setNow] = React.useState<Date | null>(null);
@@ -172,8 +167,6 @@ export default function DashboardClient({
             </Button>
           </div>
         </header>
-
-        {businessState && <BusinessStatePanel state={businessState} />}
 
         <div className="flex flex-wrap items-center gap-2">
           {VIEWS.map((v) => (

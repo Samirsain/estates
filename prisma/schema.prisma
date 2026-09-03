@@ -2158,7 +2158,7 @@ model LandInquiryJamabandiEntry {
   landInquiry   LandInquiry @relation(fields: [landInquiryId], references: [id], onDelete: Cascade)
 
   murbbaNo  String?
-  patwarNo  String?
+  patharNo  String?
   khasraNo  String?
   sortOrder Int
 
@@ -2167,5 +2167,5 @@ model LandInquiryJamabandiEntry {
 
   @@unique([landInquiryId, sortOrder])
   @@index([khasraNo])
-  @@index([patwarNo])
+  @@index([patharNo])
 }

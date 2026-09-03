@@ -119,7 +119,7 @@ export function toFormInput(
     })),
     jamabandiEntries: inquiry.jamabandiEntries.map((j) => ({
       murbbaNo: j.murbbaNo ?? "",
-      patwarNo: j.patwarNo ?? "",
+      patharNo: j.patharNo ?? "",
       khasraNo: j.khasraNo ?? "",
     })),
   };

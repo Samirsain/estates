@@ -19,6 +19,8 @@ import {
   RECEIVED_FROM_LABEL,
   STAGE_LABEL,
   STAGE_ORDER,
+  inr,
+  stageVariant,
   type LandInquiryReceivedFrom,
   type LandInquiryStage,
   type LandInquiryStatus,
@@ -47,17 +49,6 @@ export type LandInquiryRowView = {
   assignedTo: string | null;
   archived: boolean;
 };
-
-export function stageVariant(stage: LandInquiryStage) {
-  if (stage === "REJECTED_CLOSED") return "destructive" as const;
-  if (stage === "APPROVED_FOR_ACQUISITION") return "success" as const;
-  if (stage === "NEW") return "outline" as const;
-  return "info" as const;
-}
-
-/** Indian grouping, so a rate reads the way it is spoken (spec §16). */
-export const inr = (value: string) =>
-  `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 export default function LandInquiriesClient({
   role,

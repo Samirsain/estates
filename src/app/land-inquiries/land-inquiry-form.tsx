@@ -16,11 +16,12 @@ import { PersonPicker, type PickerOption } from "@/components/person-picker";
 import {
   RATE_BASIS_LABEL,
   RECEIVED_FROM_LABEL,
+  humanise,
   metricViews,
   toSquareMetres,
+  type LandInquiryInput,
   type LandMetricSourceUnit,
 } from "@/lib/domain/land-inquiry";
-import type { LandInquiryInput } from "@/lib/services/land-inquiry-service";
 import { createLandInquiryAction, updateLandInquiryAction } from "./actions";
 
 export type FormOptions = {
@@ -59,75 +60,18 @@ const EVALUATIONS = [
 ] as const;
 const RATE_BASES = ["TOTAL", "PER_BIGHA", "PER_BISWA", "PER_HECTARE", "PER_SQ_M", "PER_SQ_FT"] as const;
 
-export const humanise = (value: string) =>
-  value
-    .split("_")
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(" ")
-    .replace("Bhu Naksha", "Bhu-Naksha")
-    .replace("Conversion Order 90a", "90A / Conversion Order")
-    .replace("Owner Id", "Owner ID")
-    .replace("Sq M", "Sq. Mtr.")
-    .replace("Sq Ft", "Sq. Ft.");
+/** Spec §11 — the metric units, and how many decimals each one reads to. */
+const METRIC_FIELDS = [
+  { unit: "HECTARE" as const, label: "Hectare", decimals: 6 },
+  { unit: "SQ_M" as const, label: "Sq. Mtr.", decimals: 6 },
+  { unit: "SQ_FT" as const, label: "Sq. Ft.", decimals: 2 },
+];
 
-export const emptyInput = (): LandInquiryInput => ({
-  receivedFrom: "MEMBER",
-  sourcePersonId: null,
-  anotherDealerMobile: null,
-  assignedToId: null,
-  district: "",
-  tehsil: "",
-  exactLocation: "",
-  latitude: "",
-  longitude: "",
-  areaBigha: "",
-  areaBiswa: "",
-  areaSourceUnit: "SQ_M",
-  areaSourceValue: "",
-  dimensions: "",
-  frontageValue: "",
-  frontageUnit: "FT",
-  roadWidthValue: "",
-  roadWidthUnit: "FT",
-  shape: "",
-  boundaries: "",
-  landCategory: null,
-  currentLandUse: "",
-  masterPlanZonalUse: "",
-  status90A: "UNKNOWN",
-  landConversionStatus: "UNKNOWN",
-  changeLandUseStatus: "UNKNOWN",
-  pattaLeaseStatus: "UNKNOWN",
-  registrySaleDeedAvailable: "UNKNOWN",
-  mutationComplete: "UNKNOWN",
-  mortgageBankCharge: "UNKNOWN",
-  courtCaseStay: "UNKNOWN",
-  familyDispute: "UNKNOWN",
-  acquisitionNotice: "UNKNOWN",
-  governmentRestriction: "UNKNOWN",
-  approachRoad: "UNKNOWN",
-  roadType: "",
-  electricity: "UNKNOWN",
-  water: "UNKNOWN",
-  sewerage: "UNKNOWN",
-  existingConstruction: "UNKNOWN",
-  encroachment: "UNKNOWN",
-  possessionStatus: "",
-  ownerAskingRate: "",
-  ownerAskingRateBasis: null,
-  totalAskingValue: "",
-  negotiable: null,
-  dlcRate: "",
-  dlcRateBasis: null,
-  expectedPurchaseRate: "",
-  expectedPurchaseRateBasis: null,
-  paymentExpectation: "",
-  developmentPotential: [],
-  documentsReceived: [],
-  evaluation: [],
-  owners: [],
-  jamabandiEntries: [],
-});
+const METRIC_LABEL: Record<LandMetricSourceUnit, string> = {
+  HECTARE: "Hectare",
+  SQ_M: "Sq. Mtr.",
+  SQ_FT: "Sq. Ft.",
+};
 
 function Section({
   index,
@@ -259,10 +203,25 @@ export default function LandInquiryForm({
   const setReceivedFrom = (receivedFrom: LandInquiryInput["receivedFrom"]) =>
     setForm((f) => ({ ...f, receivedFrom, sourcePersonId: null, anotherDealerMobile: null }));
 
+  /**
+   * Spec §11 — one measurement shown in three units. The box the user typed in
+   * shows exactly what they typed, because that is what is stored; the other
+   * two are converted from it. Sq. Ft. reads to two decimals and Hectare to
+   * six, and neither display rounds the canonical value.
+   */
   const metric =
     form.areaSourceValue.trim() && form.areaSourceUnit && Number(form.areaSourceValue) > 0
       ? metricViews(toSquareMetres(Number(form.areaSourceValue), form.areaSourceUnit))
       : null;
+
+  const metricValue = (unit: LandMetricSourceUnit, decimals: number) => {
+    if (form.areaSourceUnit === unit) return form.areaSourceValue;
+    if (!metric) return "";
+    const derived =
+      unit === "SQ_M" ? metric.sqM : unit === "HECTARE" ? metric.hectare : metric.sqFt;
+    // Trailing zeros make a converted figure look more precise than it reads.
+    return String(Number(derived.toFixed(decimals)));
+  };
 
   async function submit() {
     setBusy(true);
@@ -289,14 +248,23 @@ export default function LandInquiryForm({
       <Section
         index={1}
         title="Inquiry Details"
-        hint="The number and the date are the system's. Received From decides what the source is."
+        hint={
+          inquiryNo
+            ? "The number and the date are the system's. Received From decides what the source is."
+            : "The date is the system's, and the Inquiry No. is issued when you save. Received From decides what the source is."
+        }
       >
         <Grid>
-          <Field label="Inquiry No.">
-            <div className={`${inputClass} flex items-center text-muted-foreground`}>
-              {inquiryNo ?? "Generated after Save"}
-            </div>
-          </Field>
+          {/* Only once it exists. On a new inquiry the number is issued by the
+              database at save, so a row saying so is a row that tells nobody
+              anything — and the heading carries it on an edit anyway. */}
+          {inquiryNo && (
+            <Field label="Inquiry No.">
+              <div className={`${inputClass} flex items-center text-muted-foreground`}>
+                {inquiryNo}
+              </div>
+            </Field>
+          )}
           <Field label="Date">
             <div className={`${inputClass} flex items-center text-muted-foreground`}>
               {inquiryDate}
@@ -496,12 +464,12 @@ export default function LandInquiryForm({
         <div className="space-y-2">
           {form.jamabandiEntries.map((row, i) => (
             <div key={i} className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
-              {(["murbbaNo", "patwarNo", "khasraNo"] as const).map((key) => (
+              {(["murbbaNo", "patharNo", "khasraNo"] as const).map((key) => (
                 <Input
                   key={key}
                   className="h-9"
                   placeholder={
-                    key === "murbbaNo" ? "Murbba No." : key === "patwarNo" ? "Patwar No." : "Khasra No."
+                    key === "murbbaNo" ? "Murbba No." : key === "patharNo" ? "Pathar No." : "Khasra No."
                   }
                   value={row[key]}
                   onChange={(e) =>
@@ -536,7 +504,7 @@ export default function LandInquiryForm({
             onClick={() =>
               set("jamabandiEntries", [
                 ...form.jamabandiEntries,
-                { murbbaNo: "", patwarNo: "", khasraNo: "" },
+                { murbbaNo: "", patharNo: "", khasraNo: "" },
               ])
             }
           >
@@ -549,36 +517,64 @@ export default function LandInquiryForm({
       <Section
         index={5}
         title="Land Details"
-        hint="Bigha and Biswa are local measures and are stored exactly as entered — no statewide conversion exists to apply."
+        hint="Bigha and Biswa go together and are stored exactly as entered. The three metric boxes are one measurement in three units — type in whichever one you were given."
       >
-        <Grid>
-          <Field label="Bigha">
-            <Input className="h-9" value={form.areaBigha} onChange={(e) => set("areaBigha", e.target.value)} />
-          </Field>
-          <Field label="Biswa">
-            <Input className="h-9" value={form.areaBiswa} onChange={(e) => set("areaBiswa", e.target.value)} />
-          </Field>
-          <Field label="Metric Area">
-            <Input
-              className="h-9"
-              value={form.areaSourceValue}
-              onChange={(e) => set("areaSourceValue", e.target.value)}
-              placeholder="Measured area"
-            />
-          </Field>
-          <Choice
-            label="Metric Unit"
-            value={form.areaSourceUnit}
-            options={["SQ_M", "HECTARE", "SQ_FT"] as const satisfies readonly LandMetricSourceUnit[]}
-            onChange={(v) => set("areaSourceUnit", v)}
-          />
-        </Grid>
-        {metric && (
-          <p className="mt-2 text-[11px] text-muted-foreground tabular-nums">
-            {metric.sqM.toFixed(6)} Sq. Mtr. · {metric.hectare.toFixed(6)} Hectare ·{" "}
-            {metric.sqFt.toFixed(2)} Sq. Ft.
-          </p>
-        )}
+        <div className="space-y-3">
+          <div>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Local measure
+            </p>
+            <Grid>
+              <Field label="Bigha">
+                <Input
+                  className="h-9"
+                  value={form.areaBigha}
+                  onChange={(e) => set("areaBigha", e.target.value)}
+                />
+              </Field>
+              <Field label="Biswa">
+                <Input
+                  className="h-9"
+                  value={form.areaBiswa}
+                  onChange={(e) => set("areaBiswa", e.target.value)}
+                />
+              </Field>
+            </Grid>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Rajasthan publishes different Bigha equivalents by district, so these are kept as
+              stated and never converted into the metric boxes below.
+            </p>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Metric measure
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {METRIC_FIELDS.map(({ unit, label, decimals }) => (
+                <Field key={unit} label={label}>
+                  <Input
+                    className="h-9"
+                    value={metricValue(unit, decimals)}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        areaSourceUnit: unit,
+                        areaSourceValue: e.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {form.areaSourceValue.trim() && form.areaSourceUnit
+                ? `Entered in ${METRIC_LABEL[form.areaSourceUnit]}; the other two are converted from it and the entered figure is what is stored.`
+                : "Whichever box you type in becomes the recorded measurement; the other two follow it."}
+            </p>
+          </div>
+        </div>
+
         <div className="mt-3">
           <Grid>
             <Field label="Dimensions">

@@ -2712,13 +2712,13 @@ assert.match(
 // Spec §10 — an all-blank Jamabandi row records nothing and never persists.
 assert.equal(
   normaliseJamabandi([
-    { murbbaNo: " ", patwarNo: "", khasraNo: "" },
-    { murbbaNo: "", patwarNo: "", khasraNo: " 145/2 " },
+    { murbbaNo: " ", patharNo: "", khasraNo: "" },
+    { murbbaNo: "", patharNo: "", khasraNo: " 145/2 " },
   ]).length,
   1
 );
 assert.equal(
-  normaliseJamabandi([{ murbbaNo: "", patwarNo: "", khasraNo: "145/2" }])[0].khasraNo,
+  normaliseJamabandi([{ murbbaNo: "", patharNo: "", khasraNo: "145/2" }])[0].khasraNo,
   "145/2"
 );
 

@@ -253,7 +253,7 @@ by the owner, not invented by development, and because `main-PRD.md` — the
 binding baseline — never enumerates PLC categories at all. §16.3 states only
 that PLC is a percentage, that each distinct component is charged once, and that
 the same category on multiple sides is not charged repeatedly. All three still
-hold, and the second and third now hold *by construction* rather than by asking
+hold, and the second and third now hold _by construction_ rather than by asking
 a person not to type the same code twice.
 
 `plc.md` §2.3 requires deduplication by a stable category key rather than by

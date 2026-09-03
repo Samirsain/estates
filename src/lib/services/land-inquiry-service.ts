@@ -38,85 +38,16 @@ import {
   rateError,
   toSquareMetres,
   validateReceivedFrom,
-  type JamabandiRow,
-  type OwnerRow,
+  type LandInquiryInput,
 } from "@/lib/domain/land-inquiry";
 import { istDay } from "@/lib/tasks";
 import { blocked, nextReference, runCommand, type Tx } from "./command";
 
+// Re-exported because the actions already name it from here, and one shape
+// named from two places is two shapes the day someone edits one of them.
+export type { LandInquiryInput };
+
 const D = Prisma.Decimal;
-
-/** Everything the create and update forms send. Strings throughout: the form
- *  gives strings, and money must never pass through a JavaScript float. */
-export type LandInquiryInput = {
-  receivedFrom: LandInquiryReceivedFrom;
-  sourcePersonId: string | null;
-  anotherDealerMobile: string | null;
-  assignedToId: string | null;
-
-  district: string;
-  tehsil: string;
-  exactLocation: string;
-  latitude: string;
-  longitude: string;
-
-  areaBigha: string;
-  areaBiswa: string;
-  /** The metric unit the user actually typed in, with its value. */
-  areaSourceUnit: LandMetricSourceUnit | null;
-  areaSourceValue: string;
-
-  dimensions: string;
-  frontageValue: string;
-  frontageUnit: LinearUnit | null;
-  roadWidthValue: string;
-  roadWidthUnit: LinearUnit | null;
-  shape: string;
-  boundaries: string;
-
-  landCategory: LandCategory | null;
-  currentLandUse: string;
-  masterPlanZonalUse: string;
-
-  status90A: LandApprovalStatus;
-  landConversionStatus: LandApprovalStatus;
-  changeLandUseStatus: LandApprovalStatus;
-  pattaLeaseStatus: LandApprovalStatus;
-
-  registrySaleDeedAvailable: LandCheckState;
-  mutationComplete: LandCheckState;
-  mortgageBankCharge: LandCheckState;
-  courtCaseStay: LandCheckState;
-  familyDispute: LandCheckState;
-  acquisitionNotice: LandCheckState;
-  governmentRestriction: LandCheckState;
-
-  approachRoad: LandCheckState;
-  roadType: string;
-  electricity: LandCheckState;
-  water: LandCheckState;
-  sewerage: LandCheckState;
-  existingConstruction: LandCheckState;
-  encroachment: LandCheckState;
-  possessionStatus: string;
-
-  ownerAskingRate: string;
-  ownerAskingRateBasis: LandRateBasis | null;
-  totalAskingValue: string;
-  negotiable: boolean | null;
-  dlcRate: string;
-  dlcRateBasis: LandRateBasis | null;
-  expectedPurchaseRate: string;
-  expectedPurchaseRateBasis: LandRateBasis | null;
-  paymentExpectation: string;
-
-  developmentPotential: LandDevelopmentPotential[];
-  documentsReceived: LandDocumentType[];
-  evaluation: LandEvaluationType[];
-
-  owners: OwnerRow[];
-  jamabandiEntries: JamabandiRow[];
-};
 
 const text = (value: string) => value.trim() || null;
 const decimal = (value: string) => {

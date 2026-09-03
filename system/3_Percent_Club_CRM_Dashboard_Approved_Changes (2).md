@@ -71,6 +71,7 @@ The current rule that freezes `Original Introduced By Member` from the earliest 
 > **Enquiry Source is history/follow-up only. It does not decide Direct, Invite, Royalty or Loyalty.**
 
 ## Required change
+
 - Do not create/freeze Royalty beneficiary from Enquiry.
 - Existing `Original Introduced By Member` must not drive new commission logic.
 - Member Enquiry features remain operational but have zero earning effect.
@@ -328,6 +329,7 @@ Royalty positions 1–9 must each successfully generate that Customer's one qual
 Cancelled/reversed qualifying events do not count as successfully completed.
 
 ## Upgrade
+
 - Invite and Royalty upgrade independently.
 - If a counter is incomplete on anniversary, nothing resets.
 - When positions 1–9 are all successful, status becomes `Upgrade Eligible`.
@@ -456,6 +458,7 @@ When paid commission becomes recoverable:
 - **do not store rupee recovery amount in CRM**.
 
 ## Member
+
 - future cash payout blocked;
 - external Accounts may set off future commissions;
 - recovery must be resolved within **15 calendar days**;
@@ -464,6 +467,7 @@ When paid commission becomes recoverable:
 - reactivation requires Recovery Cleared + authorised reactivation.
 
 ## Customer
+
 - future Loyalty/benefit payout blocked;
 - future Membership activation blocked until Recovery Cleared.
 
@@ -618,6 +622,7 @@ Unless changed above:
 # 30. MIGRATION INSTRUCTION
 
 ## If no live real transactions
+
 - update rules before go-live;
 - seed test data under the new model;
 - do not preserve Enquiry-based Royalty as an earning rule.

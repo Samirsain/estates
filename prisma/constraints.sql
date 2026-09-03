@@ -731,5 +731,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS "land_inquiry_one_primary_owner"
 ALTER TABLE "LandInquiryJamabandiEntry" DROP CONSTRAINT IF EXISTS "land_inquiry_jamabandi_row_not_blank";
 ALTER TABLE "LandInquiryJamabandiEntry" ADD CONSTRAINT "land_inquiry_jamabandi_row_not_blank"
   CHECK (length(btrim(COALESCE("murbbaNo", ''))) > 0
-      OR length(btrim(COALESCE("patwarNo", ''))) > 0
+      OR length(btrim(COALESCE("patharNo", ''))) > 0
       OR length(btrim(COALESCE("khasraNo", ''))) > 0);

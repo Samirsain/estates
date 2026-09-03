@@ -5,7 +5,8 @@ import { ArrowLeft } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { requireStaff } from "@/lib/security/current-actor";
 import { formatIstDate } from "@/lib/tasks";
-import LandInquiryForm, { emptyInput } from "../land-inquiry-form";
+import { emptyInput } from "@/lib/domain/land-inquiry";
+import LandInquiryForm from "../land-inquiry-form";
 import { loadFormOptions } from "../form-options";
 
 export const dynamic = "force-dynamic";

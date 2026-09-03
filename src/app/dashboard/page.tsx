@@ -4,7 +4,6 @@
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { taskSubjects } from "@/lib/services/task-service";
-import { businessState } from "@/lib/services/report-service";
 import type { RecordKind, Recurrence, Task } from "@/lib/tasks";
 import DashboardClient from "./dashboard-client";
 
@@ -18,12 +17,6 @@ export default async function DashboardPage() {
   // query, because a client-side filter is not a control (DESIGN §1): the rows
   // would already be in the page payload, remarks and all.
   const seesAllWork = actor.role === "MD" || actor.role === "ADMIN";
-
-  // AC-07 — the business-state figures go to the roles that answer for them.
-  // CRM and PC work Plot and Enquiry queues and have no reason to be served
-  // commission and royalty totals on their own dashboard.
-  const seesBusinessState =
-    seesAllWork || actor.role === "ACCOUNTS" || actor.role === "MIS";
 
   const rows = await db.task.findMany({
     where: seesAllWork
@@ -62,7 +55,6 @@ export default async function DashboardPage() {
       staffAccountId={actor.staffAccountId}
       initialTasks={tasks}
       seesAllWork={seesAllWork}
-      businessState={seesBusinessState ? await businessState() : null}
     />
   );
 }
