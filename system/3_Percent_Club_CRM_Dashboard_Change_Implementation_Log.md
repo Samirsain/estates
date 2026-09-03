@@ -2,10 +2,16 @@
 
 ## Status
 
-**Second-pass audit complete and committed. One rule was implemented wrongly in
-the first pass and has been corrected. Integration tests are written but unrun —
-see §7. The work is on `chore/visible-sign-out-and-next-15.5` as the commits
-listed in §11.**
+**A second, larger pack arrived on 3 September 2026 and supersedes the first.**
+`3_Percent_Club_CRM_Dashboard_Approved_Changes (2).md` carries 46 business rules,
+27 change requests and 31 acceptance criteria, and it *changes* rules the first
+pack established rather than only adding to them. Part Two of this log covers it.
+
+**Part One — the first pack (AC-01 … AC-07) — is complete, committed and now
+proven against the database.** All eight check suites pass. Two of its rules
+survive into the second pack unchanged (Paid Early MD approval, the 5% Buying
+Commission cap); the performance-cycle model it introduced is replaced by the
+second pack's CR-014.
 
 This document is the running record of what has been built against
 [`3_Percent_Club_CRM_Dashboard_Approved_Changes.md`](./3_Percent_Club_CRM_Dashboard_Approved_Changes.md)
@@ -670,3 +676,71 @@ and every §4 visibility requirement present as a group on `BusinessState`.
 **Item 12 — negative and edge cases covered by UAT — remains the one open
 item.** The suites exist; they have not run. Nothing else in the pack is
 outstanding.
+
+---
+
+# PART TWO — the Approved Business Changes Pack of 3 September 2026
+
+Source: `3_Percent_Club_CRM_Dashboard_Approved_Changes (2).md`, with its companion
+dataset `mockdata-v2.md`. The first pack's file was removed from `system/` when
+this one arrived; Part One above remains the record of what was built for it, and
+of what is still true of the code.
+
+## 12. What the second pack changes, measured against the running system
+
+Read against the source, not against Part One's claims.
+
+| Pack clause | The system today | What the pack requires |
+| --- | --- | --- |
+| **CR-001 – CR-004** · Royalty ownership | Royalty follows `CustomerProfile.originalIntroducedByMemberId`, frozen from the earliest Member-sourced Enquiry (`applyIntroducerFreeze` in `enquiry-service`) | Enquiry has **no** earning role. Royalty belongs to the Member who was Sold By on the Customer's **first qualifying purchase** — provisional at the first approved Booking, final at 100% Payment Received **or** an Approved Buyback |
+| **CR-013** · Position 10+ | No record is created at all: `generateCommission` skips a component whose band rate is 0 | A 0% line is **created and visible**, and it **consumes** that person's one-time opportunity |
+| **CR-014, CR-027** · Cycles | One `PerformanceCycle` per Member per annual counter year, plus an `ANNUAL_COUNTER_RESET` job | Two independent cycles per Member — Invite and Royalty. Positions 1–9 must each complete. Nothing resets on an anniversary; a complete cycle becomes `Upgrade Eligible` and the next opens at the following anniversary |
+| **CR-015, CR-016** · Buyback | A Buyback accelerates nothing | An **Approved Buyback is an alternative milestone** for Invite, Royalty and Loyalty, and never for Direct. An unwound Buyback rechecks each accelerated benefit against actual Payment Received |
+| **CR-020 – CR-022** · Recovery | Nothing | `Recovery Outstanding` / `Negative Account` status with an external reference and no rupee amount; 15 calendar days; unresolved recovery deactivates a Member and blocks a Customer's future benefits and activation |
+| **CR-006** · Self-purchase | Any Active Member buyer takes the self-purchase branch | **Only an Active Member who is the Primary Customer.** An Additional Customer who is a Member does not make it a self-purchase |
+| **CR-009, CR-010** · Loyalty and conversion | Three lifetime slots enforced; nothing after the third | After the third Loyalty the Customer cannot be selected as Sold By Customer. Conversion has two routes: after three Loyalty (no inviter) and voluntary (inviter allowed, unused Loyalty forfeited) |
+| **CR-019** · Paid Early | **Already built** — MD only, stored approver, time and note | Unchanged by this pack |
+| **CR-024** · Buying Commission 5% | **Already built** — enforced in the domain on exact decimals | Adds an external broker as a permitted beneficiary |
+
+Two clauses need no work. Everything else in the table is a change to who earns,
+when they earn, or whether an opportunity is consumed — which is exactly the set
+the pack's §32 says must not be invented, so each lands as its own reviewed
+change with its own evidence.
+
+## 13. What has already been done for this pack
+
+| Item | Where |
+| --- | --- |
+| Paid Early requires MD approval (CR-019, rule 31) | `approveCommissionPaidEarly`, `canMarkPaid` — Part One AC-03 |
+| Buying Commission hard maximum 5% (CR-024, rule 36) | `BUYING_CAP_PERCENT` — Part One AC-04 |
+| Approved Bookings keep their classification after Member activation (CR-010 "Existing approved Bookings", acceptance 20) | `Booking.originalClassification` — Part One AC-01 |
+| That classification is **visible on the Booking**, not only counted on the Dashboard | `bookings-client.tsx` — the record shows Customer/Member business, and says so plainly where the buyer has since been activated |
+| Historical Customer sales create no retroactive Royalty (acceptance 21) | The freeze already prevents reclassification; CR-003's stronger rule is still to build |
+
+## 14. Order of work, and why this order
+
+The dependencies run one way, so the order is not a preference.
+
+1. **Royalty ownership (CR-001 – CR-004).** Everything about Royalty positions,
+   cycles and acceptance tests 1–6 rests on the Royalty Linked Member existing.
+   Until it does, the rest has nothing to hang from.
+2. **Position 10+ visible and consuming (CR-013).** Small, and it changes what a
+   cycle counts as a completed position, so it comes before cycles.
+3. **Performance cycles and the anniversary job (CR-014, CR-027).** Rebuilt on
+   top of 1 and 2.
+4. **Buyback as an alternative milestone, and its unwind (CR-015, CR-016).**
+   Touches every one-time opportunity, so it follows the opportunities being
+   correct.
+5. **Self-purchase by Primary Customer only (CR-006).** Independent; small.
+6. **Loyalty exhaustion and the two conversion routes (CR-009, CR-010).**
+7. **Recovery and negative account (CR-020 – CR-022).** New surface, and the
+   payout rules in CR-018 land with it.
+8. **Portal and dashboard visibility (CR-026), reports (§40).**
+9. **The v2 dataset and the standing checks (`mockdata-v2.md` §41).**
+
+Nothing is written until the rule it implements is quoted in the code beside it,
+as Part One did with its AC-nn references. The pack's own instruction in §32
+governs the rest: where an implementation choice would change who earns, when,
+whether an opportunity is consumed, whether a cycle upgrades or whether a payment
+becomes recoverable, it is asked rather than invented, and the question is
+recorded here.
