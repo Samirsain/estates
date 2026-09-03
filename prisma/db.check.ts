@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { assertCheckDatabase } from "./check-guard.ts";
+import { INITIAL_PASSWORD } from "./seed-password.ts";
 
 assertCheckDatabase();
 import { hashPassword, verifyPassword } from "../src/lib/security/auth.ts";
@@ -111,8 +112,18 @@ async function main() {
 
   // PRD §14 — duplicate Aadhaar and PAN are prevented without storing a
   // searchable plaintext column.
-  const seeded = await db.person.findFirst({ where: { aadhaarBlindIndex: { not: null } } });
-  assert.ok(seeded?.aadhaarBlindIndex, "seed provides one Aadhaar to collide with");
+  // Look the seeded Person up *by* the blind index this Aadhaar produces, rather
+  // than taking whichever Person happens to have one. Finding it at all is the
+  // stability check — the stored index was written by an earlier run, so it can
+  // only match if the key and the algorithm still agree. `findFirst` with no
+  // ordering used to pass only because the seed's Person was the sole candidate;
+  // it broke the moment the database held other People with Aadhaar on file.
+  const seededIndex = blindIndex("234567890123");
+  const seeded = await db.person.findFirst({ where: { aadhaarBlindIndex: seededIndex } });
+  assert.ok(
+    seeded?.aadhaarBlindIndex,
+    "seed provides one Aadhaar to collide with, and its blind index is stable across runs"
+  );
   await expectRejected("duplicate Aadhaar must be rejected", () =>
     db.person.create({
       data: {
@@ -125,7 +136,7 @@ async function main() {
       },
     })
   );
-  assert.equal(blindIndex("234567890123"), seeded.aadhaarBlindIndex, "blind index is stable across runs");
+  assert.equal(seeded.aadhaarBlindIndex, seededIndex);
 
   // PRD §14.2 — PAN Available requires a PAN Number; Not Available requires it empty.
   await expectRejected("PAN status must match the stored value", () =>
@@ -142,9 +153,9 @@ async function main() {
 
   // Seeded credentials round-trip: the password verifies and is stored hashed.
   const md = await db.staffAccount.findUniqueOrThrow({ where: { staffAccountId: "STF-0001" } });
-  assert.ok(verifyPassword("ChangeMe#2026", md.passwordHash), "seeded password verifies");
-  assert.ok(!verifyPassword("ChangeMe#2027", md.passwordHash));
-  assert.ok(!md.passwordHash.includes("ChangeMe"), "password is stored only as a hash");
+  assert.ok(verifyPassword(INITIAL_PASSWORD, md.passwordHash), "seeded password verifies");
+  assert.ok(!verifyPassword(`${INITIAL_PASSWORD}x`, md.passwordHash));
+  assert.ok(!md.passwordHash.includes(INITIAL_PASSWORD), "password is stored only as a hash");
 
   /* ------------------------------------------------------------- Phase 2 */
 
