@@ -160,11 +160,26 @@ export function allocatePayment(
   return { allocations };
 }
 
-/** PRD §10.4 — cumulative progress can never exceed 100%. */
+/**
+ * PRD §10.4 — cumulative progress can never exceed 100%.
+ *
+ * The refusal names what was allowed rather than only what was exceeded. "This
+ * would reach 110%" tells somebody they are wrong; "at most 60% remains" tells
+ * them what to type instead, and it is the same number the form's own ceiling
+ * is set from. The total it would have reached still travels, because a
+ * correction is argued about in totals.
+ *
+ * A correction passes `current` with its own original percentage already taken
+ * off, so the entry being edited never counts against itself.
+ */
 export function progressAfter(current: Numeric, delta: Numeric): Decimal {
   const next = new D(current).add(new D(delta));
   if (next.gt(HUNDRED)) {
-    throw new Error(`Payment Received progress cannot go above 100%, this would reach ${next.toFixed(4)}%.`);
+    const remaining = HUNDRED.sub(new D(current));
+    throw new Error(
+      `Payment cannot exceed the remaining ${remaining.toFixed(2)}%. ` +
+        `This ${new D(delta).toFixed(2)}% would take Payment Received to ${next.toFixed(4)}%.`
+    );
   }
   if (next.lt(0)) throw new Error("Payment Received progress cannot go below 0%.");
   return next;
