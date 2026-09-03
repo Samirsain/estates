@@ -24,7 +24,7 @@ export default async function PlotsPage({
   // followed it.
   const { project: initialProject } = await searchParams;
 
-  const [plots, projects, requests, bookingForm, awaitingApproval] = await Promise.all([
+  const [plots, projects, requests, bookingForm, liveBookings] = await Promise.all([
     listPlots(),
     db.project.findMany({
       include: { plcRuleVersions: { where: { status: "PUBLISHED" }, include: { components: true }, take: 1 } },
@@ -34,13 +34,32 @@ export default async function PlotsPage({
     // Booking starts here now, so what the Booking form needs arrives here too
     // — the same loader the Bookings screen uses, so one bookable-Plot rule.
     loadBookingFormData(),
-    listBookings({ status: "REQUEST_PENDING" }),
+    // The three states an inventory row can act on: the request Accounts has
+    // to decide, the Booking taking payment, and the one that is paid off and
+    // waiting to be delivered. One query, because they are the same shape and
+    // the same trip.
+    listBookings({ status: { in: ["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED"] } }),
   ]);
 
   // A Plot waiting for approval has exactly one pending request, so the row can
   // carry it and Accounts can decide without leaving the inventory.
   const pendingBookings = Object.fromEntries(
-    awaitingApproval.map((b) => [b.plotId, bookingRow(b)])
+    liveBookings.filter((b) => b.status === "REQUEST_PENDING").map((b) => [b.plotId, bookingRow(b)])
+  );
+
+  // The same for a Booked Plot: exactly one live Booking, so Payment Received
+  // can be confirmed against the row rather than from the Bookings screen.
+  // Payment Completed is not here — there is nothing left to receive.
+  const bookedBookings = Object.fromEntries(
+    liveBookings.filter((b) => b.status === "BOOKED").map((b) => [b.plotId, bookingRow(b)])
+  );
+
+  // Paid in full and not yet Delivered. Allotment or Registry is recorded
+  // against this one, which is what turns the Plot Delivered (main-PRD §18.6).
+  const completedBookings = Object.fromEntries(
+    liveBookings
+      .filter((b) => b.status === "PAYMENT_COMPLETED")
+      .map((b) => [b.plotId, bookingRow(b)])
   );
 
   // PLC spec §15.2 — the effective PLC for Available / Not Active inventory is
@@ -192,6 +211,8 @@ export default async function PlotsPage({
       members={bookingForm.members}
       bookable={bookingForm.bookable}
       pendingBookings={pendingBookings}
+      bookedBookings={bookedBookings}
+      completedBookings={completedBookings}
       staffRef={actor.staffAccountId}
       permissions={{
         makeAvailable: can(actor.role, "PLOT_MAKE_AVAILABLE"),
@@ -202,6 +223,9 @@ export default async function PlotsPage({
         reviewRequests: can(actor.role, "HOLD_REQUEST_REVIEW"),
         book: can(actor.role, "BOOKING_REQUEST_SUBMIT"),
         decideBooking: can(actor.role, "BOOKING_DECIDE"),
+        confirmPayment: can(actor.role, "PAYMENT_RECEIVED_CONFIRM"),
+        recordFinalBuyers: can(actor.role, "FINAL_BUYER_RECORD"),
+        recordCompletion: can(actor.role, "COMPLETION_RECORD"),
       }}
     />
   );

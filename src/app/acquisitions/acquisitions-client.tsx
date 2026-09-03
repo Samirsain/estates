@@ -15,7 +15,9 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
-import { formatIst, istDay, type StaffRole } from "@/lib/tasks";
+import { formatIst, istDay, remainingPercent, type StaffRole } from "@/lib/tasks";
+import { capPercent, percentSum } from "@/lib/domain/shares";
+import { PaymentPercentInput } from "@/app/bookings/bookings-client";
 import {
   cancelAcquisitionAction,
   confirmPaymentGivenAction,
@@ -178,16 +180,17 @@ export default function AcquisitionsClient({
                   <th className="px-4 py-3 font-medium">Deal</th>
                   <th className="px-4 py-3 font-medium">Project</th>
                   <th className="px-4 py-3 font-medium">Plot No.</th>
-                  <th className="px-4 py-3 font-medium">Seller / Arranged by</th>
+                  <th className="px-4 py-3 font-medium">Seller</th>
+                  <th className="px-4 py-3 font-medium">Arranged by</th>
                   <th className="px-4 py-3 font-medium">Payment Given</th>
                   <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium text-right">Actions</th>
+                  <th className="px-4 py-3 font-medium text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
                   <React.Fragment key={row.id}>
-                    <tr className="border-t border-border/40">
+                    <tr className="h-14 border-t border-border/40">
                       <td className="px-4 py-3">
                         <div className="font-medium text-foreground">
                           {row.type === "BUYBACK" ? "Buyback" : "Purchase for Resale"}
@@ -207,14 +210,16 @@ export default function AcquisitionsClient({
                       </td>
                       <td className="px-4 py-3">
                         <PersonLink personId={row.sellerPersonId} name={row.seller} />
-                        <div className="text-muted-foreground">
-                          via{" "}
-                          <PersonLink
-                            personId={row.arrangedByPersonId}
-                            name={row.arrangedBy}
-                            as={row.arrangedByType === "MEMBER" ? "member" : undefined}
-                          />
-                        </div>
+                      </td>
+                      {/* Two people, two columns. Stacked in one cell with a
+                          "via" in front, the arranger read as a footnote on the
+                          seller rather than the other party to the deal. */}
+                      <td className="px-4 py-3">
+                        <PersonLink
+                          personId={row.arrangedByPersonId}
+                          name={row.arrangedBy}
+                          as={row.arrangedByType === "MEMBER" ? "member" : undefined}
+                        />
                       </td>
                       <td className="px-4 py-3 tabular-nums">
                         {row.paymentGivenPercent}%
@@ -235,7 +240,7 @@ export default function AcquisitionsClient({
                           {STATUS_LABEL[row.status] ?? row.status}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-center">
                         <Button
                           size="xs"
                           variant="outline"
@@ -252,7 +257,7 @@ export default function AcquisitionsClient({
                     </tr>
                     {open === row.id && (
                       <tr className="border-t border-border/40 bg-muted">
-                        <td colSpan={7} className="px-4 py-4">
+                        <td colSpan={8} className="px-4 py-4">
                           <Detail
                             row={row}
                             permissions={permissions}
@@ -302,8 +307,14 @@ export default function AcquisitionsClient({
             )
           }
         >
-          <Field label="Payment Given This Time (%)">
-            <Input name="percent" required inputMode="decimal" />
+          {/* Payment Given is incremental like Payment Received, so the
+              ceiling is what is left of the deal, not a flat 100. Same
+              clamped field, its own number — the two ledgers are never
+              totalled together (main-PRD §1). */}
+          <Field
+            label={`Payment Given This Time (%) — ${remainingPercent(dialog.row.paymentGivenPercent)}% remaining`}
+          >
+            <PaymentPercentInput max={remainingPercent(dialog.row.paymentGivenPercent)} />
           </Field>
           <Field label="Payment Date">
             <Input type="date" name="paidOn" required defaultValue={istDay(new Date())} />
@@ -339,8 +350,20 @@ export default function AcquisitionsClient({
             )
           }
         >
-          <Field label="Corrected percentage (%)">
-            <Input name="percent" required inputMode="decimal" defaultValue={dialog.entry.percent} />
+          {/* The entry being corrected is taken off the total first, exactly
+              as correctPaymentGiven does server-side, so its own percentage is
+              not counted against itself. */}
+          <Field
+            label={`Corrected percentage (%) — up to ${remainingPercent(
+              Number(dialog.row.paymentGivenPercent) - Number(dialog.entry.percent)
+            )}%`}
+          >
+            <PaymentPercentInput
+              max={remainingPercent(
+                Number(dialog.row.paymentGivenPercent) - Number(dialog.entry.percent)
+              )}
+              defaultValue={dialog.entry.percent}
+            />
           </Field>
           <Field label="Payment Date">
             <Input type="date" name="paidOn" required defaultValue={istDay(dialog.entry.paidOn)} />
@@ -633,8 +656,7 @@ function fillForward(rows: ScheduleRowInput[], typedIndex = -1): ScheduleRowInpu
   return out;
 }
 
-const scheduleTotal = (rows: ScheduleRowInput[]) =>
-  round2(rows.reduce((sum, r) => sum + (Number(r.percent) || 0), 0));
+const scheduleTotal = (rows: ScheduleRowInput[]) => percentSum(rows.map((r) => r.percent));
 
 function addDays(date: string, days: number): string {
   const [y, m, d] = date.split("-").map(Number);
@@ -821,10 +843,25 @@ function NewAcquisitionDialog({
                 required
                 value={line.percent}
                 placeholder="%"
+                // max="100" only blocks the submit; it lets 150 be typed and
+                // then argues. Capping at what the other instalments have left
+                // means the column cannot be built past 100 in the first
+                // place — 80 typed where 60 is already spoken for lands on 40.
                 onChange={(e) =>
                   setSchedule(
                     fillForward(
-                      schedule.map((r, i) => (i === index ? { ...r, percent: e.target.value } : r)),
+                      schedule.map((r, i) =>
+                        i === index
+                          ? {
+                              ...r,
+                              percent: capPercent(
+                                schedule.map((x) => x.percent),
+                                index,
+                                e.target.value
+                              ),
+                            }
+                          : r
+                      ),
                       index
                     )
                   )

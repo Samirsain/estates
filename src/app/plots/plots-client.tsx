@@ -21,6 +21,8 @@ import { PersonPicker, personLabel } from "@/components/person-picker";
 // inventory bundle starts to matter.
 import {
   BookingFormDialog,
+  DeliverDialog,
+  PaymentPercentInput,
   ReviewDialog,
   type BookableView,
   type BookingRowView,
@@ -28,8 +30,11 @@ import {
   type PersonView,
 } from "@/app/bookings/bookings-client";
 import {
+  confirmPaymentReceivedAction,
   decideBookingRequestAction,
   loadBookingDetail,
+  recordCompletionAction,
+  recordFinalBuyersAction,
   submitBookingRequestAction,
   type BookingDetail,
 } from "@/app/bookings/actions";
@@ -43,9 +48,11 @@ import {
   formatIst,
   formatIstDate,
   formatPercent,
+  formatDimension,
   formatPlotSize,
   formatQuantity,
   istDay,
+  remainingPercent,
   type StaffRole,
 } from "@/lib/tasks";
 // The grid computes Area and Location Charge live from the same domain rules
@@ -768,6 +775,8 @@ export default function PlotsClient({
   members,
   bookable,
   pendingBookings,
+  bookedBookings,
+  completedBookings,
   staffRef,
   permissions,
   initialProject,
@@ -786,6 +795,10 @@ export default function PlotsClient({
   bookable: BookableView[];
   /** The one pending request per Plot waiting for approval, keyed by Plot id. */
   pendingBookings: Record<string, BookingRowView>;
+  /** The one live Booking per Booked Plot, keyed by Plot id. */
+  bookedBookings: Record<string, BookingRowView>;
+  /** Paid in full and waiting on Allotment or Registry, keyed by Plot id. */
+  completedBookings: Record<string, BookingRowView>;
   staffRef: string;
   permissions: {
     makeAvailable: boolean;
@@ -796,6 +809,9 @@ export default function PlotsClient({
     reviewRequests: boolean;
     book: boolean;
     decideBooking: boolean;
+    confirmPayment: boolean;
+    recordFinalBuyers: boolean;
+    recordCompletion: boolean;
   };
 }) {
   const router = useRouter();
@@ -820,12 +836,15 @@ export default function PlotsClient({
     | { kind: "DECIDE_EXTENSION"; plot: PlotRowView; approve: boolean }
     | { kind: "BOOK"; plot: PlotRowView }
     | { kind: "REVIEW"; row: BookingRowView }
+    | { kind: "PAY"; plot: PlotRowView; row: BookingRowView }
+    | { kind: "DELIVER"; row: BookingRowView }
     | null
   >(null);
 
-  // The review reads the submitted snapshot, which is too much to ship with
-  // every inventory row — it is fetched when one request is actually opened.
-  const [reviewDetail, setReviewDetail] = React.useState<BookingDetail | null>(null);
+  // The Booking behind a row — its submitted snapshot for a review, its parties
+  // for final buyers. Too much to ship with every inventory row, so it is
+  // fetched when one Booking is actually opened.
+  const [bookingDetail, setBookingDetail] = React.useState<BookingDetail | null>(null);
 
   /** Members are Active by construction here, so this is the whole test. */
   const activeMemberPersonIds = React.useMemo(
@@ -968,7 +987,7 @@ export default function PlotsClient({
                 >
                   <div className="min-w-0 space-y-0.5 text-xs">
                     <p className="text-sm font-semibold">
-                      {r.project} · <span className="font-mono text-primary">{r.plot}</span>
+                      {r.project} · <span className="text-primary">{r.plot}</span>
                       <Badge variant="outline" className="ml-2">
                         Queue #{r.queuePosition}
                       </Badge>
@@ -1024,7 +1043,7 @@ export default function PlotsClient({
               <thead className="text-left text-[11px] font-semibold uppercase tracking-wide text-foreground">
                 <tr>
                   <th className="px-3 py-1">Plot</th>
-                  <th className="px-3 py-1 text-center">Size (W × L)</th>
+                  <th className="w-[9.5rem] px-3 py-1 text-center">Size (W × L)</th>
                   <th className="px-3 py-1 text-center">Area</th>
                   <th className="px-3 py-1 text-center">Status</th>
                   <th className="px-3 py-1 text-center">Location</th>
@@ -1098,7 +1117,7 @@ export default function PlotsClient({
                     // the action were centred while Plot, Size, Area and
                     // Location hung from the top, so every column started on a
                     // different line.
-                    className="rounded-xl align-middle [&>td]:border-y [&>td]:border-border"
+                    className="h-14 rounded-xl align-middle [&>td]:border-y [&>td]:border-border"
                   >
                     {/* The Plot is the subject; the Project and type are what
                         it belongs to, so they read under it rather than as a
@@ -1106,7 +1125,7 @@ export default function PlotsClient({
                     <td className="rounded-l-xl border-l border-border px-3 py-2">
                       <Link
                         href={`/plots/${plot.id}`}
-                        className="font-mono font-semibold text-primary hover:underline"
+                        className="font-semibold text-primary hover:underline"
                       >
                         {plot.plotNumber}
                       </Link>
@@ -1126,8 +1145,17 @@ export default function PlotsClient({
                         column already shows. */}
                     <td className="px-3 py-2 text-center tabular-nums">
                       {formatPlotSize(plot.widthFt, plot.lengthFt) ? (
-                        <span className="whitespace-nowrap font-semibold text-foreground">
-                          {formatPlotSize(plot.widthFt, plot.lengthFt)}
+                        // Width, the cross, length — three columns, not one
+                        // string. A side that carries inches is wider than one
+                        // that does not, so centring the whole size walks the
+                        // × left and right down the column and grows the column
+                        // to fit the longest row. Pinning the cross to the
+                        // middle lines every row up on it and leaves the column
+                        // one width.
+                        <span className="grid grid-cols-[1fr_auto_1fr] items-baseline gap-1.5 whitespace-nowrap font-semibold text-foreground">
+                          <span className="text-right">{formatDimension(plot.widthFt)}</span>
+                          <span className="text-muted-foreground">×</span>
+                          <span className="text-left">{formatDimension(plot.lengthFt)}</span>
                         </span>
                       ) : (
                         <span className="text-[11px] font-medium text-foreground">Irregular</span>
@@ -1234,54 +1262,54 @@ export default function PlotsClient({
                       {plot.plc ? `${Number(plot.plc.totalPercent).toFixed(2)}%` : "—"}
                     </td>
                     <td className="w-px whitespace-nowrap rounded-r-xl border-r border-border py-2 pl-3 pr-2">
-                      {/* At most two: the thing to do to this Plot now — or a
+                      {/* The thing to do to this Plot now, on the row — or a
                           menu, once there is more than one — and then Book.
                           Both solid: the row offers two things and neither is
-                          the lesser one. What ends something still reads as such
-                          — Cancel Hold is red inside the menu. */}
+                          the lesser one. What ends something still reads as
+                          such — Cancel Hold is red inside the menu. */}
                       <div className={rowActions}>
-                          {plot.status === "NOT_AVAILABLE" && permissions.makeAvailable && (
-                            <Button className={rowButton} onClick={() => setDialog({ kind: "AVAILABLE", plot })}>
-                              Make Available
-                            </Button>
-                          )}
+                        {plot.status === "NOT_AVAILABLE" && permissions.makeAvailable && (
+                          <Button className={rowButton} onClick={() => setDialog({ kind: "AVAILABLE", plot })}>
+                            Make Available
+                          </Button>
+                        )}
 
-                          {/* One other action, so no menu: a menu wrapping a
-                              single item is worse than the item. */}
-                          {plot.status === "AVAILABLE" && permissions.hold && (
-                            <Button
-                              className={rowButton}
-                              onClick={() => {
-                                setHoldPerson("");
-                                setDialog({ kind: "HOLD", plot });
-                              }}
-                            >
-                              Hold
-                            </Button>
-                          )}
+                        {/* One other action, so no menu: a menu wrapping a
+                            single item is worse than the item. */}
+                        {plot.status === "AVAILABLE" && permissions.hold && (
+                          <Button
+                            className={rowButton}
+                            onClick={() => {
+                              setHoldPerson("");
+                              setDialog({ kind: "HOLD", plot });
+                            }}
+                          >
+                            Hold
+                          </Button>
+                        )}
 
-                          {plot.status === "HOLD" && plot.hold && holdActions.length > 0 && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                {/* Named, not three dots. The Available row
-                                    shows what it can do; a bare ··· made the
-                                    held row the one place you had to open
-                                    something to find out. */}
-                                <Button className={rowButton}>Cancel</Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="start">
-                                {holdActions.map((action) => (
-                                  <DropdownMenuItem
-                                    key={action.label}
-                                    onSelect={action.run}
-                                    className={action.ends ? "text-red-700 focus:text-red-700" : ""}
-                                  >
-                                    {action.label}
-                                  </DropdownMenuItem>
-                                ))}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
+                        {plot.status === "HOLD" && plot.hold && holdActions.length > 0 && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              {/* Named, not three dots. The Available row
+                                  shows what it can do; a bare ··· made the
+                                  held row the one place you had to open
+                                  something to find out. */}
+                              <Button className={rowButton}>Cancel</Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start">
+                              {holdActions.map((action) => (
+                                <DropdownMenuItem
+                                  key={action.label}
+                                  onSelect={action.run}
+                                  className={action.ends ? "text-red-700 focus:text-red-700" : ""}
+                                >
+                                  {action.label}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
 
                         {/* Waiting on Accounts: the decision belongs on the row
                             that is blocked by it, not one screen away. */}
@@ -1292,12 +1320,52 @@ export default function PlotsClient({
                               className={rowButton}
                               onClick={() => {
                                 const row = pendingBookings[plot.id];
-                                setReviewDetail(null);
+                                setBookingDetail(null);
                                 setDialog({ kind: "REVIEW", row });
-                                loadBookingDetail(row.id).then(setReviewDetail);
+                                loadBookingDetail(row.id).then(setBookingDetail);
                               }}
                             >
                               Review
+                            </Button>
+                          )}
+
+                        {/* A Booked Plot is still taking payment, and the row is
+                            where anyone reading inventory sees that. Fully paid
+                            has no button — the gate is what remains, not the
+                            status, because a correction can step the total back
+                            below 100. */}
+                        {plot.status === "BOOKED" &&
+                          permissions.confirmPayment &&
+                          bookedBookings[plot.id] &&
+                          Number(remainingPercent(bookedBookings[plot.id].paymentReceivedPercent)) > 0 && (
+                            <Button
+                              className={rowButton}
+                              onClick={() =>
+                                setDialog({ kind: "PAY", plot, row: bookedBookings[plot.id] })
+                              }
+                            >
+                              Payment
+                            </Button>
+                          )}
+
+                        {/* Paid in full. One thing is left — the legal end of
+                            the sale — and the dialog asks for both halves of
+                            it: who the papers go to, and the route that
+                            transfers them. */}
+                        {plot.status === "PAYMENT_COMPLETED" &&
+                          completedBookings[plot.id] &&
+                          permissions.recordFinalBuyers &&
+                          permissions.recordCompletion && (
+                            <Button
+                              className={rowButton}
+                              onClick={() => {
+                                const row = completedBookings[plot.id];
+                                setBookingDetail(null);
+                                setDialog({ kind: "DELIVER", row });
+                                loadBookingDetail(row.id).then(setBookingDetail);
+                              }}
+                            >
+                              Deliver
                             </Button>
                           )}
 
@@ -1450,7 +1518,7 @@ export default function PlotsClient({
       {dialog?.kind === "REVIEW" && (
         <ReviewDialog
           row={dialog.row}
-          detail={reviewDetail}
+          detail={bookingDetail}
           selfRef={staffRef}
           busy={busy}
           onClose={() => setDialog(null)}
@@ -1458,6 +1526,80 @@ export default function PlotsClient({
             run(() =>
               decideBookingRequestAction({ ...input, bookingId: dialog.row.id }, newKey())
             )
+          }
+        />
+      )}
+
+      {dialog?.kind === "DELIVER" && (
+        <DeliverDialog
+          row={dialog.row}
+          detail={bookingDetail}
+          people={people}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={({ buyers, completion }) =>
+            run(async () => {
+              // Two commands, in order, because they are two rules: the buyers
+              // are recorded first and the route refuses to run without them.
+              // Stopping on the first failure means a rejected route never
+              // leaves half a delivery behind.
+              const saved = await recordFinalBuyersAction(dialog.row.id, buyers, newKey());
+              if (!saved.ok) return saved;
+              return recordCompletionAction(dialog.row.id, completion, newKey());
+            })
+          }
+        />
+      )}
+
+      {/* DESIGN §11.1 — the Payment Received form is these four fields and no
+          others, and it is the same server action the Bookings screen calls.
+          Confirming it here saves finding the Booking for a Plot you are
+          already looking at. */}
+      {dialog?.kind === "PAY" && (
+        <ConfirmDialog
+          title="Confirm Payment Received"
+          plot={dialog.plot}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(f) =>
+            run(() =>
+              confirmPaymentReceivedAction(
+                {
+                  bookingId: dialog.row.id,
+                  percent: String(f.get("percent")),
+                  paidOn: String(f.get("paidOn")),
+                  reference: String(f.get("reference")),
+                  remark: String(f.get("remark") ?? ""),
+                },
+                newKey()
+              )
+            )
+          }
+          fields={
+            <>
+              {/* Not max 100: 100 is the whole Booking, and this field is one
+                  payment against what is left of it. A Booking already at 30%
+                  can only take 70 more, and the server refuses the rest — the
+                  field should say so before the form is sent. */}
+              <Field label={`Payment Received This Time (%) — ${remainingPercent(dialog.row.paymentReceivedPercent)}% remaining`}>
+                <PaymentPercentInput max={remainingPercent(dialog.row.paymentReceivedPercent)} />
+              </Field>
+              <Field label="Payment Date">
+                <Input
+                  name="paidOn"
+                  type="date"
+                  defaultValue={istDay(new Date())}
+                  max={istDay(new Date())}
+                  required
+                />
+              </Field>
+              <Field label="Payment Reference No.">
+                <Input name="reference" required />
+              </Field>
+              <Field label="Remark">
+                <Input name="remark" />
+              </Field>
+            </>
           }
         />
       )}
@@ -2032,7 +2174,7 @@ export function PrepareInventoryForm({
 
                 {/* Plot No. */}
                 <input
-                  className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs font-mono font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
+                  className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
                   placeholder="Plot no."
                   value={row.plotNumber}
                   onChange={(e) => update(i, { plotNumber: e.target.value })}
