@@ -6,7 +6,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Plus, X, Trash2, Pencil, Lock, Pause, Calendar, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronsUpDown, Plus, X, Trash2, Pencil, Lock, Pause, Calendar, XCircle } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { PersonLink } from "@/components/person-link";
@@ -177,6 +177,30 @@ const STATUS_LABEL: Record<string, string> = {
   PAYMENT_COMPLETED: "Payment Completed",
   REFUND_PENDING: "Refund Pending",
   DELIVERED: "Delivered",
+};
+
+/**
+ * The order the status groups read in when the Action column is grouped.
+ *
+ * Lifecycle order, with what can still be sold first: a list grouped by what
+ * can be done to a row should open on the rows something can be done to, not
+ * on the ones that are finished or were never for sale. A status missing from
+ * this list sorts to the end rather than disappearing.
+ */
+const STATUS_GROUP_ORDER = [
+  "AVAILABLE",
+  "HOLD",
+  "WAITING_FOR_BOOKING_APPROVAL",
+  "BOOKED",
+  "PAYMENT_COMPLETED",
+  "DELIVERED",
+  "REFUND_PENDING",
+  "NOT_AVAILABLE",
+];
+
+const statusRank = (status: string) => {
+  const at = STATUS_GROUP_ORDER.indexOf(status);
+  return at === -1 ? STATUS_GROUP_ORDER.length : at;
 };
 
 /**
@@ -819,6 +843,10 @@ export default function PlotsClient({
   const [notice, setNotice] = React.useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [projectFilter, setProjectFilter] = React.useState(initialProject);
   const [statusFilter, setStatusFilter] = React.useState("ALL");
+  // The Action column groups the rows by the status that decides their
+  // buttons. Off by default, because the plain list is plot order and that is
+  // how inventory is read out on site.
+  const [grouped, setGrouped] = React.useState(false);
   const [search, setSearch] = React.useState("");
   // "" until picked, "NEW" for a buyer typed on the form.
   const [holdPerson, setHoldPerson] = React.useState("");
@@ -872,6 +900,31 @@ export default function PlotsClient({
           .toLowerCase()
           .includes(search.trim().toLowerCase()))
   );
+
+  /**
+   * The status a row actually shows, which is not always the Plot's own — the
+   * Plots of a Project that is not live show as Not Available. The grouping
+   * follows what is on the screen, so one function answers for the row and for
+   * the group it lands in.
+   */
+  const shownFor = (plot: PlotRowView) =>
+    displayStatus(
+      plot.status as PlotStatus,
+      projects.find((p) => p.id === plot.projectId)?.status as ProjectStatus | undefined
+    );
+
+  // Grouped: every row that takes the same action sits with its own kind. The
+  // sort is stable, so plot order survives inside a group and the ungrouped
+  // list is left exactly as it was.
+  const ordered = grouped
+    ? [...visible].sort((a, b) => statusRank(shownFor(a).status) - statusRank(shownFor(b).status))
+    : visible;
+
+  const groupCounts = new Map<string, number>();
+  for (const plot of ordered) {
+    const status = shownFor(plot).status;
+    groupCounts.set(status, (groupCounts.get(status) ?? 0) + 1);
+  }
 
   async function run(action: () => Promise<ActionResult>) {
     if (busy) return false;
@@ -1048,11 +1101,30 @@ export default function PlotsClient({
                   <th className="px-3 py-1 text-center">Status</th>
                   <th className="px-3 py-1 text-center">Location</th>
                   <th className="w-[5rem] px-3 py-1 text-center">PLC</th>
-                  <th className="px-3 py-1 text-center">Action</th>
+                  {/* Clicking the column groups the rows by the status that
+                      decides their buttons — every Available together, every
+                      Hold together — because a list read for what to do next
+                      is read one action at a time. Clicking again returns to
+                      plot order. It orders what is on the screen; the filters
+                      above still decide what is on it. */}
+                  <th className="px-3 py-1 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setGrouped((on) => !on)}
+                      aria-pressed={grouped}
+                      title={grouped ? "Back to plot order" : "Group rows by status"}
+                      className={`mx-auto inline-flex items-center gap-1 uppercase tracking-wide hover:text-primary ${
+                        grouped ? "text-primary" : ""
+                      }`}
+                    >
+                      Action
+                      <ChevronsUpDown className="h-3 w-3" aria-hidden />
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {visible.map((plot) => {
+                {ordered.map((plot, index) => {
                   // What a held Plot can have done to it, in the order it would
                   // be wanted. `ends` is what makes the item read as the one
                   // that stops something, wherever it lands in the list.
@@ -1099,20 +1171,34 @@ export default function PlotsClient({
                   // The row payload carries these as plain strings; the values
                   // are Prisma enums either way, so this is the boundary cast
                   // rather than a widening.
-                  const shown = displayStatus(
-                    plot.status as PlotStatus,
-                    projects.find((p) => p.id === plot.projectId)?.status as
-                      | ProjectStatus
-                      | undefined
-                  );
+                  const shown = shownFor(plot);
                   const why = statusReason(plot, shown.because);
+                  // Only the first row of a group carries the heading, and only
+                  // while the rows are grouped at all.
+                  const opensGroup =
+                    grouped &&
+                    (index === 0 || shownFor(ordered[index - 1]).status !== shown.status);
+                  const groupCount = groupCounts.get(shown.status) ?? 0;
                   return (
-                  // A 1px outline and no fill: the row is a card in outline
-                  // only. A table in border-separate paints no border on the
-                  // <tr>, so the cells paint it — border-y across the row, and
-                  // the two end cells close it off.
+                  <React.Fragment key={plot.id}>
+                  {opensGroup && (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                      >
+                        {STATUS_LABEL[shown.status] ?? shown.status}
+                        <span className="ml-1.5 font-medium normal-case">
+                          {groupCount} {groupCount === 1 ? "plot" : "plots"}
+                        </span>
+                      </td>
+                    </tr>
+                  )}
+                  {/* A 1px outline and no fill: the row is a card in outline
+                      only. A table in border-separate paints no border on the
+                      <tr>, so the cells paint it — border-y across the row, and
+                      the two end cells close it off. */}
                   <tr
-                    key={plot.id}
                     // One vertical alignment for the whole row. Status, PLC and
                     // the action were centred while Plot, Size, Area and
                     // Location hung from the top, so every column started on a
@@ -1386,6 +1472,7 @@ export default function PlotsClient({
                       </div>
                     </td>
                   </tr>
+                  </React.Fragment>
                   );
                 })}
               </tbody>
