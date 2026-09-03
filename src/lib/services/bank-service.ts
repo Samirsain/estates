@@ -6,7 +6,7 @@
 import { db } from "@/lib/db";
 import { encryptSensitive } from "@/lib/security/identity";
 import { blocked, runCommand, type Tx } from "./command";
-import { ensureTask, closeTasksFor } from "./task-service";
+import { closeTasksFor } from "./task-service";
 
 /** IFSC is four letters, a zero, then six alphanumerics. */
 const IFSC = /^[A-Z]{4}0[A-Z0-9]{6}$/;
@@ -57,18 +57,17 @@ export async function enterBankDetails(args: {
       payload: { personId: args.personId, ifsc },
     },
     async (tx) => {
-      const person = await tx.person.findUniqueOrThrow({ where: { id: args.personId } });
-
-      const pending = await tx.bankDetail.findFirst({
-        where: { personId: args.personId, status: "PENDING" },
+      // Saving is the whole of it. The details reaching this form have been
+      // checked before they get here, so a second Accounts decision only held
+      // up a payment on an account nobody doubted — the owner removed the
+      // step. The record still supersedes rather than overwrites, so the
+      // account that was paid to last month is still on file.
+      await tx.bankDetail.updateMany({
+        where: { personId: args.personId, status: { in: ["VERIFIED", "PENDING"] } },
+        data: { status: "SUPERSEDED", reason: `Replaced on ${new Date().toISOString()}` },
       });
-      if (pending) {
-        blocked(
-          "A replacement bank entry is already waiting for the Accounts decision. " +
-            "Complete that verification before entering another."
-        );
-      }
 
+      const now = new Date();
       const detail = await tx.bankDetail.create({
         data: {
           personId: args.personId,
@@ -79,19 +78,10 @@ export async function enterBankDetails(args: {
           accountLastFour: accountNumber.slice(-4),
           ifsc,
           enteredByRef: args.actorRef,
+          status: "VERIFIED",
+          verifiedByRef: args.actorRef,
+          verifiedAt: now,
         },
-      });
-
-      await ensureTask(tx, {
-        recordKind: "Person",
-        recordId: args.personId,
-        recordName: person.fullName,
-        purpose: "BANK_VERIFICATION",
-        title: "Accounts Verification — Bank Details",
-        assigneeRole: "ACCOUNTS",
-        dueAt: new Date(),
-        decision: true,
-        latestResult: `${args.bankName.trim()} ending ${accountNumber.slice(-4)}`,
       });
 
       return {

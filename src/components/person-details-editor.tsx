@@ -103,7 +103,7 @@ export function PersonDetailsEditor({
               <Field label="Primary Mobile">
                 <Input name="mobile" required inputMode="tel" defaultValue={person.mobile} />
               </Field>
-              <Field label="Alt Mobile">
+              <Field label="Alternate Mobile">
                 <Input name="altMobile" inputMode="tel" defaultValue={person.altMobile} />
               </Field>
               <Field label="Email">
@@ -180,8 +180,8 @@ export function PersonDetailsEditor({
                 </h3>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
                   {bank
-                    ? `On file: •••• ${bank.accountLastFour} · ${bank.status.charAt(0) + bank.status.slice(1).toLowerCase()}. Saving here replaces it, once Accounts verifies.`
-                    : "Goes to Accounts for verification before it can be paid to."}
+                    ? `On file: •••• ${bank.accountLastFour}. Saving replaces it — the old account stays in History.`
+                    : "Saved as the account to pay to. A previous one is superseded, never deleted."}
                 </p>
               </div>
 
@@ -218,7 +218,7 @@ export function PersonDetailsEditor({
 
               <div className="flex justify-end pt-1">
                 <Button type="submit" size="sm" variant="outline" disabled={busy}>
-                  {busy ? "Saving…" : "Send bank details to Accounts"}
+                  {busy ? "Saving…" : "Save bank details"}
                 </Button>
               </div>
             </form>
