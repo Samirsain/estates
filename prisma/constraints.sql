@@ -64,11 +64,13 @@ ALTER TABLE "Plot" ADD CONSTRAINT "restriction_needs_reason"
   CHECK ("restriction" NOT IN ('NOT_FOR_SALE', 'PLEDGE')
       OR ("restrictionReason" IS NOT NULL AND length(btrim("restrictionReason")) > 0));
 
--- PRD §16.2 — Road boundary carries a road width; Plot boundary carries the adjacent number.
+-- PRD §16.2 — a Road boundary carries the road width, because that is what
+-- decides the PLC band. What is on the other side of a non-road boundary is
+-- the reference column, optional for every kind, so the old half of this rule
+-- that demanded an adjacent Plot Number is gone with the column it named.
 ALTER TABLE "PlotBoundary" DROP CONSTRAINT IF EXISTS "boundary_details_match_kind";
 ALTER TABLE "PlotBoundary" ADD CONSTRAINT "boundary_details_match_kind"
-  CHECK (("kind" <> 'ROAD' OR "roadWidthFt" IS NOT NULL)
-     AND ("kind" <> 'PLOT' OR "adjacentPlotNumber" IS NOT NULL));
+  CHECK ("kind" <> 'ROAD' OR "roadWidthFt" IS NOT NULL);
 
 -- PRD §16.3 — PLC is a percentage and is never negative.
 ALTER TABLE "PlcComponent" DROP CONSTRAINT IF EXISTS "plc_percent_non_negative";
@@ -647,3 +649,87 @@ ALTER TABLE "PlcSnapshot" ADD CONSTRAINT "plc_correction_names_reason_and_actor"
 ALTER TABLE "PlcSnapshot" DROP CONSTRAINT IF EXISTS "plc_snapshot_not_self_superseding";
 ALTER TABLE "PlcSnapshot" ADD CONSTRAINT "plc_snapshot_not_self_superseding"
   CHECK ("supersededById" IS NULL OR "supersededById" <> "id");
+
+-- --------------------------------------------------------- Land Inquiry
+
+-- Spec §6 — the Inquiry No. comes from a sequence. A row count or MAX+1 hands
+-- two concurrent creators the same number; a sequence cannot.
+CREATE SEQUENCE IF NOT EXISTS "land_inquiry_no_seq";
+
+-- Spec §5, §28.1 — the source pair is exclusive. Member, Customer and 3% Club
+-- name a Person the CRM already holds; Another Dealer names nobody and carries
+-- only a mobile, so no Person row is ever created for one.
+ALTER TABLE "LandInquiry" DROP CONSTRAINT IF EXISTS "land_inquiry_source_pair";
+ALTER TABLE "LandInquiry" ADD CONSTRAINT "land_inquiry_source_pair"
+  CHECK ((("receivedFrom" IN ('MEMBER', 'CUSTOMER'))
+            AND "sourcePersonId" IS NOT NULL AND "anotherDealerMobile" IS NULL)
+      OR ("receivedFrom" = 'THREE_PERCENT_CLUB'
+            AND "sourcePersonId" IS NULL AND "anotherDealerMobile" IS NULL)
+      OR ("receivedFrom" = 'ANOTHER_DEALER'
+            AND "sourcePersonId" IS NULL AND "anotherDealerMobile" IS NOT NULL));
+
+-- Spec §22 — Working with a Rejected / Closed stage is the one combination the
+-- business does not have. Closing sets both fields together.
+ALTER TABLE "LandInquiry" DROP CONSTRAINT IF EXISTS "land_inquiry_status_stage";
+ALTER TABLE "LandInquiry" ADD CONSTRAINT "land_inquiry_status_stage"
+  CHECK (NOT ("status" = 'WORKING' AND "stage" = 'REJECTED_CLOSED'));
+
+-- Spec §28.1 — a map pin is a pair or it is nothing.
+ALTER TABLE "LandInquiry" DROP CONSTRAINT IF EXISTS "land_inquiry_map_pin_pair";
+ALTER TABLE "LandInquiry" ADD CONSTRAINT "land_inquiry_map_pin_pair"
+  CHECK (("latitude" IS NULL AND "longitude" IS NULL)
+      OR ("latitude" BETWEEN -90 AND 90 AND "longitude" BETWEEN -180 AND 180));
+
+-- Spec §28.1 — a recorded measurement or value is positive. Zero is not a
+-- smaller number here, it is a wrong one.
+ALTER TABLE "LandInquiry" DROP CONSTRAINT IF EXISTS "land_inquiry_positive_numbers";
+ALTER TABLE "LandInquiry" ADD CONSTRAINT "land_inquiry_positive_numbers"
+  CHECK (COALESCE("areaBigha", 1) > 0 AND COALESCE("areaBiswa", 1) > 0
+     AND COALESCE("areaSqM", 1) > 0 AND COALESCE("areaSourceValue", 1) > 0
+     AND COALESCE("frontageValue", 1) > 0 AND COALESCE("roadWidthValue", 1) > 0
+     AND COALESCE("ownerAskingRate", 1) > 0 AND COALESCE("totalAskingValue", 1) > 0
+     AND COALESCE("dlcRate", 1) > 0 AND COALESCE("expectedPurchaseRate", 1) > 0);
+
+-- Spec §16 — a rate with no basis is not a rate anyone can act on, and a basis
+-- with no rate describes nothing.
+ALTER TABLE "LandInquiry" DROP CONSTRAINT IF EXISTS "land_inquiry_rate_basis_paired";
+ALTER TABLE "LandInquiry" ADD CONSTRAINT "land_inquiry_rate_basis_paired"
+  CHECK (("ownerAskingRate" IS NULL) = ("ownerAskingRateBasis" IS NULL)
+     AND ("dlcRate" IS NULL) = ("dlcRateBasis" IS NULL)
+     AND ("expectedPurchaseRate" IS NULL) = ("expectedPurchaseRateBasis" IS NULL));
+
+-- Spec §11 — the metric source unit and the value the user typed travel
+-- together, and the canonical square metres exist whenever they do.
+ALTER TABLE "LandInquiry" DROP CONSTRAINT IF EXISTS "land_inquiry_metric_source_paired";
+ALTER TABLE "LandInquiry" ADD CONSTRAINT "land_inquiry_metric_source_paired"
+  CHECK (("areaSourceUnit" IS NULL) = ("areaSourceValue" IS NULL)
+     AND ("areaSourceUnit" IS NULL OR "areaSqM" IS NOT NULL));
+
+-- Spec §28.1 — a linear measurement always says what unit it is in.
+ALTER TABLE "LandInquiry" DROP CONSTRAINT IF EXISTS "land_inquiry_linear_units_paired";
+ALTER TABLE "LandInquiry" ADD CONSTRAINT "land_inquiry_linear_units_paired"
+  CHECK (("frontageValue" IS NULL) = ("frontageUnit" IS NULL)
+     AND ("roadWidthValue" IS NULL) = ("roadWidthUnit" IS NULL));
+
+-- Spec §4.6, §23.8 — an archived inquiry always names who archived it.
+ALTER TABLE "LandInquiry" DROP CONSTRAINT IF EXISTS "land_inquiry_archive_names_actor";
+ALTER TABLE "LandInquiry" ADD CONSTRAINT "land_inquiry_archive_names_actor"
+  CHECK (("archivedAt" IS NULL) = ("archivedByRef" IS NULL));
+
+-- Spec §8 — an owner row without a name records nothing.
+ALTER TABLE "LandInquiryOwner" DROP CONSTRAINT IF EXISTS "land_inquiry_owner_named";
+ALTER TABLE "LandInquiryOwner" ADD CONSTRAINT "land_inquiry_owner_named"
+  CHECK (length(btrim("ownerName")) > 0);
+
+-- Spec §4.5 — at most one Primary Owner per inquiry, enforced by the database
+-- rather than by whoever remembers to clear the old flag first.
+CREATE UNIQUE INDEX IF NOT EXISTS "land_inquiry_one_primary_owner"
+  ON "LandInquiryOwner" ("landInquiryId")
+  WHERE "isPrimary" = true;
+
+-- Spec §10 — a Jamabandi row with all three identifiers blank is not a record.
+ALTER TABLE "LandInquiryJamabandiEntry" DROP CONSTRAINT IF EXISTS "land_inquiry_jamabandi_row_not_blank";
+ALTER TABLE "LandInquiryJamabandiEntry" ADD CONSTRAINT "land_inquiry_jamabandi_row_not_blank"
+  CHECK (length(btrim(COALESCE("murbbaNo", ''))) > 0
+      OR length(btrim(COALESCE("patwarNo", ''))) > 0
+      OR length(btrim(COALESCE("khasraNo", ''))) > 0);

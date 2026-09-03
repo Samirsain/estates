@@ -32,6 +32,10 @@ const NAV = [
       { label: "Projects", href: "/projects", phase: null },
       { label: "Plot Inventory", href: "/plots", phase: null },
       { label: "Enquiries", href: "/enquiries", phase: null },
+      // Land Inquiry spec §23.1 — pre-acquisition land sourcing sits with the
+      // rest of the sales pipeline rather than opening a seventh top-level
+      // area (DESIGN §3.1).
+      { label: "Land Inquiries", href: "/land-inquiries", phase: null },
       { label: "Bookings", href: "/bookings", phase: null },
       { label: "Buyback / Resale", href: "/acquisitions", phase: null },
     ],

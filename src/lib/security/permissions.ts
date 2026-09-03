@@ -32,6 +32,12 @@ export type Action =
   | "HOLD_EXTEND_FURTHER"
   | "HOLD_REQUEST_SUBMIT"
   | "HOLD_REQUEST_REVIEW"
+  // Pre-acquisition land sourcing (Land Inquiry spec §27). Viewing is any
+  // signed-in staff account; reopening and archiving are MD/Admin only, which
+  // is what holding no role grant already means.
+  | "LAND_INQUIRY_MANAGE"
+  | "LAND_INQUIRY_REOPEN"
+  | "LAND_INQUIRY_ARCHIVE"
   // Sale
   | "BOOKING_REQUEST_SUBMIT"
   | "BOOKING_DECIDE"
@@ -97,6 +103,7 @@ const ROLE_ACTIONS: Record<Role, readonly Action[]> = {
   ],
   CRM: [
     "ENQUIRY_MANAGE",
+    "LAND_INQUIRY_MANAGE",
     "PERSON_DETAILS_EDIT",
     "HOLD_CREATE",
     "HOLD_EXTEND_FIRST",
@@ -259,6 +266,9 @@ export const ACTION_GROUPS = [
       "HOLD_EXTEND_FURTHER",
       "HOLD_REQUEST_SUBMIT",
       "HOLD_REQUEST_REVIEW",
+      "LAND_INQUIRY_MANAGE",
+      "LAND_INQUIRY_REOPEN",
+      "LAND_INQUIRY_ARCHIVE",
     ],
   },
   {

@@ -1,6 +1,7 @@
 // Phase 2 to 6 domain checks — PHASES.md Phase 2-6 "Tests".
 // Run: node src/lib/domain/domain.check.ts
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { matchPeople, personLabel } from "./person-search.ts";
 import { capPercent, capShare, percentRoom, percentSum, shareRoom, shareSum } from "./shares.ts";
 import { calculateRate, formatRupees, parsePercent } from "./rate-calculator.ts";
@@ -47,6 +48,24 @@ import {
   openPositionCount,
 } from "./holds.ts";
 import { parseTerms } from "../terms.ts";
+import {
+  SQ_FT_PER_SQ_M,
+  SQ_M_PER_HECTARE,
+  SQ_M_PER_SQ_FT,
+  isValidStatusStage,
+  mapPinError,
+  metricViews,
+  normaliseJamabandi,
+  normaliseMobile,
+  normaliseOwners,
+  ownerError,
+  parseAmount,
+  planReopen,
+  planStageChange,
+  rateError,
+  toSquareMetres,
+  validateReceivedFrom,
+} from "./land-inquiry.ts";
 import {
   duplicateKey,
   enquiryStatusAfterBookingCancelled,
@@ -2463,5 +2482,175 @@ assert.equal(formatRupees("999"), "\u20b9999.00");
 assert.equal(formatRupees("1000"), "\u20b91,000.00");
 assert.equal(formatRupees("100000"), "\u20b91,00,000.00");
 assert.equal(formatRupees("30000000"), "\u20b93,00,00,000.00");
+
+/* --------------------------------------------------- land inquiry (spec §32) */
+
+// The source is a discriminated union, and the database CHECK says the same
+// thing. Every wrong pairing has to be refused here, or the constraint is the
+// first thing that notices.
+assert.equal(
+  validateReceivedFrom({ receivedFrom: "MEMBER", sourcePersonId: "p1", anotherDealerMobile: null }),
+  null
+);
+assert.match(
+  validateReceivedFrom({ receivedFrom: "MEMBER", sourcePersonId: null, anotherDealerMobile: null }) ?? "",
+  /Select the Member/
+);
+assert.match(
+  validateReceivedFrom({ receivedFrom: "MEMBER", sourcePersonId: "p1", anotherDealerMobile: "9876543210" }) ?? "",
+  /applies only to an Another Dealer/
+);
+assert.equal(
+  validateReceivedFrom({
+    receivedFrom: "ANOTHER_DEALER",
+    sourcePersonId: null,
+    anotherDealerMobile: "+91 98765-43210",
+  }),
+  null,
+  "a dealer mobile is accepted the way people type it"
+);
+assert.match(
+  validateReceivedFrom({
+    receivedFrom: "ANOTHER_DEALER",
+    sourcePersonId: "p1",
+    anotherDealerMobile: "9876543210",
+  }) ?? "",
+  /never a Person on file/,
+  "an Another Dealer inquiry can never carry a Person id"
+);
+assert.match(
+  validateReceivedFrom({ receivedFrom: "ANOTHER_DEALER", sourcePersonId: null, anotherDealerMobile: "12345" }) ?? "",
+  /valid 10-digit/
+);
+assert.equal(
+  validateReceivedFrom({
+    receivedFrom: "THREE_PERCENT_CLUB",
+    sourcePersonId: null,
+    anotherDealerMobile: null,
+  }),
+  null,
+  "a 3% Club inquiry is the company's own and names nobody"
+);
+assert.equal(normaliseMobile("+91 98765 43210"), "9876543210");
+
+// Spec §22 — Working with a Rejected / Closed stage is the one invalid pair.
+assert.equal(isValidStatusStage("WORKING", "NEGOTIATION"), true);
+assert.equal(isValidStatusStage("CLOSED", "REJECTED_CLOSED"), true);
+assert.equal(isValidStatusStage("CLOSED", "APPROVED_FOR_ACQUISITION"), true);
+assert.equal(isValidStatusStage("WORKING", "REJECTED_CLOSED"), false);
+
+// Spec §21 — one step forward is ordinary; a skip or a step back is a decision
+// and carries its reason. Rejected / Closed takes the Status with it.
+{
+  const forward = planStageChange({ status: "WORKING", from: "NEW", to: "DOCUMENTS_PENDING", reason: "" });
+  assert.ok(forward.ok && forward.nextStatus === "WORKING" && !forward.reasonRequired);
+
+  const skip = planStageChange({ status: "WORKING", from: "NEW", to: "NEGOTIATION", reason: "" });
+  assert.ok(!skip.ok && /Skipping a stage/.test(skip.error));
+  assert.ok(planStageChange({ status: "WORKING", from: "NEW", to: "NEGOTIATION", reason: "Arrived advanced" }).ok);
+
+  const back = planStageChange({ status: "WORKING", from: "NEGOTIATION", to: "SITE_VISIT", reason: "" });
+  assert.ok(!back.ok && /back a stage/.test(back.error));
+
+  const closed = planStageChange({ status: "WORKING", from: "NEW", to: "REJECTED_CLOSED", reason: "Owner withdrew" });
+  assert.ok(closed.ok && closed.nextStatus === "CLOSED");
+  assert.ok(!planStageChange({ status: "WORKING", from: "NEW", to: "REJECTED_CLOSED", reason: " " }).ok);
+
+  // A Closed inquiry does not move until Admin or MD reopens it.
+  assert.ok(!planStageChange({ status: "CLOSED", from: "REJECTED_CLOSED", to: "NEW", reason: "x" }).ok);
+}
+
+// Reopening a rejected inquiry has to land on a stage it can actually work at.
+assert.ok(!planReopen({ stage: "REJECTED_CLOSED", restoredStage: null, reason: "Owner returned" }).ok);
+assert.ok(
+  !planReopen({ stage: "REJECTED_CLOSED", restoredStage: "REJECTED_CLOSED", reason: "Owner returned" }).ok
+);
+assert.ok(planReopen({ stage: "REJECTED_CLOSED", restoredStage: "NEGOTIATION", reason: "Owner returned" }).ok);
+assert.ok(!planReopen({ stage: "REJECTED_CLOSED", restoredStage: "NEW", reason: "  " }).ok);
+
+// Spec §11 — the metric conversions are the exact published factors, and there
+// is deliberately no Bigha or Biswa conversion anywhere in this module: the
+// Rajasthan Land Revenue rules publish different equivalents per district, so
+// one statewide factor would silently restate what an owner said.
+assert.equal(SQ_M_PER_HECTARE, 10000);
+assert.equal(SQ_M_PER_SQ_FT, 0.09290304);
+assert.equal(SQ_FT_PER_SQ_M, 10.763910416709722);
+assert.equal(toSquareMetres(1, "HECTARE"), 10000);
+assert.equal(toSquareMetres(1, "SQ_M"), 1);
+assert.equal(toSquareMetres(1, "SQ_FT"), 0.09290304);
+assert.equal(metricViews(10000).hectare, 1);
+assert.ok(Math.abs(metricViews(1).sqFt - 10.763910416709722) < 1e-12);
+// Round trip: a square-foot entry comes back as the same square feet.
+assert.ok(Math.abs(metricViews(toSquareMetres(1000, "SQ_FT")).sqFt - 1000) < 1e-9);
+{
+  const source = readFileSync(new URL("./land-inquiry.ts", import.meta.url), "utf8");
+  assert.ok(
+    !/BIGHA_|SQ_M_PER_BIGHA|bighaToSq/i.test(source),
+    "no universal Bigha conversion exists — Rajasthan publishes different equivalents per district"
+  );
+}
+
+// Spec §16 — a rate needs its basis and a basis needs its rate.
+assert.equal(rateError([{ value: "5000", basis: "PER_SQ_FT", label: "Owner Asking Rate" }]), null);
+assert.match(
+  rateError([{ value: "5000", basis: null, label: "Owner Asking Rate" }]) ?? "",
+  /needs a rate basis/
+);
+assert.match(
+  rateError([{ value: "", basis: "PER_BIGHA", label: "DLC Rate" }]) ?? "",
+  /basis but no rate/
+);
+assert.match(
+  rateError([{ value: "0", basis: "TOTAL", label: "DLC Rate" }]) ?? "",
+  /positive amount/
+);
+assert.equal(rateError([{ value: null, basis: null, label: "DLC Rate" }]), null);
+assert.equal(parseAmount("1,25,00,000"), "12500000", "Indian grouping in, plain decimal out");
+
+// Spec §8 — the first owner is Primary, exactly one is, and a removed Primary
+// promotes the earliest one left.
+{
+  const owners = normaliseOwners([
+    { ownerName: " Ram Lal ", mobile: "+91 98765 43210", isPrimary: false },
+    { ownerName: "Sita Devi", mobile: "", isPrimary: false },
+    { ownerName: "   ", mobile: "", isPrimary: false },
+  ]);
+  assert.equal(owners.length, 2, "a blank owner row is dropped, not rejected");
+  assert.deepEqual(owners.map((o) => o.isPrimary), [true, false]);
+  assert.equal(owners[0].ownerName, "Ram Lal");
+  assert.equal(owners[0].mobile, "9876543210");
+  assert.equal(owners[1].mobile, null, "an owner mobile is optional");
+  assert.equal(normaliseOwners([]).length, 0, "zero owners is a valid partial inquiry");
+
+  const promoted = normaliseOwners([
+    { ownerName: "A", mobile: null, isPrimary: false },
+    { ownerName: "B", mobile: null, isPrimary: true },
+  ]);
+  assert.deepEqual(promoted.map((o) => o.isPrimary), [false, true], "a chosen Primary is kept");
+}
+assert.match(
+  ownerError([{ ownerName: "Ram", mobile: "12345", isPrimary: true }]) ?? "",
+  /invalid mobile/
+);
+
+// Spec §10 — an all-blank Jamabandi row records nothing and never persists.
+assert.equal(
+  normaliseJamabandi([
+    { murbbaNo: " ", patwarNo: "", khasraNo: "" },
+    { murbbaNo: "", patwarNo: "", khasraNo: " 145/2 " },
+  ]).length,
+  1
+);
+assert.equal(
+  normaliseJamabandi([{ murbbaNo: "", patwarNo: "", khasraNo: "145/2" }])[0].khasraNo,
+  "145/2"
+);
+
+// A map pin is a pair or it is nothing.
+assert.equal(mapPinError("", ""), null);
+assert.match(mapPinError("26.9124", "") ?? "", /both latitude and longitude/);
+assert.match(mapPinError("95", "75.7873") ?? "", /Latitude/);
+assert.match(mapPinError("26.9124", "200") ?? "", /Longitude/);
+assert.equal(mapPinError("26.9124", "75.7873"), null);
 
 console.log("domain.check.ts OK");

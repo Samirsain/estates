@@ -116,6 +116,7 @@ model Person {
   bankDetails             BankDetail[]
   mergeRequestsAsSurvivor PersonMergeRequest[]    @relation("MergeSurvivor")
   mergeRequestsAsMerged   PersonMergeRequest[]    @relation("MergeMerged")
+  landInquiriesSourced    LandInquiry[]           @relation("LandInquirySource")
 
   @@index([primaryMobile])
   @@index([fullName])
@@ -268,8 +269,9 @@ model StaffAccount {
   disabledReason    String?
   emergencyDisabled Boolean   @default(false)
 
-  assignedEnquiries Enquiry[]
-  assignedTasks     Task[]    @relation("TaskAssignee")
+  assignedEnquiries     Enquiry[]
+  assignedTasks         Task[]        @relation("TaskAssignee")
+  assignedLandInquiries LandInquiry[] @relation("LandInquiryAssignee")
 
   @@index([role, status])
 }
@@ -1880,4 +1882,275 @@ model PersonMergeRequest {
 
   @@index([status])
   @@index([survivingPersonId])
+}
+
+// ----------------------------------------------------------- Land Inquiry
+/// Pre-acquisition land sourcing (Land Inquiry spec §1). It is not a Lead, a
+/// Booking, a Plot or an Acquisition, and nothing here feeds Payment,
+/// Commission or accounting: the rupee fields below are inquiry and
+/// negotiation information only (spec §0 "Feature-specific exception").
+
+/// Spec §2.2. Three sources are a Person already on file; Another Dealer is a
+/// mobile number and nothing else — no Person row is created for it, ever.
+enum LandInquiryReceivedFrom {
+  MEMBER
+  CUSTOMER
+  THREE_PERCENT_CLUB
+  ANOTHER_DEALER
+}
+
+/// Spec §20 — whether the inquiry is operationally open. Never overloaded to
+/// carry acquisition progress; that is the Stage.
+enum LandInquiryStatus {
+  WORKING
+  CLOSED
+}
+
+/// Spec §21, in displayed order.
+enum LandInquiryStage {
+  NEW
+  DOCUMENTS_PENDING
+  SITE_VISIT
+  UNDER_VERIFICATION
+  NEGOTIATION
+  APPROVED_FOR_ACQUISITION
+  REJECTED_CLOSED
+}
+
+enum LandCategory {
+  RESIDENTIAL
+  COMMERCIAL
+  INDUSTRIAL
+  AGRICULTURAL
+  OTHER
+}
+
+/// Spec §13 — one tracking vocabulary for all four approval fields. Internal
+/// status only; never a guarantee of title, legality or future approval.
+enum LandApprovalStatus {
+  UNKNOWN
+  NOT_APPLICABLE
+  NOT_STARTED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Spec §14 — Unknown is a real answer and must never be stored as No.
+enum LandCheckState {
+  UNKNOWN
+  YES
+  NO
+}
+
+enum LandDevelopmentPotential {
+  RESIDENTIAL
+  COMMERCIAL
+  WAREHOUSE
+  AGRICULTURE
+  OTHER
+}
+
+/// Spec §18 — "the inquiry record says this item was received". Not an upload,
+/// not KYC, not a legal verification.
+enum LandDocumentType {
+  JAMABANDI
+  REGISTRY
+  MUTATION
+  BHU_NAKSHA
+  KHASRA_MAP
+  CONVERSION_ORDER_90A
+  PATTA
+  OWNER_ID
+  SITE_PHOTOS
+  LOCATION_MAP
+}
+
+enum LandEvaluationType {
+  SITE_VISIT_REQUIRED
+  LEGAL_VERIFICATION_REQUIRED
+  REVENUE_VERIFICATION_REQUIRED
+}
+
+/// Spec §16 — a rate with no basis is meaningless, so every rate carries one.
+enum LandRateBasis {
+  TOTAL
+  PER_BIGHA
+  PER_BISWA
+  PER_HECTARE
+  PER_SQ_M
+  PER_SQ_FT
+}
+
+enum LinearUnit {
+  FT
+  MTR
+}
+
+/// Spec §11 — which metric unit the user actually typed, kept so the canonical
+/// square metres can be shown back without conversion drift.
+enum LandMetricSourceUnit {
+  SQ_M
+  HECTARE
+  SQ_FT
+}
+
+model LandInquiry {
+  id          String   @id @default(uuid())
+  /// LI-000001, from the `land_inquiry_no_seq` sequence. Never a row count,
+  /// never MAX+1, never editable (spec §6).
+  inquiryNo   String   @unique
+  /// The Asia/Kolkata calendar date the inquiry was taken, set by the server.
+  /// `createdAt` keeps the full instant separately (spec §7).
+  inquiryDate DateTime @db.Date
+
+  receivedFrom        LandInquiryReceivedFrom
+  /// Member and Customer name an existing Person. 3% Club is the company
+  /// itself and names nobody; Another Dealer names nobody and carries a mobile.
+  sourcePersonId      String?
+  sourcePerson        Person?                 @relation("LandInquirySource", fields: [sourcePersonId], references: [id])
+  /// Spec §2.2 — inquiry-local, deliberately not unique, and never an identity.
+  anotherDealerMobile String?
+
+  status LandInquiryStatus @default(WORKING)
+  stage  LandInquiryStage  @default(NEW)
+
+  assignedToId String?
+  assignedTo   StaffAccount? @relation("LandInquiryAssignee", fields: [assignedToId], references: [id])
+
+  district      String?
+  tehsil        String?
+  exactLocation String?
+  latitude      Decimal? @db.Decimal(10, 7)
+  longitude     Decimal? @db.Decimal(10, 7)
+
+  /// Spec §11 — Bigha and Biswa are local measures with no statewide
+  /// conversion, so they are stored exactly as entered and never derived from
+  /// the metric area, nor it from them.
+  areaBigha       Decimal?              @db.Decimal(20, 6)
+  areaBiswa       Decimal?              @db.Decimal(20, 6)
+  /// Canonical metric area. Hectare and Sq Ft are derived from it for display.
+  areaSqM         Decimal?              @db.Decimal(20, 6)
+  areaSourceUnit  LandMetricSourceUnit?
+  areaSourceValue Decimal?              @db.Decimal(20, 6)
+
+  dimensions     String?
+  frontageValue  Decimal?    @db.Decimal(18, 4)
+  frontageUnit   LinearUnit?
+  roadWidthValue Decimal?    @db.Decimal(18, 4)
+  roadWidthUnit  LinearUnit?
+  shape          String?
+  boundaries     String?
+
+  landCategory       LandCategory?
+  currentLandUse     String?
+  masterPlanZonalUse String?
+
+  status90A            LandApprovalStatus @default(UNKNOWN)
+  landConversionStatus LandApprovalStatus @default(UNKNOWN)
+  changeLandUseStatus  LandApprovalStatus @default(UNKNOWN)
+  pattaLeaseStatus     LandApprovalStatus @default(UNKNOWN)
+
+  registrySaleDeedAvailable LandCheckState @default(UNKNOWN)
+  mutationComplete          LandCheckState @default(UNKNOWN)
+  /// Risk fields: YES means the issue exists or is reported (spec §14).
+  mortgageBankCharge        LandCheckState @default(UNKNOWN)
+  courtCaseStay             LandCheckState @default(UNKNOWN)
+  familyDispute             LandCheckState @default(UNKNOWN)
+  acquisitionNotice         LandCheckState @default(UNKNOWN)
+  governmentRestriction     LandCheckState @default(UNKNOWN)
+
+  approachRoad         LandCheckState @default(UNKNOWN)
+  roadType             String?
+  electricity          LandCheckState @default(UNKNOWN)
+  water                LandCheckState @default(UNKNOWN)
+  sewerage             LandCheckState @default(UNKNOWN)
+  existingConstruction LandCheckState @default(UNKNOWN)
+  encroachment         LandCheckState @default(UNKNOWN)
+  possessionStatus     String?
+
+  /// Spec §16 — INR, pre-acquisition only. Nothing here reaches a Booking, a
+  /// Payment, a Commission, a payout, a refund or accounting.
+  ownerAskingRate           Decimal?       @db.Decimal(20, 2)
+  ownerAskingRateBasis      LandRateBasis?
+  /// Stated by the seller and never recomputed from area x rate (spec §16).
+  totalAskingValue          Decimal?       @db.Decimal(20, 2)
+  negotiable                Boolean?
+  dlcRate                   Decimal?       @db.Decimal(20, 2)
+  dlcRateBasis              LandRateBasis?
+  expectedPurchaseRate      Decimal?       @db.Decimal(20, 2)
+  expectedPurchaseRateBasis LandRateBasis?
+  paymentExpectation        String?
+
+  developmentPotential LandDevelopmentPotential[] @default([])
+  documentsReceived    LandDocumentType[]         @default([])
+  evaluation           LandEvaluationType[]       @default([])
+
+  /// The submission key. A retry with the same key returns the first result
+  /// rather than creating a second inquiry (spec §26.6).
+  createRequestId String @unique
+  /// Optimistic lock. An update carrying a stale version is rejected, never
+  /// merged (spec §26.7).
+  version         Int    @default(1)
+
+  createdByRef  String
+  updatedByRef  String
+  /// Spec §4.6 — no hard delete. Archiving hides the record from the default
+  /// list and keeps every fact and every audit event.
+  archivedAt    DateTime?
+  archivedByRef String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owners           LandInquiryOwner[]
+  jamabandiEntries LandInquiryJamabandiEntry[]
+
+  @@index([inquiryDate])
+  @@index([receivedFrom])
+  @@index([status, stage])
+  @@index([district, tehsil])
+  @@index([sourcePersonId])
+  @@index([assignedToId])
+  @@index([archivedAt])
+}
+
+/// Spec §8 — owners are inquiry-child records. They are deliberately not
+/// Person rows: a name heard on a phone call is not an identity the CRM holds.
+model LandInquiryOwner {
+  id            String      @id @default(uuid())
+  landInquiryId String
+  landInquiry   LandInquiry @relation(fields: [landInquiryId], references: [id], onDelete: Cascade)
+
+  ownerName String
+  mobile    String?
+  isPrimary Boolean @default(false)
+  sortOrder Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([landInquiryId, sortOrder])
+  @@index([ownerName])
+  @@index([mobile])
+}
+
+/// Spec §10 — one inquiry can carry several revenue references. A row with all
+/// three identifiers blank is not a record of anything and never persists.
+model LandInquiryJamabandiEntry {
+  id            String      @id @default(uuid())
+  landInquiryId String
+  landInquiry   LandInquiry @relation(fields: [landInquiryId], references: [id], onDelete: Cascade)
+
+  murbbaNo  String?
+  patwarNo  String?
+  khasraNo  String?
+  sortOrder Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([landInquiryId, sortOrder])
+  @@index([khasraNo])
+  @@index([patwarNo])
 }
