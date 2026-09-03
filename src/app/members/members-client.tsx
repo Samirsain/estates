@@ -56,6 +56,8 @@ export type MemberRowView = {
   panStatus: string;
   invitedCount: number;
   introducedCount: number;
+  /** Bookings this Member sold that became a sale — see the members loader. */
+  dealCount: number;
 };
 
 type Permissions = {
@@ -236,18 +238,23 @@ export default function MembersClient({
           <table className="w-full min-w-[62rem] border-collapse text-xs">
             <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr className="border-b border-border">
-                <th className="w-[11rem] px-3 py-1.5">Member</th>
-                <th className="w-[9rem] px-3 py-1.5">Mobile · City</th>
+                {/* One fact per column. Position and Member since moved into
+                    the Member's own panel — they are read when a Member is
+                    being looked at, not scanned down a list — and what the list
+                    is scanned for took their place. */}
+                <th className="w-[7rem] px-3 py-1.5">Member ID</th>
+                <th className="w-[11rem] px-3 py-1.5">Name</th>
+                <th className="w-[8rem] px-3 py-1.5">Mobile</th>
+                <th className="w-[8rem] px-3 py-1.5">City</th>
                 <th className="w-[11rem] px-3 py-1.5">Invited by</th>
-                <th className="w-[10rem] px-3 py-1.5">Position</th>
-                <th className="px-3 py-1.5">Member since</th>
+                <th className="w-[6rem] px-3 py-1.5 text-center">Total Deals</th>
                 <th className="w-[10rem] px-3 py-1.5">RERA</th>
               </tr>
             </thead>
             <tbody>
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">
                     No Members match these filters.
                   </td>
                 </tr>
@@ -255,27 +262,29 @@ export default function MembersClient({
               {visible.map((row) => (
                 <React.Fragment key={row.id}>
                   <tr
-                    className={`border-b border-border/60 align-middle leading-tight last:border-0 [&>td]:px-3 [&>td]:py-1 ${
+                    className={`h-14 border-b border-border/60 align-middle leading-tight last:border-0 [&>td]:px-3 [&>td]:py-1 ${
                       row.status === "ACTIVE"
                         ? "hover:bg-secondary/50"
                         : "bg-red-500/5 text-red-700 hover:bg-red-500/10"
                     }`}
                     title={row.status === "ACTIVE" ? undefined : "Deactivated"}
                   >
-                    <td>
+                    <td className="whitespace-nowrap">
                       <button
                         type="button"
-                        className="group inline-flex items-center gap-1.5 font-mono font-bold text-primary hover:underline"
+                        className="font-bold text-primary hover:underline"
                         onClick={() => router.push(`/members/${row.id}`)}
                         aria-label={`View details for ${row.memberId}`}
                       >
-                        <span>{row.memberId}</span>
+                        {row.memberId}
                       </button>
-                      <span className="block text-[11px] text-muted-foreground">
-                        <Link href={`/members/${row.id}`} className="hover:underline">
-                          {row.name}
-                        </Link>
-                      </span>
+                    </td>
+                    <td>
+                      <Link href={`/members/${row.id}`} className="hover:underline">
+                        {row.name}
+                      </Link>
+                      {/* These qualify the Member, not the name — they stay
+                          under it because that is who they are about. */}
                       {row.commissionHold && (
                         <span className="block text-[11px] text-amber-800">Commission Hold</span>
                       )}
@@ -285,16 +294,12 @@ export default function MembersClient({
                         </span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap font-mono">
-                      {row.mobile}
-                      <span className="block font-sans text-[11px] text-muted-foreground">
-                        {row.city}
-                      </span>
-                    </td>
+                    <td className="whitespace-nowrap tabular-nums">{row.mobile}</td>
+                    <td className="whitespace-nowrap">{row.city}</td>
                     <td>
                       {row.invitedBy ? (
                         <Link href={`/members/${row.invitedBy.id}`} className="group">
-                          <span className="block font-mono font-semibold text-primary group-hover:underline">
+                          <span className="block font-semibold text-primary group-hover:underline">
                             {row.invitedBy.memberId}
                           </span>
                           <span className="block text-[11px] text-muted-foreground">
@@ -305,26 +310,11 @@ export default function MembersClient({
                         "—"
                       )}
                     </td>
-                    <td className="tabular-nums">
-                      {row.invitePosition
-                        ? `${row.invitePosition} · ${row.inviteRatePercent}%`
-                        : "Not assigned"}
-                      <span className="block text-[11px] text-muted-foreground">
-                        {row.invitedCount} invited · {row.introducedCount} introduced
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap">
-                      {row.activationDate ? (
-                        <>
-                          {formatIstDate(row.activationDate)}
-                          {row.experience && (
-                            <span className="block text-[11px] text-muted-foreground">
-                              {row.experience}
-                            </span>
-                          )}
-                        </>
+                    <td className="text-center tabular-nums">
+                      {row.dealCount > 0 ? (
+                        <span className="font-semibold text-foreground">{row.dealCount}</span>
                       ) : (
-                        <span className="text-muted-foreground">Not activated</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
                     <td>
@@ -342,7 +332,7 @@ export default function MembersClient({
                   </tr>
                   {openId === row.id && (
                     <tr>
-                      <td colSpan={6} className="px-1 pb-3">
+                      <td colSpan={7} className="px-1 pb-3">
                         <MemberDetailPanel
                           row={row}
                           detail={detail}

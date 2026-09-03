@@ -90,18 +90,16 @@ function Row({
   label,
   value,
   hint,
-  mono,
 }: {
   label: string;
   value: React.ReactNode;
   hint?: React.ReactNode;
-  mono?: boolean;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-border/50 py-2 last:border-0">
       <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       <span className="text-right">
-        <span className={`block text-sm font-semibold text-foreground ${mono ? "font-mono" : ""}`}>
+        <span className="block text-sm font-semibold text-foreground">
           {value}
         </span>
         {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
@@ -149,7 +147,7 @@ function NetworkRow({
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 py-2.5">
       <span className="min-w-0">
-        <Link href={href} className="font-mono font-semibold text-primary hover:underline">
+        <Link href={href} className="font-semibold text-primary hover:underline">
           {code}
         </Link>
         <span className="block text-[11px] text-muted-foreground">
@@ -270,7 +268,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
                     stacked sentences. */}
                 <h1 className="text-2xl font-bold tracking-tight">{member.person.fullName}</h1>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-sm text-muted-foreground">{member.memberId}</span>
+                  <span className="text-sm text-muted-foreground">{member.memberId}</span>
                   <Badge variant={member.status === "ACTIVE" ? "success" : "destructive"}>
                     {STATUS_LABEL[member.status] ?? member.status}
                   </Badge>
@@ -293,7 +291,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
                   value={
                     <Link
                       href={`/members/${member.invitedByMemberId}`}
-                      className="font-mono text-primary hover:underline"
+                      className="text-primary hover:underline"
                     >
                       {member.invitedByMember.memberId}
                     </Link>
@@ -313,9 +311,9 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
             lists of facts, so three of the same card side by side. */}
         <div className="grid gap-4 md:grid-cols-3">
           <Section title="Profile" icon={<UserCheck className="h-3.5 w-3.5" />}>
-            <Row label="Mobile" value={member.person.primaryMobile} mono />
+            <Row label="Mobile" value={member.person.primaryMobile} />
             {member.person.altMobile && (
-              <Row label="Alt Mobile" value={member.person.altMobile} mono />
+              <Row label="Alternate Mobile" value={member.person.altMobile} />
             )}
             <Row label="Email" value={member.person.email ?? "—"} />
             {/* A blank Date of Birth or Address is shown rather than hidden:
@@ -345,7 +343,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
               }
               hint={member.reraNotApplicableReason ?? undefined}
             />
-            <Row label="Number" value={member.reraNumber ?? "—"} mono={!!member.reraNumber} />
+            <Row label="Number" value={member.reraNumber ?? "—"} />
             <Row
               label="Expiry"
               value={member.reraExpiryDate ? formatIst(member.reraExpiryDate.toISOString()) : "—"}
@@ -381,9 +379,8 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
                         {b.verifiedAt && ` ${formatIst(b.verifiedAt.toISOString())}`}
                       </>
                     }
-                    mono
                   />
-                  <Row label="IFSC" value={b.ifsc} mono />
+                  <Row label="IFSC" value={b.ifsc} />
                   <Row label="Bank" value={b.bankName} />
                   <Row label="Branch" value={b.branchName ?? "—"} />
                   <Row label="Holder" value={b.accountHolder} />
@@ -464,7 +461,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
                 <tbody className="divide-y divide-border/40 align-baseline">
                   {commissions.map((c) => (
                     <tr key={c.id}>
-                      <td className="py-2 font-mono">
+                      <td className="py-2">
                         <span className="inline-flex items-center gap-1.5">
                           <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           {c.booking ? (
@@ -481,7 +478,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
                         {/* Superseded is said once, as a word. Fading the whole
                             row said it twice and made it hard to read. */}
                         {!c.isCurrent && (
-                          <span className="ml-2 rounded border border-border/60 px-1 font-sans text-[10px] text-muted-foreground">
+                          <span className="ml-2 rounded border border-border/60 px-1 text-[10px] text-muted-foreground">
                             Superseded
                           </span>
                         )}

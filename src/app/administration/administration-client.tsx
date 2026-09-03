@@ -852,7 +852,7 @@ function OneTimePasswordCard({ password, onDone }: { password: string; onDone: (
         Give this to the account holder now. It is shown only once and cannot be recovered — if it is
         lost, issue a reset.
       </p>
-      <p className="break-all font-mono text-lg text-foreground">{password}</p>
+      <p className="break-all text-lg text-foreground">{password}</p>
       <p className="text-xs text-muted-foreground">
         They change it themselves under My Account at first sign in.
       </p>
@@ -1157,7 +1157,7 @@ function StaffDetailModal({
               rows={[
                 ["Full name", detail.fullName],
                 ["Mobile", detail.primaryMobile],
-                ["Alternate mobile", detail.altMobile ?? "—"],
+                ["Alternate Mobile", detail.altMobile ?? "—"],
                 ["Email", detail.email ?? "—"],
                 ["City", detail.city ?? "—"],
               ]}
@@ -1518,13 +1518,13 @@ function IdentityTab({ canReveal }: { canReveal: boolean }) {
                         {row.reference} · {row.mobileMasked}
                       </div>
                     </td>
-                    <td className="py-2 pr-4 font-mono">
+                    <td className="py-2 pr-4">
                       {open ? (open.aadhaar ?? "Not recorded") : row.aadhaarMasked}
-                      <div className="font-sans text-muted-foreground">{row.aadhaarStatus}</div>
+                      <div className="text-muted-foreground">{row.aadhaarStatus}</div>
                     </td>
-                    <td className="py-2 pr-4 font-mono">
+                    <td className="py-2 pr-4">
                       {open ? (open.pan ?? "Not recorded") : row.panMasked}
-                      <div className="font-sans text-muted-foreground">{row.panStatus}</div>
+                      <div className="text-muted-foreground">{row.panStatus}</div>
                     </td>
                     <td className="py-1.5 pr-3">
                       {canReveal && !open && (

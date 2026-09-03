@@ -40,6 +40,7 @@ export type CustomerRowView = {
   plotId: string | null;
   otherBookings: number;
   introducedBy: string | null;
+  introducedByName: string | null;
   introducedByMemberId: string | null;
   loyaltySlotsConsumed: number;
 };
@@ -171,12 +172,12 @@ export default function CustomersClient({
               {visible.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-b border-border/60 align-middle last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1.5"
+                  className="h-14 border-b border-border/60 align-middle last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1.5"
                 >
                   <td className="whitespace-nowrap">
                     <button
                       type="button"
-                      className="block font-mono font-bold text-primary hover:underline"
+                      className="block font-bold text-primary hover:underline"
                       onClick={() => router.push(`/customers/${row.id}`)}
                     >
                       {row.customerId}
@@ -187,7 +188,7 @@ export default function CustomersClient({
                       {row.name}
                     </Link>
                   </td>
-                  <td className="whitespace-nowrap font-mono">{row.mobileMasked}</td>
+                  <td className="whitespace-nowrap">{row.mobileMasked}</td>
                   <td>{row.city}</td>
                   <td>{row.customerType ? row.customerType.replaceAll("_", " ") : "—"}</td>
                   <td>
@@ -202,7 +203,7 @@ export default function CustomersClient({
                         row.plotNumber && row.plotId ? (
                           <Link
                             href={`/plots/${row.plotId}`}
-                            className="font-mono text-primary hover:underline"
+                            className="text-primary hover:underline"
                           >
                             {row.plotNumber}
                           </Link>
@@ -213,13 +214,20 @@ export default function CustomersClient({
                       under={row.plotType}
                     />
                   </td>
-                  <td className="whitespace-nowrap font-mono">
+                  <td className="whitespace-nowrap">
+                    {/* The Member ID leads and opens the Member; the name under
+                        it confirms who that is without competing for the eye —
+                        the same shape the Members list uses for Invited by. */}
                     {row.introducedBy && row.introducedByMemberId ? (
-                      <Link
-                        href={`/members/${row.introducedByMemberId}`}
-                        className="text-primary hover:underline"
-                      >
-                        {row.introducedBy}
+                      <Link href={`/members/${row.introducedByMemberId}`} className="group">
+                        <span className="block text-primary group-hover:underline">
+                          {row.introducedBy}
+                        </span>
+                        {row.introducedByName && (
+                          <span className="block text-[11px] text-muted-foreground">
+                            {row.introducedByName}
+                          </span>
+                        )}
                       </Link>
                     ) : (
                       (row.introducedBy ?? "—")

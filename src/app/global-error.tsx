@@ -64,7 +64,6 @@ export default function GlobalError({
                 padding: "0.75rem",
                 borderRadius: "12px",
                 background: "#f5f5f7",
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                 fontSize: "0.75rem",
               }}
             >

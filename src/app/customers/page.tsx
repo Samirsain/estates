@@ -84,9 +84,10 @@ export default async function CustomersPage() {
     plotType: latest.get(c.personId)?.plot.plotType.replaceAll("_", " ") ?? null,
     plotId: latest.get(c.personId)?.plot.id ?? null,
     otherBookings: Math.max((bookingCount.get(c.personId) ?? 0) - 1, 0),
-    // The Member ID is what the introduction is filed under; the name is on
-    // the Customer's own page.
+    // The Member ID is what the introduction is filed under; the name under it
+    // is who that is, the same way the Members list reads Invited by.
     introducedBy: c.originalIntroducedByMember?.memberId ?? null,
+    introducedByName: c.originalIntroducedByMember?.person.fullName ?? null,
     introducedByMemberId: c.originalIntroducedByMemberId,
     loyaltySlotsConsumed: c.loyaltySlotsConsumed,
   }));
