@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function MembersPage() {
   const actor = await requireStaff();
 
-  const [members, activatable] = await Promise.all([
+  const [members, activatable, deals] = await Promise.all([
     db.memberProfile.findMany({
       include: {
         person: true,
@@ -31,7 +31,27 @@ export default async function MembersPage() {
       orderBy: { fullName: "asc" },
       take: 300,
     }),
+    /*
+     * How many sales a Member has brought, counted once here rather than per
+     * row. A deal is a Booking that became a sale — the request statuses are
+     * not deals yet, and a rejected or cancelled request never was one. A
+     * Booking being refunded or bought back still happened, so it counts.
+     */
+    db.booking.groupBy({
+      by: ["soldByPersonId"],
+      where: {
+        soldByType: "MEMBER",
+        status: {
+          in: ["BOOKED", "PAYMENT_COMPLETED", "DELIVERED", "REFUND_PENDING", "BUYBACK_COMPLETED"],
+        },
+      },
+      _count: { _all: true },
+    }),
   ]);
+
+  const dealsByPerson = new Map(
+    deals.map((d) => [d.soldByPersonId, d._count._all] as const)
+  );
 
   const rows: MemberRowView[] = members.map((m) => ({
     id: m.id,
@@ -66,6 +86,7 @@ export default async function MembersPage() {
     panStatus: m.person.panStatus,
     invitedCount: m._count.invitedMembers,
     introducedCount: m._count.introducedCustomers,
+    dealCount: dealsByPerson.get(m.personId) ?? 0,
   }));
 
   return (

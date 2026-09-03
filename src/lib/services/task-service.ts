@@ -4,6 +4,7 @@
 
 import type { StaffRole, TaskStatus } from "@prisma/client";
 import { db } from "@/lib/db";
+import type { TaskSubject } from "@/lib/tasks";
 import { nextReference, type Tx } from "./command";
 
 export type TaskInput = {
@@ -131,4 +132,194 @@ export async function closeTasksFor(
 
 export function listTasks() {
   return db.task.findMany({ orderBy: { dueAt: "asc" } });
+}
+
+/* ------------------------------------------------------------ subjects */
+
+/**
+ * Resolves what each task is actually about — DESIGN §6.2.
+ *
+ * The Dashboard prints a Project, a Plot, a Member or Customer ID and a name in
+ * columns of their own, and a task stores none of that: it stores a record kind,
+ * an internal id and one line of display text somebody composed when they raised
+ * it. So the records are read back here, one query per kind present, and the
+ * parts are handed over separately.
+ *
+ * A task whose record cannot be resolved — a manual task typed against free
+ * text, an unlinked one — simply gets no subject, and the row falls back to the
+ * stored line. Nothing is invented to fill a column.
+ */
+export async function taskSubjects(
+  rows: readonly { id: string; recordKind: string; recordId: string }[]
+): Promise<Map<string, TaskSubject>> {
+  const idsFor = (...kinds: string[]) => [
+    ...new Set(rows.filter((r) => kinds.includes(r.recordKind)).map((r) => r.recordId)),
+  ];
+
+  const bookingIds = idsFor("Booking", "Booking Request");
+  const enquiryIds = idsFor("Enquiry");
+  const memberIds = idsFor("Member", "MemberProfile");
+  const customerIds = idsFor("Customer");
+  const plotIds = idsFor("Plot");
+  const acquisitionIds = idsFor("Acquisition");
+  const commissionIds = idsFor("Commission");
+
+  /** A Person carries at most one of each id; the task is about the Person. */
+  const party = (person: {
+    fullName: string;
+    memberProfile: { memberId: string } | null;
+    customerProfile: { customerId: string } | null;
+  }) => ({
+    partyRef: person.memberProfile?.memberId ?? person.customerProfile?.customerId ?? null,
+    partyName: person.fullName,
+  });
+  const personSelect = {
+    fullName: true,
+    memberProfile: { select: { memberId: true } },
+    customerProfile: { select: { customerId: true } },
+  } as const;
+
+  const [bookings, enquiries, members, customers, plots, acquisitions, commissions] =
+    await Promise.all([
+      bookingIds.length
+        ? db.booking.findMany({
+            where: { id: { in: bookingIds } },
+            select: {
+              id: true,
+              bookingNumber: true,
+              requestNo: true,
+              project: { select: { name: true } },
+              plot: { select: { plotNumber: true } },
+              primaryPerson: { select: personSelect },
+            },
+          })
+        : [],
+      enquiryIds.length
+        ? db.enquiry.findMany({
+            where: { id: { in: enquiryIds } },
+            select: {
+              id: true,
+              enquiryNo: true,
+              project: { select: { name: true } },
+              plot: { select: { plotNumber: true } },
+              person: { select: personSelect },
+            },
+          })
+        : [],
+      memberIds.length
+        ? db.memberProfile.findMany({
+            where: { id: { in: memberIds } },
+            select: { id: true, memberId: true, person: { select: { fullName: true } } },
+          })
+        : [],
+      customerIds.length
+        ? db.customerProfile.findMany({
+            where: { id: { in: customerIds } },
+            select: { id: true, customerId: true, person: { select: { fullName: true } } },
+          })
+        : [],
+      plotIds.length
+        ? db.plot.findMany({
+            where: { id: { in: plotIds } },
+            select: { id: true, plotNumber: true, project: { select: { name: true } } },
+          })
+        : [],
+      acquisitionIds.length
+        ? db.acquisition.findMany({
+            where: { id: { in: acquisitionIds } },
+            select: {
+              id: true,
+              acquisitionNo: true,
+              propertyName: true,
+              propertyNumber: true,
+              plot: { select: { plotNumber: true, project: { select: { name: true } } } },
+              sellerPerson: { select: personSelect },
+            },
+          })
+        : [],
+      commissionIds.length
+        ? db.commissionRecord.findMany({
+            where: { id: { in: commissionIds } },
+            select: {
+              id: true,
+              booking: {
+                select: {
+                  bookingNumber: true,
+                  requestNo: true,
+                  project: { select: { name: true } },
+                  plot: { select: { plotNumber: true } },
+                },
+              },
+              beneficiaryPerson: { select: personSelect },
+            },
+          })
+        : [],
+    ]);
+
+  const subjects = new Map<string, TaskSubject>();
+  const add = (recordId: string, subject: TaskSubject) => subjects.set(recordId, subject);
+
+  for (const b of bookings) {
+    add(b.id, {
+      project: b.project.name,
+      plot: b.plot.plotNumber,
+      reference: b.bookingNumber ?? b.requestNo,
+      ...party(b.primaryPerson),
+    });
+  }
+  for (const e of enquiries) {
+    add(e.id, {
+      project: e.project.name,
+      plot: e.plot?.plotNumber ?? null,
+      reference: e.enquiryNo,
+      ...party(e.person),
+    });
+  }
+  for (const m of members) {
+    add(m.id, {
+      project: null,
+      plot: null,
+      reference: m.memberId,
+      partyRef: m.memberId,
+      partyName: m.person.fullName,
+    });
+  }
+  for (const c of customers) {
+    add(c.id, {
+      project: null,
+      plot: null,
+      reference: c.customerId,
+      partyRef: c.customerId,
+      partyName: c.person.fullName,
+    });
+  }
+  for (const p of plots) {
+    add(p.id, {
+      project: p.project.name,
+      plot: p.plotNumber,
+      reference: null,
+      partyRef: null,
+      partyName: null,
+    });
+  }
+  for (const a of acquisitions) {
+    // A Purchase for Resale has no Plot until approval, and carries the
+    // external property's own name and number instead (main-PRD §17.4).
+    add(a.id, {
+      project: a.plot?.project.name ?? a.propertyName,
+      plot: a.plot?.plotNumber ?? a.propertyNumber,
+      reference: a.acquisitionNo,
+      ...party(a.sellerPerson),
+    });
+  }
+  for (const r of commissions) {
+    add(r.id, {
+      project: r.booking?.project.name ?? null,
+      plot: r.booking?.plot.plotNumber ?? null,
+      reference: r.booking?.bookingNumber ?? r.booking?.requestNo ?? null,
+      ...party(r.beneficiaryPerson),
+    });
+  }
+
+  return subjects;
 }

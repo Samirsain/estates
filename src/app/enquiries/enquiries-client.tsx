@@ -297,7 +297,7 @@ export default function EnquiriesClient({
                 {visible.map((e) => (
                   <tr
                     key={e.id}
-                    className="border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1"
+                    className="h-14 border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1"
                   >
                     <td className="whitespace-nowrap tabular-nums text-muted-foreground">
                       {formatIstDate(e.createdAt)}
@@ -305,7 +305,7 @@ export default function EnquiriesClient({
                     <td>
                       <PersonLink personId={e.personId} name={e.name} />
                     </td>
-                    <td className="whitespace-nowrap font-mono">{e.mobileMasked}</td>
+                    <td className="whitespace-nowrap">{e.mobileMasked}</td>
                     <td>{e.city || "—"}</td>
                     <td>{e.project || "—"}</td>
                     <td>
@@ -314,7 +314,7 @@ export default function EnquiriesClient({
                           in it yet, or the Project itself. */}
                       {e.plot !== "General" ? (
                         <>
-                          <span className="block font-mono font-semibold">{e.plot}</span>
+                          <span className="block font-semibold">{e.plot}</span>
                           {e.plotType && (
                             <span className="block text-[11px] text-muted-foreground">
                               {humanise(e.plotType)}
@@ -351,7 +351,7 @@ export default function EnquiriesClient({
                               personId={e.sourceRefPersonId}
                               name={e.sourceRefId}
                               as={e.sourceRefKind ?? undefined}
-                              className="font-mono"
+                              className=""
                             />
                           ) : (
                             (SOURCE_LABEL[e.source] ?? humanise(e.source))

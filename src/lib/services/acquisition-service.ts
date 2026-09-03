@@ -810,8 +810,11 @@ export async function decideAcquisition(args: {
             closeReason: `Buyback ${acquisition.acquisitionNo} approved — ${args.note}`,
           },
         });
+        // AC-05 — main-PRD §14.12 treats a Buyback differently from a plain
+        // cancellation, and differently again either side of legal completion.
         await cancelCommissionForBooking(tx, acquisition.sourceBooking.id, args.actorRef, {
           legallyCompleted,
+          unwind: "BUYBACK",
           reason: `Buyback ${acquisition.acquisitionNo} approved`,
         });
         await closeTasksFor(
@@ -848,6 +851,22 @@ export async function decideAcquisition(args: {
                 : "Complete Registry Back",
             assigneeRole: "CRM",
             dueAt: new Date(),
+          });
+
+          // PRD §4.4 — a live completion record is what makes a Booking
+          // Delivered, so it cannot outlive the sale it completed. The Buyback
+          // sends the papers back; leaving the record live left the Booking
+          // closed while the COMPLETIONS report and the reconciliation rule
+          // still read it as a completed route. Reopened rather than deleted,
+          // so the audit trail the unwind rule requires stays intact, and only
+          // after the paper task above has read its route.
+          await tx.bookingCompletion.update({
+            where: { id: completion.id },
+            data: {
+              reopenedAt: new Date(),
+              reopenedByRef: args.actorRef,
+              reopenReason: `Buyback ${acquisition.acquisitionNo} approved`,
+            },
           });
         }
       }

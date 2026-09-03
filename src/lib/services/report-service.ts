@@ -5,7 +5,9 @@
 // records, and a merged-away Person is never counted twice.
 
 import { createHash } from "node:crypto";
-import { db } from "@/lib/db";
+import { Prisma } from "@prisma/client";
+import { db, inWaves } from "@/lib/db";
+import { BUYING_CAP_PERCENT } from "@/lib/domain/acquisition";
 import { maskExportRow } from "@/lib/domain/completion";
 import { blocked } from "./command";
 
@@ -198,4 +200,200 @@ export async function activityHistory(entity: string, entityId: string) {
     orderBy: { at: "desc" },
     take: 500,
   });
+}
+
+/* ------------------------------------------------------- business state */
+
+/**
+ * AC-07 — the Dashboard's business-state figures.
+ *
+ * Every number here is counted from the transaction-level records themselves,
+ * in one pass, rather than from a separate rollup table. That is the point of
+ * the requirement: a dashboard total that disagreed with the records behind it
+ * would be a second source of truth, and the first thing anyone would find is
+ * that the two do not match.
+ *
+ * Nothing is snapshotted and nothing is cached — the page recomputes on every
+ * load, exactly as the other reports do (PRD §21).
+ */
+export type BusinessState = {
+  /** AC-01 — split by the classification frozen at approval, never by who the buyer is today. */
+  business: { customer: number; member: number; unclassified: number };
+  transactions: { active: number; unwound: number; cancelled: number; completed: number };
+  /**
+   * AC-02, TC-ROY-001/002 — earned means the qualifying activity is complete,
+   * which is not the same as paid. A Royalty at its 100% payment milestone but
+   * not yet legally completed is pending, however far the money has come.
+   */
+  royalty: { earned: number; pending: number; paid: number };
+  cycles: { inProgress: number; completed: number; qualifyingTransactions: number };
+  buying: { records: number; totalPercent: string; overCapExceptions: number };
+  paidEarly: { approvedAwaitingPayment: number; notReadyUnapproved: number; processed: number };
+  conflicts: { aboveCap: number };
+  recoveries: { refundPending: number; cancellationsDecided: number };
+  conversions: { customersActivatedAsMembers: number };
+  audit: { reversals: number; supersededRecords: number };
+  /** Test plan §18 — the volumes every other figure has to reconcile against. */
+  volumes: {
+    enquiries: number;
+    holds: number;
+    approvedBookings: number;
+    paymentsReceived: number;
+  };
+};
+
+export async function businessState(): Promise<BusinessState> {
+  const approved = { bookingNumber: { not: null } } as const;
+
+  // Kept out of the count waves below: it returns rows rather than a number,
+  // and the percentages are needed for both the total and the cap exceptions.
+  const buyingRecords = await db.commissionRecord.findMany({
+    where: { type: "BUYING", isCurrent: true },
+    select: { percent: true },
+  });
+
+  const [
+    customerBusiness,
+    memberBusiness,
+    unclassified,
+    activeTx,
+    unwoundTx,
+    cancelledTx,
+    completedTx,
+    royaltyEarned,
+    royaltyPending,
+    royaltyPaid,
+    cyclesInProgress,
+    cyclesCompleted,
+    qualifyingTransactions,
+    paidEarlyApproved,
+    paidEarlyUnapproved,
+    paidEarlyProcessed,
+    conflicts,
+    refundPending,
+    cancellationsDecided,
+    conversions,
+    supersededRecords,
+    reversals,
+    enquiries,
+    holds,
+    paymentsReceived,
+  ] = await inWaves([
+    () => db.booking.count({ where: { ...approved, originalClassification: "CUSTOMER" } }),
+    () => db.booking.count({ where: { ...approved, originalClassification: "MEMBER" } }),
+    () => db.booking.count({ where: { ...approved, originalClassification: null } }),
+    () => db.booking.count({ where: { ...approved, status: { in: ["BOOKED", "PAYMENT_COMPLETED"] } } }),
+    () => db.booking.count({ where: { status: "BUYBACK_COMPLETED" } }),
+    () => db.booking.count({ where: { status: { in: ["CANCELLED", "REFUND_PENDING"] } } }),
+    () => db.booking.count({ where: { status: "DELIVERED" } }),
+    // Earned: the qualifying activity is complete (AC-02), whatever the payment
+    // state. Pending: recorded but not completed, plus everything still short of
+    // its milestone.
+    () => db.commissionRecord.count({
+      where: { type: "ROYALTY", isCurrent: true, cycleCompletedAt: { not: null } },
+    }),
+    () => db.commissionRecord.count({
+      where: {
+        type: "ROYALTY",
+        isCurrent: true,
+        cycleCompletedAt: null,
+        payment: { notIn: ["CANCELLED"] },
+      },
+    }),
+    () => db.commissionRecord.count({
+      where: { type: "ROYALTY", isCurrent: true, payment: { in: ["PAID", "PAID_EARLY"] } },
+    }),
+    () => db.performanceCycle.count({ where: { status: "IN_PROGRESS" } }),
+    () => db.performanceCycle.count({ where: { status: "COMPLETED" } }),
+    () => db.commissionRecord.count({ where: { performanceCycleId: { not: null } } }),
+    () => db.commissionRecord.count({
+      where: { isCurrent: true, payment: "NOT_PAID", earlyApprovedAt: { not: null } },
+    }),
+    // Unpaid, not yet Ready and carrying no MD approval — the records for which
+    // Paid Early is the only route, and which cannot move until MD approves.
+    () => db.commissionRecord.count({
+      where: {
+        isCurrent: true,
+        payment: "NOT_PAID",
+        earlyApprovedAt: null,
+        eligibility: { in: ["ON_HOLD", "MILESTONE_PENDING"] },
+      },
+    }),
+    () => db.commissionRecord.count({ where: { payment: "PAID_EARLY" } }),
+    () => db.commissionRecord.count({
+      where: { isCurrent: true, holdReason: "COMMISSION_CONFLICT_ABOVE_4" },
+    }),
+    () => db.booking.count({ where: { activeProcess: "REFUND_PENDING" } }),
+    () => db.cancellationRequest.count({ where: { status: { not: "PENDING" } } }),
+    // AC-01 — a Customer who later activated as a Member, evidenced by the
+    // Customer Bookings that stayed Customer business through the activation.
+    () => db.booking.count({
+      where: {
+        ...approved,
+        originalClassification: "CUSTOMER",
+        primaryPerson: { memberProfile: { activationDate: { not: null } } },
+      },
+    }),
+    () => db.commissionRecord.count({ where: { isCurrent: false } }),
+    () => db.commissionEvent.count({
+      where: {
+        action: {
+          in: [
+            "BOOKING_CANCELLED",
+            "MILESTONE_LOST",
+            "OPPORTUNITY_LOST",
+            "SUPERSEDED",
+            "CYCLE_RELEASED",
+            "CYCLE_REOPENED",
+            "CYCLE_ACTIVITY_REOPENED",
+          ],
+        },
+      },
+    }),
+    () => db.enquiry.count(),
+    () => db.hold.count(),
+    () => db.paymentReceivedEntry.count({ where: { status: "CONFIRMED" } }),
+  ]);
+
+  const totalBuying = buyingRecords.reduce((sum, r) => sum.add(r.percent), new Prisma.Decimal(0));
+  // AC-04 — the cap is enforced on entry, so a row above it can only be legacy
+  // data. It is surfaced rather than hidden: an exception that nobody can see
+  // is an exception nobody corrects.
+  const overCap = buyingRecords.filter((r) => r.percent.gt(BUYING_CAP_PERCENT)).length;
+
+  return {
+    business: { customer: customerBusiness, member: memberBusiness, unclassified },
+    transactions: {
+      active: activeTx,
+      unwound: unwoundTx,
+      cancelled: cancelledTx,
+      completed: completedTx,
+    },
+    royalty: { earned: royaltyEarned, pending: royaltyPending, paid: royaltyPaid },
+    cycles: {
+      inProgress: cyclesInProgress,
+      completed: cyclesCompleted,
+      qualifyingTransactions,
+    },
+    buying: {
+      records: buyingRecords.length,
+      totalPercent: totalBuying.toFixed(2),
+      overCapExceptions: overCap,
+    },
+    paidEarly: {
+      approvedAwaitingPayment: paidEarlyApproved,
+      notReadyUnapproved: paidEarlyUnapproved,
+      processed: paidEarlyProcessed,
+    },
+    conflicts: { aboveCap: conflicts },
+    recoveries: { refundPending, cancellationsDecided },
+    conversions: { customersActivatedAsMembers: conversions },
+    audit: { reversals, supersededRecords },
+    volumes: {
+      enquiries,
+      holds,
+      approvedBookings: customerBusiness + memberBusiness + unclassified,
+      paymentsReceived,
+    },
+  };
 }

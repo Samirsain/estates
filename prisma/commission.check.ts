@@ -2,7 +2,7 @@
 // real database and the real commands.
 // Run: npm run commission:check   (requires a seeded database)
 import assert from "node:assert/strict";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { assertCheckDatabase } from "./check-guard.ts";
 
 assertCheckDatabase();
@@ -17,20 +17,28 @@ import {
 import { confirmPaymentReceived } from "@/lib/services/payment-service";
 import {
   applyMemberCommissionHold,
+  approveCommissionPaidEarly,
   cancelCommissionForBooking,
+  generateForBooking,
   markCommissionPaid,
   memberCommissionView,
   reassessCommission,
 } from "@/lib/services/commission-service";
-import { decideBankDetails, enterBankDetails } from "@/lib/services/bank-service";
+import {
+  recordCompletion,
+  recordFinalBuyers,
+  reopenDelivered,
+} from "@/lib/services/completion-service";
+import { businessState } from "@/lib/services/report-service";
+import { enterBankDetails } from "@/lib/services/bank-service";
 import { activateMember } from "@/lib/services/network-service";
 import { encryptSensitive } from "@/lib/security/identity";
 
 const db = new PrismaClient();
+const Decimal = Prisma.Decimal;
 const TAG = "ZZ-COMM";
 const CRM = `${TAG}-CRM`;
 const ACC = `${TAG}-ACC`;
-const ACC2 = `${TAG}-ACC2`;
 
 let seq = 0;
 const key = () => `${TAG}-${Date.now()}-${seq++}`;
@@ -284,6 +292,27 @@ async function main() {
       remarks: "",
     })
   );
+  // AC-03 supersedes PRD §6.11 on this point: Paid Early now needs a recorded
+  // MD approval first, and Accounts alone can no longer process it.
+  await expectBlocked(/requires a recorded MD approval/, () =>
+    markCommissionPaid({
+      idempotencyKey: key(),
+      actorRef: ACC,
+      actorRole: "ACCOUNTS",
+      recordId: bRecords[0].id,
+      early: true,
+      paidOn: today,
+      reference: `${TAG} UTR B1`,
+      remarks: "Advance settled with the Member.",
+    })
+  );
+  await approveCommissionPaidEarly({
+    idempotencyKey: key(),
+    actorRef: `${TAG}-MD`,
+    actorRole: "MD",
+    recordId: bRecords[0].id,
+    note: "Advance approved for the quarter close.",
+  });
   await markCommissionPaid({
     idempotencyKey: key(),
     actorRef: ACC,
@@ -296,6 +325,7 @@ async function main() {
   });
   const early = await db.commissionRecord.findUniqueOrThrow({ where: { id: bRecords[0].id } });
   assert.equal(early.payment, "PAID_EARLY");
+  assert.ok(early.earlyApprovedAt, "and the approval that unlocked it is stored on the record");
   assert.ok(early.externalReferenceId, "Paid Early records its reference");
 
   // It can never be marked Paid again, and the normal milestone raises no
@@ -570,34 +600,50 @@ async function main() {
     accountNumber: "9988776655",
     ifsc: "hdfc0001234",
   });
-  const pending = await db.bankDetail.findFirstOrThrow({
-    where: { personId: banker.id, status: "PENDING" },
+  // Saving is the whole of it — the Accounts verification step was removed, so
+  // the entry is active the moment it is written and no task is raised for it.
+  const saved = await db.bankDetail.findFirstOrThrow({
+    where: { personId: banker.id, status: "VERIFIED" },
   });
-  assert.equal(pending.accountLastFour, "6655");
-  assert.ok(!pending.accountCipher.includes("9988776655"), "the account number is encrypted at rest");
-
-  // PRD §3.3 — bank entry and verification are different staff accounts.
-  await expectBlocked(/different staff account/, () =>
-    decideBankDetails({
-      idempotencyKey: key(),
-      actorRef: CRM,
-      actorRole: "CRM",
-      bankDetailId: pending.id,
-      approve: true,
-      note: "self verify",
-    })
+  assert.equal(saved.accountLastFour, "6655");
+  assert.ok(!saved.accountCipher.includes("9988776655"), "the account number is encrypted at rest");
+  assert.equal(saved.verifiedByRef, CRM, "the account records who put it there");
+  assert.ok(saved.verifiedAt, "and when");
+  assert.equal(
+    await db.bankDetail.count({ where: { personId: banker.id, status: "PENDING" } }),
+    0,
+    "nothing waits on an Accounts decision any more"
   );
-  await decideBankDetails({
+  assert.equal(
+    await db.task.count({ where: { recordId: banker.id, purpose: "BANK_VERIFICATION" } }),
+    0,
+    "and no bank verification task is raised"
+  );
+
+  // Entering a second account supersedes the first rather than overwriting it:
+  // what was paid to before stays on file.
+  await enterBankDetails({
     idempotencyKey: key(),
-    actorRef: ACC2,
-    actorRole: "ACCOUNTS",
-    bankDetailId: pending.id,
-    approve: true,
-    note: "Cheque verified.",
+    actorRef: CRM,
+    actorRole: "CRM",
+    personId: banker.id,
+    accountHolder: "Test Holder",
+    bankName: "Second Bank",
+    branchName: "Second Branch",
+    accountNumber: "1122334455",
+    ifsc: "hdfc0009999",
   });
   assert.equal(
-    (await db.bankDetail.findUniqueOrThrow({ where: { id: pending.id } })).status,
-    "VERIFIED"
+    (await db.bankDetail.findUniqueOrThrow({ where: { id: saved.id } })).status,
+    "SUPERSEDED"
+  );
+  assert.equal(
+    (
+      await db.bankDetail.findFirstOrThrow({
+        where: { personId: banker.id, status: "VERIFIED" },
+      })
+    ).accountLastFour,
+    "4455"
   );
 
   /* ------------- concurrent milestones cannot consume the same slot twice */
@@ -701,8 +747,556 @@ async function main() {
   assert.ok(!serialised.includes("9600000003"), "no buyer mobile");
   assert.ok(serialised.includes("INVITE"), "type, percentage and status are shown");
 
+  /* ============================ Approved Changes pack ============================ */
+
+  /* AC-01 — a Customer who later becomes a Member keeps their Customer Bookings */
+
+  const convert = await makeEligiblePerson("Converter", "9600000021");
+  const plotAC1 = await makePlot(project.id, "AC1");
+  const bookingAC1 = await bookAndApprove({
+    plotId: plotAC1.id,
+    buyerPersonId: convert.id,
+    soldByType: "MEMBER",
+    soldByPersonId: seller.id,
+  });
+
+  const frozen = await db.booking.findUniqueOrThrow({ where: { id: bookingAC1 } });
+  assert.equal(
+    frozen.originalClassification,
+    "CUSTOMER",
+    "the buyer was not a Member at approval, so this is Customer business"
+  );
+  const beforeConversion = (await currentRecords(bookingAC1)).map(
+    (r) => `${r.type}:${r.beneficiaryPersonId}:${r.percent.toFixed(2)}@${r.milestonePercent.toFixed(0)}`
+  );
+  assert.deepEqual(
+    beforeConversion,
+    [`DIRECT:${seller.id}:3.00@25`, `INVITE:${inviter.id}:1.00@100`],
+    "a third-party Member close: Direct at 25% to the seller, Invite at 100% to the inviter"
+  );
+
+  // The same person is now activated as a Member.
+  await activateMember({
+    idempotencyKey: key(),
+    actorRef: `${TAG}-ADMIN`,
+    actorRole: "ADMIN",
+    personId: convert.id,
+  });
+
+  // Anything that regenerates commission on the old Booking must leave the
+  // classification, the beneficiaries and the milestones exactly as they were.
+  // Without the freeze this would become a Member self-purchase: Direct 3% at
+  // 100% to the buyer, and the inviter's 1% would vanish.
+  // Regeneration is what would rewrite the classification if the freeze were
+  // not there: it is the same call Accounts approval, a Change Plot approval and
+  // a Sold By Correction approval all make.
+  await generateForBooking_(bookingAC1);
+
+  const afterConversion = await db.booking.findUniqueOrThrow({ where: { id: bookingAC1 } });
+  assert.equal(
+    afterConversion.originalClassification,
+    "CUSTOMER",
+    "Member activation never rewrites the historical classification"
+  );
+  assert.deepEqual(
+    (await currentRecords(bookingAC1)).map(
+      (r) => `${r.type}:${r.beneficiaryPersonId}:${r.percent.toFixed(2)}@${r.milestonePercent.toFixed(0)}`
+    ),
+    beforeConversion,
+    "regeneration after activation reproduces the Customer-business components exactly"
+  );
+  assert.ok(
+    await db.bookingEvent.findFirst({
+      where: { bookingId: bookingAC1, action: "CLASSIFICATION_FROZEN" },
+    }),
+    "the freeze is on the record's own history, so a report can explain the split"
+  );
+
+  /* AC-02 — Royalty waits for a COMPLETED performance cycle, and completion is
+     legal completion, not the payment milestone (PRD §6.3; Approved Changes §1
+     "not simply by recording a transaction"). */
+
+  const royaltyBuyer = await makeEligiblePerson("RoyaltyBuyer", "9600000022");
+  await db.customerProfile.create({
+    data: {
+      customerId: `${TAG}-C-ROY`,
+      personId: royaltyBuyer.id,
+      originalIntroducedByMemberId: inviterMember.id,
+      introducedPosition: 1,
+      introducedRatePercent: "1",
+      introducedYearStart: day(-30),
+    },
+  });
+
+  // A first 3% Club direct purchase earns nothing; the repeat one earns
+  // Loyalty for the buyer and Royalty for the Member who introduced them.
+  const plotAC2a = await makePlot(project.id, "AC2A");
+  const firstPurchase = await bookAndApprove({
+    plotId: plotAC2a.id,
+    buyerPersonId: royaltyBuyer.id,
+    soldByType: "THREE_PERCENT_CLUB",
+  });
+  assert.equal((await currentRecords(firstPurchase)).length, 0, "a first direct purchase earns nothing");
+
+  const plotAC2b = await makePlot(project.id, "AC2B");
+  const repeatPurchase = await bookAndApprove({
+    plotId: plotAC2b.id,
+    buyerPersonId: royaltyBuyer.id,
+    soldByType: "THREE_PERCENT_CLUB",
+  });
+  const royalty = () =>
+    db.commissionRecord.findFirstOrThrow({
+      where: { bookingId: repeatPurchase, type: "ROYALTY", isCurrent: true },
+    });
+
+  assert.equal((await royalty()).eligibility, "MILESTONE_PENDING", "no cycle before the milestone");
+  assert.equal(
+    await db.performanceCycle.count({ where: { memberProfileId: inviterMember.id } }),
+    0,
+    "a cycle is created by a qualifying transaction, not in advance"
+  );
+
+  /* TC-ROY-002 — the milestone alone is a *recorded* transaction, not completed
+     qualifying activity. The cycle stays pending and no royalty is recognised. */
+
+  await pay(repeatPurchase, "100", `${TAG} UTR AC2`);
+
+  const cycle = await db.performanceCycle.findFirstOrThrow({
+    where: { memberProfileId: inviterMember.id },
+  });
+  assert.equal(cycle.qualifyingCount, 1, "the qualifying transaction is recorded in the cycle");
+  assert.equal(cycle.completedCount, 0, "but nothing in it is legally completed yet");
+  assert.equal(cycle.status, "IN_PROGRESS", "a partial cycle is never marked completed");
+  assert.equal(cycle.completedAt, null, "and carries no achievement timestamp");
+  assert.equal(cycle.entitlement, null, "and confers no entitlement yet");
+  assert.ok(cycle.cycleStart < cycle.cycleEnd, "the window has start and end dates");
+
+  const recorded = await royalty();
+  assert.equal(recorded.performanceCycleId, cycle.id, "the record names the cycle it entered");
+  assert.equal(recorded.cycleCompletedAt, null, "its qualifying activity is not complete");
+  assert.equal(recorded.eligibility, "ON_HOLD", "100% payment alone does not earn Royalty");
+  assert.equal(recorded.holdReason, "PERFORMANCE_CYCLE_INCOMPLETE");
+
+  // A repeated reassessment must not change any of that, or double-count.
+  await reassessCommission_(repeatPurchase);
+  const afterRepeat = await db.performanceCycle.findUniqueOrThrow({ where: { id: cycle.id } });
+  assert.equal(afterRepeat.qualifyingCount, 1, "a repeated reassessment never double-counts");
+  assert.equal(afterRepeat.status, "IN_PROGRESS", "and never completes a partial cycle");
+
+  /* TC-ROY-001 — legal completion completes the qualifying activity. */
+
+  await recordFinalBuyers({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    bookingId: repeatPurchase,
+    buyers: [{ personId: royaltyBuyer.id, dateOfBirth: day(-14000), address: "9 Cycle Road" }],
+  });
+  await recordCompletion({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    bookingId: repeatPurchase,
+    completion: { route: "REGISTRY", advocateName: "S. Menon", registryDate: today },
+  });
+
+  const completedCycle = await db.performanceCycle.findUniqueOrThrow({ where: { id: cycle.id } });
+  assert.equal(completedCycle.completedCount, 1, "the qualifying transaction is now complete");
+  assert.equal(completedCycle.status, "COMPLETED", "so the cycle is achieved");
+  assert.ok(completedCycle.completedAt, "the achievement carries its timestamp");
+  assert.match(
+    completedCycle.entitlement ?? "",
+    /ROYALTY 1\.00%/,
+    "and the entitlement it confers is the actual Royalty, not a fixed label"
+  );
+
+  const earned = await royalty();
+  assert.ok(earned.cycleCompletedAt, "the record's own qualifying activity is complete");
+  assert.equal(earned.eligibility, "READY", "a completed cycle releases the Royalty");
+
+  /* A delivery recorded in error and reopened takes the completion back. */
+
+  await reopenDelivered({
+    idempotencyKey: key(),
+    actorRef: `${TAG}-MD`,
+    actorRole: "MD",
+    bookingId: repeatPurchase,
+    reason: "Registry papers were filed against the wrong Plot.",
+  });
+  const reopenedCycle = await db.performanceCycle.findUniqueOrThrow({ where: { id: cycle.id } });
+  assert.equal(reopenedCycle.status, "IN_PROGRESS", "reopening the delivery un-completes the cycle");
+  assert.equal(reopenedCycle.completedCount, 0);
+  assert.equal(reopenedCycle.completedAt, null);
+  assert.equal(reopenedCycle.entitlement, null);
+  assert.equal(
+    (await royalty()).holdReason,
+    "PERFORMANCE_CYCLE_INCOMPLETE",
+    "and the Royalty goes back on hold"
+  );
+
+  // Complete it again so the Buyback case below starts from a real completion.
+  await recordCompletion({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    bookingId: repeatPurchase,
+    completion: { route: "REGISTRY", advocateName: "S. Menon", registryDate: today },
+  });
+  assert.equal(
+    (await db.performanceCycle.findUniqueOrThrow({ where: { id: cycle.id } })).status,
+    "COMPLETED",
+    "re-completing the delivery re-achieves the cycle"
+  );
+
+  /* PRD §6.3, §6.5, main-PRD §14.12 — a Buyback AFTER legal completion keeps
+     what was earned. The cycle must not be un-completed by it. */
+
+  const beforeUnwind = await royalty();
+  await cancelCommissionForBooking_(repeatPurchase, {
+    legallyCompleted: true,
+    unwind: "BUYBACK",
+    reason: `${TAG} Buyback after legal completion`,
+  });
+
+  const afterBuyback = await db.performanceCycle.findUniqueOrThrow({ where: { id: cycle.id } });
+  assert.equal(
+    afterBuyback.status,
+    "COMPLETED",
+    "a Buyback after legal completion never un-completes an achieved cycle"
+  );
+  assert.equal(afterBuyback.completedCount, 1, "and its qualifying transaction stays counted");
+  assert.ok(afterBuyback.entitlement, "and its entitlement stands");
+
+  // main-PRD §14.12 — "Original sale commission normally remains earned".
+  const afterUnwind = await royalty();
+  assert.equal(
+    afterUnwind.payment,
+    beforeUnwind.payment,
+    "a Buyback after legal completion leaves the commission earned, not Cancelled"
+  );
+  assert.ok(afterUnwind.opportunityId, "and its consumed entitlement stays consumed");
+  assert.ok(
+    await db.commissionEvent.findFirst({
+      where: { recordId: afterUnwind.id, action: "BUYBACK_AFTER_COMPLETION" },
+    }),
+    "the Buyback is on the record's history even though nothing about it moved"
+  );
+  assert.ok(
+    await db.task.findFirst({
+      where: { recordId: repeatPurchase, purpose: "BUYBACK_COMMISSION_REVIEW" },
+    }),
+    "and Accounts are asked to confirm it against the written arrangement"
+  );
+
+  /* A Buyback BEFORE legal completion is the other §14.12 case: the records
+     step back, and the CRM/management decision is raised rather than skipped. */
+
+  const plotAC5 = await makePlot(project.id, "AC5");
+  const earlyBuyback = await bookAndApprove({
+    plotId: plotAC5.id,
+    buyerPersonId: buyerTwo.id,
+    soldByType: "MEMBER",
+    soldByPersonId: seller.id,
+  });
+  await pay(earlyBuyback, "30", `${TAG} UTR AC5`);
+  await cancelCommissionForBooking_(earlyBuyback, {
+    legallyCompleted: false,
+    unwind: "BUYBACK",
+    reason: `${TAG} Buyback before legal completion`,
+  });
+  const steppedBack = await db.commissionRecord.findFirstOrThrow({
+    where: { bookingId: earlyBuyback, type: "DIRECT", isCurrent: true },
+  });
+  assert.equal(
+    steppedBack.payment,
+    "CANCELLED",
+    "an unpaid old-sale commission steps back when the sale had not completed"
+  );
+  assert.ok(
+    await db.task.findFirst({
+      where: { recordId: earlyBuyback, purpose: "BUYBACK_COMMISSION_REVIEW" },
+    }),
+    "and §14.12's CRM/management decision is raised for Accounts"
+  );
+
+  /* AC-03 — Paid Early needs a recorded MD approval */
+
+  await expectBlocked(/requires a recorded MD approval/, () =>
+    markCommissionPaid({
+      idempotencyKey: key(),
+      actorRef: ACC,
+      actorRole: "ACCOUNTS",
+      recordId: earned.id,
+      early: true,
+      paidOn: today,
+      reference: `${TAG} UTR EARLY-NO`,
+      remarks: "Processing ahead of the conditions.",
+    })
+  );
+
+  const heldRecord = await db.commissionRecord.findFirstOrThrow({
+    where: { bookingId: bookingAC1, type: "INVITE", isCurrent: true },
+  });
+  await expectBlocked(/Only MD may approve/, () =>
+    approveCommissionPaidEarly({
+      idempotencyKey: key(),
+      actorRef: ACC,
+      actorRole: "ACCOUNTS",
+      recordId: heldRecord.id,
+      note: "Approving my own early payment.",
+    })
+  );
+  await expectBlocked(/Only MD may approve/, () =>
+    approveCommissionPaidEarly({
+      idempotencyKey: key(),
+      actorRef: `${TAG}-ADMIN`,
+      actorRole: "ADMIN",
+      recordId: heldRecord.id,
+      note: "Admin is not MD.",
+    })
+  );
+
+  await approveCommissionPaidEarly({
+    idempotencyKey: key(),
+    actorRef: `${TAG}-MD`,
+    actorRole: "MD",
+    recordId: heldRecord.id,
+    note: "Approved ahead of the milestone for the quarter close.",
+  });
+  const approved = await db.commissionRecord.findUniqueOrThrow({ where: { id: heldRecord.id } });
+  assert.equal(approved.earlyApprovedByRef, `${TAG}-MD`, "the approver is stored");
+  assert.ok(approved.earlyApprovedAt, "with the date and time");
+  assert.ok(approved.earlyApprovalNote, "and the compulsory note");
+  assert.ok(
+    await db.commissionEvent.findFirst({
+      where: { recordId: heldRecord.id, action: "PAID_EARLY_APPROVED" },
+    }),
+    "the approval is on the record's own timeline"
+  );
+
+  await markCommissionPaid({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    recordId: heldRecord.id,
+    early: true,
+    paidOn: today,
+    reference: `${TAG} UTR EARLY-YES`,
+    remarks: "Processed on MD approval.",
+  });
+  assert.equal(
+    (await db.commissionRecord.findUniqueOrThrow({ where: { id: heldRecord.id } })).payment,
+    "PAID_EARLY",
+    "an approved Paid Early goes through"
+  );
+
+  /* ===== Test plan §11 TC-CM-002 — duplicate Member activation is refused === */
+
+  await expectBlocked(/already an activated Member/, () =>
+    activateMember({
+      idempotencyKey: key(),
+      actorRef: `${TAG}-ADMIN`,
+      actorRole: "ADMIN",
+      personId: convert.id,
+    })
+  );
+  assert.equal(
+    await db.memberProfile.count({ where: { personId: convert.id } }),
+    1,
+    "one Person never holds two Member profiles"
+  );
+
+  /* ===== Test plan §18 — every Dashboard figure reconciles to the records ===
+
+     Approved Changes §5: "Dashboard totals agree with transaction-level
+     records", and §6: the business logic must be what produces them.
+
+     Each figure is re-derived here with its own explicit query rather than by
+     calling the same helper twice. That is the whole point: businessState()
+     could drop an `isCurrent`, count a cancelled record or read a payment state
+     where it means to read an achievement, and only an independent derivation
+     notices. */
+
+  const state = await businessState();
+
+  const approvedOnly = { bookingNumber: { not: null } } as const;
+
+  assert.equal(
+    state.business.customer,
+    await db.booking.count({ where: { ...approvedOnly, originalClassification: "CUSTOMER" } }),
+    "Customer business matches the frozen classification on the Bookings"
+  );
+  assert.equal(
+    state.business.member,
+    await db.booking.count({ where: { ...approvedOnly, originalClassification: "MEMBER" } }),
+    "Member business matches"
+  );
+  assert.equal(
+    state.business.unclassified,
+    await db.booking.count({ where: { ...approvedOnly, originalClassification: null } }),
+    "and so does the unclassified remainder"
+  );
+  assert.equal(
+    state.volumes.approvedBookings,
+    state.business.customer + state.business.member + state.business.unclassified,
+    "the split reconciles to the total, which is what makes the panel checkable"
+  );
+  assert.equal(
+    state.volumes.approvedBookings,
+    await db.booking.count({ where: approvedOnly }),
+    "and the total is the number of approved Bookings"
+  );
+
+  assert.equal(
+    state.transactions.unwound,
+    await db.booking.count({ where: { status: "BUYBACK_COMPLETED" } }),
+    "unwound transactions"
+  );
+  assert.equal(
+    state.transactions.completed,
+    await db.booking.count({ where: { status: "DELIVERED" } }),
+    "completed transactions"
+  );
+
+  /* Royalty. TC-ROY-001 requires the Dashboard to count a completed cycle as
+     earned, and TC-ROY-002 requires an incomplete one not to be counted —
+     whatever its payment state. */
+  assert.equal(
+    state.royalty.earned,
+    await db.commissionRecord.count({
+      where: { type: "ROYALTY", isCurrent: true, cycleCompletedAt: { not: null } },
+    }),
+    "earned Royalty is the completed qualifying activity, not the paid records"
+  );
+  assert.ok(
+    state.royalty.earned >= 1,
+    "TC-ROY-001 — the Royalty completed above is counted as earned on the Dashboard"
+  );
+  assert.equal(
+    state.cycles.completed,
+    await db.performanceCycle.count({ where: { status: "COMPLETED" } }),
+    "completed cycles"
+  );
+  assert.equal(
+    state.cycles.inProgress,
+    await db.performanceCycle.count({ where: { status: "IN_PROGRESS" } }),
+    "and cycles still in progress"
+  );
+  assert.equal(
+    state.cycles.qualifyingTransactions,
+    await db.commissionRecord.count({ where: { performanceCycleId: { not: null } } }),
+    "qualifying transactions counted into cycles"
+  );
+
+  /* Buying Commission. TC-BC-002: "Dashboard must not report an amount above
+     the approved cap." */
+  const buyingRows = await db.commissionRecord.findMany({
+    where: { type: "BUYING", isCurrent: true },
+    select: { percent: true },
+  });
+  assert.equal(state.buying.records, buyingRows.length, "Buying Commission record count");
+  assert.equal(
+    state.buying.totalPercent,
+    buyingRows.reduce((sum, r) => sum.add(r.percent), new Decimal(0)).toFixed(2),
+    "and the total is summed on exact decimals"
+  );
+  assert.equal(
+    state.buying.overCapExceptions,
+    buyingRows.filter((r) => r.percent.gt(5)).length,
+    "cap exceptions are the records actually above 5%"
+  );
+  assert.equal(
+    state.buying.overCapExceptions,
+    0,
+    "TC-BC-002 — nothing above the approved cap is reportable, because entry refuses it"
+  );
+
+  /* Paid Early. */
+  assert.equal(
+    state.paidEarly.processed,
+    await db.commissionRecord.count({ where: { payment: "PAID_EARLY" } }),
+    "processed Paid Early records"
+  );
+  assert.ok(
+    state.paidEarly.processed >= 1,
+    "the Paid Early processed above is visible on the Dashboard"
+  );
+  assert.equal(
+    state.paidEarly.approvedAwaitingPayment,
+    await db.commissionRecord.count({
+      where: { isCurrent: true, payment: "NOT_PAID", earlyApprovedAt: { not: null } },
+    }),
+    "approved but not yet paid"
+  );
+
+  assert.equal(
+    state.conflicts.aboveCap,
+    await db.commissionRecord.count({
+      where: { isCurrent: true, holdReason: "COMMISSION_CONFLICT_ABOVE_4" },
+    }),
+    "4% conflicts"
+  );
+  assert.equal(
+    state.audit.supersededRecords,
+    await db.commissionRecord.count({ where: { isCurrent: false } }),
+    "superseded records — nothing is deleted, so they stay countable"
+  );
+  assert.equal(
+    state.conversions.customersActivatedAsMembers,
+    await db.booking.count({
+      where: {
+        ...approvedOnly,
+        originalClassification: "CUSTOMER",
+        primaryPerson: { memberProfile: { activationDate: { not: null } } },
+      },
+    }),
+    "Customer → Member conversions, explained by the frozen classification"
+  );
+  assert.ok(
+    state.conversions.customersActivatedAsMembers >= 1,
+    "the conversion built above is visible, which is what §4 asks reports to explain"
+  );
+
+  assert.equal(state.volumes.enquiries, await db.enquiry.count(), "enquiries");
+  assert.equal(state.volumes.holds, await db.hold.count(), "holds");
+  assert.equal(
+    state.volumes.paymentsReceived,
+    await db.paymentReceivedEntry.count({ where: { status: "CONFIRMED" } }),
+    "confirmed payment entries"
+  );
+
   await cleanup();
   console.log("commission.check.ts OK");
+}
+
+/**
+ * A Buyback's commission reversal, outside a command. The real Buyback path
+ * needs an approved acquisition; this drives the same reversal function with the
+ * legally-completed flag the acquisition service would pass.
+ */
+async function cancelCommissionForBooking_(
+  bookingId: string,
+  args: { legallyCompleted: boolean; reason: string; unwind?: "CANCELLATION" | "BUYBACK" }
+) {
+  await db.$transaction(
+    async (tx) => {
+      await cancelCommissionForBooking(tx, bookingId, `${TAG}-SYSTEM`, args);
+      await tx.$executeRawUnsafe("SET CONSTRAINTS ALL IMMEDIATE");
+    },
+    { maxWait: 10_000, timeout: Number(process.env.COMMAND_TIMEOUT_MS ?? 20_000) }
+  );
+}
+
+/** Regeneration outside a command — the call every approval path makes. */
+async function generateForBooking_(bookingId: string) {
+  await db.$transaction(
+    async (tx) => {
+      await generateForBooking(tx, bookingId, `${TAG}-SYSTEM`);
+      await reassessCommission(tx, bookingId, `${TAG}-SYSTEM`);
+      await tx.$executeRawUnsafe("SET CONSTRAINTS ALL IMMEDIATE");
+    },
+    { maxWait: 10_000, timeout: Number(process.env.COMMAND_TIMEOUT_MS ?? 20_000) }
+  );
 }
 
 /** Reassessment outside a command, for the regeneration check. */

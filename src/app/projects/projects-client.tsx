@@ -159,10 +159,6 @@ export default function ProjectsClient({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">Projects</h1>
-            <p className="text-xs text-muted-foreground">
-              A Project starts as Unreleased. Inventory can be prepared while it is unreleased;
-              nothing may be sold until it is Active. PLC is a percentage only.
-            </p>
           </div>
           {canSetup && (
             <Button size="sm" variant="gradient" onClick={() => setCreating(true)}>
@@ -412,10 +408,6 @@ function ComponentEditor({
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
-        Each category is charged once however many sides qualify, and a banded category charges only
-        the highest band the Plot reaches.
-      </p>
       {rows.map((row, index) => {
         const meta = PLC_CATEGORIES[row.category];
 
@@ -798,7 +790,6 @@ function PlcDialog({
   return (
     <Modal
       title={`PLC — ${project.projectCode}`}
-      description="A revision creates the next version. A published version is never edited in place, and Holds and Bookings keep the snapshot they froze."
       wide
       onClose={onClose}
     >

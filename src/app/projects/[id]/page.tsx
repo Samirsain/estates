@@ -182,7 +182,7 @@ export default async function ProjectDetailPage({
               <Badge variant={project.status === "ACTIVE" ? "success" : "outline"}>
                 {STATUS_LABEL[project.status] ?? project.status}
               </Badge>
-              <span className="font-mono text-xs text-muted-foreground">{project.projectCode}</span>
+              <span className="text-xs text-muted-foreground">{project.projectCode}</span>
             </div>
 
             {facts.length > 0 && <p className="text-xs text-foreground">{facts.join(" · ")}</p>}

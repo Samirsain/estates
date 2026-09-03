@@ -65,6 +65,7 @@ const HOLD_LABEL: Record<string, string> = {
   BUYBACK_PENDING: "Deal Under Review",
   PAYMENT_PENDING: "Payment Pending",
   COMMISSION_CONFLICT_ABOVE_4: "Under Review",
+  PERFORMANCE_CYCLE_INCOMPLETE: "Performance Cycle in Progress",
 };
 
 export type PortalData = {
@@ -172,7 +173,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                {data.name} · <span className="font-mono font-medium text-foreground">{data.memberId}</span>
+                {data.name} · <span className="font-medium text-foreground">{data.memberId}</span>
               </p>
             </div>
           </div>
@@ -188,13 +189,16 @@ export default function PortalClient({ data }: { data: PortalData }) {
             </button>
 
             <form action={signOut}>
-              <button
+              <Button
                 type="submit"
+                variant="outline"
+                size="icon"
                 title="Sign out"
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                aria-label="Sign out"
+                className="h-9 w-9"
               >
                 <LogOut className="h-4 w-4" />
-              </button>
+              </Button>
             </form>
           </div>
         </header>
@@ -254,7 +258,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-foreground">{p.project}</p>
-                      <span className="rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-semibold text-primary">
+                      <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
                         {p.label}
                       </span>
                     </div>
@@ -288,7 +292,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 space-y-1">
                     <p className="text-sm font-semibold text-foreground">
-                      {r.project} · <span className="font-mono text-primary">{r.plot}</span>
+                      {r.project} · <span className="text-primary">{r.plot}</span>
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Buyer: <span className="font-medium text-foreground">{r.buyer}</span> · Submitted {formatIst(r.createdAt)}
@@ -342,7 +346,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
               <div key={e.enquiryNo} className="rounded-2xl border border-border bg-card p-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-foreground">
-                    <span className="font-mono text-primary">{e.enquiryNo}</span> · {e.buyer}
+                    <span className="text-primary">{e.enquiryNo}</span> · {e.buyer}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {e.mobileMasked} · {e.project} · {e.plot} · Submitted {formatIst(e.createdAt)}
@@ -394,7 +398,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                       <tr key={m.memberId}>
                         <td className="py-2.5">
                           <span className="font-semibold text-foreground">{m.name}</span>
-                          <span className="block font-mono text-[11px] text-muted-foreground">{m.memberId}</span>
+                          <span className="block text-[11px] text-muted-foreground">{m.memberId}</span>
                         </td>
                         <td className="py-2.5 text-right tabular-nums text-foreground">{m.position ?? "—"}</td>
                         <td className="py-2.5 text-right tabular-nums font-semibold text-primary">
@@ -505,7 +509,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                       <tr key={index}>
                         <td className="py-2.5">
                           <span className="font-semibold text-foreground">{c.project}</span>
-                          <span className="block font-mono text-[11px] font-medium text-primary">{c.plot}</span>
+                          <span className="block text-[11px] font-medium text-primary">{c.plot}</span>
                         </td>
                         <td className="py-2.5 text-foreground">{COMMISSION_LABEL[c.type] ?? c.type}</td>
                         <td className="py-2.5 text-right tabular-nums font-semibold text-primary">{c.percent}</td>

@@ -151,6 +151,201 @@ export function counterYearRolled(
   return counterYearStart(activationDate, at) > lastYearStart;
 }
 
+/* --------------------------------------- historical classification (AC-01) */
+
+/**
+ * AC-01 — what an already-approved Booking's classification was, recovered from
+ * what the Booking itself already holds.
+ *
+ * A Booking approved before `originalClassification` existed still has to be
+ * classified, and the one source that must never be used is the buyer's Member
+ * status *today*: for the converted Customer the pack is actually about, that
+ * reads MEMBER and rewrites settled Customer business, which is the exact thing
+ * Approved Changes §1 forbids.
+ *
+ * Two independent signals survive from the time of approval.
+ *
+ * **The commission, which is authoritative.** `generateCommission()` is the code
+ * that read `buyerIsActiveMember` at approval, and its output is frozen on the
+ * record. An Active Member buyer takes the self-purchase branch, which emits
+ * exactly one DIRECT component carrying `DIRECT/SELF_PURCHASE/...` and returns
+ * immediately; every other branch emits something else or nothing. Accounts
+ * cannot approve while the engine reports a conflict (PRD RD-03), so an approved
+ * Booking's earliest DIRECT record is the engine's own verdict on the question.
+ *
+ * **The dates, as a fallback.** A Booking that generated no commission at all —
+ * a first 3% Club direct purchase earns nothing — has no verdict to read. There
+ * the Member Activation Date against the approval date answers it.
+ *
+ * The commission wins where both exist. It used the buyer's *actual* status,
+ * including a capability that has since been deactivated, which the dates alone
+ * cannot see. A disagreement is reported rather than resolved silently.
+ */
+export type ClassificationEvidence = {
+  /** `ruleVersion` of the earliest DIRECT record ever created for the Booking. */
+  earliestDirectRuleVersion: string | null;
+  /** Whether the Booking carries any commission record at all, current or not. */
+  hasAnyCommission: boolean;
+  /** When Accounts approved it. Null on a legacy row that never recorded one. */
+  approvedAt: Date | null;
+  /** The buyer's Member Activation Date, if they have ever been activated. */
+  memberActivationDate: Date | null;
+};
+
+export type BookingClassification = "CUSTOMER" | "MEMBER";
+
+export type ClassificationDecision =
+  | {
+      resolved: true;
+      classification: BookingClassification;
+      /** Which signal decided it, for the audit row and the migration report. */
+      source: string;
+      /** Set where the other signal disagreed — reported, never auto-resolved. */
+      note: string | null;
+    }
+  | { resolved: false; reason: string };
+
+/** The marker `generateCommission()` freezes onto a Member's own purchase. */
+const SELF_PURCHASE_RULE = "SELF_PURCHASE";
+
+export function classifyApprovedBooking(
+  evidence: ClassificationEvidence
+): ClassificationDecision {
+  // What the engine decided at approval.
+  const fromCommission: BookingClassification | null = evidence.earliestDirectRuleVersion
+    ? evidence.earliestDirectRuleVersion.includes(SELF_PURCHASE_RULE)
+      ? "MEMBER"
+      : "CUSTOMER"
+    : evidence.hasAnyCommission
+      ? // Commission was generated and none of it is a Direct component. An
+        // Active Member buyer always produces one, so this buyer was not one.
+        "CUSTOMER"
+      : null;
+
+  // What the dates say, where they can say anything.
+  const fromDates: BookingClassification | null = !evidence.memberActivationDate
+    ? "CUSTOMER" // never activated, so never a Member at any approval date
+    : evidence.approvedAt
+      ? evidence.memberActivationDate <= evidence.approvedAt
+        ? "MEMBER"
+        : "CUSTOMER"
+      : null;
+
+  if (fromCommission) {
+    const note =
+      fromDates && fromDates !== fromCommission
+        ? `The Member Activation Date suggests ${fromDates}, but the commission frozen at ` +
+          `approval says ${fromCommission}. The commission is authoritative — it read the ` +
+          `buyer's status at the time, including a Member capability that has since been ` +
+          `deactivated. Worth an eye all the same.`
+        : null;
+    return {
+      resolved: true,
+      classification: fromCommission,
+      source: evidence.earliestDirectRuleVersion
+        ? `the Direct commission frozen at approval (${evidence.earliestDirectRuleVersion})`
+        : "the commission generated at approval, which carries no Direct component",
+      note,
+    };
+  }
+
+  if (fromDates) {
+    return {
+      resolved: true,
+      classification: fromDates,
+      source: evidence.memberActivationDate
+        ? "the Member Activation Date against the approval date"
+        : "the buyer has never been activated as a Member",
+      note: null,
+    };
+  }
+
+  return {
+    resolved: false,
+    reason:
+      "This Booking generated no commission and has no approval date, and its buyer has been " +
+      "activated as a Member at some point. Nothing on the record says whether they held that " +
+      "capability when it was approved.",
+  };
+}
+
+/* ------------------------------------------------- performance cycles */
+
+/**
+ * AC-02 — Royalty is earned through a completed performance cycle rather than
+ * by a transaction simply being recorded (Approved Changes §1 "Royalty").
+ *
+ * The cycle window is the Member's own annual counter year (RD-02): it opens on
+ * the Member Activation Date anniversary and runs to the day before the next
+ * one. Reusing that window rather than inventing a second one matters — a Member
+ * activated on 29 February must see their cycle roll on the same day their
+ * Introduced Customer Counter rolls, not a day apart.
+ *
+ * What counts as "completed qualifying activity" is not a number of
+ * transactions. The approved corpus defines the qualifying activity for Royalty
+ * and its terminal state directly:
+ *
+ *  - PRD §6.3 / main-PRD §14.4 — the qualifying activity is the introduced
+ *    Customer's first future direct purchase through 3% Club, with no selling
+ *    Member closing it, at a 100% Payment Received milestone.
+ *  - PRD §6.3 — "Cancellation before legal completion restores the opportunity.
+ *    Legally completed purchase consumes the opportunity."
+ *  - COMMISSION-TEST-PLAN §1 — "Legally completed: the sale reached final
+ *    delivery. Before that, it is not legally completed."
+ *
+ * So the qualifying activity is *recorded* at the payment milestone and
+ * *completed* at final delivery. A transaction sitting between the two is
+ * exactly the partially completed cycle Approved Changes §1 refuses to treat as
+ * complete, and exactly what TC-ROY-002 exercises.
+ *
+ * There is deliberately no target count here. PRD §6.3 already fixes the number
+ * of qualifying transactions per entitlement — "Royalty applies only to the
+ * Customer's first qualifying future direct purchase" and "may be generated only
+ * once per introduced Customer" — so a separate threshold would be a second,
+ * invented rule on top of an approved one.
+ */
+export type CycleWindow = { start: string; end: string };
+
+/**
+ * The IST calendar days the Member's cycle covering `at` opens and closes on.
+ * The end is the day before the next anniversary, so the windows tile without
+ * overlapping and a transaction belongs to exactly one cycle.
+ */
+export function cycleWindow(activationDate: Date | string, at: Date = new Date()): CycleWindow {
+  const start = counterYearStart(new Date(activationDate), at);
+  const nextStart = anniversaryDay(istDay(activationDate), Number(start.slice(0, 4)) + 1);
+  const dayBefore = new Date(`${nextStart}T00:00:00Z`);
+  dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
+  return { start, end: dayBefore.toISOString().slice(0, 10) };
+}
+
+/**
+ * AC-02 — whether one qualifying transaction's activity is complete.
+ *
+ * Both halves are required and neither implies the other: a Booking can be at
+ * 100% Payment Received for months before delivery, and delivery cannot precede
+ * the milestone on an approved sale. The milestone alone is "recording a
+ * transaction", which Approved Changes §1 states is not enough to earn Royalty.
+ */
+export function qualifyingActivityComplete(activity: {
+  milestoneReached: boolean;
+  legallyCompleted: boolean;
+}): boolean {
+  return activity.milestoneReached && activity.legallyCompleted;
+}
+
+/**
+ * AC-02 — the cycle's own achievement status.
+ *
+ * TC-ROY-001 completes a cycle whose qualifying transactions "satisfy all cycle
+ * conditions"; TC-ROY-002 keeps one pending where "only part of the qualifying
+ * conditions are met". So a cycle is achieved when it holds qualifying activity
+ * and all of it is complete — never on a subset, and never while empty.
+ */
+export function cycleAchieved(qualifyingCount: number, completedCount: number): boolean {
+  return qualifyingCount > 0 && completedCount === qualifyingCount;
+}
+
 /* ---------------------------------------------------------- the components */
 
 export type CommissionType = "DIRECT" | "INVITE" | "ROYALTY" | "LOYALTY";
@@ -186,7 +381,15 @@ export type CommissionInput = {
   soldByPersonId: string | null;
   /** The Primary Customer — the commercial buyer of this Booking. */
   buyerPersonId: string;
-  /** PRD §6.7, §14.2 — the buyer holds an Active Member capability. */
+  /**
+   * PRD §6.7, §14.2 — the buyer holds an Active Member capability.
+   *
+   * AC-01 — for an approved Booking this is the *frozen* classification taken at
+   * Accounts approval, not the buyer's standing today. A Customer who later
+   * activates as a Member leaves their earlier approved Bookings classified as
+   * Customer business, so a regeneration after activation must not silently
+   * rewrite them into Member self-purchases.
+   */
   buyerIsActiveMember: boolean;
   /**
    * PRD §14.5 — the buyer already has a legally completed purchase, so this one
@@ -212,6 +415,66 @@ export type CommissionOutcome =
   | { ok: true; components: Component[]; totalPercent: Decimal }
   /** RD-03 — shown as Commission Conflict, corrected by CRM/Admin. */
   | { ok: false; conflict: string };
+
+/**
+ * The facts a screen holds about one Person, and the engine input two of them
+ * make between them.
+ *
+ * commissionInputFor() in services/commission-service builds the same input
+ * from a real Booking. This builds it from two people and no Booking at all,
+ * which is what the Calculator asks: who would earn what, before there is a
+ * sale to ask it of.
+ *
+ * It lives here, beside the engine and away from React, because the wiring is
+ * the part worth checking: the Invite band belongs to the *seller's* inviting
+ * Member and the Royalty band to the *buyer's* introducing Member, and Loyalty
+ * follows the closing Customer where one closed the sale. Crossing any of
+ * those over pays the wrong person at the right rate, which is the hardest
+ * kind of wrong to see on a screen.
+ */
+export type PersonFacts = {
+  id: string;
+  /** PRD §6.7, §14.2 — an Active Member capability changes the whole row. */
+  memberActive: boolean;
+  /** PRD §14.5 — a first personal purchase earns no repeat-purchase Loyalty. */
+  hasPriorPurchase: boolean;
+  /** This Member's own position under their inviting Member (RD-02). */
+  invite: NetworkLink | null;
+  /** PRD §6.1 — one Invite opportunity per invited Member. */
+  inviteUsed: boolean;
+  /** This Customer's position under their Original Introduced By Member (§6.4). */
+  royalty: NetworkLink | null;
+  /** PRD §6.3 — one Royalty opportunity per introduced Customer. */
+  royaltyUsed: boolean;
+  /** PRD §6.5 — lifetime Loyalty slots already consumed, of three. */
+  loyaltyUsed: number;
+};
+
+export function previewInput(
+  soldByType: CommissionInput["soldByType"],
+  seller: PersonFacts | null,
+  buyer: PersonFacts
+): CommissionInput {
+  // Only a Member close carries an Invite band; a Customer or 3% Club close
+  // has no invited Member behind it.
+  const selling = soldByType === "MEMBER" ? seller : null;
+  // Loyalty belongs to the closing Customer where one closed the sale, and to
+  // the buyer otherwise (PRD §6.5, §14.5).
+  const loyaltySubject = soldByType === "CUSTOMER" ? seller : buyer;
+
+  return {
+    soldByType,
+    soldByPersonId: soldByType === "THREE_PERCENT_CLUB" ? null : (seller?.id ?? null),
+    buyerPersonId: buyer.id,
+    buyerIsActiveMember: buyer.memberActive,
+    buyerHasPriorPurchase: buyer.hasPriorPurchase,
+    invite: selling?.invite ?? null,
+    inviteOpportunityOpen: selling ? !selling.inviteUsed : false,
+    royalty: buyer.royalty,
+    royaltyOpportunityOpen: !buyer.royaltyUsed,
+    loyaltySlotsConsumed: loyaltySubject?.loyaltyUsed ?? 0,
+  };
+}
 
 function band(link: NetworkLink, label: string): Component["percent"] {
   // The frozen rate wins over a recomputed one: a position's band never moves
@@ -392,7 +655,8 @@ export type HoldReason =
   | "CHANGE_PLOT_PENDING"
   | "BUYBACK_PENDING"
   | "PAYMENT_PENDING"
-  | "COMMISSION_CONFLICT_ABOVE_4";
+  | "COMMISSION_CONFLICT_ABOVE_4"
+  | "PERFORMANCE_CYCLE_INCOMPLETE";
 
 export type EligibilityInput = {
   type: CommissionType;
@@ -418,6 +682,12 @@ export type EligibilityInput = {
   acquisitionPaymentPending: boolean;
   /** RD-03 — the Booking's combination is above 4%. */
   commissionConflictAbove4: boolean;
+  /**
+   * AC-02 — Royalty only: whether the introducing Member's performance cycle for
+   * this qualifying transaction is complete. Null for every other type, and for
+   * a Royalty record whose milestone has not yet placed it into a cycle.
+   */
+  performanceCycleComplete: boolean | null;
 };
 
 export type Eligibility = { state: EligibilityState; holdReason: HoldReason | null };
@@ -451,6 +721,13 @@ export function resolveEligibility(input: EligibilityInput): Eligibility {
     return { state: "MILESTONE_PENDING", holdReason: null };
   }
 
+  // AC-02 — the milestone alone does not earn Royalty (Approved Changes §1:
+  // "not simply by recording a transaction"). The qualifying activity must be
+  // complete, which PRD §6.3 puts at legal completion; a partial one holds.
+  if (input.type === "ROYALTY" && input.performanceCycleComplete !== true) {
+    return hold("PERFORMANCE_CYCLE_INCOMPLETE");
+  }
+
   // Conditions on the beneficiary. PAN never creates an automatic hold.
   if (!input.beneficiaryAadhaarAvailable) return hold("AADHAAR_PENDING");
   if (!input.beneficiaryBankVerified) return hold("BANK_VERIFICATION_PENDING");
@@ -474,14 +751,23 @@ export type PaymentState =
   | "CANCELLED";
 
 /**
- * PRD §6.11 — Accounts may process a commission before eligibility is Ready.
- * It needs compulsory remarks, a reference and a date, needs no extra MD/Admin
- * approval, and can never be marked Paid again.
+ * PRD §6.11 with AC-03 — Accounts may process a commission before eligibility is
+ * Ready. It needs compulsory remarks, a reference and a date.
+ *
+ * AC-03 changes one thing about PRD §6.11: Paid Early now requires a recorded MD
+ * approval. The approved pack is explicit that "without approval, the system
+ * must not mark the benefit as approved", so the absence of an approval is a
+ * refusal here in the domain rather than a convention Accounts is trusted to
+ * follow. `mdApproved` is the presence of a stored approver and timestamp, never
+ * an in-memory claim by the caller.
+ *
+ * A Paid Early record can never be marked Paid again.
  */
 export function canMarkPaid(
   current: PaymentState,
   eligibility: EligibilityState,
-  early: boolean
+  early: boolean,
+  mdApproved = false
 ): Check {
   if (current === "PAID") return fail("This commission is already Paid.");
   if (current === "PAID_EARLY") {
@@ -490,6 +776,12 @@ export function canMarkPaid(
   if (current === "CANCELLED") return fail("A cancelled commission cannot be paid.");
   if (current === "ACCOUNTS_ADJUSTMENT_REQUIRED") {
     return fail("This record needs an Accounts adjustment before any further payment action.");
+  }
+  if (early && !mdApproved) {
+    return fail(
+      "Paid Early requires a recorded MD approval. Raise the Paid Early approval for this " +
+        "commission and have MD approve it before processing the payment."
+    );
   }
   if (!early && eligibility !== "READY") {
     return fail(

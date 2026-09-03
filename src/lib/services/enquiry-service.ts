@@ -80,9 +80,24 @@ export async function ensureCustomerProfile(tx: Tx, personId: string) {
   const existing = await tx.customerProfile.findUnique({ where: { personId } });
   if (existing) return existing;
 
-  return tx.customerProfile.create({
+  const created = await tx.customerProfile.create({
     data: { personId, customerId: await nextReference(tx, "CUS", "Customer") },
   });
+
+  // PRD §6.4 — "Freeze Original Introduced By Member at the earliest valid
+  // Member-sourced Enquiry for that Person."
+  //
+  // createEnquiry already tries, but for a first-time enquirer there is no
+  // Customer yet, so the claim is left waiting on the Enquiry. Nothing used to
+  // come back for it once the Customer did exist, so a Person whose first
+  // contact was a Member-sourced Enquiry — the ordinary path — never had an
+  // introducing Member frozen, and their introducer could never earn Royalty.
+  //
+  // Resolving it here catches every route that creates a Customer: a Booking, a
+  // Hold, or a Primary Customer change. It is idempotent, because an already
+  // frozen relationship is left exactly as it is.
+  await applyIntroducerFreeze(tx, personId);
+  return created;
 }
 
 /** PRD §23.2 — a Member-submitted Enquiry is assigned to CRM, never to the Member. */

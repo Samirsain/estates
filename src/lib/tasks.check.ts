@@ -6,6 +6,7 @@ import {
   filterTasks,
   findPendingDuplicate,
   formatDimension,
+  remainingPercent,
   formatDue,
   formatPlotSize,
   istDay,
@@ -127,27 +128,50 @@ assert.equal(recordReference({ id: "UNLINKED:STF-0001", name: "Not linked" }), n
 assert.equal(recordReference({ id: "", name: "Not linked" }), null);
 
 // Decimal feet read back as feet and inches — the inverse of what the Plot
-// form parses, so 25'5" typed in is 25'5" shown.
-assert.equal(formatDimension("25.4167"), `25'5"`);
+// form parses, so 25' 5" typed in is 25' 5" shown.
+assert.equal(formatDimension("25.4167"), `25' 5"`);
+// The quarter, half and three-quarter foot every plan is drawn in.
+assert.equal(formatDimension("30.25"), `30' 3"`);
+assert.equal(formatDimension("30.50"), `30' 6"`);
+assert.equal(formatDimension("30.75"), `30' 9"`);
+// Zero inches is not a measurement — a whole foot prints as 24', not 24' 0".
 assert.equal(formatDimension("24"), "24'");
 assert.equal(formatDimension("24.000"), "24'");
-// A rounding that lands on twelve inches is the next foot, not 24'12".
+assert.equal(formatDimension("31.00"), "31'");
+// A rounding that lands on twelve inches is the next foot, not 24' 12" — and
+// the foot it lands on carries no inch mark either.
 assert.equal(formatDimension("24.999"), "25'");
+// Thousands stay grouped the way every other quantity here is grouped.
+assert.equal(formatDimension("1200.5"), `1,200' 6"`);
+assert.equal(formatDimension("1200"), "1,200'");
 
 // One size, one shape, wherever a Plot size is printed. Width first — which is
 // which is said in the column heading, not in every row.
-assert.equal(formatPlotSize("30.250", "20.750"), "30.25 × 20.75 ft");
-assert.equal(formatPlotSize("30", "45.5"), "30 × 45.5 ft");
+assert.equal(formatPlotSize("30.250", "20.750"), `30' 3" × 20' 9"`);
+assert.equal(formatPlotSize("30.5", "23.25"), `30' 6" × 23' 3"`);
+assert.equal(formatPlotSize("30", "45.5"), `30' × 45' 6"`);
 // Three stored decimals must not claim a precision the tape never had.
-assert.equal(formatPlotSize("40.000", "23.000"), "40 × 23 ft");
-assert.equal(formatPlotSize("1200.500", "20"), "1,200.5 × 20 ft");
+assert.equal(formatPlotSize("40.000", "23.000"), "40' × 23'");
+assert.equal(formatPlotSize("1200.500", "20"), `1,200' 6" × 20'`);
+// The foot and inch marks are the unit; no trailing "ft" repeating it.
+assert.ok(!formatPlotSize("30", "45")!.includes("ft"));
 // An irregular Plot has an area and no sides — the caller prints that instead.
 assert.equal(formatPlotSize(null, "23"), null);
 assert.equal(formatPlotSize("40", null), null);
 assert.equal(formatPlotSize("", ""), null);
 assert.equal(formatPlotSize(undefined, undefined), null);
 // Numbers and Decimal-ish objects arrive from the loaders as either.
-assert.equal(formatPlotSize(40, 23), "40 × 23 ft");
+assert.equal(formatPlotSize(40, 23), "40' × 23'");
+// A side that is not a number is no size at all, not "NaN' NaN"".
+assert.equal(formatPlotSize("irregular", "23"), null);
+
+// The Payment Received field is capped at what is left of the Booking, not at
+// a flat 100 — progressAfter() refuses anything that lands above 100%.
+assert.equal(remainingPercent("0.00"), "100.00");
+assert.equal(remainingPercent("30.00"), "70.00");
+assert.equal(remainingPercent("99.75"), "0.25");
+// A Booking that is fully paid offers nothing, rather than offering 100 again.
+assert.equal(remainingPercent("100.00"), "0.00");
 
 // A due date, as a list has room for it. Fixed instants, so the assertions do
 // not drift with the clock.

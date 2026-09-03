@@ -39,7 +39,7 @@ export default function Error({
         </p>
 
         {error.digest && (
-          <p className="rounded-xl border border-border/60 bg-secondary p-3 font-mono text-xs">
+          <p className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
             {error.digest}
           </p>
         )}

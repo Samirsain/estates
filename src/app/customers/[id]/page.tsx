@@ -96,20 +96,16 @@ function Row({
   label,
   value,
   hint,
-  mono,
 }: {
   label: string;
   value: React.ReactNode;
   hint?: React.ReactNode;
-  mono?: boolean;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-border/50 py-2 last:border-0">
       <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       <span className="text-right">
-        <span
-          className={`block text-sm font-semibold text-foreground ${mono ? "font-mono" : ""}`}
-        >
+        <span className="block text-sm font-semibold text-foreground">
           {value}
         </span>
         {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
@@ -272,7 +268,7 @@ export default async function CustomerDetailPage({
                   {customer.person.fullName}
                 </h1>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-sm text-muted-foreground">
+                  <span className="text-sm text-muted-foreground">
                     {customer.customerId}
                   </span>
                   {customer.customerType && (
@@ -297,7 +293,7 @@ export default async function CustomerDetailPage({
                   value={
                     <Link
                       href={`/members/${customer.originalIntroducedByMember.id}`}
-                      className="font-mono text-primary hover:underline"
+                      className="text-primary hover:underline"
                     >
                       {customer.originalIntroducedByMember.memberId}
                     </Link>
@@ -314,9 +310,9 @@ export default async function CustomerDetailPage({
             at the bottom of the page in a shape of its own. */}
         <div className="grid gap-4 md:grid-cols-3">
           <Section title="Profile" icon={<User className="h-3.5 w-3.5" />}>
-            <Row label="Mobile" value={maskMobile(customer.person.primaryMobile)} mono />
+            <Row label="Mobile" value={maskMobile(customer.person.primaryMobile)} />
             {customer.person.altMobile && (
-              <Row label="Alt Mobile" value={maskMobile(customer.person.altMobile)} mono />
+              <Row label="Alternate Mobile" value={maskMobile(customer.person.altMobile)} />
             )}
             <Row label="Email" value={customer.person.email ?? "—"} />
             {/* A blank Date of Birth or Address is shown rather than hidden:
@@ -341,7 +337,6 @@ export default async function CustomerDetailPage({
                   ? statusWord(customer.person.aadhaarStatus)
                   : undefined
               }
-              mono={!!customer.person.aadhaarLastFour}
             />
             <Row
               label="PAN"
@@ -353,7 +348,6 @@ export default async function CustomerDetailPage({
               hint={
                 customer.person.panMasked ? statusWord(customer.person.panStatus) : undefined
               }
-              mono={!!customer.person.panMasked}
             />
           </Section>
 
@@ -385,9 +379,8 @@ export default async function CustomerDetailPage({
                         {b.verifiedAt && ` ${formatIst(b.verifiedAt.toISOString())}`}
                       </>
                     }
-                    mono
                   />
-                  <Row label="IFSC" value={b.ifsc} mono />
+                  <Row label="IFSC" value={b.ifsc} />
                   <Row label="Bank" value={b.bankName} />
                   <Row label="Branch" value={b.branchName ?? "—"} />
                   <Row label="Holder" value={b.accountHolder} />

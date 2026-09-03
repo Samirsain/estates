@@ -1,7 +1,7 @@
 # PLC Applicability and Inventory Screens Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
+>
 > ## Superseded in part — 22 August 2026
 >
 > The owner removed the code-based PLC model outright: no typed category codes,
@@ -18,11 +18,43 @@
 > | 3 · snapshot side evidence | **Done**, absorbed into the derivation |
 > | 4, 5, 6 · Project city, edit, card | **Done** as written |
 > | 7 · Prepare Inventory grid | **Done differently** — boundary columns and a live Area / Charge read-out, no tick boxes |
-> | 8 · row menu | **Open.** Edit Plot Details from it is built; the `⋯` menu itself is not |
-> | 9 · Plot detail panel | **Open** |
+> | 8 · row menu | **Done differently** — a named menu, and only where a row has more than one action |
+> | 9 · Plot detail panel | **Done differently** — a route, `/plots/[plotId]`, not an inline panel |
 > | 10 · terminology | **Done** |
 >
-> Tasks 8 and 9 below still read correctly. Everything else is history.
+> ## Tasks 8 and 9 closed — 2 September 2026
+>
+> Both were settled by the inventory rebuild of 29 August – 1 September
+> (`563c8d1`, `6a9cf21`, `24954c6`), after the note above was written. Neither is
+> built as written below, and neither should be.
+>
+> **Task 8.** The button pile is gone, which was the point: a row now carries at
+> most its one next action plus Book, and only a Hold — the one state with
+> several — collapses into a menu. The menu is labelled `Cancel` rather than
+> `⋯`, because a bare `⋯` made the held row the only row you had to open to
+> find out what it could do. `Start Booking` is no longer a permanently disabled
+> button; it is the Book dialog, opened from the row. `Restriction…` moved to the
+> Plot's own page beside Edit Plot Details, where its reason field belongs.
+>
+> The extension approve / reject pair stayed on the row, against this plan. The
+> objection was that a row shows neither who asked nor why — that is now false:
+> the decision opens a dialog carrying the request's reason and the current
+> expiry, over a `This Hold so far` list of every request, requester, hours and
+> decision note (`plots-client.tsx`, `HoldHistory`). Maker-checker is intact
+> (PRD §8.5, `HOLD_EXTEND_FURTHER`); the deciding is simply not a screen away
+> from the thing being decided.
+>
+> **Task 9.** `src/app/plots/[plotId]/page.tsx` is DESIGN §7.2 as a real route:
+> Location Charge with the boundaries it derives from, Dimensions, Boundaries, a
+> scaled Layout, Allocation / Bought by, Restriction and History. Payment
+> progress and the commission summary are deliberately not repeated — they belong
+> to the Booking and the page links there. The plan assumed this application has
+> no dynamic route; it has this one, and the Plot number in the grid opens it.
+>
+> There is no PLC applicability editor in it, and there must not be: Task 2 was
+> dropped and applicability is derived from the Plot's four boundaries.
+>
+> Nothing below is live. The whole plan is history.
 
 **Goal:** Close the three PLC gaps left open by the version lifecycle — per-Plot applicability records, snapshot side evidence, and four-decimal precision — and rebuild the two screens they land on.
 
@@ -49,13 +81,13 @@
 
 ## File Structure
 
-**Created**
+### Created
 
 | File | Responsibility |
 | --- | --- |
 | `prisma/migrations/20260823090000_plc_applicability/migration.sql` | The one migration: applicability table, precision widening, Project columns |
 
-**Modified**
+### Modified
 
 | File | Change |
 | --- | --- |
@@ -80,6 +112,7 @@
 Independent of everything else, and the smallest change that touches the widest set of files. Do it first so later tasks are written against the final types.
 
 **Files:**
+
 - Create: `prisma/migrations/20260823090000_plc_applicability/migration.sql` (first section only; Tasks 2 and 4 append to the same file)
 - Modify: `prisma/schema.prisma:488,504,1519`
 - Modify: `src/lib/tasks.ts` (add `formatPercent`)
@@ -90,6 +123,7 @@ Independent of everything else, and the smallest change that touches the widest 
 - Test: `src/lib/domain/domain.check.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `formatPercent(value: string | number, minDecimals?: number): string` exported from `@/lib/tasks`. `buildPlcSnapshot()` keeps its signature but returns percentages at four decimals.
 
@@ -234,6 +268,7 @@ worse than a precise one."
 ## Task 2: Plot applicability becomes a table
 
 **Files:**
+
 - Modify: `prisma/schema.prisma` (new model and enum; drop `Plot.plcComponentCodes`)
 - Modify: `prisma/migrations/20260823090000_plc_applicability/migration.sql` (append)
 - Modify: `src/lib/services/inventory-service.ts`
@@ -243,6 +278,7 @@ worse than a precise one."
 - Test: `prisma/plc.check.ts`
 
 **Interfaces:**
+
 - Consumes: `buildPlcSnapshot()` from Task 1.
 - Produces:
   - `applicableCodes(tx: Tx, plotId: string): Promise<string[]>` from `@/lib/services/inventory-service`
@@ -588,11 +624,13 @@ inventory by construction rather than by copy-forward over every Plot."
 ## Task 3: Snapshot side evidence
 
 **Files:**
+
 - Modify: `src/lib/domain/inventory.ts`
 - Modify: `src/lib/services/hold-service.ts`, `booking-service.ts`, `change-plot-service.ts`, `project-service.ts`
 - Test: `src/lib/domain/domain.check.ts`, `prisma/plc.check.ts`
 
 **Interfaces:**
+
 - Consumes: `applicableCodes()` from Task 2.
 - Produces: `buildPlcSnapshot(appliedCodes, ruleComponents, evidence?)` where
   `evidence?: { boundaries: readonly Boundary[]; parkFacing: boolean }`, and each
@@ -826,12 +864,14 @@ entry makes a duplicate structurally impossible. They exist so the shape matches
 ## Task 4: Project city, amenities, and the create form
 
 **Files:**
+
 - Modify: `prisma/schema.prisma` (Project), `prisma/migrations/20260823090000_plc_applicability/migration.sql`
 - Modify: `src/lib/services/project-service.ts` (`createProject`)
 - Modify: `src/app/projects/actions.ts`, `projects-client.tsx`, `page.tsx`
 - Test: `prisma/plc.check.ts`
 
 **Interfaces:**
+
 - Consumes: nothing from earlier tasks.
 - Produces: `createProject` no longer takes `projectCode` or `reraExpiryDate`; it takes `city?: string | null` and `amenities?: string | null`. It still returns `{ projectId, projectCode }`.
 
@@ -867,7 +907,7 @@ Append to `prisma/plc.check.ts`, before the final `await cleanup();`:
 ```
 
 The existing `createProject` call at the top of `main()` must lose its
-`projectCode: `${TAG}-01`` argument at the same time, or it will not compile.
+`` `projectCode: `${TAG}-01``` `` argument at the same time, or it will not compile.
 Replace the whole call's argument list with:
 
 ```ts
@@ -1063,11 +1103,13 @@ acquisition-service and existing rows."
 ## Task 5: Edit Project
 
 **Files:**
+
 - Modify: `src/lib/services/project-service.ts`
 - Modify: `src/app/projects/actions.ts`, `projects-client.tsx`
 - Test: `prisma/plc.check.ts`
 
 **Interfaces:**
+
 - Consumes: `createProject` from Task 4.
 - Produces: `updateProject(args: { idempotencyKey, actorRef, actorRole, projectId, name, type, developer?, location?, city?, amenities?, reraNumber?, reason }): Promise<{ projectId: string }>` and `updateProjectAction(projectId, input, reason, key)`.
 
@@ -1308,9 +1350,11 @@ the audit trail answers who renamed a Project and why."
 ## Task 6: Project card
 
 **Files:**
+
 - Modify: `src/app/projects/projects-client.tsx`
 
 **Interfaces:**
+
 - Consumes: `ProjectRowView` with `city` and `amenities` from Task 4; `formatPercent` from Task 1.
 - Produces: nothing other tasks depend on.
 
@@ -1424,10 +1468,12 @@ Setup / Not Active now reads Unreleased on screen. The enum is untouched."
 ## Task 7: Prepare Inventory grid
 
 **Files:**
+
 - Modify: `src/app/plots/plots-client.tsx`
 - Modify: `src/app/plots/page.tsx` (pass component labels and percentages)
 
 **Interfaces:**
+
 - Consumes: `PlotPlcApplicability` write path from Task 2; `formatPercent` from Task 1.
 - Produces: `GridRow.plcCodes` changes type from `string` to `string[]`.
 
@@ -1645,9 +1691,11 @@ about the Plot, the other is a charge, and they read identically today."
 ## Task 8: Plot Inventory row menu
 
 **Files:**
+
 - Modify: `src/app/plots/plots-client.tsx`
 
 **Interfaces:**
+
 - Consumes: nothing from earlier tasks.
 - Produces: a local `RowMenu` component; no exported interface.
 
@@ -1783,10 +1831,12 @@ free, and no dependency."
 ## Task 9: Plot detail panel
 
 **Files:**
+
 - Modify: `src/app/plots/actions.ts` (add `loadPlotDetail`)
 - Modify: `src/app/plots/plots-client.tsx`
 
 **Interfaces:**
+
 - Consumes: `applicableCodes`, `setPlotPlcApplicability` from Task 2; `buildPlcSnapshot` from Task 3; `formatPercent` from Task 1.
 - Produces: `loadPlotDetail(plotId: string)` and `setPlcApplicabilityAction(plotId, entries, key)`.
 
@@ -2032,6 +2082,7 @@ thing the applicability table holds that the audit trail cannot."
 ## Task 10: Terminology and the deviations record
 
 **Files:**
+
 - Modify: `src/app/plots/plots-client.tsx`, `src/app/bookings/bookings-client.tsx`, `src/app/projects/projects-client.tsx`
 - Modify: `system/DEVIATIONS.md`
 

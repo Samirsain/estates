@@ -15,7 +15,8 @@ import { ArrowLeft } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { PersonLink } from "@/components/person-link";
-import { buildPlcSnapshot, humaniseRestriction, isOpenSide, locationChargeLabel, shortSides,
+import {
+  buildPlcSnapshot, humaniseRestriction, isOpenSide, locationChargeLabel, shortSides,
   canEditPlotDetails,
   canSetRestriction,
 } from "@/lib/domain/inventory";
@@ -186,9 +187,8 @@ function PlotShape({
         viewBox={`0 0 ${bw + padX * 2} ${bh + padY * 2}`}
         className="block h-auto w-full overflow-visible text-foreground"
         role="img"
-        aria-label={`Plot ${plotNumber}, ${widthFt} by ${lengthFt} feet${
-          spoken ? `, bounded by ${spoken}` : ""
-        }`}
+        aria-label={`Plot ${plotNumber}, ${widthFt} by ${lengthFt} feet${spoken ? `, bounded by ${spoken}` : ""
+          }`}
       >
         {/* The four sides. An open one carries the charge, so it is the only
             thing here drawn heavier than the rest. */}
@@ -208,7 +208,7 @@ function PlotShape({
           y={cy - 8}
           textAnchor="middle"
           dominantBaseline="middle"
-          className="fill-current font-mono text-[15px] font-bold"
+          className="fill-current text-[15px] font-bold"
         >
           {plotNumber}
         </text>
@@ -324,12 +324,12 @@ export default async function PlotDetailPage({
       <PersonLink
         personId={person.id}
         name={person.customerProfile?.customerId ?? person.fullName}
-        className={person.customerProfile ? "font-mono font-semibold" : undefined}
+        className={person.customerProfile ? "font-semibold" : undefined}
       />
       {person.customerProfile && (
         <span className="block text-[11px] text-muted-foreground">{person.fullName}</span>
       )}
-      <span className="block font-mono text-[11px] text-muted-foreground">
+      <span className="block text-[11px] text-muted-foreground">
         {maskMobile(person.primaryMobile)}
       </span>
     </span>
@@ -344,7 +344,10 @@ export default async function PlotDetailPage({
             {
               label: "Booking",
               value: (
-                <Link href="/bookings" className="font-mono text-primary hover:underline">
+                <Link
+                  href={`/bookings?booking=${booking.id}`}
+                  className="text-primary hover:underline"
+                >
                   {booking.bookingNumber ?? booking.requestNo}
                 </Link>
               ),
@@ -386,7 +389,7 @@ export default async function PlotDetailPage({
       ) : (
         <p className="text-xs text-muted-foreground">Nobody holds this Plot.</p>
       )}
-            </Section>
+    </Section>
   );
 
   return (
@@ -402,7 +405,7 @@ export default async function PlotDetailPage({
 
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h1 className="font-mono text-2xl font-semibold tracking-tight">{plot.plotNumber}</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">{plot.plotNumber}</h1>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {plot.project.name} · {PLOT_TYPE_LABEL[plot.plotType] ?? plot.plotType}
               </p>
@@ -437,10 +440,10 @@ export default async function PlotDetailPage({
                 components={
                   version
                     ? plcRules(version.components).map((c) => ({
-                        category: c.category,
-                        threshold: c.threshold == null ? null : String(c.threshold),
-                        percent: String(c.percent),
-                      }))
+                      category: c.category,
+                      threshold: c.threshold == null ? null : String(c.threshold),
+                      percent: String(c.percent),
+                    }))
                     : []
                 }
                 currentRestriction={plot.restriction}
@@ -461,109 +464,108 @@ export default async function PlotDetailPage({
             takes two rows of the page and a four-side Boundaries takes four. */}
         <div className="grid gap-x-10 lg:grid-cols-[26rem_minmax(0,1fr)]">
           <div className="min-w-0">
-          <Section title="Location Charge (PLC %)">
-            {plc ? (
-              <>
-                {/* One component IS the total — printing both put 10.00% on the
+            <Section title="Location Charge (PLC %)">
+              {plc ? (
+                <>
+                  {/* One component IS the total — printing both put 10.00% on the
                     page twice and called the second one a breakdown of the
                     first. The total earns its own row only once there is more
                     than one number adding up to it. */}
-                {plc.components.length > 1 && (
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                    <span className="text-xs text-muted-foreground">Total</span>
-                    <span className="text-lg font-semibold tabular-nums tracking-tight">
-                      {formatPercent(plc.totalPercent.toString())}
-                    </span>
-                  </div>
-                )}
+                  {plc.components.length > 1 && (
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                      <span className="text-xs text-muted-foreground">Total</span>
+                      <span className="text-lg font-semibold tabular-nums tracking-tight">
+                        {formatPercent(plc.totalPercent.toString())}
+                      </span>
+                    </div>
+                  )}
 
-                {plc.components.length === 0 ? (
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                    <span className="text-xs text-muted-foreground">
-                      No component applies to this Plot.
-                    </span>
-                    <span className="text-lg font-semibold tabular-nums tracking-tight">
-                      {formatPercent(plc.totalPercent.toString())}
-                    </span>
-                  </div>
-                ) : (
-                  <dl className="mt-1 space-y-1">
-                    {plc.components.map((c) => (
-                      <div key={c.category} className="grid grid-cols-[1fr_auto] gap-x-4 text-xs">
-                        {/* Park Facing, Corner, Road Facing — these are the
+                  {plc.components.length === 0 ? (
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                      <span className="text-xs text-muted-foreground">
+                        No component applies to this Plot.
+                      </span>
+                      <span className="text-lg font-semibold tabular-nums tracking-tight">
+                        {formatPercent(plc.totalPercent.toString())}
+                      </span>
+                    </div>
+                  ) : (
+                    <dl className="mt-1 space-y-1">
+                      {plc.components.map((c) => (
+                        <div key={c.category} className="grid grid-cols-[1fr_auto] gap-x-4 text-xs">
+                          {/* Park Facing, Corner, Road Facing — these are the
                             charge, not a caption for it. They carry the same
                             weight as the percent they earn; only the sides that
                             evidence them step back. */}
-                        <dt className="font-semibold text-foreground">
-                          {c.label}
-                          <span className="ml-2 font-normal text-muted-foreground">
-                            {shortSides(c.evidence)}
-                          </span>
-                        </dt>
-                        <dd
-                          className={`font-semibold tabular-nums text-foreground ${
-                            plc.components.length === 1 ? "text-lg tracking-tight" : ""
-                          }`}
-                        >
-                          {formatPercent(c.percent)}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-              </>
-            ) : (
-              <p className="text-xs text-amber-800">{plcIssue}</p>
-            )}
-          </Section>
+                          <dt className="font-semibold text-foreground">
+                            {c.label}
+                            <span className="ml-2 font-normal text-muted-foreground">
+                              {shortSides(c.evidence)}
+                            </span>
+                          </dt>
+                          <dd
+                            className={`font-semibold tabular-nums text-foreground ${plc.components.length === 1 ? "text-lg tracking-tight" : ""
+                              }`}
+                          >
+                            {formatPercent(c.percent)}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-amber-800">{plcIssue}</p>
+              )}
+            </Section>
 
-          <Section title="Dimensions">
-            <Facts
-              rows={[
-                {
-                  label: "Width × Length",
-                  value:
-                    plot.widthFt && plot.lengthFt ? (
-                      <span className="text-sm font-semibold tabular-nums text-foreground">
-                        {formatPlotSize(plot.widthFt.toString(), plot.lengthFt.toString())}
+            <Section title="Dimensions">
+              <Facts
+                rows={[
+                  {
+                    label: "Width × Length",
+                    value:
+                      plot.widthFt && plot.lengthFt ? (
+                        <span className="text-sm font-semibold tabular-nums text-foreground">
+                          {formatPlotSize(plot.widthFt.toString(), plot.lengthFt.toString())}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Irregular Plot</span>
+                      ),
+                  },
+                  {
+                    label: plot.exactAreaSqFt ? "Area (exact, overridden)" : "Area",
+                    value: (
+                      // The three areas are one measurement, so all three are read
+                      // at full weight; only the unit steps back, as on the list.
+                      <span className="tabular-nums">
+                        <span className="block text-sm font-semibold text-foreground">
+                          {num(plot.areaSqFt)}
+                          <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                            sq ft
+                          </span>
+                        </span>
+                        <span className="block text-xs font-semibold text-foreground">
+                          {conv(plot.areaSqYd)}
+                          <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                            sq yd
+                          </span>
+                        </span>
+                        <span className="block text-xs font-semibold text-foreground">
+                          {conv(plot.areaSqM)}
+                          <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                            sq m
+                          </span>
+                        </span>
                       </span>
-                    ) : (
-                      <span className="text-muted-foreground">Irregular Plot</span>
                     ),
-                },
-                {
-                  label: plot.exactAreaSqFt ? "Area (exact, overridden)" : "Area",
-                  value: (
-                    // The three areas are one measurement, so all three are read
-                    // at full weight; only the unit steps back, as on the list.
-                    <span className="tabular-nums">
-                      <span className="block text-sm font-semibold text-foreground">
-                        {num(plot.areaSqFt)}
-                        <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-                          sq ft
-                        </span>
-                      </span>
-                      <span className="block text-xs font-semibold text-foreground">
-                        {conv(plot.areaSqYd)}
-                        <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-                          sq yd
-                        </span>
-                      </span>
-                      <span className="block text-xs font-semibold text-foreground">
-                        {conv(plot.areaSqM)}
-                        <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-                          sq m
-                        </span>
-                      </span>
-                    </span>
-                  ),
-                },
-                // A Plot can carry both sides and an override — then the Area above
-                // is the override, and what the sides multiply to is nowhere on the
-                // page unless it is put here. The gap between the two is the reason
-                // the override exists.
-                ...(plot.exactAreaSqFt && plot.widthFt && plot.lengthFt
-                  ? [
+                  },
+                  // A Plot can carry both sides and an override — then the Area above
+                  // is the override, and what the sides multiply to is nowhere on the
+                  // page unless it is put here. The gap between the two is the reason
+                  // the override exists.
+                  ...(plot.exactAreaSqFt && plot.widthFt && plot.lengthFt
+                    ? [
                       {
                         label: "Width × Length area",
                         value: (
@@ -574,46 +576,46 @@ export default async function PlotDetailPage({
                         ),
                       },
                     ]
-                  : []),
-                ...(plot.exactAreaReason
-                  ? [{ label: "Override reason", value: plot.exactAreaReason }]
-                  : []),
-              ]}
-            />
-          </Section>
+                    : []),
+                  ...(plot.exactAreaReason
+                    ? [{ label: "Override reason", value: plot.exactAreaReason }]
+                    : []),
+                ]}
+              />
+            </Section>
 
-          <Section title="Boundaries">
-            <Facts
-              rows={SIDES.map((side) => {
-                const b = bySide.get(side);
-                return {
-                  label: side.charAt(0) + side.slice(1).toLowerCase(),
-                  value: b ? (
-                    <>
-                      {BOUNDARY_KIND_LABEL[b.kind] ?? b.kind}
-                      {b.kind === "ROAD" && b.roadWidthFt ? (
-                        <span className="tabular-nums"> · {num(b.roadWidthFt)} ft</span>
-                      ) : b.reference ? (
-                        <span className="text-muted-foreground"> · {b.reference}</span>
-                      ) : null}
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">Not recorded</span>
-                  ),
-                };
-              })}
-            />
-            {/* The position, in the one vocabulary every screen uses — the list
+            <Section title="Boundaries">
+              <Facts
+                rows={SIDES.map((side) => {
+                  const b = bySide.get(side);
+                  return {
+                    label: side.charAt(0) + side.slice(1).toLowerCase(),
+                    value: b ? (
+                      <>
+                        {BOUNDARY_KIND_LABEL[b.kind] ?? b.kind}
+                        {b.kind === "ROAD" && b.roadWidthFt ? (
+                          <span className="tabular-nums"> · {num(b.roadWidthFt)} ft</span>
+                        ) : b.reference ? (
+                          <span className="text-muted-foreground"> · {b.reference}</span>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">Not recorded</span>
+                    ),
+                  };
+                })}
+              />
+              {/* The position, in the one vocabulary every screen uses — the list
                 and the Booking read it off the same function. */}
-            <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-foreground">
-              {locationChargeLabel(boundaries).join(" · ")}
-            </p>
-          </Section>
+              <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-foreground">
+                {locationChargeLabel(boundaries).join(" · ")}
+              </p>
+            </Section>
           </div>
 
           <div className="min-w-0">
             {plot.widthFt && plot.lengthFt && (
-              <Section title="Diagram">
+              <Section title="Layout">
                 <div className="flex justify-center pt-1">
                   <PlotShape
                     plotNumber={plot.plotNumber}

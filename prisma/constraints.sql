@@ -333,8 +333,8 @@ ALTER TABLE "MemberProfile" DROP CONSTRAINT IF EXISTS "rera_registered_needs_num
 ALTER TABLE "MemberProfile" ADD CONSTRAINT "rera_registered_needs_number"
   CHECK ("reraStatus" <> 'REGISTERED' OR "reraNumber" IS NOT NULL);
 
--- PRD §14.4 — one active verified bank and at most one pending replacement per
--- Person. The verified one stays active while the replacement is reviewed.
+-- One active bank per Person. The previous one is superseded, never deleted,
+-- so what was paid to last month is still on file.
 CREATE UNIQUE INDEX IF NOT EXISTS "one_verified_bank_per_person"
   ON "BankDetail" ("personId")
   WHERE "status" = 'VERIFIED';
@@ -343,14 +343,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS "one_pending_bank_per_person"
   ON "BankDetail" ("personId")
   WHERE "status" = 'PENDING';
 
+-- An active bank still records who put it there and when.
 ALTER TABLE "BankDetail" DROP CONSTRAINT IF EXISTS "verified_bank_names_its_checker";
 ALTER TABLE "BankDetail" ADD CONSTRAINT "verified_bank_names_its_checker"
   CHECK ("status" <> 'VERIFIED' OR ("verifiedByRef" IS NOT NULL AND "verifiedAt" IS NOT NULL));
 
--- PRD §3.3 — bank entry and bank verification are different staff accounts.
+-- Dropped, not replaced. PRD §3.3 had bank entry and bank verification as two
+-- different staff accounts; the owner removed the Accounts verification step,
+-- so the one person who enters the details is also the one on record for them
+-- and the maker/checker check would refuse every save.
 ALTER TABLE "BankDetail" DROP CONSTRAINT IF EXISTS "bank_maker_checker_differ";
-ALTER TABLE "BankDetail" ADD CONSTRAINT "bank_maker_checker_differ"
-  CHECK ("verifiedByRef" IS NULL OR "verifiedByRef" <> "enteredByRef");
 
 -- RD-03 — combined sale commission for one Booking never exceeds 4%. Buying
 -- Commission is outside the cap. Deferred so a supersede-and-replace rewrite is
