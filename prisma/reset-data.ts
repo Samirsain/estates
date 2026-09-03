@@ -94,6 +94,10 @@ async function main() {
   console.log(
     `data:reset — kept ${staff.length} staff account(s) and their people; removed ${removed.count} other Person record(s) and every Project, Plot, Enquiry, Hold, Booking, payment, commission, acquisition, Member, Customer, task and land inquiry.`
   );
+  // The Phase 1 seed owns a baseline the check suites rely on — one Person with
+  // a known Aadhaar to collide against, and the demo Project. It is upsert-based
+  // and safe to re-run, so it is the first thing to do after a reset.
+  console.log("Next: npm run db:seed, then npm run uat:seed and npm run uat:seed:v2.");
   await db.$disconnect();
 }
 
