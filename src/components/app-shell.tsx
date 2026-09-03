@@ -1,6 +1,6 @@
 "use client";
 
-// Staff application shell — DESIGN.md §3.1. Exactly six top-level areas.
+// Staff application shell — DESIGN.md §3.1, which set six top-level areas.
 // Hiding a nav item is presentation only; server-side permission enforcement
 // is the real control (DESIGN.md §1).
 
@@ -8,6 +8,7 @@ import React from "react";
 import { usePathname } from "next/navigation";
 import {
   Calculator,
+  LandPlot,
   LayoutDashboard,
   Building2,
   Users,
@@ -32,14 +33,17 @@ const NAV = [
       { label: "Projects", href: "/projects", phase: null },
       { label: "Plot Inventory", href: "/plots", phase: null },
       { label: "Enquiries", href: "/enquiries", phase: null },
-      // Land Inquiry spec §23.1 — pre-acquisition land sourcing sits with the
-      // rest of the sales pipeline rather than opening a seventh top-level
-      // area (DESIGN §3.1).
-      { label: "Land Inquiries", href: "/land-inquiries", phase: null },
       { label: "Bookings", href: "/bookings", phase: null },
       { label: "Buyback / Resale", href: "/acquisitions", phase: null },
     ],
   },
+  // Land Inquiry spec §23.1 asks for its own navigation entry. It sat under
+  // Plots & Sales to avoid widening DESIGN §3.1's top-level list; the owner
+  // asked for it at the top level, so here it is — recorded the same way the
+  // Calculator below is, rather than left to look like a slip. Pre-acquisition
+  // sourcing is its own stage of the business and reads oddly filed under the
+  // Plots it does not have yet.
+  { label: "Land Inquiries", icon: LandPlot, href: "/land-inquiries", phase: null },
   { label: "Customers", icon: Users, href: "/customers", phase: null },
   { label: "Members", icon: Network, href: "/members", phase: null },
   // DESIGN §3.1 lists six top-level areas and §1 says not to reintroduce a

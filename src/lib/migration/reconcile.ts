@@ -338,12 +338,12 @@ async function loyaltySlots(): Promise<RuleResult> {
 
 /**
  * RD-02; ARCHITECTURE §13.8 — annual positions are rebuilt without renumbering,
- * so within one counter year a position is issued once.
+ * so within one cycle a position is issued once.
  */
 async function annualPositions(): Promise<RuleResult> {
   const members = await db.memberProfile.findMany({
     where: { invitePosition: { not: null } },
-    select: { memberId: true, invitedByMemberId: true, invitePosition: true, inviteYearStart: true },
+    select: { memberId: true, invitedByMemberId: true, invitePosition: true, inviteCycleId: true },
   });
   const customers = await db.customerProfile.findMany({
     where: { royaltyPosition: { not: null } },
@@ -351,7 +351,7 @@ async function annualPositions(): Promise<RuleResult> {
       customerId: true,
       royaltyLinkedMemberId: true,
       royaltyPosition: true,
-      royaltyYearStart: true,
+      royaltyCycleId: true,
     },
   });
 
@@ -359,22 +359,22 @@ async function annualPositions(): Promise<RuleResult> {
   const seen = new Set<string>();
 
   for (const member of members) {
-    const key = `invite:${member.invitedByMemberId}:${member.inviteYearStart?.toISOString() ?? "none"}:${member.invitePosition}`;
+    const key = `invite:${member.invitedByMemberId}:${member.inviteCycleId ?? "none"}:${member.invitePosition}`;
     if (seen.has(key)) {
       exceptions.push({
         record: member.memberId,
-        detail: `Invite position ${member.invitePosition} is issued twice in the same counter year`,
+        detail: `Invite position ${member.invitePosition} is issued twice in the same cycle`,
       });
     }
     seen.add(key);
   }
 
   for (const customer of customers) {
-    const key = `royalty:${customer.royaltyLinkedMemberId}:${customer.royaltyYearStart?.toISOString() ?? "none"}:${customer.royaltyPosition}`;
+    const key = `royalty:${customer.royaltyLinkedMemberId}:${customer.royaltyCycleId ?? "none"}:${customer.royaltyPosition}`;
     if (seen.has(key)) {
       exceptions.push({
         record: customer.customerId,
-        detail: `Royalty position ${customer.royaltyPosition} is issued twice in the same counter year`,
+        detail: `Royalty position ${customer.royaltyPosition} is issued twice in the same cycle`,
       });
     }
     seen.add(key);

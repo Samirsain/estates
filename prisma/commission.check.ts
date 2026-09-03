@@ -33,6 +33,7 @@ import {
 import { businessState } from "@/lib/services/report-service";
 import { enterBankDetails } from "@/lib/services/bank-service";
 import { activateMember } from "@/lib/services/network-service";
+import { refreshCycle, upgradeCycleIfDue } from "@/lib/services/cycle-service";
 import { encryptSensitive } from "@/lib/security/identity";
 
 const db = new PrismaClient();
@@ -565,12 +566,22 @@ async function main() {
   });
   assert.ok(stored.activationDate! <= new Date(), "activation is now, never backdated");
   assert.ok(stored.memberId.startsWith("MEM-"), "the Member ID is issued at activation");
+  // CR-014 — a position belongs to a cycle, not to a counter year. The cycle a
+  // Member's first invitees join is cycle 1, opened on the Member's own
+  // activation day in IST.
+  const anchorCycle = await db.performanceCycle.findFirstOrThrow({
+    where: { memberProfileId: anchorMember.id, kind: "INVITE" },
+  });
+  assert.equal(anchorCycle.cycleNumber, 1);
   assert.equal(
-    stored.inviteYearStart!.toISOString().slice(0, 10),
-    // 2026 is not a leap year, so the 29 February anniversary falls on the 28th.
-    "2026-02-27",
-    "the counter year starts on the fallback anniversary in IST"
+    anchorCycle.openedOn.toISOString().slice(0, 10),
+    "2024-02-29",
+    "cycle 1 opens on the Member Activation Date in IST"
   );
+  assert.equal(stored.inviteCycleId, anchorCycle.id, "and the position sits in it");
+  assert.equal(stored.inviteYearStart, null, "the old counter-year column is no longer written");
+  assert.equal(anchorCycle.positionsFilled, 4, "the cycle counts the positions it holds");
+  assert.equal(anchorCycle.positionsComplete, 0, "none of which has completed yet");
 
   const notForCrm = await db.person.create({
     data: { fullName: `${TAG} Invited 9`, primaryMobile: "9600000199" },
@@ -822,6 +833,16 @@ async function main() {
   // Customer whose first qualifying purchase completed under this Member looks
   // like. How the link is *established* is AC-06's subject, below; this block
   // is about what a final link then earns.
+  // CR-014 — the position belongs to the Member's Royalty cycle 1, which is
+  // what `assignRoyaltyPosition` would have put it in.
+  const seededRoyaltyCycle = await db.performanceCycle.create({
+    data: {
+      memberProfileId: inviterMember.id,
+      kind: "ROYALTY",
+      cycleNumber: 1,
+      openedOn: new Date(inviterMember.activationDate!.toISOString().slice(0, 10)),
+    },
+  });
   await db.customerProfile.create({
     data: {
       customerId: `${TAG}-C-ROY`,
@@ -830,7 +851,7 @@ async function main() {
       royaltyLinkFinalAt: day(-30),
       royaltyPosition: 1,
       royaltyRatePercent: "1",
-      royaltyYearStart: day(-30),
+      royaltyCycleId: seededRoyaltyCycle.id,
     },
   });
 
@@ -855,41 +876,52 @@ async function main() {
       where: { bookingId: repeatPurchase, type: "ROYALTY", isCurrent: true },
     });
 
-  assert.equal((await royalty()).eligibility, "MILESTONE_PENDING", "no cycle before the milestone");
   assert.equal(
-    await db.performanceCycle.count({ where: { memberProfileId: inviterMember.id } }),
-    0,
-    "a cycle is created by a qualifying transaction, not in advance"
+    (await royalty()).eligibility,
+    "MILESTONE_PENDING",
+    "below its milestone the Royalty is simply pending"
   );
 
-  /* TC-ROY-002 — the milestone alone is a *recorded* transaction, not completed
-     qualifying activity. The cycle stays pending and no royalty is recognised. */
+  /* CR-004 supersedes AC-02 — the Royalty's own milestone is 100% Payment
+     Received. It used to hold on PERFORMANCE_CYCLE_INCOMPLETE until delivery,
+     which under CR-014's model would hold it until eight other Customers had
+     bought. The performance cycle decides an upgrade, not a payment. */
 
   await pay(repeatPurchase, "100", `${TAG} UTR AC2`);
 
-  const cycle = await db.performanceCycle.findFirstOrThrow({
-    where: { memberProfileId: inviterMember.id },
-  });
-  assert.equal(cycle.qualifyingCount, 1, "the qualifying transaction is recorded in the cycle");
-  assert.equal(cycle.completedCount, 0, "but nothing in it is legally completed yet");
-  assert.equal(cycle.status, "IN_PROGRESS", "a partial cycle is never marked completed");
-  assert.equal(cycle.completedAt, null, "and carries no achievement timestamp");
-  assert.equal(cycle.entitlement, null, "and confers no entitlement yet");
-  assert.ok(cycle.cycleStart < cycle.cycleEnd, "the window has start and end dates");
+  const earnedRoyalty = await royalty();
+  assert.equal(earnedRoyalty.eligibility, "READY", "100% Payment Received earns the Royalty");
+  assert.equal(earnedRoyalty.holdReason, null);
+  assert.ok(earnedRoyalty.opportunityId, "and consumes the Customer's one-time Royalty");
 
-  const recorded = await royalty();
-  assert.equal(recorded.performanceCycleId, cycle.id, "the record names the cycle it entered");
-  assert.equal(recorded.cycleCompletedAt, null, "its qualifying activity is not complete");
-  assert.equal(recorded.eligibility, "ON_HOLD", "100% payment alone does not earn Royalty");
-  assert.equal(recorded.holdReason, "PERFORMANCE_CYCLE_INCOMPLETE");
+  /* CR-014 — that consumption is also what makes a cycle position successful.
+     This Customer sits at Royalty position 1 of the Member's cycle 1, so the
+     cycle now holds one filled position, one of them complete, and eight to go. */
+
+  const royaltyCycle = await db.performanceCycle.findFirstOrThrow({
+    where: { memberProfileId: inviterMember.id, kind: "ROYALTY" },
+  });
+  assert.equal(royaltyCycle.cycleNumber, 1);
+  assert.equal(royaltyCycle.positionsFilled, 1, "the cycle holds the position");
+  assert.equal(royaltyCycle.positionsComplete, 1, "and that position is successful");
+  assert.equal(
+    royaltyCycle.status,
+    "IN_PROGRESS",
+    "one of nine is not an upgrade — a cycle is completed by all nine"
+  );
+  assert.equal(royaltyCycle.completedAt, null);
+  assert.equal(royaltyCycle.entitlement, null);
 
   // A repeated reassessment must not change any of that, or double-count.
   await reassessCommission_(repeatPurchase);
-  const afterRepeat = await db.performanceCycle.findUniqueOrThrow({ where: { id: cycle.id } });
-  assert.equal(afterRepeat.qualifyingCount, 1, "a repeated reassessment never double-counts");
-  assert.equal(afterRepeat.status, "IN_PROGRESS", "and never completes a partial cycle");
+  const afterRepeat = await db.performanceCycle.findUniqueOrThrow({
+    where: { id: royaltyCycle.id },
+  });
+  assert.equal(afterRepeat.positionsComplete, 1, "a repeated reassessment never double-counts");
+  assert.equal(afterRepeat.status, "IN_PROGRESS");
 
-  /* TC-ROY-001 — legal completion completes the qualifying activity. */
+  /* Legal completion no longer decides anything about a cycle, so recording it
+     and reopening it must leave the Royalty and its cycle exactly as they are. */
 
   await recordFinalBuyers({
     idempotencyKey: key(),
@@ -905,22 +937,7 @@ async function main() {
     bookingId: repeatPurchase,
     completion: { route: "REGISTRY", advocateName: "S. Menon", registryDate: today },
   });
-
-  const completedCycle = await db.performanceCycle.findUniqueOrThrow({ where: { id: cycle.id } });
-  assert.equal(completedCycle.completedCount, 1, "the qualifying transaction is now complete");
-  assert.equal(completedCycle.status, "COMPLETED", "so the cycle is achieved");
-  assert.ok(completedCycle.completedAt, "the achievement carries its timestamp");
-  assert.match(
-    completedCycle.entitlement ?? "",
-    /ROYALTY 1\.00%/,
-    "and the entitlement it confers is the actual Royalty, not a fixed label"
-  );
-
-  const earned = await royalty();
-  assert.ok(earned.cycleCompletedAt, "the record's own qualifying activity is complete");
-  assert.equal(earned.eligibility, "READY", "a completed cycle releases the Royalty");
-
-  /* A delivery recorded in error and reopened takes the completion back. */
+  assert.equal((await royalty()).eligibility, "READY", "delivery leaves the earned Royalty earned");
 
   await reopenDelivered({
     idempotencyKey: key(),
@@ -929,18 +946,18 @@ async function main() {
     bookingId: repeatPurchase,
     reason: "Registry papers were filed against the wrong Plot.",
   });
-  const reopenedCycle = await db.performanceCycle.findUniqueOrThrow({ where: { id: cycle.id } });
-  assert.equal(reopenedCycle.status, "IN_PROGRESS", "reopening the delivery un-completes the cycle");
-  assert.equal(reopenedCycle.completedCount, 0);
-  assert.equal(reopenedCycle.completedAt, null);
-  assert.equal(reopenedCycle.entitlement, null);
   assert.equal(
-    (await royalty()).holdReason,
-    "PERFORMANCE_CYCLE_INCOMPLETE",
-    "and the Royalty goes back on hold"
+    (await royalty()).eligibility,
+    "READY",
+    "and reopening it does not take the Royalty back — the milestone was payment, not delivery"
+  );
+  assert.equal(
+    (await db.performanceCycle.findUniqueOrThrow({ where: { id: royaltyCycle.id } })).positionsComplete,
+    1,
+    "nor does it disturb the cycle position"
   );
 
-  // Complete it again so the Buyback case below starts from a real completion.
+  // Put the delivery back, so the Buyback case below starts from a real one.
   await recordCompletion({
     idempotencyKey: key(),
     actorRef: CRM,
@@ -948,11 +965,6 @@ async function main() {
     bookingId: repeatPurchase,
     completion: { route: "REGISTRY", advocateName: "S. Menon", registryDate: today },
   });
-  assert.equal(
-    (await db.performanceCycle.findUniqueOrThrow({ where: { id: cycle.id } })).status,
-    "COMPLETED",
-    "re-completing the delivery re-achieves the cycle"
-  );
 
   /* PRD §6.3, §6.5, main-PRD §14.12 — a Buyback AFTER legal completion keeps
      what was earned. The cycle must not be un-completed by it. */
@@ -964,14 +976,15 @@ async function main() {
     reason: `${TAG} Buyback after legal completion`,
   });
 
-  const afterBuyback = await db.performanceCycle.findUniqueOrThrow({ where: { id: cycle.id } });
+  const afterBuyback = await db.performanceCycle.findUniqueOrThrow({
+    where: { id: royaltyCycle.id },
+  });
   assert.equal(
-    afterBuyback.status,
-    "COMPLETED",
-    "a Buyback after legal completion never un-completes an achieved cycle"
+    afterBuyback.positionsComplete,
+    1,
+    "a Buyback after legal completion leaves the cycle position successful — the entitlement " +
+      "stays consumed (PRD §6.3, §6.5), so the position it filled stays filled"
   );
-  assert.equal(afterBuyback.completedCount, 1, "and its qualifying transaction stays counted");
-  assert.ok(afterBuyback.entitlement, "and its entitlement stands");
 
   // main-PRD §14.12 — "Original sale commission normally remains earned".
   const afterUnwind = await royalty();
@@ -1413,6 +1426,203 @@ async function main() {
     "and the position never re-rates"
   );
 
+  /* ===== AC-08 — CR-014, CR-027: the two cycles, and the anniversary =========
+
+     Nothing resets on an anniversary any more. A cycle is a set of positions and
+     it ends when all nine have completed, however long that takes; the two
+     counters move independently; and the anniversary run opens the next cycle
+     only when the current one is already Upgrade Eligible. */
+
+  const cycleInviterPerson = await makeEligiblePerson("CycleInviter", "9600000061");
+  const cycleInviter = await makeMember("CYCLE-I", cycleInviterPerson.id, 700);
+
+  /* Nine cycleInvited Members, each closing their own first third-party sale to
+     100%. That is what CR-014 calls a successful Invite position. */
+
+  const cycleInvited: string[] = [];
+  for (let n = 1; n <= 9; n++) {
+    const person = await makeEligiblePerson(`CycleSeller${n}`, `96001000${String(n).padStart(2, "0")}`);
+    await activateMember({
+      idempotencyKey: key(),
+      actorRef: `${TAG}-MD`,
+      actorRole: "MD",
+      personId: person.id,
+      invitedByMemberId: cycleInviter.id,
+      reraStatus: "NOT_APPLICABLE",
+      reraNotApplicableReason: "Individual referrer",
+    });
+    cycleInvited.push(person.id);
+  }
+
+  const inviteCycle = async () =>
+    db.performanceCycle.findFirstOrThrow({
+      where: { memberProfileId: cycleInviter.id, kind: "INVITE" },
+      orderBy: { cycleNumber: "desc" },
+    });
+
+  let cycle1 = await inviteCycle();
+  assert.equal(cycle1.cycleNumber, 1, "activation opens cycle 1");
+  assert.equal(cycle1.positionsFilled, 9, "all nine positions are filled");
+  assert.equal(cycle1.positionsComplete, 0, "and none of them has completed anything yet");
+  assert.equal(cycle1.status, "IN_PROGRESS");
+
+  // A tenth invitee joins the same cycle at 0% and is outside its nine.
+  const tenthPerson = await makeEligiblePerson("CycleSeller10", "9600100010");
+  await activateMember({
+    idempotencyKey: key(),
+    actorRef: `${TAG}-MD`,
+    actorRole: "MD",
+    personId: tenthPerson.id,
+    invitedByMemberId: cycleInviter.id,
+    reraStatus: "NOT_APPLICABLE",
+    reraNotApplicableReason: "Individual referrer",
+  });
+  const tenth = await db.memberProfile.findUniqueOrThrow({ where: { personId: tenthPerson.id } });
+  assert.equal(tenth.invitePosition, 10, "the counter keeps climbing — nothing reset it");
+  assert.equal(tenth.inviteRatePercent?.toFixed(2), "0.00");
+  assert.equal(tenth.inviteCycleId, cycle1.id, "and it sits in the same cycle");
+  assert.equal(
+    (await inviteCycle()).positionsFilled,
+    9,
+    "which the cycle does not count — it is completed by its first nine"
+  );
+
+  for (const [index, sellerPersonId] of cycleInvited.entries()) {
+    const buyer = await makeEligiblePerson(`CycleBuyer${index + 1}`, `96002000${String(index + 1).padStart(2, "0")}`);
+    const plot = await makePlot(project.id, `CY${index + 1}`);
+    const booking = await bookAndApprove({
+      plotId: plot.id,
+      buyerPersonId: buyer.id,
+      soldByType: "MEMBER",
+      soldByPersonId: sellerPersonId,
+    });
+
+    // Eight of nine is not an upgrade.
+    if (index === 7) {
+      await pay(booking, "100", `${TAG} UTR CY${index + 1}`);
+      const eight = await inviteCycle();
+      assert.equal(eight.positionsComplete, 8);
+      assert.equal(eight.status, "IN_PROGRESS", "eight of nine is not Upgrade Eligible");
+      continue;
+    }
+    await pay(booking, "100", `${TAG} UTR CY${index + 1}`);
+  }
+
+  cycle1 = await inviteCycle();
+  assert.equal(cycle1.positionsComplete, 9, "all nine positions completed");
+  assert.equal(cycle1.status, "UPGRADE_ELIGIBLE", "so the cycle is Upgrade Eligible");
+  assert.ok(cycle1.completedAt, "with the moment it became so");
+  assert.match(cycle1.entitlement ?? "", /Invite cycle 1 complete/);
+
+  /* The counters are independent: the Royalty cycle of the same Member has not
+     moved at all. */
+
+  const royaltyCycleOfInviter = await db.performanceCycle.findFirst({
+    where: { memberProfileId: cycleInviter.id, kind: "ROYALTY" },
+  });
+  assert.ok(
+    royaltyCycleOfInviter === null || royaltyCycleOfInviter.status === "IN_PROGRESS",
+    "a completed Invite cycle upgrades nothing about Royalty"
+  );
+
+  /* CR-027 — the anniversary run. It opens nothing on an ordinary day, opens
+     nothing for an incomplete counter, and is safe to run twice. */
+
+  // The next anniversary that is still ahead of us: the cycle completed just
+  // now, and CR-027 only rolls a completion recorded before the run's own day.
+  const anniversaryAfter = (from: Date) => {
+    const d = new Date(from);
+    while (d <= new Date()) d.setUTCFullYear(d.getUTCFullYear() + 1);
+    return d;
+  };
+  const anniversary = anniversaryAfter(cycleInviter.activationDate!);
+  const ordinaryDay = new Date(anniversary);
+  ordinaryDay.setUTCDate(ordinaryDay.getUTCDate() + 3);
+
+  const upgradeCheck = (at: Date) =>
+    db.$transaction(async (tx) => {
+      const opened: string[] = [];
+      for (const kind of ["INVITE", "ROYALTY"] as const) {
+        if (await upgradeCycleIfDue(tx as never, cycleInviter.id, kind, at, `${TAG}-JOB`)) {
+          opened.push(kind);
+        }
+      }
+      await tx.$executeRawUnsafe("SET CONSTRAINTS ALL IMMEDIATE");
+      return opened;
+    });
+
+  assert.deepEqual(await upgradeCheck(ordinaryDay), [], "no roll on an ordinary day");
+
+  assert.deepEqual(
+    await upgradeCheck(anniversary),
+    ["INVITE"],
+    "on the anniversary the eligible counter rolls, and only that counter"
+  );
+
+  const cycle2 = await inviteCycle();
+  assert.equal(cycle2.cycleNumber, 2, "cycle 2 opens");
+  assert.equal(cycle2.status, "IN_PROGRESS");
+  assert.equal(cycle2.positionsFilled, 0, "and starts empty");
+
+  assert.deepEqual(
+    await upgradeCheck(anniversary),
+    [],
+    "re-running the check opens nothing a second time"
+  );
+  assert.equal(
+    await db.performanceCycle.count({
+      where: { memberProfileId: cycleInviter.id, kind: "INVITE" },
+    }),
+    2,
+    "and there are exactly two Invite cycles"
+  );
+
+  /* Positions 1 to 9 of cycle 1 never renumber or re-rate, and the next Member
+     cycleInvited starts at position 1 of cycle 2 at the top band again. */
+
+  const firstInvited = await db.memberProfile.findUniqueOrThrow({
+    where: { personId: cycleInvited[0] },
+  });
+  assert.equal(firstInvited.invitePosition, 1);
+  assert.equal(firstInvited.inviteCycleId, cycle1.id, "an old position stays in its old cycle");
+
+  const freshPerson = await makeEligiblePerson("CycleFresh", "9600100011");
+  await activateMember({
+    idempotencyKey: key(),
+    actorRef: `${TAG}-MD`,
+    actorRole: "MD",
+    personId: freshPerson.id,
+    invitedByMemberId: cycleInviter.id,
+    reraStatus: "NOT_APPLICABLE",
+    reraNotApplicableReason: "Individual referrer",
+  });
+  const fresh = await db.memberProfile.findUniqueOrThrow({ where: { personId: freshPerson.id } });
+  assert.equal(fresh.invitePosition, 1, "the earned upgrade is a fresh position 1");
+  assert.equal(fresh.inviteRatePercent?.toFixed(2), "1.00", "back in the top band");
+  assert.equal(fresh.inviteCycleId, cycle2.id);
+
+  /* And a cancelled qualifying event takes its position back out. */
+
+  const undone = await db.commissionOpportunity.findFirstOrThrow({
+    where: { kind: "INVITE", subjectPersonId: cycleInvited[0], status: "CONSUMED" },
+  });
+  await db.$transaction(async (tx) => {
+    await tx.commissionOpportunity.update({
+      where: { id: undone.id },
+      data: { status: "OPEN", consumedByBookingId: null, consumedAt: null },
+    });
+    await refreshCycle(tx as never, cycle1.id, `${TAG}-JOB`);
+    await tx.$executeRawUnsafe("SET CONSTRAINTS ALL IMMEDIATE");
+  });
+  const reopenedCycle = await db.performanceCycle.findUniqueOrThrow({ where: { id: cycle1.id } });
+  assert.equal(reopenedCycle.positionsComplete, 8);
+  assert.equal(
+    reopenedCycle.status,
+    "IN_PROGRESS",
+    "a reversed qualifying event does not count as successfully completed"
+  );
+  assert.equal(reopenedCycle.completedAt, null, "and the cycle loses its completion stamp");
+
   /* AC-03 — Paid Early needs a recorded MD approval */
 
   await expectBlocked(/requires a recorded MD approval/, () =>
@@ -1420,7 +1630,7 @@ async function main() {
       idempotencyKey: key(),
       actorRef: ACC,
       actorRole: "ACCOUNTS",
-      recordId: earned.id,
+      recordId: earnedRoyalty.id,
       early: true,
       paidOn: today,
       reference: `${TAG} UTR EARLY-NO`,
@@ -1552,24 +1762,24 @@ async function main() {
     "completed transactions"
   );
 
-  /* Royalty. TC-ROY-001 requires the Dashboard to count a completed cycle as
-     earned, and TC-ROY-002 requires an incomplete one not to be counted —
-     whatever its payment state. */
+  /* Royalty and cycles. CR-004 — earned is the consumed one-time opportunity,
+     because that is where the Royalty's own milestone puts it. CR-014 — a cycle
+     is Upgrade Eligible only on all nine of its positions. */
   assert.equal(
     state.royalty.earned,
     await db.commissionRecord.count({
-      where: { type: "ROYALTY", isCurrent: true, cycleCompletedAt: { not: null } },
+      where: { type: "ROYALTY", isCurrent: true, opportunityId: { not: null } },
     }),
-    "earned Royalty is the completed qualifying activity, not the paid records"
+    "earned Royalty is the consumed entitlement, not the paid records"
   );
   assert.ok(
     state.royalty.earned >= 1,
-    "TC-ROY-001 — the Royalty completed above is counted as earned on the Dashboard"
+    "the Royalty earned above is counted as earned on the Dashboard"
   );
   assert.equal(
-    state.cycles.completed,
-    await db.performanceCycle.count({ where: { status: "COMPLETED" } }),
-    "completed cycles"
+    state.cycles.upgradeEligible,
+    await db.performanceCycle.count({ where: { status: "UPGRADE_ELIGIBLE" } }),
+    "cycles that reached Upgrade Eligible"
   );
   assert.equal(
     state.cycles.inProgress,
@@ -1577,9 +1787,10 @@ async function main() {
     "and cycles still in progress"
   );
   assert.equal(
-    state.cycles.qualifyingTransactions,
-    await db.commissionRecord.count({ where: { performanceCycleId: { not: null } } }),
-    "qualifying transactions counted into cycles"
+    state.cycles.positions,
+    (await db.performanceCycle.aggregate({ _sum: { positionsFilled: true } }))._sum
+      .positionsFilled ?? 0,
+    "positions held in cycles"
   );
 
   /* Buying Commission. TC-BC-002: "Dashboard must not report an amount above

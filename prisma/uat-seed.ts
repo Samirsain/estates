@@ -291,6 +291,17 @@ async function wipe() {
         select: { id: true },
       })
     ).map((m) => m.id);
+  // CR-014 — a position points at its cycle, and the cycle points at the Member,
+  // so neither can go first. The position links are cleared, then the cycles,
+  // then the profiles.
+    await db.memberProfile.updateMany({
+      where: { id: { in: memberIds } },
+      data: { inviteCycleId: null },
+    });
+    await db.customerProfile.updateMany({
+      where: { personId: { in: personIds } },
+      data: { royaltyCycleId: null },
+    });
     await db.performanceCycle.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.portalAccount.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.memberTermsAcceptance.deleteMany({ where: { memberProfileId: { in: memberIds } } });

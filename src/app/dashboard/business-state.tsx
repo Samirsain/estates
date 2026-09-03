@@ -86,13 +86,14 @@ export function BusinessStatePanel({ state }: { state: BusinessState }) {
             { label: "Royalty earned", value: state.royalty.earned },
             { label: "Royalty pending", value: state.royalty.pending },
             { label: "of which paid", value: state.royalty.paid },
-            { label: "Cycles completed", value: state.cycles.completed },
+            { label: "Cycles Upgrade Eligible", value: state.cycles.upgradeEligible },
             {
               label: "Cycles in progress",
               value: state.cycles.inProgress,
               note:
-                "Earned means the qualifying sale reached legal completion, not that its " +
-                "payment milestone was recorded. A partial cycle is never counted as complete.",
+                "Earned means the Royalty reached 100% Payment Received and consumed the " +
+                "Customer's one-time opportunity. A cycle becomes Upgrade Eligible only when " +
+                "all nine of its positions have done that, and nothing resets on an anniversary.",
             },
           ]}
         />
@@ -167,7 +168,7 @@ export function BusinessStatePanel({ state }: { state: BusinessState }) {
         <Group
           title="Audit"
           figures={[
-            { label: "Qualifying transactions in cycles", value: state.cycles.qualifyingTransactions },
+            { label: "Positions held in cycles", value: state.cycles.positions },
             { label: "Reversal / adjustment events", value: state.audit.reversals },
             {
               label: "Superseded commission records",

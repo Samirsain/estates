@@ -30,6 +30,11 @@ async function main() {
   await db.commissionEvent.deleteMany({});
   await db.commissionRecord.deleteMany({});
   await db.commissionOpportunity.deleteMany({});
+  // CR-014 — a position points at its cycle, and the cycle points at the Member,
+  // so neither can go first. The position links are cleared, then the cycles,
+  // then the profiles.
+  await db.memberProfile.updateMany({ data: { inviteCycleId: null } });
+  await db.customerProfile.updateMany({ data: { royaltyCycleId: null } });
   await db.performanceCycle.deleteMany({});
 
   // Everything that hangs off a Booking.

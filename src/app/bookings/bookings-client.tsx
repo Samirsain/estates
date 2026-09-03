@@ -207,7 +207,6 @@ const HOLD_LABEL: Record<string, string> = {
   BUYBACK_PENDING: "Buyback Pending",
   PAYMENT_PENDING: "Payment Pending",
   COMMISSION_CONFLICT_ABOVE_4: "Commission Conflict — Above 4%",
-  PERFORMANCE_CYCLE_INCOMPLETE: "Performance Cycle Incomplete",
 };
 
 const SOLD_BY_LABEL: Record<string, string> = {

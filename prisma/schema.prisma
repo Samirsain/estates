@@ -148,13 +148,17 @@ model CustomerProfile {
   /// `royaltyLinkFirstBookingId` is CR-003's permanent "no Royalty Member":
   /// the first purchase was Sold By 3% CLUB or Sold By Customer.
   royaltyLinkedMemberId     String?
-  royaltyLinkedMember       MemberProfile? @relation("RoyaltyLinkedCustomers", fields: [royaltyLinkedMemberId], references: [id])
+  royaltyLinkedMember       MemberProfile?    @relation("RoyaltyLinkedCustomers", fields: [royaltyLinkedMemberId], references: [id])
   royaltyLinkFirstBookingId String?
-  royaltyLinkFirstBooking   Booking?       @relation("RoyaltyFirstPurchase", fields: [royaltyLinkFirstBookingId], references: [id])
+  royaltyLinkFirstBooking   Booking?          @relation("RoyaltyFirstPurchase", fields: [royaltyLinkFirstBookingId], references: [id])
   royaltyLinkFinalAt        DateTime?
   royaltyPosition           Int?
-  royaltyRatePercent        Decimal?       @db.Decimal(7, 4)
+  royaltyRatePercent        Decimal?          @db.Decimal(7, 4)
+  /// History only, for the same reason `inviteYearStart` is (CR-014).
   royaltyYearStart          DateTime?
+  /// CR-014 — the Royalty Linked Member's Royalty cycle this position sits in.
+  royaltyCycleId            String?
+  royaltyCycle              PerformanceCycle? @relation("RoyaltyCyclePositions", fields: [royaltyCycleId], references: [id])
 
   /// PRD §6.5 — combined lifetime maximum of three; the limit never resets.
   loyaltySlotsConsumed Int @default(0)
@@ -205,8 +209,13 @@ model MemberProfile {
 
   /// Positions are assigned once and never renumbered (PRD RD-02).
   invitePosition    Int?
-  inviteRatePercent Decimal?  @db.Decimal(7, 4)
+  inviteRatePercent Decimal?          @db.Decimal(7, 4)
+  /// History only. CR-014 removes the annual reset, so a position belongs to a
+  /// cycle rather than to a counter year. Nothing writes this any more.
   inviteYearStart   DateTime?
+  /// CR-014 — the inviting Member's Invite cycle this position sits in.
+  inviteCycleId     String?
+  inviteCycle       PerformanceCycle? @relation("InviteCyclePositions", fields: [inviteCycleId], references: [id])
 
   /// A new Member has provided nothing yet, so Pending is the honest default:
   /// Not Applicable is a decision that carries a compulsory reason (PRD §19.5).
@@ -1336,7 +1345,6 @@ enum CommissionHoldReason {
   /// RD-03 — no sale-commission record is Ready or Paid while the total is above 4%.
   COMMISSION_CONFLICT_ABOVE_4
   /// AC-02 — Royalty waits for its performance cycle to be complete.
-  PERFORMANCE_CYCLE_INCOMPLETE
 }
 
 /// PRD §6.8 — the entitlements that must never be consumed twice.
@@ -1411,22 +1419,6 @@ model CommissionRecord {
   opportunityId String?                @unique
   opportunity   CommissionOpportunity? @relation(fields: [opportunityId], references: [id])
 
-  /// AC-02 — the performance cycle this record's qualifying transaction was
-  /// counted into. Royalty only; null for every other type and until the
-  /// milestone is first reached.
-  performanceCycleId String?
-  performanceCycle   PerformanceCycle? @relation(fields: [performanceCycleId], references: [id])
-
-  /// AC-02 — when this record's qualifying transaction reached legal completion.
-  ///
-  /// Stored rather than derived from the Booking's status on every read, because
-  /// the two diverge on purpose: main-PRD §14.12 and PRD §6.3 keep a legally
-  /// completed sale's entitlement consumed even after a later Buyback moves the
-  /// Booking to BUYBACK_COMPLETED. Reading the live status would silently
-  /// un-complete a cycle the Member had already earned. Cleared only by
-  /// reopening the delivery, which genuinely reverses the legal completion.
-  cycleCompletedAt DateTime?
-
   /// AC-03 — Paid Early needs a recorded MD approval before Accounts may
   /// process it. Approver, timestamp and note are kept on the record itself so
   /// the approval can never be separated from the transaction it approved.
@@ -1442,7 +1434,6 @@ model CommissionRecord {
   @@index([bookingId, isCurrent])
   @@index([beneficiaryPersonId, payment])
   @@index([eligibility, payment])
-  @@index([performanceCycleId])
 }
 
 /// PRD §6.8 — atomic entitlement tracking. One Invite opportunity per invited
@@ -1499,42 +1490,62 @@ model CommissionOpportunity {
 /// The cycle is COMPLETED when every qualifying transaction inside it is legally
 /// completed — the test plan's "satisfy all cycle conditions" (TC-ROY-001)
 /// against "only part of the qualifying conditions are met" (TC-ROY-002).
-enum PerformanceCycleStatus {
-  IN_PROGRESS
-  COMPLETED
+/// CR-014 — the two counters, kept apart because they upgrade independently.
+enum PerformanceCycleKind {
+  INVITE
+  ROYALTY
 }
 
-model PerformanceCycle {
-  id              String        @id @default(uuid())
-  memberProfileId String
-  memberProfile   MemberProfile @relation(fields: [memberProfileId], references: [id])
+/// CR-014 — a cycle is either still being filled, or its positions 1 to 9 are
+/// all successful and it is waiting for the next anniversary to roll.
+enum PerformanceCycleStatus {
+  IN_PROGRESS
+  UPGRADE_ELIGIBLE
+}
 
-  /// Inclusive IST start and end instants of the counter year.
-  cycleStart DateTime
-  cycleEnd   DateTime
+/// CR-014 — a Member holds two of these, one per counter, and they upgrade
+/// independently. A cycle is a set of positions, not a span of time: it opens
+/// on an anniversary, and it ends when positions 1 to 9 have each succeeded —
+/// never because a year passed.
+model PerformanceCycle {
+  id              String               @id @default(uuid())
+  memberProfileId String
+  memberProfile   MemberProfile        @relation(fields: [memberProfileId], references: [id])
+  kind            PerformanceCycleKind
+  /// 1 for the cycle that opens at activation, then 2, 3 … Cycles never merge
+  /// and a number is never reused.
+  cycleNumber     Int
+
+  /// The IST day the cycle opened: the Member's activation for cycle 1, and an
+  /// activation anniversary for every later one.
+  openedOn DateTime @db.Date
 
   status PerformanceCycleStatus @default(IN_PROGRESS)
 
-  /// Approved Changes §1 requires the cycle to store its qualifying
-  /// transactions. The rows themselves are the CommissionRecords in `records`;
-  /// these two are the derived counts the Dashboard reads, and both are
-  /// recomputed from those rows rather than incremented, so they cannot drift.
-  qualifyingCount Int @default(0)
-  /// Of `qualifyingCount`, how many reached legal completion.
-  completedCount  Int @default(0)
+  /// Derived counts the Dashboard reads. Both are recomputed from the positions
+  /// themselves rather than incremented, so they cannot drift.
+  /// How many of positions 1 to 9 are filled at all.
+  positionsFilled   Int @default(0)
+  /// Of those, how many have completed their qualifying transaction.
+  positionsComplete Int @default(0)
 
+  /// Set when positions 1 to 9 are all successful, and cleared if one is later
+  /// reversed. The anniversary job reads it to decide whether the next cycle may
+  /// open yet (CR-014's "completion recorded after that run waits").
   completedAt DateTime?
-  /// The entitlement the completed cycle confers, derived from the qualifying
-  /// records themselves rather than a fixed label.
+  /// What the completed cycle earned, derived from its own positions.
   entitlement String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  records CommissionRecord[]
+  /// The Members holding an Invite position in this cycle.
+  invitePositions  MemberProfile[]   @relation("InviteCyclePositions")
+  /// The Customers holding a Royalty position in this cycle.
+  royaltyPositions CustomerProfile[] @relation("RoyaltyCyclePositions")
 
-  @@unique([memberProfileId, cycleStart])
-  @@index([memberProfileId, status])
+  @@unique([memberProfileId, kind, cycleNumber])
+  @@index([memberProfileId, kind, status])
 }
 
 /// Append-only commission history for the record timeline (DESIGN §14.3).

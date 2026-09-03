@@ -904,3 +904,80 @@ be seen on a screen and not only in a test.
 
 Next: performance cycles and the anniversary job (CR-014, CR-027), rebuilt on
 top of steps 1 and 2.
+
+## 18. Step 3 built — performance cycles and the anniversary job (CR-014, CR-027)
+
+The old model was an annual window. A cycle covered one counter year, a new one
+opened every anniversary whether anything had been achieved or not, and only
+Royalty had one at all. The pack removes that outright, so this is a rebuild
+rather than an edit.
+
+**A cycle is a set of positions, not a span of time.** It opens on an
+anniversary and it ends when positions 1 to 9 have each completed, however many
+anniversaries that takes. `cycleStart`/`cycleEnd` are gone; `kind`,
+`cycleNumber` and `openedOn` replace them, and every Member holds two —
+`INVITE` and `ROYALTY` — which upgrade independently.
+
+**A position's success is its consumed one-time opportunity.** That was the
+find worth having. CR-014 defines Invite completion as the invited Member's
+first qualifying third-party transaction reaching 100% Payment Received, and
+Royalty completion as the Customer's one qualifying Royalty transaction reaching
+the same milestone. Both of those are already written, atomically and in one
+place, by `CommissionOpportunity`: consumed at exactly that milestone, reopened
+when a sale is cancelled before completion. So the pack's "cancelled/reversed
+qualifying events do not count as successfully completed" needed no new code,
+and there is no second source of truth to keep in step. `consumeOpportunity` and
+`reopenOpportunity` call `refreshCyclesFor`, and that is the only hook.
+
+**A position now belongs to a cycle rather than to a counter year.**
+`MemberProfile.inviteCycleId` and `CustomerProfile.royaltyCycleId` are what
+group a counter; the `*YearStart` columns stay as history and nothing writes
+them. This is what actually removes the annual reset: the position counter keeps
+climbing — past nine into CR-013's 0% band — until the cycle's own nine are
+complete and the next anniversary opens a new one. The earned upgrade is a fresh
+position 1 back at the top band, which is what an upgrade is *for*.
+
+**CR-027** replaces `ANNUAL_COUNTER_RESET` with
+`PERFORMANCE_CYCLE_UPGRADE_CHECK`: per Member whose anniversary is today, per
+counter, open the next cycle only if the current one is already Upgrade
+Eligible. A completion recorded on the anniversary itself waits a year, which is
+the pack's own convention and what makes the job independent of the hour it runs
+at. Re-running it opens nothing twice.
+
+### One rule this changes, stated plainly
+
+Royalty used to hold on `PERFORMANCE_CYCLE_INCOMPLETE` until its cycle
+completed, which was AC-02's reading of the first pack. CR-004 states Royalty's
+milestone directly — 100% Payment Received, or an Approved Buyback — and CR-014
+makes a cycle nine positions wide. Keeping the old gate would have held every
+Royalty until eight *other* Customers had bought. So the hold is gone: the cycle
+decides an upgrade, not whether one commission may be paid. The hold reason is
+removed from the enum, the eligibility input no longer takes
+`performanceCycleComplete`, and `CommissionRecord` loses `performanceCycleId`
+and `cycleCompletedAt` with it — a cycle holds positions, not records.
+
+Legal completion consequently decides nothing about a cycle any more.
+`onLegalCompletionChanged` stays as a named call because the completion service
+means something by it, but it is now a plain reassessment.
+
+### Evidence
+
+`AC-08` in `commission.check.ts` runs it end to end: nine invited Members each
+closing their first sale to 100%, a tenth invitee landing at position 10 and 0%
+inside the same cycle without counting towards it, eight of nine refusing to
+upgrade, the ninth turning the cycle Upgrade Eligible, the Royalty counter of
+the same Member staying untouched, the anniversary run opening nothing on an
+ordinary day and opening only the eligible counter on the anniversary, a second
+run opening nothing, an old position keeping its cycle and rate, the next
+invitee starting at position 1 of cycle 2 at 1%, and a reversed qualifying event
+taking the cycle back out of Upgrade Eligible. `domain.check.ts` covers the
+completion rule, the anniversary convention and the 29 February fallback.
+
+All nine database suites, `npm run check`, `tsc --noEmit` and `npm run build`
+pass, and both datasets were rebuilt so their positions sit in cycles.
+
+Land Inquiries also moved to its own top-level navigation entry, as asked.
+
+Next: CR-015 and CR-016 — an Approved Buyback as the alternative milestone for
+Invite, Royalty and Loyalty, and its unwind. It is the seam this step left open
+in both cycle-completion conditions.

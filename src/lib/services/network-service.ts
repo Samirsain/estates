@@ -11,26 +11,26 @@
 import { db } from "@/lib/db";
 import { bandRate, counterYearStart, nextNetworkPosition } from "@/lib/domain/commission";
 import { hashPassword } from "@/lib/security/auth";
-import { istDay, istInstant } from "@/lib/tasks";
-import { blocked, lockKey, nextReference, runCommand, type Tx } from "./command";
+import { istDay } from "@/lib/tasks";
+import { blocked, nextReference, runCommand, type Tx } from "./command";
+import { currentCycle, refreshCycle } from "./cycle-service";
 import { generateForBooking, reassessCommission } from "./commission-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
-/** The counter year as an instant, so it can be stored and compared. */
-function yearStartInstant(activationDate: Date, at: Date): Date {
-  return new Date(istInstant(counterYearStart(activationDate, at), "00:00"));
-}
-
 /**
- * RD-02 — the next free position in the inviting Member's current annual
- * Invited Member Counter. Serialised on the counter so two activations in the
- * same year cannot take the same position.
+ * RD-02 with CR-014 — the next free position in the inviting Member's *current
+ * Invite cycle*.
+ *
+ * The counter year used to be the grouping key, which is exactly the annual
+ * reset the pack removes: a Member who invited four people a year got position 1
+ * again every anniversary. The cycle is the grouping key now, so positions keep
+ * climbing — past nine into CR-013's 0% band — until the cycle's own nine are
+ * complete and the next anniversary opens a new one.
  */
 export async function assignInvitePosition(
   tx: Tx,
   args: { invitedMemberId: string; invitingMemberId: string; at?: Date }
 ) {
-  const at = args.at ?? new Date();
   const inviter = await tx.memberProfile.findUniqueOrThrow({
     where: { id: args.invitingMemberId },
   });
@@ -38,11 +38,12 @@ export async function assignInvitePosition(
     blocked("The inviting Member is not activated, so no Network position can be assigned.");
   }
 
-  const yearStart = yearStartInstant(inviter.activationDate, at);
-  await lockKey(tx, `invite-counter:${inviter.id}:${istDay(yearStart)}`);
+  // currentCycle takes the lock that serialises this counter, so two
+  // activations in the same instant cannot take the same position.
+  const cycle = await currentCycle(tx, inviter.id, "INVITE");
 
   const taken = await tx.memberProfile.findMany({
-    where: { invitedByMemberId: inviter.id, inviteYearStart: yearStart, invitePosition: { not: null } },
+    where: { inviteCycleId: cycle.id, invitePosition: { not: null } },
     select: { invitePosition: true },
   });
   const position = nextNetworkPosition(taken.map((t) => t.invitePosition!));
@@ -54,10 +55,11 @@ export async function assignInvitePosition(
       invitedByMemberId: inviter.id,
       invitePosition: position,
       inviteRatePercent: ratePercent,
-      inviteYearStart: yearStart,
+      inviteCycleId: cycle.id,
     },
   });
-  return { position, ratePercent, yearStart };
+  await refreshCycle(tx, cycle.id, `MEMBER:${inviter.memberId}`);
+  return { position, ratePercent, cycleNumber: cycle.cycleNumber };
 }
 
 /**
@@ -66,28 +68,19 @@ export async function assignInvitePosition(
  * that is the moment the pack says the position is taken: a provisional link
  * consumes nothing.
  */
-async function assignRoyaltyPosition(
-  tx: Tx,
-  args: { customerProfileId: string; royaltyMemberId: string; at: Date }
-) {
+async function assignRoyaltyPosition(tx: Tx, args: { royaltyMemberId: string }) {
   const member = await tx.memberProfile.findUniqueOrThrow({ where: { id: args.royaltyMemberId } });
   if (!member.activationDate) {
     blocked("The Royalty Linked Member is not activated, so no Royalty position can be assigned.");
   }
 
-  const yearStart = yearStartInstant(member.activationDate, args.at);
-  await lockKey(tx, `royalty-counter:${member.id}:${istDay(yearStart)}`);
-
+  const cycle = await currentCycle(tx, member.id, "ROYALTY");
   const taken = await tx.customerProfile.findMany({
-    where: {
-      royaltyLinkedMemberId: member.id,
-      royaltyYearStart: yearStart,
-      royaltyPosition: { not: null },
-    },
+    where: { royaltyCycleId: cycle.id, royaltyPosition: { not: null } },
     select: { royaltyPosition: true },
   });
   const position = nextNetworkPosition(taken.map((t) => t.royaltyPosition!));
-  return { position, ratePercent: bandRate(position), yearStart };
+  return { position, ratePercent: bandRate(position), cycleId: cycle.id, cycleNumber: cycle.cycleNumber };
 }
 
 /**
@@ -190,11 +183,7 @@ export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string
 
   const at = new Date();
   const position = linkedMember
-    ? await assignRoyaltyPosition(tx, {
-        customerProfileId: customer.id,
-        royaltyMemberId: linkedMember.id,
-        at,
-      })
+    ? await assignRoyaltyPosition(tx, { royaltyMemberId: linkedMember.id })
     : null;
 
   await tx.customerProfile.update({
@@ -203,9 +192,12 @@ export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string
       royaltyLinkFinalAt: at,
       royaltyPosition: position?.position ?? null,
       royaltyRatePercent: position?.ratePercent ?? null,
-      royaltyYearStart: position?.yearStart ?? null,
+      royaltyCycleId: position?.cycleId ?? null,
     },
   });
+  // CR-014 — the new position joins the Member's Royalty cycle, so the cycle's
+  // own count of filled positions moves with it.
+  if (position) await refreshCycle(tx, position.cycleId, actorRef);
   await tx.bookingEvent.create({
     data: {
       bookingId: first.id,
@@ -213,7 +205,7 @@ export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string
       action: "ROYALTY_LINK_FINAL",
       reason: linkedMember
         ? `Royalty Linked Member final — ${linkedMember.memberId} at Royalty position ` +
-          `${position!.position} (${position!.ratePercent}%), on ${
+          `${position!.position} (${position!.ratePercent}%) of cycle ${position!.cycleNumber}, on ${
             paidInFull ? "100% Payment Received" : "an Approved Buyback"
           } (CR-002).`
         : `No Royalty Linked Member, now final on ${
@@ -377,10 +369,9 @@ export async function activateMember(args: {
 }
 
 /**
- * RD-02 — the anniversary job. Nothing is renumbered: the counter year is
- * derived per Member from their activation date, so a new year simply means the
- * next introduction records a new `yearStart` and starts again at position 1.
- * This exists to make the roll observable rather than to mutate anything.
+ * CR-027 — the Members whose Activation Anniversary falls today in IST, which is
+ * the set the Performance Cycle Anniversary Upgrade Check walks. 29 February
+ * resolves to 28 February in a non-leap year inside `counterYearStart`.
  */
 export function membersRollingToday(at: Date = new Date()) {
   return db.memberProfile.findMany({

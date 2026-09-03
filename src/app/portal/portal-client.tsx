@@ -61,7 +61,6 @@ const HOLD_LABEL: Record<string, string> = {
   BUYBACK_PENDING: "Deal Under Review",
   PAYMENT_PENDING: "Payment Pending",
   COMMISSION_CONFLICT_ABOVE_4: "Under Review",
-  PERFORMANCE_CYCLE_INCOMPLETE: "Performance Cycle in Progress",
 };
 
 export type PortalData = {

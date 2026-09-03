@@ -11,13 +11,10 @@ import {
   afterAffectingChange,
   canMarkPaid,
   classifyApprovedBooking,
-  cycleAchieved,
-  cycleWindow,
   generateCommission,
   MAX_LOYALTY_SLOTS,
   needsPaymentTask,
   opportunityReopens,
-  qualifyingActivityComplete,
   resolveEligibility,
   totalOf,
   type CommissionInput,
@@ -30,6 +27,7 @@ import { normaliseReference, notFutureDated } from "@/lib/domain/booking";
 import { hasVerifiedBank } from "./bank-service";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { closeTasksFor, ensureTask } from "./task-service";
+import { refreshCyclesFor } from "./cycle-service";
 
 const D = Prisma.Decimal;
 
@@ -114,6 +112,12 @@ async function consumeOpportunity(
     },
   });
   await syncLoyaltyCount(tx, args.kind, args.subjectPersonId);
+  // CR-014 — the consumed opportunity is what makes a cycle position
+  // successful, so the cycle is recomputed here rather than by whoever
+  // remembers to. Loyalty has no cycle.
+  if (args.kind !== "LOYALTY") {
+    await refreshCyclesFor(tx, args.kind, args.subjectPersonId, "SYSTEM");
+  }
   return { ok: true, opportunityId: opportunity.id };
 }
 
@@ -155,6 +159,11 @@ async function reopenOpportunity(tx: Tx, opportunityId: string, reason: string) 
     },
   });
   await syncLoyaltyCount(tx, opportunity.kind, opportunity.subjectPersonId);
+  // CR-014 — "cancelled/reversed qualifying events do not count as successfully
+  // completed", so a reopened opportunity un-completes its cycle position.
+  if (opportunity.kind !== "LOYALTY") {
+    await refreshCyclesFor(tx, opportunity.kind, opportunity.subjectPersonId, "SYSTEM");
+  }
 }
 
 /* ------------------------------------------------------------ engine input */
@@ -428,235 +437,6 @@ export async function isLegallyCompleted(tx: Tx, bookingId: string): Promise<boo
   return !!live;
 }
 
-/**
- * AC-02 — the cycle a Royalty's qualifying transaction falls into, created on
- * first use. The window is the introducing Member's own counter year (RD-02),
- * so the row is found by (member, cycle start) and two concurrent qualifying
- * transactions cannot create two cycles for the same year.
- */
-async function cycleFor(tx: Tx, memberProfileId: string, at: Date) {
-  const member = await tx.memberProfile.findUniqueOrThrow({ where: { id: memberProfileId } });
-  if (!member.activationDate) return null;
-
-  const window = cycleWindow(member.activationDate, at);
-  const cycleStart = new Date(istInstant(window.start, "00:00"));
-  const cycleEnd = new Date(istInstant(window.end, "23:59"));
-
-  await lockKey(tx, `performance-cycle:${memberProfileId}:${window.start}`);
-  const existing = await tx.performanceCycle.findUnique({
-    where: { memberProfileId_cycleStart: { memberProfileId, cycleStart } },
-  });
-  if (existing) return existing;
-
-  return tx.performanceCycle.create({ data: { memberProfileId, cycleStart, cycleEnd } });
-}
-
-/**
- * AC-02 — recomputes a cycle's stored figures from the qualifying records
- * actually attached to it, and returns the refreshed row.
- *
- * Recomputing rather than incrementing is the whole reliability story here: a
- * reassessment can run any number of times from any number of triggers, and a
- * counter that is stepped up and down by each of them drifts the first time one
- * path is missed. Counting the rows cannot drift, and it makes every caller
- * below idempotent for free.
- */
-async function refreshCycle(tx: Tx, cycleId: string, actorRef: string) {
-  const attached = await tx.commissionRecord.findMany({
-    where: { performanceCycleId: cycleId },
-    select: { id: true, percent: true, cycleCompletedAt: true },
-  });
-
-  const qualifyingCount = attached.length;
-  const completedCount = attached.filter((r) => r.cycleCompletedAt !== null).length;
-  const achieved = cycleAchieved(qualifyingCount, completedCount);
-
-  const before = await tx.performanceCycle.findUniqueOrThrow({ where: { id: cycleId } });
-
-  // Approved Changes §1 — "resulting entitlement". Derived from the qualifying
-  // records themselves rather than a fixed label, so the cycle says what it
-  // actually earned rather than that it earned something.
-  const entitled = attached.filter((r) => r.cycleCompletedAt !== null);
-  const totalPercent = entitled.reduce((sum, r) => sum.add(r.percent), new D(0));
-  const entitlement = achieved
-    ? `ROYALTY ${totalPercent.toFixed(2)}% across ${entitled.length} qualifying ` +
-      `transaction${entitled.length === 1 ? "" : "s"}`
-    : null;
-
-  const cycle = await tx.performanceCycle.update({
-    where: { id: cycleId },
-    data: {
-      qualifyingCount,
-      completedCount,
-      status: achieved ? "COMPLETED" : "IN_PROGRESS",
-      // The first completion timestamp is kept across later qualifying
-      // transactions entering the same window; only losing achievement clears it.
-      completedAt: achieved ? (before.completedAt ?? new Date()) : null,
-      entitlement,
-    },
-  });
-
-  if (before.status !== cycle.status) {
-    for (const record of attached) {
-      await tx.commissionEvent.create({
-        data: {
-          recordId: record.id,
-          actorRef,
-          action: cycle.status === "COMPLETED" ? "CYCLE_COMPLETED" : "CYCLE_REOPENED",
-          fromState: before.status,
-          toState: `${cycle.status} ${completedCount}/${qualifyingCount}`,
-          reason: entitlement,
-        },
-      });
-    }
-  }
-  return cycle;
-}
-
-/**
- * AC-02 — records one qualifying transaction against the beneficiary Member's
- * cycle, and returns whether **this record's own** qualifying activity is
- * complete.
- *
- * The per-record answer is what gates eligibility, not the cycle's aggregate
- * status. One Member's cycle can hold qualifying transactions from several
- * different introduced Customers in the same counter year, and PRD §6.3 gives
- * each introduced Customer their own single Royalty entitlement. Gating on the
- * aggregate would let one Customer's completed purchase release another
- * Customer's Royalty, which is a different person's entitlement entirely.
- *
- * The cycle row is the stored record of that activity — start, end, qualifying
- * transactions, achievement and entitlement — which is what Approved Changes §1
- * requires the CRM to keep and §4 requires the Dashboard to show.
- */
-async function recordCycleQualification(
-  tx: Tx,
-  record: {
-    id: string;
-    performanceCycleId: string | null;
-    cycleCompletedAt: Date | null;
-    beneficiaryPersonId: string;
-  },
-  legallyCompleted: boolean,
-  actorRef: string
-): Promise<boolean | null> {
-  let cycleId = record.performanceCycleId;
-
-  if (!cycleId) {
-    const member = await tx.memberProfile.findUnique({
-      where: { personId: record.beneficiaryPersonId },
-    });
-    if (!member) return null;
-
-    const cycle = await cycleFor(tx, member.id, new Date());
-    if (!cycle) return null;
-    cycleId = cycle.id;
-
-    await tx.commissionRecord.update({
-      where: { id: record.id },
-      data: { performanceCycleId: cycleId },
-    });
-    await tx.commissionEvent.create({
-      data: {
-        recordId: record.id,
-        actorRef,
-        action: "CYCLE_QUALIFIED",
-        toState: "RECORDED",
-        reason:
-          `Qualifying transaction recorded in the performance cycle ` +
-          `${cycle.cycleStart.toISOString().slice(0, 10)} to ` +
-          `${cycle.cycleEnd.toISOString().slice(0, 10)}. It is not complete until the ` +
-          `sale is legally completed.`,
-      },
-    });
-  }
-
-  // The milestone has been reached by the time this runs, so the remaining half
-  // of the qualifying activity is legal completion (PRD §6.3).
-  const complete = qualifyingActivityComplete({ milestoneReached: true, legallyCompleted });
-
-  if (complete && !record.cycleCompletedAt) {
-    await tx.commissionRecord.update({
-      where: { id: record.id },
-      data: { cycleCompletedAt: new Date() },
-    });
-    await tx.commissionEvent.create({
-      data: {
-        recordId: record.id,
-        actorRef,
-        action: "CYCLE_ACTIVITY_COMPLETED",
-        toState: "LEGALLY_COMPLETED",
-        reason: "The qualifying sale reached final delivery.",
-      },
-    });
-  }
-
-  await refreshCycle(tx, cycleId, actorRef);
-  // Re-read rather than trusting the local flag: a completion recorded on an
-  // earlier pass counts just as much as one recorded on this one.
-  const current = await tx.commissionRecord.findUniqueOrThrow({
-    where: { id: record.id },
-    select: { cycleCompletedAt: true },
-  });
-  return current.cycleCompletedAt !== null;
-}
-
-/**
- * AC-02 — the qualifying activity's legal completion is reversed.
- *
- * Only reopening the delivery reaches this. A Buyback does not: PRD §6.3 and
- * main-PRD §14.12 both keep a legally completed sale's entitlement earned after
- * a later Buyback, so the completion it already achieved stands.
- */
-async function reverseCycleCompletion(tx: Tx, bookingId: string, actorRef: string, reason: string) {
-  const records = await tx.commissionRecord.findMany({
-    where: { bookingId, type: "ROYALTY", cycleCompletedAt: { not: null } },
-    select: { id: true, performanceCycleId: true },
-  });
-
-  for (const record of records) {
-    await tx.commissionRecord.update({
-      where: { id: record.id },
-      data: { cycleCompletedAt: null },
-    });
-    await tx.commissionEvent.create({
-      data: {
-        recordId: record.id,
-        actorRef,
-        action: "CYCLE_ACTIVITY_REOPENED",
-        fromState: "LEGALLY_COMPLETED",
-        reason,
-      },
-    });
-    if (record.performanceCycleId) await refreshCycle(tx, record.performanceCycleId, actorRef);
-  }
-  return { affected: records.length };
-}
-
-/**
- * AC-02 — a qualifying transaction that no longer stands leaves the cycle, and
- * the cycle's figures are recomputed without it.
- *
- * The cycle row is never deleted and keeps its window; only its membership
- * changes, and the record's own timeline says why it left.
- */
-async function releaseFromCycle(tx: Tx, recordId: string, actorRef: string, reason: string) {
-  const record = await tx.commissionRecord.findUniqueOrThrow({
-    where: { id: recordId },
-    select: { performanceCycleId: true },
-  });
-  if (!record.performanceCycleId) return;
-
-  await tx.commissionRecord.update({
-    where: { id: recordId },
-    data: { performanceCycleId: null, cycleCompletedAt: null },
-  });
-  await tx.commissionEvent.create({
-    data: { recordId, actorRef, action: "CYCLE_RELEASED", reason },
-  });
-  await refreshCycle(tx, record.performanceCycleId, actorRef);
-}
-
 /* ------------------------------------------------------------- generation */
 
 /**
@@ -772,8 +552,9 @@ async function supersedeRecord(tx: Tx, recordId: string, actorRef: string, reaso
     await reopenOpportunity(tx, record.opportunityId, `Superseded — ${reason}`);
     await tx.commissionRecord.update({ where: { id: recordId }, data: { opportunityId: null } });
   }
-  // AC-02 — and its qualifying transaction leaves the cycle with it.
-  await releaseFromCycle(tx, recordId, actorRef, `Superseded — ${reason}`);
+  // CR-014 — reopening the opportunity is what takes the position back out of
+  // its cycle, and `reopenOpportunity` recomputes the cycle itself. There is
+  // nothing else to release: a cycle holds positions, not records.
 }
 
 /* ------------------------------------------------------------- reassessment */
@@ -854,41 +635,11 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
       });
     }
 
-    // AC-02 — Royalty's qualifying transaction is counted into the introducing
-    // Member's performance cycle at the milestone, and released again if the
-    // milestone is lost. Counting before eligibility is resolved is deliberate:
-    // otherwise the record would hold for one extra reassessment after the very
-    // transaction that completed the cycle.
-    let performanceCycleComplete: boolean | null = null;
-    // CR-013 — a 0% Royalty consumes the Customer's one-time opportunity but
-    // enters no performance cycle. A cycle is completed by its positions 1 to 9;
-    // a position past the ninth is outside it and must not count towards one.
-    const earnsNothing = record.percent.isZero();
-    if (record.type === "ROYALTY" && !earnsNothing) {
-      if (milestoneReached && payment !== "CANCELLED") {
-        performanceCycleComplete = await recordCycleQualification(
-          tx,
-          {
-            id: record.id,
-            performanceCycleId: record.performanceCycleId,
-            cycleCompletedAt: record.cycleCompletedAt,
-            beneficiaryPersonId: record.beneficiaryPersonId,
-          },
-          await isLegallyCompleted(tx, bookingId),
-          actorRef
-        );
-      } else if (record.performanceCycleId) {
-        await releaseFromCycle(
-          tx,
-          record.id,
-          actorRef,
-          milestoneReached
-            ? "The commission record was cancelled."
-            : "Payment fell below the milestone."
-        );
-      }
-    }
-
+    // CR-014 — nothing about the cycle is done here any more. A cycle is made of
+    // positions, a position succeeds when its one-time opportunity is consumed,
+    // and that consumption happens a few lines above — which is where the cycle
+    // is recomputed. Royalty itself is earned at its own milestone (CR-004), so
+    // no cycle gates it.
     const next = resolveEligibility({
       type: record.type as "DIRECT" | "INVITE" | "ROYALTY" | "LOYALTY",
       percent: record.percent.toString(),
@@ -902,7 +653,6 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
       bookingProcess: booking.activeProcess,
       acquisitionPaymentPending: false, // Phase 5 sets this from the acquisition.
       commissionConflictAbove4: conflictAbove4,
-      performanceCycleComplete,
     });
 
     if (next.state !== record.eligibility || next.holdReason !== record.holdReason) {
@@ -1237,13 +987,10 @@ export async function cancelCommissionForBooking(
       await reopenOpportunity(tx, record.opportunityId, args.reason);
       await tx.commissionRecord.update({ where: { id: record.id }, data: { opportunityId: null } });
     }
-    // AC-02 — the qualifying transaction leaves its cycle only where the sale
-    // had not legally completed. PRD §6.3 and §6.5 hold the entitlement
-    // consumed for a completed sale that is later bought back, so releasing it
-    // here would un-complete a cycle the Member had already earned.
-    if (opportunityReopens(args.legallyCompleted)) {
-      await releaseFromCycle(tx, record.id, actorRef, args.reason);
-    }
+    // CR-014 — the cycle follows the opportunity above and needs nothing here.
+    // A completed sale later bought back keeps its entitlement consumed
+    // (PRD §6.3, §6.5), so its cycle position stays successful, which is what
+    // `opportunityReopens` already decides.
     await closeTasksFor(tx, "Commission", record.id, actorRef, args.reason, COMMISSION_PAYMENT_PURPOSE);
   }
 
@@ -1278,12 +1025,14 @@ export async function cancelCommissionForBooking(
 }
 
 /**
- * AC-02 — the commission side of reaching, or losing, legal completion.
+ * The commission side of reaching, or losing, legal completion.
  *
- * Delivery is what completes a Royalty's qualifying activity, so the completion
- * service has to tell the commission engine when it happens. Without this the
- * Royalty would sit on PERFORMANCE_CYCLE_INCOMPLETE forever: nothing else in the
- * system changes after the final payment.
+ * Under AC-02 this also completed or reversed a Royalty's performance cycle,
+ * because delivery was what the cycle waited for. CR-014 moves the cycle onto
+ * the 100% Payment Received milestone instead, so delivery no longer decides
+ * anything about a cycle and this is a plain reassessment — kept as its own
+ * function because the completion service calls it by name and what it means is
+ * still "the legal completion of this Booking moved".
  */
 export async function onLegalCompletionChanged(
   tx: Tx,
@@ -1291,7 +1040,7 @@ export async function onLegalCompletionChanged(
   actorRef: string,
   args: { completed: boolean; reason: string }
 ) {
-  if (!args.completed) await reverseCycleCompletion(tx, bookingId, actorRef, args.reason);
+  void args;
   await reassessCommission(tx, bookingId, actorRef);
 }
 

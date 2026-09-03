@@ -105,8 +105,10 @@ import {
   counterYearRolled,
   counterYearStart,
   countsAsUnpaid,
-  cycleAchieved,
-  cycleWindow,
+  CYCLE_POSITIONS,
+  countsTowardsCycle,
+  cycleComplete,
+  cycleEntitlement,
   generateCommission,
   isLeapYear,
   experienceSince,
@@ -115,7 +117,7 @@ import {
   nextNetworkPosition,
   opportunityReopens,
   previewInput,
-  qualifyingActivityComplete,
+  mayOpenNextCycle,
   resolveEligibility,
   totalOf,
   type PersonFacts,
@@ -1231,7 +1233,6 @@ const eligibilityBase = {
   bookingProcess: "NONE" as const,
   acquisitionPaymentPending: false,
   commissionConflictAbove4: false,
-  performanceCycleComplete: null as boolean | null,
 };
 
 assert.deepEqual(resolveEligibility(eligibilityBase), { state: "READY", holdReason: null });
@@ -1465,90 +1466,109 @@ assert.equal(
   );
 }
 
-/* --------------------------------------- AC-02 · performance cycles */
+/* ------------------------------- CR-014, CR-027 · performance cycles */
 
-// A cycle window opens on the anniversary and closes the day before the next
-// one, so consecutive windows tile without a gap or an overlap.
+// A cycle is completed by its positions 1 to 9, and by nothing else. Position
+// 10 and beyond are real, visible and consuming (CR-013) but they are outside
+// the cycle, so they neither complete it nor hold it open.
+assert.ok(countsTowardsCycle(1) && countsTowardsCycle(9));
+assert.ok(!countsTowardsCycle(10) && !countsTowardsCycle(0));
+assert.equal(CYCLE_POSITIONS, 9);
+
+const nine = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+assert.ok(cycleComplete(nine), "all nine successful is Upgrade Eligible");
+assert.ok(!cycleComplete([]), "an empty cycle is not complete");
+assert.ok(!cycleComplete(nine.slice(0, 8)), "eight of nine is not complete");
+assert.ok(
+  !cycleComplete([...nine.slice(0, 8), 10, 11, 12]),
+  "positions past the ninth cannot stand in for a missing one"
+);
+assert.ok(
+  cycleComplete([...nine, 10, 11]),
+  "and they do not stop a cycle whose own nine are done"
+);
+assert.ok(cycleComplete([...nine, 5, 5]), "a repeated position counts once");
+
+/* CR-027 — the anniversary run. Three things must hold at once, and the third
+   is the pack's own convention: a completion recorded on the anniversary itself
+   waits for the next one. */
 {
-  const window = cycleWindow(new Date("2024-06-10T00:00:00+05:30"), new Date("2026-08-22T12:00:00+05:30"));
-  assert.equal(window.start, "2026-06-10");
-  assert.equal(window.end, "2027-06-09");
+  const activation = new Date("2024-06-10T00:00:00+05:30");
+  const anniversary = new Date("2027-06-10T09:00:00+05:30");
 
-  // Before the anniversary the transaction still belongs to the previous cycle.
-  const earlier = cycleWindow(new Date("2024-06-10T00:00:00+05:30"), new Date("2026-06-09T23:00:00+05:30"));
-  assert.equal(earlier.start, "2025-06-10");
-  assert.equal(earlier.end, "2026-06-09");
+  assert.ok(
+    mayOpenNextCycle({
+      activationDate: activation,
+      status: "UPGRADE_ELIGIBLE",
+      completedAt: new Date("2027-01-04T10:00:00+05:30"),
+      at: anniversary,
+    }),
+    "eligible, on the anniversary, completed earlier — the next cycle opens"
+  );
+  assert.ok(
+    !mayOpenNextCycle({
+      activationDate: activation,
+      status: "IN_PROGRESS",
+      completedAt: null,
+      at: anniversary,
+    }),
+    "an incomplete counter is untouched by its anniversary — nothing resets"
+  );
+  assert.ok(
+    !mayOpenNextCycle({
+      activationDate: activation,
+      status: "UPGRADE_ELIGIBLE",
+      completedAt: new Date("2027-01-04T10:00:00+05:30"),
+      at: new Date("2027-06-11T09:00:00+05:30"),
+    }),
+    "and it only rolls on the anniversary itself"
+  );
+  assert.ok(
+    !mayOpenNextCycle({
+      activationDate: activation,
+      status: "UPGRADE_ELIGIBLE",
+      completedAt: new Date("2027-06-10T18:00:00+05:30"),
+      at: anniversary,
+    }),
+    "completion recorded on the anniversary day waits until the next anniversary"
+  );
 
-  // RD-02's 29 February rule carries into the cycle, so the cycle and the
-  // annual counter roll on the same day rather than a day apart.
-  const leap = cycleWindow(new Date("2024-02-29T00:00:00+05:30"), new Date("2027-03-05T12:00:00+05:30"));
-  assert.equal(leap.start, "2027-02-28");
+  // RD-02's 29 February rule carries into the anniversary, so a Member
+  // activated on a leap day rolls on 28 February in a common year.
+  assert.ok(
+    mayOpenNextCycle({
+      activationDate: new Date("2024-02-29T00:00:00+05:30"),
+      status: "UPGRADE_ELIGIBLE",
+      completedAt: new Date("2026-11-01T10:00:00+05:30"),
+      at: new Date("2027-02-28T09:00:00+05:30"),
+    })
+  );
 }
 
-// Approved Changes §1 — "not simply by recording a transaction". The payment
-// milestone records the qualifying activity; PRD §6.3's legal completion
-// completes it. Neither half alone is enough.
-assert.ok(
-  qualifyingActivityComplete({ milestoneReached: true, legallyCompleted: true }),
-  "milestone reached and legally completed is complete qualifying activity"
-);
-assert.ok(
-  !qualifyingActivityComplete({ milestoneReached: true, legallyCompleted: false }),
-  "100% Payment Received alone is a recorded transaction, not completed activity"
-);
-assert.ok(
-  !qualifyingActivityComplete({ milestoneReached: false, legallyCompleted: true }),
-  "legal completion without the milestone is not complete qualifying activity"
-);
-assert.ok(!qualifyingActivityComplete({ milestoneReached: false, legallyCompleted: false }));
+assert.match(cycleEntitlement("INVITE", 1), /Invite cycle 1 complete/);
+assert.match(cycleEntitlement("ROYALTY", 3), /Royalty cycle 3 complete/);
 
-// TC-ROY-001 "satisfy all cycle conditions" against TC-ROY-002 "only part of the
-// qualifying conditions are met". A cycle is achieved on all of its qualifying
-// activity, never on a subset and never while empty.
-assert.ok(!cycleAchieved(0, 0), "an empty cycle is not achieved");
-assert.ok(cycleAchieved(1, 1), "one qualifying transaction, completed, is achieved");
-assert.ok(!cycleAchieved(2, 1), "half a two-transaction cycle is partial, not achieved");
-assert.ok(cycleAchieved(3, 3), "all three completed is achieved");
-assert.ok(!cycleAchieved(3, 0), "three recorded and none completed is not achieved");
-assert.ok(
-  !cycleAchieved(0, 1),
-  "a completion count that outran the qualifying count is not treated as achievement"
-);
-
-// Royalty holds until its cycle is complete; nothing else is affected by it.
+/* CR-004 supersedes AC-02: Royalty is earned at its own milestone, and the
+   performance cycle decides an upgrade rather than a payment. */
 assert.equal(
-  resolveEligibility({ ...eligibilityBase, type: "ROYALTY", milestonePercent: "100", performanceCycleComplete: null })
-    .holdReason,
-  "PERFORMANCE_CYCLE_INCOMPLETE",
-  "Royalty with no cycle yet is held, not Ready"
-);
-assert.equal(
-  resolveEligibility({ ...eligibilityBase, type: "ROYALTY", milestonePercent: "100", performanceCycleComplete: false })
-    .holdReason,
-  "PERFORMANCE_CYCLE_INCOMPLETE",
-  "a partially completed cycle holds the Royalty"
-);
-assert.equal(
-  resolveEligibility({ ...eligibilityBase, type: "ROYALTY", milestonePercent: "100", performanceCycleComplete: true })
-    .state,
+  resolveEligibility({ ...eligibilityBase, type: "ROYALTY", milestonePercent: "100" }).state,
   "READY",
-  "a completed cycle releases the Royalty"
+  "Royalty at 100% Payment Received is Ready — no cycle gates it"
 );
 assert.equal(
   resolveEligibility({ ...eligibilityBase, type: "ROYALTY", progressPercent: "99", milestonePercent: "100" }).state,
   "MILESTONE_PENDING",
-  "the milestone is still judged before the cycle"
+  "and below the milestone it is simply pending"
 );
 assert.equal(
-  resolveEligibility({ ...eligibilityBase, type: "DIRECT", performanceCycleComplete: false }).state,
-  "READY",
-  "Direct is not a cycle-earned component"
-);
-assert.equal(
-  resolveEligibility({ ...eligibilityBase, type: "ROYALTY", milestonePercent: "100", performanceCycleComplete: true, beneficiaryAadhaarAvailable: false })
-    .holdReason,
+  resolveEligibility({
+    ...eligibilityBase,
+    type: "ROYALTY",
+    milestonePercent: "100",
+    beneficiaryAadhaarAvailable: false,
+  }).holdReason,
   "AADHAAR_PENDING",
-  "a complete cycle does not skip the beneficiary conditions"
+  "the beneficiary conditions still apply"
 );
 
 /* ---------------------------------------------------------- payment states */

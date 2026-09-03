@@ -272,78 +272,84 @@ export function classifyApprovedBooking(
 /* ------------------------------------------------- performance cycles */
 
 /**
- * AC-02 — Royalty is earned through a completed performance cycle rather than
- * by a transaction simply being recorded (Approved Changes §1 "Royalty").
+ * CR-014, CR-027 — a Member holds two performance cycles, one per counter, and
+ * they upgrade independently.
  *
- * The cycle window is the Member's own annual counter year (RD-02): it opens on
- * the Member Activation Date anniversary and runs to the day before the next
- * one. Reusing that window rather than inventing a second one matters — a Member
- * activated on 29 February must see their cycle roll on the same day their
- * Introduced Customer Counter rolls, not a day apart.
+ * The previous model was an annual window: a cycle covered one counter year and
+ * a new one opened every anniversary whether anything had been achieved or not.
+ * The pack removes that outright — "Remove automatic annual reset", "If a
+ * counter is incomplete on anniversary, nothing resets" — so a cycle here is a
+ * set of positions rather than a span of time. It opens on an anniversary and it
+ * ends when positions 1 to 9 have each completed, however many anniversaries
+ * that takes.
  *
- * What counts as "completed qualifying activity" is not a number of
- * transactions. The approved corpus defines the qualifying activity for Royalty
- * and its terminal state directly:
+ * What a position must do to count is the same shape on both sides:
  *
- *  - PRD §6.3 / main-PRD §14.4 — the qualifying activity is the introduced
- *    Customer's first future direct purchase through 3% Club, with no selling
- *    Member closing it, at a 100% Payment Received milestone.
- *  - PRD §6.3 — "Cancellation before legal completion restores the opportunity.
- *    Legally completed purchase consumes the opportunity."
- *  - COMMISSION-TEST-PLAN §1 — "Legally completed: the sale reached final
- *    delivery. Before that, it is not legally completed."
+ *  - Invite position — that invited Member's first qualifying third-party
+ *    transaction reaches 100% Payment Received (or an Approved Buyback, which is
+ *    CR-015 and lands with the Buyback work).
+ *  - Royalty position — that Customer's one qualifying Royalty transaction
+ *    reaches the same milestone.
  *
- * So the qualifying activity is *recorded* at the payment milestone and
- * *completed* at final delivery. A transaction sitting between the two is
- * exactly the partially completed cycle Approved Changes §1 refuses to treat as
- * complete, and exactly what TC-ROY-002 exercises.
- *
- * There is deliberately no target count here. PRD §6.3 already fixes the number
- * of qualifying transactions per entitlement — "Royalty applies only to the
- * Customer's first qualifying future direct purchase" and "may be generated only
- * once per introduced Customer" — so a separate threshold would be a second,
- * invented rule on top of an approved one.
+ * Both of those are already recorded, atomically and in one place: the
+ * `CommissionOpportunity` row. It is consumed exactly at that milestone and
+ * reopened if the sale is cancelled before completion, which is precisely
+ * CR-014's "Cancelled/reversed qualifying events do not count as successfully
+ * completed". So a position is successful when its one-time opportunity is
+ * consumed, and there is no second source of truth to keep in step.
  */
-export type CycleWindow = { start: string; end: string };
+
+/** CR-014 — positions 1 to 9 must each complete before a cycle upgrades. */
+export const CYCLE_POSITIONS = 9;
 
 /**
- * The IST calendar days the Member's cycle covering `at` opens and closes on.
- * The end is the day before the next anniversary, so the windows tile without
- * overlapping and a transaction belongs to exactly one cycle.
+ * CR-013 — a position past the ninth is real, visible and consuming, but it is
+ * not part of the cycle: the cycle is completed by its first nine.
  */
-export function cycleWindow(activationDate: Date | string, at: Date = new Date()): CycleWindow {
-  const start = counterYearStart(new Date(activationDate), at);
-  const nextStart = anniversaryDay(istDay(activationDate), Number(start.slice(0, 4)) + 1);
-  const dayBefore = new Date(`${nextStart}T00:00:00Z`);
-  dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
-  return { start, end: dayBefore.toISOString().slice(0, 10) };
+export function countsTowardsCycle(position: number): boolean {
+  return position >= 1 && position <= CYCLE_POSITIONS;
 }
 
 /**
- * AC-02 — whether one qualifying transaction's activity is complete.
- *
- * Both halves are required and neither implies the other: a Booking can be at
- * 100% Payment Received for months before delivery, and delivery cannot precede
- * the milestone on an approved sale. The milestone alone is "recording a
- * transaction", which Approved Changes §1 states is not enough to earn Royalty.
+ * CR-014 — "When positions 1–9 are all successful, status becomes Upgrade
+ * Eligible." Never on a subset, and never on a cycle that has not filled all
+ * nine positions yet.
  */
-export function qualifyingActivityComplete(activity: {
-  milestoneReached: boolean;
-  legallyCompleted: boolean;
+export function cycleComplete(successfulPositions: readonly number[]): boolean {
+  const filled = new Set(successfulPositions.filter(countsTowardsCycle));
+  return filled.size === CYCLE_POSITIONS;
+}
+
+/**
+ * CR-027 — whether the anniversary run may open the next cycle today.
+ *
+ * Three things have to hold at once, and the third is the pack's own
+ * implementation convention: "run upgrade check at start of anniversary day in
+ * Asia/Kolkata; completion recorded after that run waits until the next
+ * anniversary". A cycle that completes *on* the anniversary is therefore not
+ * rolled by that anniversary — it waits a year, which is what makes the job
+ * safe to re-run and independent of the hour it happens to run at.
+ */
+export function mayOpenNextCycle(args: {
+  activationDate: Date | string;
+  status: "IN_PROGRESS" | "UPGRADE_ELIGIBLE";
+  completedAt: Date | null;
+  at: Date;
 }): boolean {
-  return activity.milestoneReached && activity.legallyCompleted;
+  if (args.status !== "UPGRADE_ELIGIBLE" || !args.completedAt) return false;
+  const today = istDay(args.at);
+  if (counterYearStart(new Date(args.activationDate), args.at) !== today) return false;
+  return istDay(args.completedAt) < today;
 }
 
 /**
- * AC-02 — the cycle's own achievement status.
- *
- * TC-ROY-001 completes a cycle whose qualifying transactions "satisfy all cycle
- * conditions"; TC-ROY-002 keeps one pending where "only part of the qualifying
- * conditions are met". So a cycle is achieved when it holds qualifying activity
- * and all of it is complete — never on a subset, and never while empty.
+ * CR-014 — what a completed cycle earned, in its own terms. Derived from the
+ * positions themselves rather than a fixed label, so the cycle says what it
+ * actually achieved rather than that it achieved something.
  */
-export function cycleAchieved(qualifyingCount: number, completedCount: number): boolean {
-  return qualifyingCount > 0 && completedCount === qualifyingCount;
+export function cycleEntitlement(kind: "INVITE" | "ROYALTY", cycleNumber: number): string {
+  const counter = kind === "INVITE" ? "Invite" : "Royalty";
+  return `${counter} cycle ${cycleNumber} complete — positions 1 to ${CYCLE_POSITIONS} all successful. Upgrade Eligible.`;
 }
 
 /* ---------------------------------------------------------- the components */
@@ -690,8 +696,7 @@ export type HoldReason =
   | "CHANGE_PLOT_PENDING"
   | "BUYBACK_PENDING"
   | "PAYMENT_PENDING"
-  | "COMMISSION_CONFLICT_ABOVE_4"
-  | "PERFORMANCE_CYCLE_INCOMPLETE";
+  | "COMMISSION_CONFLICT_ABOVE_4";
 
 export type EligibilityInput = {
   type: CommissionType;
@@ -723,12 +728,6 @@ export type EligibilityInput = {
   acquisitionPaymentPending: boolean;
   /** RD-03 — the Booking's combination is above 4%. */
   commissionConflictAbove4: boolean;
-  /**
-   * AC-02 — Royalty only: whether the introducing Member's performance cycle for
-   * this qualifying transaction is complete. Null for every other type, and for
-   * a Royalty record whose milestone has not yet placed it into a cycle.
-   */
-  performanceCycleComplete: boolean | null;
 };
 
 export type Eligibility = { state: EligibilityState; holdReason: HoldReason | null };
@@ -769,12 +768,11 @@ export function resolveEligibility(input: EligibilityInput): Eligibility {
     return { state: "MILESTONE_PENDING", holdReason: null };
   }
 
-  // AC-02 — the milestone alone does not earn Royalty (Approved Changes §1:
-  // "not simply by recording a transaction"). The qualifying activity must be
-  // complete, which PRD §6.3 puts at legal completion; a partial one holds.
-  if (input.type === "ROYALTY" && input.performanceCycleComplete !== true) {
-    return hold("PERFORMANCE_CYCLE_INCOMPLETE");
-  }
+  // CR-004 supersedes AC-02 here. Royalty's milestone is 100% Payment Received
+  // — the pack states it directly — and the performance cycle decides an
+  // upgrade, not whether one commission may be paid. Royalty used to hold until
+  // its cycle completed, which under the new model would hold it until eight
+  // other Customers had bought.
 
   // Conditions on the beneficiary. PAN never creates an automatic hold.
   if (!input.beneficiaryAadhaarAvailable) return hold("AADHAAR_PENDING");

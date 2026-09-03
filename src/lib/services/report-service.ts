@@ -226,7 +226,7 @@ export type BusinessState = {
    * not yet legally completed is pending, however far the money has come.
    */
   royalty: { earned: number; pending: number; paid: number };
-  cycles: { inProgress: number; completed: number; qualifyingTransactions: number };
+  cycles: { inProgress: number; upgradeEligible: number; positions: number };
   buying: { records: number; totalPercent: string; overCapExceptions: number };
   paidEarly: { approvedAwaitingPayment: number; notReadyUnapproved: number; processed: number };
   conflicts: { aboveCap: number };
@@ -264,8 +264,8 @@ export async function businessState(): Promise<BusinessState> {
     royaltyPending,
     royaltyPaid,
     cyclesInProgress,
-    cyclesCompleted,
-    qualifyingTransactions,
+    cyclesUpgradeEligible,
+    cyclePositions,
     paidEarlyApproved,
     paidEarlyUnapproved,
     paidEarlyProcessed,
@@ -286,26 +286,30 @@ export async function businessState(): Promise<BusinessState> {
     () => db.booking.count({ where: { status: "BUYBACK_COMPLETED" } }),
     () => db.booking.count({ where: { status: { in: ["CANCELLED", "REFUND_PENDING"] } } }),
     () => db.booking.count({ where: { status: "DELIVERED" } }),
-    // Earned: the qualifying activity is complete (AC-02), whatever the payment
-    // state. Pending: recorded but not completed, plus everything still short of
-    // its milestone.
+    // CR-004 — Royalty is earned at its own milestone now, so "earned" is the
+    // consumed one-time opportunity rather than a completed cycle, and pending
+    // is everything still short of it.
     () => db.commissionRecord.count({
-      where: { type: "ROYALTY", isCurrent: true, cycleCompletedAt: { not: null } },
+      where: { type: "ROYALTY", isCurrent: true, opportunityId: { not: null } },
     }),
     () => db.commissionRecord.count({
       where: {
         type: "ROYALTY",
         isCurrent: true,
-        cycleCompletedAt: null,
+        opportunityId: null,
         payment: { notIn: ["CANCELLED"] },
       },
     }),
     () => db.commissionRecord.count({
       where: { type: "ROYALTY", isCurrent: true, payment: { in: ["PAID", "PAID_EARLY"] } },
     }),
+    // CR-014 — cycles in progress, cycles that reached Upgrade Eligible, and the
+    // positions those cycles hold.
     () => db.performanceCycle.count({ where: { status: "IN_PROGRESS" } }),
-    () => db.performanceCycle.count({ where: { status: "COMPLETED" } }),
-    () => db.commissionRecord.count({ where: { performanceCycleId: { not: null } } }),
+    () => db.performanceCycle.count({ where: { status: "UPGRADE_ELIGIBLE" } }),
+    () => db.performanceCycle
+      .aggregate({ _sum: { positionsFilled: true } })
+      .then((r) => r._sum.positionsFilled ?? 0),
     () => db.commissionRecord.count({
       where: { isCurrent: true, payment: "NOT_PAID", earlyApprovedAt: { not: null } },
     }),
@@ -372,8 +376,8 @@ export async function businessState(): Promise<BusinessState> {
     royalty: { earned: royaltyEarned, pending: royaltyPending, paid: royaltyPaid },
     cycles: {
       inProgress: cyclesInProgress,
-      completed: cyclesCompleted,
-      qualifyingTransactions,
+      upgradeEligible: cyclesUpgradeEligible,
+      positions: cyclePositions,
     },
     buying: {
       records: buyingRecords.length,

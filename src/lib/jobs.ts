@@ -7,6 +7,7 @@ import { istDay } from "@/lib/tasks";
 import { settleConstraints } from "@/lib/services/command";
 import { releaseHold } from "@/lib/services/hold-service";
 import { membersRollingToday } from "@/lib/services/network-service";
+import { upgradeCycleIfDue } from "@/lib/services/cycle-service";
 import { syncPaymentFollowUp } from "@/lib/services/payment-service";
 import { ensureTask, reviseTask } from "@/lib/services/task-service";
 
@@ -236,15 +237,35 @@ export function runReraExpiryReminder(now: Date = new Date()): Promise<JobResult
 }
 
 /**
- * RD-02 — the Member Activation Date anniversary. Counter years are derived per
- * Member from that date, so nothing is renumbered or written: the run exists to
- * make the roll observable, and 29 February resolves to 28 February in a
- * non-leap year inside `counterYearStart`.
+ * CR-027 — the Performance Cycle Anniversary Upgrade Check, which replaces the
+ * Annual Counter Reset outright.
+ *
+ * Per Member whose Activation Anniversary is today, independently for Invite and
+ * Royalty: if the current cycle's positions 1 to 9 are not all successful, do
+ * nothing — an incomplete counter is not reset, which is the whole point of the
+ * change. If it is Upgrade Eligible, open the next cycle. Existing positions are
+ * never moved, renumbered or re-rated.
+ *
+ * Re-running it, or running it twice in a day after a missed run, opens nothing
+ * a second time: the roll makes the current cycle a fresh IN_PROGRESS one, which
+ * `mayOpenNextCycle` refuses, and the unique key on (Member, kind, number) is the
+ * backstop underneath that.
  */
-export function runAnnualCounterReset(now: Date = new Date()): Promise<JobResult> {
-  return withRun("ANNUAL_COUNTER_RESET", async () => {
+export function runPerformanceCycleUpgradeCheck(now: Date = new Date()): Promise<JobResult> {
+  return withRun("PERFORMANCE_CYCLE_UPGRADE_CHECK", async () => {
     const rolling = await membersRollingToday(now);
-    return { processed: rolling.length, changed: 0 };
+    let changed = 0;
+    for (const member of rolling) {
+      // One transaction per Member: a failure on one Member's counters must not
+      // roll back another's, and the run stays short on a hosted request cap.
+      await db.$transaction(async (tx) => {
+        for (const kind of ["INVITE", "ROYALTY"] as const) {
+          if (await upgradeCycleIfDue(tx, member.id, kind, now, "JOB")) changed++;
+        }
+        await settleConstraints(tx);
+      });
+    }
+    return { processed: rolling.length * 2, changed };
   });
 }
 
@@ -270,7 +291,7 @@ export const JOBS = {
   PAYMENT_GIVEN_REMINDER: runPaymentGivenReminder,
   BOOKING_DECISION_ALERT: runBookingDecisionAlert,
   RERA_EXPIRY_REMINDER: runReraExpiryReminder,
-  ANNUAL_COUNTER_RESET: runAnnualCounterReset,
+  PERFORMANCE_CYCLE_UPGRADE_CHECK: runPerformanceCycleUpgradeCheck,
 } as const;
 
 export type JobName = keyof typeof JOBS;

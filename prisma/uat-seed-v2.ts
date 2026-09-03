@@ -387,6 +387,17 @@ async function wipe() {
     const memberIds = (
       await db.memberProfile.findMany({ where: { personId: { in: personIds } }, select: { id: true } })
     ).map((m) => m.id);
+  // CR-014 — a position points at its cycle, and the cycle points at the Member,
+  // so neither can go first. The position links are cleared, then the cycles,
+  // then the profiles.
+    await db.memberProfile.updateMany({
+      where: { id: { in: memberIds } },
+      data: { inviteCycleId: null },
+    });
+    await db.customerProfile.updateMany({
+      where: { personId: { in: personIds } },
+      data: { royaltyCycleId: null },
+    });
     await db.performanceCycle.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.portalAccount.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.memberTermsAcceptance.deleteMany({ where: { memberProfileId: { in: memberIds } } });
@@ -846,6 +857,13 @@ async function main() {
     include: { beneficiaryPerson: true },
   });
 
+  // CR-014 — §8's Invite cycle seed, as the engine actually built it.
+  const cycles = await db.performanceCycle.findMany({
+    where: { memberProfile: { person: { primaryMobile: { startsWith: MOBILE } } } },
+    include: { memberProfile: { include: { person: true } } },
+    orderBy: [{ memberProfileId: "asc" }, { kind: "asc" }],
+  });
+
   const links = await db.customerProfile.findMany({
     where: { person: { primaryMobile: { startsWith: MOBILE } }, royaltyLinkedMemberId: { not: null } },
     include: { royaltyLinkedMember: { include: { person: true } }, person: true },
@@ -864,6 +882,13 @@ async function main() {
         `${link.royaltyLinkFinalAt ? `final, position ${link.royaltyPosition} at ${link.royaltyRatePercent}%` : "provisional"}`
     );
   }
+  for (const cycle of cycles.filter((c) => c.positionsFilled > 0)) {
+    console.log(
+      `${cycle.memberProfile.memberId} ${cycle.kind} cycle ${cycle.cycleNumber}: ` +
+        `${cycle.positionsFilled} of 9 positions filled, ${cycle.positionsComplete} complete — ${cycle.status}`
+    );
+  }
+  console.log(line);
   if (zeroBand) {
     console.log(
       `Position 10 — ${zeroBand.ruleVersion} to ${zeroBand.beneficiaryPerson.fullName}: ` +

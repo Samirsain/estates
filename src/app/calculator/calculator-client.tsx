@@ -179,7 +179,6 @@ const HOLD_SENTENCE: Record<string, string> = {
   BUYBACK_PENDING: "Buyback Pending on the Booking",
   PAYMENT_PENDING: "Payment Pending on the acquisition",
   COMMISSION_CONFLICT_ABOVE_4: "Commission Conflict — Above 4%",
-  PERFORMANCE_CYCLE_INCOMPLETE: "Performance Cycle Incomplete",
 };
 
 export default function CalculatorClient({
@@ -461,7 +460,6 @@ export default function CalculatorClient({
       // AC-02 — treated as complete for the same reason the milestone is treated
       // as reached: a performance cycle is a fact about a real transaction, and
       // the Calculator is asking about the Person before there is one.
-      performanceCycleComplete: true,
     });
   }
 
