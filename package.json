@@ -28,6 +28,8 @@
     "acquisition:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/acquisition.check.ts",
     "reconcile": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reconcile.ts",
     "backfill:classification": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/backfill-classification.ts",
+    "data:reset": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reset-data.ts",
+    "uat:seed:v2": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/uat-seed-v2.ts",
     "uat:seed": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/uat-seed.ts",
     "rotate:key": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/rotate-key.ts",
     "reset:password": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reset-password.ts",

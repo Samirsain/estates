@@ -800,3 +800,59 @@ two performance cycles, Buyback as an alternative milestone for Invite, Royalty
 and Loyalty, self-purchase by Primary Customer only, Loyalty exhaustion and the
 two conversion routes, Recovery, portal and report visibility, and the v2
 dataset.
+
+## 16. Land Inquiry, and the dataset reset
+
+Two pieces of work outside the pack's own order, asked for while step 1 was
+being finished.
+
+**Land Inquiry Management** (`system/land-inequry-feture-.md`) is now built at
+`/land-inquiries`: pre-acquisition land sourcing, in the fourteen business
+sections the spec names. Three new tables — `LandInquiry`, `LandInquiryOwner`,
+`LandInquiryJamabandiEntry` — and nothing else new. The Person identity, the
+staff accounts and sessions, the RBAC, the append-only audit through
+`runCommand`, the reference series and the Buyback / Resale workflow are all the
+ones already here.
+
+Four decisions worth recording, because each of them could have gone another way:
+
+| Decision | Why |
+| --- | --- |
+| 3% Club names no source Person | The spec's §26.5 says to reuse whatever dealer classification the repository has. It has none — `THREE_PERCENT_CLUB` is a Sold By type, not a record — so a 3% Club inquiry is the company's own and is attributed by Assigned To. The alternative was inventing a dealer master the spec explicitly forbids |
+| Tables and columns follow the repository, not the spec's snake_case | The schema has no `@map` anywhere. A sixty-column snake_case island would have been the only one, and the spec's own §0 and §34 both say to adapt to current conventions. Every semantic the spec states is preserved exactly |
+| No universal Bigha conversion, and a check that proves it | Rajasthan's Land Revenue (Land Records) Rules 1957 Appendix I publishes different equivalents per district. Bigha and Biswa are stored as entered; square metres are canonical for the metric side, on the exact published factors |
+| North Facing PLC left out of the v2 dataset | `PlcCategory` has no facing direction, and borrowing `PLAYGROUND_FACING` for it would put a percentage on a Plot under a name that does not mean what it says. Adding a category is a PLC spec change, not a dataset change |
+
+`land-inquiry.check.ts` proves the spec's §32 list against the database: the
+Another Dealer path creates no Person even when the mobile matches one, the same
+dealer mobile reaches several inquiries, a retried submission creates one row,
+the metric conversions are exact, Bigha alone invents no metric area, a rate
+without a basis is refused, a stale version is rejected rather than merged, a
+stage skip and a step back each need their reason, closing sets Status and Stage
+together, Approved for Acquisition creates no acquisition, and archive hides
+without deleting.
+
+While applying its constraints, `constraints.sql` turned out to have been
+failing since `PlotBoundary.adjacentPlotNumber` became `reference`. The file runs
+as one script, so every statement after that line — most of the file — had never
+been applied by `npm run db:constraints`. Fixed with the rest.
+
+**The dataset.** `npm run data:reset` clears the operating data and keeps the
+eight staff accounts and the people they sit on, so everyone can still sign in.
+`npm run uat:seed` then rebuilds `mockdata-v1.md`, and `npm run uat:seed:v2`
+builds `mockdata-v2.md` §3 – §13 beside it: four Projects, the two PLC versions,
+all 78 Plots with the geometry their PLC seed implies, seventeen Members with the
+Invite counter spanning every band including position 10 at 0%, the Royalty and
+other Customer masters, twenty-two Enquiries and twelve Holds. The two datasets
+do not collide — v1's people carry mobile numbers beginning 97, v2's begin 96.
+
+The v2 seed also builds the §16 Royalty acceptance cases against the new rule,
+and the dataset now shows them: C201 was enquired by M102 and is linked to M001,
+who closed the first sale; C305 and C306 have no Royalty Linked Member at all
+because their first purchase was Sold By 3% CLUB and Sold By Customer; C307's
+provisional link died with its cancelled first Booking and was re-established
+under a different Member; C308's Member-closed repeat consumed nothing.
+
+§14 onward is not seeded. Those scenarios are the outcomes of pack items 2 – 8,
+which are not built, and a dataset that records results the engine cannot produce
+would be worse than no dataset at all.
