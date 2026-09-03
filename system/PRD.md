@@ -356,6 +356,16 @@ Display:
 Rules:
 
 - No additional MD/Admin approval is required.
+  > **Superseded on this point by the Approved Changes pack, 3 September 2026.**
+  > [`3_Percent_Club_CRM_Dashboard_Approved_Changes.md`](./3_Percent_Club_CRM_Dashboard_Approved_Changes.md)
+  > §1 "Paid Early MD Approval" requires the approved MD approval, requires it
+  > stored with approver, date/time and the related transaction/member, and
+  > states that without it "the system must not mark the benefit as approved".
+  > The pack is the later approved baseline, so it controls, and it is what the
+  > system implements: `approveCommissionPaidEarly()` is MD only, and
+  > `canMarkPaid()` refuses Paid Early without a stored approval. Every other
+  > rule in this section — compulsory remarks, reference and date, no second
+  > payment task, exclusion from Not Paid totals, no second Paid — stands.
 - It is not a separate maker-checker workflow unless company permissions later require two Accounts users.
 - No second commission-payment task is created when the normal milestone is later reached.
 - Eligibility continues to update separately.
@@ -1069,6 +1079,9 @@ The following are not pending and must not be added without a future approved ch
 - Separate Partially Received instalment status
 - Excess Receipt percentage entry above 100%
 - Paid Early mandatory MD/Admin approval
+  > **Reinstated by the Approved Changes pack, 3 September 2026.** The pack's §1
+  > "Paid Early MD Approval" requires exactly this approval, so the item is no
+  > longer excluded. See the note in §6.11.
 - Automatic bank-change hold on all Ready commission
 - Generic renaming of Payment Pending to Acquisition Payment Pending
 
