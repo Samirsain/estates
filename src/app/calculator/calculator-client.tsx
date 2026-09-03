@@ -31,6 +31,7 @@ import { Field, inputClass } from "@/components/ui/modal";
 import { calculateAreas } from "@/lib/domain/inventory";
 import {
   generateCommission,
+  noBenefitLabel,
   previewInput,
   resolveEligibility,
   type CommissionInput,
@@ -435,9 +436,18 @@ export default function CalculatorClient({
    * §14.7, §19.5). A line that came from a Booking is never sent through here;
    * it already carries the engine's frozen answer.
    */
-  function preview(beneficiary: CalcPersonView, type: CommissionType, milestone: string) {
+  function preview(
+    beneficiary: CalcPersonView,
+    type: CommissionType,
+    milestone: string,
+    /** Null while the line has a beneficiary but no band yet. */
+    percent: string | null
+  ) {
     return resolveEligibility({
       type,
+      // CR-013 — a 0% band answers No Benefit before any of the conditions
+      // below are consulted, and the preview must say the same thing.
+      percent,
       progressPercent: milestone,
       milestonePercent: milestone,
       beneficiaryAadhaarAvailable: beneficiary.aadhaarAvailable,
@@ -833,7 +843,10 @@ export default function CalculatorClient({
               const kind = commissionTypes.find((c) => c.type === split.type);
               const { record, derived } = split;
               const milestone = derived?.milestonePercent ?? kind?.milestonePercent ?? "100";
-              const verdict = beneficiary && !record ? preview(beneficiary, split.type, milestone) : null;
+              const verdict =
+                beneficiary && !record
+                  ? preview(beneficiary, split.type, milestone, percent?.toString() ?? null)
+                  : null;
               const notes = beneficiary && !record && !derived ? ruleNotes(beneficiary, split.type) : [];
 
               return (
@@ -910,7 +923,9 @@ export default function CalculatorClient({
                   {record && (
                     <p className="border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
                       <span className="font-semibold capitalize text-foreground">
-                        {humanise(record.eligibility)}
+                        {record.eligibility === "NO_BENEFIT"
+                          ? noBenefitLabel(record.type as "INVITE" | "ROYALTY")
+                          : humanise(record.eligibility)}
                       </span>
                       {record.holdReason
                         ? ` — ${HOLD_SENTENCE[record.holdReason] ?? humanise(record.holdReason)}`

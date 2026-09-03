@@ -856,3 +856,51 @@ under a different Member; C308's Member-closed repeat consumed nothing.
 §14 onward is not seeded. Those scenarios are the outcomes of pack items 2 – 8,
 which are not built, and a dataset that records results the engine cannot produce
 would be worse than no dataset at all.
+
+## 17. Step 2 built — position 10+ is visible and consumes (CR-013)
+
+The band table has always answered 0% past the ninth position. What happened
+with that 0% was nothing at all: `generateCommission` dropped any component
+whose rate was zero, so two things followed that the pack forbids. The Booking
+never showed who was in the position — a Member could not be told why their
+tenth invitee earned them nothing, because there was no record to point at. And
+the invited Member's one-time Invite opportunity stayed open, so their *next*
+sale would hand the inviter 1% at a position that had already been used.
+
+The fix is one guard removed on each side, Invite and Royalty, and then the
+consequences of the record existing.
+
+**A new eligibility state, `NO_BENEFIT`, rather than a hold reason.** A hold is
+something that lifts; a 0% band never becomes payable, and calling it On Hold
+leaves every screen implying that one day it might. `resolveEligibility` decides
+it before everything else, because nothing that follows can change it: not RERA,
+not the bank, not Aadhaar, not a deactivated Member, not the 4% cap. The record
+carries the pack's own wording — `No Invite Benefit — Position Above 9`.
+
+**"No payable amount is created" is enforced on both routes.** `canMarkPaid`
+refuses a `NO_BENEFIT` record, and refuses it for Paid Early too. That second
+half matters: Paid Early is the route around an unready record, and MD approval
+can waive a condition but must not conjure an amount that was never earned. No
+Accounts payment task is raised either, and the screens offer no button.
+
+**The opportunity is consumed anyway.** `reassessCommission` already keyed
+consumption on the milestone rather than on the rate, so once the record exists
+the pack's "0% still consumes that person's one-time opportunity" falls out. The
+one thing added is that a 0% Royalty enters no performance cycle: a cycle is
+completed by its positions 1 to 9, and a position past the ninth is outside it.
+
+**The label lived in four screens.** Bookings, Members, the Member detail page
+and the Member portal each carried their own copy of the same three-entry map,
+so adding a state to the vocabulary would have left three of them printing a raw
+enum. There is now one `eligibilityLabel()` in the domain and no copies.
+
+`AC-07` in `commission.check.ts` proves acceptance 7 end to end: a tenth-position
+Member closes a sale, the 0% line is created and carries `POSITION_10` beside the
+Direct 3%, its eligibility is `NO_BENEFIT`, 100% payment consumes the
+opportunity without making it payable, both payment routes are refused, no task
+is raised, a second sale by the same Member earns the inviter nothing, and the
+position never re-rates. The v2 dataset now carries the case as well, so it can
+be seen on a screen and not only in a test.
+
+Next: performance cycles and the anniversary job (CR-014, CR-027), rebuilt on
+top of steps 1 and 2.

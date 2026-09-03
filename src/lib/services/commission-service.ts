@@ -860,7 +860,11 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
     // otherwise the record would hold for one extra reassessment after the very
     // transaction that completed the cycle.
     let performanceCycleComplete: boolean | null = null;
-    if (record.type === "ROYALTY") {
+    // CR-013 — a 0% Royalty consumes the Customer's one-time opportunity but
+    // enters no performance cycle. A cycle is completed by its positions 1 to 9;
+    // a position past the ninth is outside it and must not count towards one.
+    const earnsNothing = record.percent.isZero();
+    if (record.type === "ROYALTY" && !earnsNothing) {
       if (milestoneReached && payment !== "CANCELLED") {
         performanceCycleComplete = await recordCycleQualification(
           tx,
@@ -887,6 +891,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
 
     const next = resolveEligibility({
       type: record.type as "DIRECT" | "INVITE" | "ROYALTY" | "LOYALTY",
+      percent: record.percent.toString(),
       progressPercent: booking.paymentReceivedPercent.toString(),
       milestonePercent: record.milestonePercent.toString(),
       beneficiaryAadhaarAvailable: record.beneficiaryPerson.aadhaarStatus !== "PENDING",

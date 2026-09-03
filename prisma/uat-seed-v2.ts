@@ -817,6 +817,21 @@ async function main() {
     soldByPersonId: people["M102"].id,
   });
 
+  /* -------------------- §8 — the position-10 Invite, visible and consuming
+
+     M110 is the tenth Member activated under M001, so their Invite band is 0%.
+     A sale they close records that 0% line against M001 rather than dropping it,
+     and reaching 100% consumes M110's one-time Invite opportunity (CR-013). */
+
+  const tenthSale = await bookApproved({
+    plotId: prj1.plots["AG-026"],
+    buyer: customers["C312"],
+    soldByType: "MEMBER",
+    soldByPersonId: people["M110"].id,
+  });
+  await pay(tenthSale, "100");
+  count("positionTenSales");
+
   /* ------------------------------------------------ §4 — PRJ-004 is Sold Out */
 
   await db.project.update({
@@ -825,6 +840,11 @@ async function main() {
   });
 
   /* ------------------------------------------------------------- the report */
+
+  const zeroBand = await db.commissionRecord.findFirst({
+    where: { bookingId: tenthSale, type: "INVITE", isCurrent: true },
+    include: { beneficiaryPerson: true },
+  });
 
   const links = await db.customerProfile.findMany({
     where: { person: { primaryMobile: { startsWith: MOBILE } }, royaltyLinkedMemberId: { not: null } },
@@ -844,7 +864,13 @@ async function main() {
         `${link.royaltyLinkFinalAt ? `final, position ${link.royaltyPosition} at ${link.royaltyRatePercent}%` : "provisional"}`
     );
   }
-  console.log(line);
+  if (zeroBand) {
+    console.log(
+      `Position 10 — ${zeroBand.ruleVersion} to ${zeroBand.beneficiaryPerson.fullName}: ` +
+        `${zeroBand.eligibility}, opportunity ${zeroBand.opportunityId ? "consumed" : "open"}`
+    );
+    console.log(line);
+  }
   console.log(
     "Not seeded: §14 onward — bookings and commission scenarios, performance\n" +
       "cycles, Buyback acceleration, Loyalty exhaustion, conversion routes and\n" +

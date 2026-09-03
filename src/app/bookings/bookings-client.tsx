@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
 import { capShare, shareRoom, shareSum } from "@/lib/domain/shares";
+import { eligibilityLabel, type CommissionType } from "@/lib/domain/commission";
 import {
   formatIst,
   formatIstDate,
@@ -184,13 +185,6 @@ const PROCESS_LABEL: Record<string, string> = {
   PRIMARY_CUSTOMER_CHANGE_UNDER_REVIEW: "Primary Customer Change — Waiting Approval",
   SOLD_BY_CORRECTION_UNDER_REVIEW: "Sold By Correction — Waiting Approval",
   MANAGEMENT_ACTION_REQUIRED: "Management Action Required",
-};
-
-/** DESIGN §4.2 — eligibility and payment are two separate badges. */
-const ELIGIBILITY_LABEL: Record<string, string> = {
-  MILESTONE_PENDING: "Milestone Pending",
-  READY: "Ready",
-  ON_HOLD: "On Hold",
 };
 
 const PAYMENT_LABEL: Record<string, string> = {
@@ -1726,7 +1720,9 @@ function BookingDetailPanel({
                                 : "outline"
                           }
                         >
-                          {ELIGIBILITY_LABEL[c.eligibility] ?? c.eligibility}
+                          {/* DESIGN §4.2 — eligibility and payment are two
+                              separate badges. */}
+                          {eligibilityLabel(c.eligibility, c.type as CommissionType)}
                         </Badge>
                         {c.holdReason && (
                           <span className="block text-[11px] text-amber-800">
@@ -1772,6 +1768,8 @@ function BookingDetailPanel({
                         {c.isCurrent &&
                           c.payment === "NOT_PAID" &&
                           c.eligibility !== "READY" &&
+                          // CR-013 — a 0% band has nothing to approve early.
+                          c.eligibility !== "NO_BENEFIT" &&
                           !c.earlyApprovedAt &&
                           permissions.approvePaidEarly && (
                             <Button
@@ -1793,6 +1791,7 @@ function BookingDetailPanel({
                         {c.isCurrent &&
                           permissions.processCommission &&
                           c.payment === "NOT_PAID" &&
+                          c.eligibility !== "NO_BENEFIT" &&
                           (c.eligibility === "READY" || c.earlyApprovedAt) && (
                             <Button
                               size="xs"
@@ -1814,12 +1813,18 @@ function BookingDetailPanel({
                         {c.isCurrent &&
                           c.payment === "NOT_PAID" &&
                           c.eligibility !== "READY" &&
+                          c.eligibility !== "NO_BENEFIT" &&
                           !c.earlyApprovedAt &&
                           !permissions.approvePaidEarly && (
                             <span className="text-[11px] text-muted-foreground">
                               Awaiting MD approval
                             </span>
                           )}
+                        {c.isCurrent && c.eligibility === "NO_BENEFIT" && (
+                          <span className="text-[11px] text-muted-foreground">
+                            Position above 9 — nothing to pay
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}

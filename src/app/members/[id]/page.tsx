@@ -5,6 +5,7 @@
 // filed under them, and what they have done. Same hero, same Stat strip, same
 // card of Rows, same full-width lists underneath.
 
+import { eligibilityLabel, type CommissionType } from "@/lib/domain/commission";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
@@ -42,11 +43,6 @@ const RERA_LABEL: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   ACTIVE: "Active",
   DEACTIVATED: "Deactivated",
-};
-const ELIGIBILITY_LABEL: Record<string, string> = {
-  MILESTONE_PENDING: "Milestone Pending",
-  READY: "Ready",
-  ON_HOLD: "On Hold",
 };
 const PAYMENT_LABEL: Record<string, string> = {
   NOT_PAID: "Not Paid",
@@ -521,7 +517,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
                         {c.percent.toFixed(2)}%
                       </td>
                       <td className="py-2">
-                        {ELIGIBILITY_LABEL[c.eligibility] ?? c.eligibility}
+                        {eligibilityLabel(c.eligibility, c.type as CommissionType)}
                         {c.holdReason && (
                           <span className="block text-[11px] text-amber-700">
                             {c.holdReason.replaceAll("_", " ").toLowerCase()}

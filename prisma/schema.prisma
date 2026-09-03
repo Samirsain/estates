@@ -1306,6 +1306,10 @@ enum EligibilityState {
   MILESTONE_PENDING
   READY
   ON_HOLD
+  /// CR-013 — a network position past the ninth earns 0%. The record is real
+  /// and visible and it consumes the one-time opportunity, but there is no
+  /// amount to pay, so it is neither pending nor held: it is settled at zero.
+  NO_BENEFIT
 }
 
 enum CommissionPaymentState {

@@ -3,6 +3,7 @@
 // Members — DESIGN.md §13.1, §13.2; PRD.md §13, §14.3.
 // Actions are hidden by permission for clarity; the server re-checks every one.
 
+import { eligibilityLabel, type CommissionType } from "@/lib/domain/commission";
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -75,11 +76,6 @@ const RERA_LABEL: Record<string, string> = {
   NOT_APPLICABLE: "Not Applicable",
 };
 
-const ELIGIBILITY_LABEL: Record<string, string> = {
-  MILESTONE_PENDING: "Milestone Pending",
-  READY: "Ready",
-  ON_HOLD: "On Hold",
-};
 
 const PAYMENT_LABEL: Record<string, string> = {
   NOT_PAID: "Not Paid",
@@ -587,7 +583,7 @@ function MemberDetailPanel({
                       <td className="py-1">{c.type}</td>
                       <td className="py-1 text-right tabular-nums">{c.percent}</td>
                       <td className="py-1">
-                        {ELIGIBILITY_LABEL[c.eligibility] ?? c.eligibility}
+                        {eligibilityLabel(c.eligibility, c.type as CommissionType)}
                         {c.holdReason && (
                           <span className="block text-[11px] text-amber-800">
                             {c.holdReason.replaceAll("_", " ").toLowerCase()}

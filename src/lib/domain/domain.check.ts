@@ -111,6 +111,7 @@ import {
   isLeapYear,
   experienceSince,
   needsPaymentTask,
+  noBenefitLabel,
   nextNetworkPosition,
   opportunityReopens,
   previewInput,
@@ -1018,18 +1019,39 @@ assert.deepEqual(
   ["DIRECT:3@25"]
 );
 
-// Past position 9 the band is 0%, so no Invite record is created at all.
-assert.deepEqual(
-  types(
-    generateCommission({
-      ...baseInput,
-      soldByType: "MEMBER",
-      soldByPersonId: M_SELLER,
-      invite: link(M_INVITER, 12),
-    })
-  ),
-  ["DIRECT:3@25"]
+// CR-013 — past position 9 the band is 0%, and the record is created anyway.
+// It used to be dropped, which left the position invisible on the Booking and
+// the invited Member's one-time opportunity open for a later sale to take at 1%.
+const pastNine = generateCommission({
+  ...baseInput,
+  soldByType: "MEMBER",
+  soldByPersonId: M_SELLER,
+  invite: link(M_INVITER, 12),
+});
+assert.deepEqual(types(pastNine), ["DIRECT:3@25", "INVITE:0@100"]);
+assert.ok(pastNine.ok);
+assert.equal(
+  pastNine.components.find((c) => c.type === "INVITE")?.ruleVersion,
+  "INVITE/POSITION_12/0%@100",
+  "the position and its rate stay on the record, which is what keeps them visible"
 );
+assert.equal(
+  pastNine.totalPercent.toFixed(2),
+  "3.00",
+  "and a 0% line adds nothing to the 4% cap"
+);
+
+// The same on the Royalty side: a repeat direct purchase whose Royalty position
+// is past the ninth still records the line.
+{
+  const royaltyPastNine = generateCommission({
+    ...baseInput,
+    buyerHasPriorPurchase: true,
+    royalty: link(M_INVITER, 10),
+    loyaltySlotsConsumed: MAX_LOYALTY_SLOTS,
+  });
+  assert.deepEqual(types(royaltyPastNine), ["ROYALTY:0@100"]);
+}
 
 // Active Member buys personally: 3% Direct at 100%, and nothing else. The
 // inviting Member's opportunity is deliberately left untouched (main-PRD §14.2).
@@ -1198,6 +1220,7 @@ assert.equal(totalOf([]).toFixed(2), "0.00");
 
 const eligibilityBase = {
   type: "DIRECT" as const,
+  percent: "3",
   progressPercent: "100",
   milestonePercent: "25",
   beneficiaryAadhaarAvailable: true,
@@ -1212,6 +1235,39 @@ const eligibilityBase = {
 };
 
 assert.deepEqual(resolveEligibility(eligibilityBase), { state: "READY", holdReason: null });
+
+/* CR-013 — a 0% band is settled at zero, not pending and not held. It is
+   decided before every other condition, because none of them can change it. */
+assert.deepEqual(resolveEligibility({ ...eligibilityBase, type: "INVITE", percent: "0" }), {
+  state: "NO_BENEFIT",
+  holdReason: null,
+});
+assert.deepEqual(
+  resolveEligibility({
+    ...eligibilityBase,
+    type: "INVITE",
+    percent: "0",
+    progressPercent: "0",
+    memberStatus: "DEACTIVATED",
+    beneficiaryBankVerified: false,
+    commissionConflictAbove4: true,
+  }),
+  { state: "NO_BENEFIT", holdReason: null },
+  "nothing else outranks it — there is no amount for a hold to be holding"
+);
+// A rate that is not decided yet is not a zero one.
+assert.equal(resolveEligibility({ ...eligibilityBase, percent: null }).state, "READY");
+
+// "no payable amount is created" — including by the Paid Early route, which is
+// what a waived condition looks like and cannot conjure an amount.
+assert.equal(canMarkPaid("NOT_PAID", "NO_BENEFIT", false).ok, false);
+const earlyOnZero = canMarkPaid("NOT_PAID", "NO_BENEFIT", true, true);
+assert.equal(earlyOnZero.ok, false);
+assert.match(earlyOnZero.ok === false ? earlyOnZero.reason : "", /no amount to pay/);
+assert.equal(needsPaymentTask("NOT_PAID", "NO_BENEFIT"), false, "and no Accounts task is raised");
+
+assert.equal(noBenefitLabel("INVITE"), "No Invite Benefit — Position Above 9");
+assert.equal(noBenefitLabel("ROYALTY"), "No Royalty Benefit — Position Above 9");
 
 // The milestone decides only once the deal-level holds are clear.
 assert.equal(

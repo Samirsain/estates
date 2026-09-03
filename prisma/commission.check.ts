@@ -1255,6 +1255,164 @@ async function main() {
   );
   assert.ok(custLink.royaltyLinkFinalAt, "and that is final at the milestone too");
 
+  /* ===== AC-07 — CR-013: position 10+ is visible at 0% and consumes ==========
+
+     The band table has always returned 0% past the ninth position. What used to
+     happen with that 0% was nothing at all: the component was dropped, so the
+     Booking never showed who was in the position, and the invited Member's
+     one-time Invite opportunity stayed open for some later sale to take at 1%.
+     The pack closes both halves — the line is created and visible, and it
+     consumes the opportunity. */
+
+  const tenthInviterPerson = await makeEligiblePerson("TenthInviter", "9600000051");
+  const tenthSellerPerson = await makeEligiblePerson("TenthSeller", "9600000052");
+  const tenthInviter = await makeMember("TENTH-I", tenthInviterPerson.id, 500);
+  const tenthSeller = await db.memberProfile.create({
+    data: {
+      memberId: `${TAG}-M-TENTH-S`,
+      personId: tenthSellerPerson.id,
+      activationDate: day(-120),
+      // Position 10 sits past the last band, so the frozen rate is 0%.
+      invitedByMemberId: tenthInviter.id,
+      invitePosition: 10,
+      inviteRatePercent: "0",
+      reraStatus: "NOT_APPLICABLE",
+      reraNotApplicableReason: "Individual referrer",
+    },
+  });
+
+  const tenthBuyer = await makeEligiblePerson("TenthBuyer", "9600000053");
+  const plotAC7 = await makePlot(project.id, "AC7A");
+  const tenthSale = await bookAndApprove({
+    plotId: plotAC7.id,
+    buyerPersonId: tenthBuyer.id,
+    soldByType: "MEMBER",
+    soldByPersonId: tenthSellerPerson.id,
+  });
+
+  const tenthInvite = () =>
+    db.commissionRecord.findFirstOrThrow({
+      where: { bookingId: tenthSale, type: "INVITE", isCurrent: true },
+    });
+
+  const created = await tenthInvite();
+  assert.equal(
+    created.percent.toFixed(2),
+    "0.00",
+    "acceptance 7 — the record exists and its rate is 0%"
+  );
+  assert.equal(
+    created.ruleVersion,
+    "INVITE/POSITION_10/0%@100",
+    "and it carries the position, which is what keeps the position visible"
+  );
+  assert.equal(created.beneficiaryPersonId, tenthInviterPerson.id);
+  assert.equal(
+    created.eligibility,
+    "NO_BENEFIT",
+    "settled at zero — not Milestone Pending, and not a hold that could later lift"
+  );
+  assert.equal(created.holdReason, null);
+  assert.deepEqual(
+    (await currentRecords(tenthSale)).map((r) => `${r.type}:${r.percent.toFixed(2)}`),
+    ["DIRECT:3.00", "INVITE:0.00"],
+    "the 0% line stands beside the Direct one rather than replacing or trimming it"
+  );
+
+  /* The milestone consumes the opportunity, exactly as a paying band would. */
+
+  assert.equal(
+    await db.commissionOpportunity.count({
+      where: { kind: "INVITE", subjectPersonId: tenthSellerPerson.id, status: "CONSUMED" },
+    }),
+    0,
+    "nothing is consumed before the milestone"
+  );
+
+  await pay(tenthSale, "100", `${TAG} UTR AC7`);
+
+  const zeroBand = await tenthInvite();
+  assert.ok(
+    zeroBand.opportunityId,
+    "acceptance 7 — 0% still consumes that person's one-time opportunity"
+  );
+  assert.equal(
+    await db.commissionOpportunity.count({
+      where: { kind: "INVITE", subjectPersonId: tenthSellerPerson.id, status: "CONSUMED" },
+    }),
+    1
+  );
+  assert.equal(
+    zeroBand.eligibility,
+    "NO_BENEFIT",
+    "and reaching the milestone does not make a 0% band payable"
+  );
+  assert.equal(
+    await db.task.count({
+      where: { recordKind: "Commission", recordId: zeroBand.id, status: "PENDING" },
+    }),
+    0,
+    "no Accounts payment task is raised for an amount that does not exist"
+  );
+
+  /* "no payable amount is created" — by either route. */
+
+  await expectBlocked(/no amount to pay/, () =>
+    markCommissionPaid({
+      idempotencyKey: key(),
+      actorRef: ACC,
+      actorRole: "ACCOUNTS",
+      recordId: zeroBand.id,
+      early: false,
+      paidOn: today,
+      reference: `${TAG} UTR AC7-PAY`,
+      remarks: "Trying to pay a zero band.",
+    })
+  );
+  // Paid Early is the route around an unready record, so MD approval must not
+  // become a way to pay a band that never earned anything.
+  await approveCommissionPaidEarly({
+    idempotencyKey: key(),
+    actorRef: `${TAG}-MD`,
+    actorRole: "MD",
+    recordId: zeroBand.id,
+    note: "Testing that approval alone cannot create an amount.",
+  });
+  await expectBlocked(/no amount to pay/, () =>
+    markCommissionPaid({
+      idempotencyKey: key(),
+      actorRef: ACC,
+      actorRole: "ACCOUNTS",
+      recordId: zeroBand.id,
+      early: true,
+      paidOn: today,
+      reference: `${TAG} UTR AC7-EARLY`,
+      remarks: "Trying to process a zero band early.",
+    })
+  );
+
+  /* "That person never moves into a later 1% cycle." The opportunity is gone,
+     so a second sale by the same Member earns their inviter nothing. */
+
+  const tenthBuyerTwo = await makeEligiblePerson("TenthBuyer2", "9600000054");
+  const plotAC7b = await makePlot(project.id, "AC7B");
+  const secondSale = await bookAndApprove({
+    plotId: plotAC7b.id,
+    buyerPersonId: tenthBuyerTwo.id,
+    soldByType: "MEMBER",
+    soldByPersonId: tenthSellerPerson.id,
+  });
+  assert.deepEqual(
+    (await currentRecords(secondSale)).map((r) => r.type),
+    ["DIRECT"],
+    "acceptance 7 — the consumed opportunity means no second Invite at any rate"
+  );
+  assert.equal(
+    (await db.memberProfile.findUniqueOrThrow({ where: { id: tenthSeller.id } })).inviteRatePercent?.toFixed(2),
+    "0.00",
+    "and the position never re-rates"
+  );
+
   /* AC-03 — Paid Early needs a recorded MD approval */
 
   await expectBlocked(/requires a recorded MD approval/, () =>

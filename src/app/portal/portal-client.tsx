@@ -3,6 +3,7 @@
 // Member portal UI — DESIGN.md §3.2, §13.
 // Apple Parchment Light Theme — High-End Clean Minimalist Aesthetics.
 
+import { eligibilityLabel, type CommissionType } from "@/lib/domain/commission";
 import React from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -38,11 +39,6 @@ const COMMISSION_LABEL: Record<string, string> = {
   BUYING: "Buying Commission",
 };
 
-const ELIGIBILITY_LABEL: Record<string, string> = {
-  MILESTONE_PENDING: "Milestone Pending",
-  READY: "Ready",
-  ON_HOLD: "On Hold",
-};
 
 const PAYMENT_LABEL: Record<string, string> = {
   NOT_PAID: "Not Paid",
@@ -516,7 +512,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                         <td className="py-2.5 text-right tabular-nums text-foreground">{c.milestonePercent}%</td>
                         <td className="py-2.5">
                           <span className="block font-medium text-foreground">
-                            {ELIGIBILITY_LABEL[c.eligibility] ?? c.eligibility}
+                            {eligibilityLabel(c.eligibility, c.type as CommissionType)}
                           </span>
                           <span className="block text-[11px] text-muted-foreground">
                             {PAYMENT_LABEL[c.payment] ?? c.payment}

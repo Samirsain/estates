@@ -535,18 +535,21 @@ export function generateCommission(input: CommissionInput): CommissionOutcome {
       ruleVersion: "DIRECT/THIRD_PARTY/3%@25",
     });
 
+    // CR-013 — a position past the ninth earns 0%, and the record is still
+    // created. It used to be skipped, which meant the position simply vanished:
+    // nothing on the Booking said who was in it, and the invited Member's
+    // one-time opportunity stayed open for a later sale to take at 1%. The pack
+    // is explicit that a 0% line is visible and consumes that opportunity.
     if (input.invite && input.inviteOpportunityOpen) {
       const percent = band(input.invite, "Invite");
-      if (new D(percent).gt(0)) {
-        components.push({
-          type: "INVITE",
-          beneficiaryRole: "INVITING_MEMBER",
-          beneficiaryPersonId: input.invite.beneficiaryPersonId,
-          percent,
-          milestonePercent: FULL_MILESTONE,
-          ruleVersion: `INVITE/POSITION_${input.invite.position}/${percent}%@100`,
-        });
-      }
+      components.push({
+        type: "INVITE",
+        beneficiaryRole: "INVITING_MEMBER",
+        beneficiaryPersonId: input.invite.beneficiaryPersonId,
+        percent,
+        milestonePercent: FULL_MILESTONE,
+        ruleVersion: `INVITE/POSITION_${input.invite.position}/${percent}%@100`,
+      });
     }
     return settle(components);
   }
@@ -591,18 +594,17 @@ export function generateCommission(input: CommissionInput): CommissionOutcome {
         ruleVersion: "LOYALTY/REPEAT_PURCHASE/1%@100",
       });
     }
+    // CR-013 again, on the Royalty side.
     if (input.royalty && input.royaltyOpportunityOpen) {
       const percent = band(input.royalty, "Royalty");
-      if (new D(percent).gt(0)) {
-        components.push({
-          type: "ROYALTY",
-          beneficiaryRole: "INTRODUCING_MEMBER",
-          beneficiaryPersonId: input.royalty.beneficiaryPersonId,
-          percent,
-          milestonePercent: FULL_MILESTONE,
-          ruleVersion: `ROYALTY/POSITION_${input.royalty.position}/${percent}%@100`,
-        });
-      }
+      components.push({
+        type: "ROYALTY",
+        beneficiaryRole: "INTRODUCING_MEMBER",
+        beneficiaryPersonId: input.royalty.beneficiaryPersonId,
+        percent,
+        milestonePercent: FULL_MILESTONE,
+        ruleVersion: `ROYALTY/POSITION_${input.royalty.position}/${percent}%@100`,
+      });
     }
   }
   return settle(components);
@@ -642,7 +644,40 @@ export function checkSaleCap(saleComponents: readonly { percent: Numeric }[]): C
 
 /* ------------------------------------------------------------ eligibility */
 
-export type EligibilityState = "MILESTONE_PENDING" | "READY" | "ON_HOLD";
+export type EligibilityState = "MILESTONE_PENDING" | "READY" | "ON_HOLD" | "NO_BENEFIT";
+
+/**
+ * CR-013 — "Position 10+ = 0%, remains visible, and consumes that person's
+ * one-time opportunity", with the status the pack itself recommends.
+ *
+ * This is a state rather than a hold reason on purpose. A hold is something
+ * that can lift; a band of 0% never becomes payable, and calling it On Hold
+ * would leave every screen implying that one day it might be.
+ */
+export function noBenefitLabel(type: CommissionType): string {
+  const what = type === "INVITE" ? "Invite" : type === "ROYALTY" ? "Royalty" : "";
+  return what ? `No ${what} Benefit — Position Above 9` : "No Benefit";
+}
+
+/**
+ * What every screen calls an eligibility state. It lives here rather than in
+ * each screen because it was in four screens, and adding a state to a vocabulary
+ * that exists four times leaves three of them printing a raw enum.
+ */
+export function eligibilityLabel(state: string, type?: CommissionType): string {
+  switch (state) {
+    case "MILESTONE_PENDING":
+      return "Milestone Pending";
+    case "READY":
+      return "Ready";
+    case "ON_HOLD":
+      return "On Hold";
+    case "NO_BENEFIT":
+      return type ? noBenefitLabel(type) : "No Benefit";
+    default:
+      return state;
+  }
+}
 
 export type HoldReason =
   | "AADHAAR_PENDING"
@@ -660,6 +695,12 @@ export type HoldReason =
 
 export type EligibilityInput = {
   type: CommissionType;
+  /**
+   * CR-013 — the record's own rate. A 0% band is never payable. Null where the
+   * rate is not decided yet, as in a Calculator line whose beneficiary has been
+   * picked but whose band has not: an unknown rate is not a zero one.
+   */
+  percent: Numeric | null;
   /** Verified Payment Received on the Booking. */
   progressPercent: Numeric;
   milestonePercent: Numeric;
@@ -702,6 +743,13 @@ const MEMBER_ROLES: CommissionType[] = ["DIRECT", "INVITE", "ROYALTY"];
  */
 export function resolveEligibility(input: EligibilityInput): Eligibility {
   const hold = (holdReason: HoldReason): Eligibility => ({ state: "ON_HOLD", holdReason });
+
+  // CR-013 — decided before everything else, because none of what follows can
+  // change it. A 0% record has no amount to hold, to pay, or to pay early; RERA,
+  // bank and Aadhaar decide nothing about it, and neither does the 4% cap.
+  if (input.percent !== null && new D(input.percent).eq(0)) {
+    return { state: "NO_BENEFIT", holdReason: null };
+  }
 
   // RD-03 — no sale-commission record is Ready or Paid while the conflict exists.
   if (input.commissionConflictAbove4) return hold("COMMISSION_CONFLICT_ABOVE_4");
@@ -776,6 +824,15 @@ export function canMarkPaid(
   if (current === "CANCELLED") return fail("A cancelled commission cannot be paid.");
   if (current === "ACCOUNTS_ADJUSTMENT_REQUIRED") {
     return fail("This record needs an Accounts adjustment before any further payment action.");
+  }
+  // CR-013 — "no payable amount is created". Paid Early is the route around an
+  // unready record, so it has to be closed here too: MD approval can waive a
+  // condition, not conjure an amount that was never earned.
+  if (eligibility === "NO_BENEFIT") {
+    return fail(
+      "This position is above 9, so the band is 0% and there is no amount to pay. The record " +
+        "stays visible and its one-time opportunity is consumed."
+    );
   }
   if (early && !mdApproved) {
     return fail(
