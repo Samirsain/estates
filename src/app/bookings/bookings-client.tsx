@@ -74,6 +74,10 @@ export type BookingRowView = {
   /** CUS-3390 — absent only on a Person who has not reached one yet. */
   primaryCustomerId: string | null;
   primaryCustomerPersonId: string;
+  /** CUSTOMER or MEMBER, frozen at Accounts approval and never rewritten. */
+  originalClassification: string | null;
+  /** MEM-0012, where the buyer holds an Active Member profile today. */
+  buyerMemberIdNow: string | null;
   soldByType: string;
   soldByName: string | null;
   /** MEM-0012 or CUS-3390 — the 3% Club sells under no code. */
@@ -504,6 +508,18 @@ export default function BookingsClient({
                 {PROCESS_LABEL[focusRow.activeProcess] && (
                   <Badge variant="warning">{PROCESS_LABEL[focusRow.activeProcess]}</Badge>
                 )}
+                {/* The historical classification stays visible on the record
+                    itself, not only as a count on the Dashboard. */}
+                {focusRow.originalClassification && (
+                  <Badge
+                    variant="outline"
+                    title="Frozen when commission was first generated, at Accounts approval, and never rewritten."
+                  >
+                    {focusRow.originalClassification === "MEMBER"
+                      ? "Member business"
+                      : "Customer business"}
+                  </Badge>
+                )}
               </div>
               <p className="mt-1 text-sm">
                 {focusRow.project} · {focusRow.plotNumber}
@@ -514,6 +530,17 @@ export default function BookingsClient({
                   : focusRow.requestNo}{" "}
                 · booked {formatIstDate(focusRow.bookingDate)} · submitted by {focusRow.submittedByRef}
               </p>
+              {/* The one case the classification has to explain itself: the
+                  buyer has become a Member since, and the Booking still counts
+                  as Customer business. Saying so is what stops a reader taking
+                  it for a mistake. */}
+              {focusRow.originalClassification === "CUSTOMER" && focusRow.buyerMemberIdNow && (
+                <p className="mt-1 text-[11px] text-amber-800">
+                  Customer business. {focusRow.primaryCustomer} has since been activated as{" "}
+                  {focusRow.buyerMemberIdNow}, and this Booking keeps the classification it was
+                  approved under — it is not recalculated as a Member self-purchase.
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2">{actions(focusRow)}</div>
           </header>
@@ -654,6 +681,14 @@ export default function BookingsClient({
                     {row.primaryCustomerId && (
                       <span className="block text-[11px] text-muted-foreground">
                         {row.primaryCustomer}
+                      </span>
+                    )}
+                    {row.originalClassification === "CUSTOMER" && row.buyerMemberIdNow && (
+                      <span
+                        className="block text-[11px] text-amber-800"
+                        title="Frozen at Accounts approval. The buyer has since been activated as a Member; this Booking stays Customer business."
+                      >
+                        Customer business · now {row.buyerMemberIdNow}
                       </span>
                     )}
                   </td>

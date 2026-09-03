@@ -1497,7 +1497,16 @@ export function listBookings(where?: Prisma.BookingWhereInput) {
     include: {
       project: true,
       plot: true,
-      primaryPerson: { include: { customerProfile: { select: { customerId: true } } } },
+      // AC-01 — the buyer's Member standing *today*, which is what lets a
+      // Booking explain why it is still Customer business after its buyer was
+      // activated. The classification itself is the frozen column and is never
+      // read from here.
+      primaryPerson: {
+        include: {
+          customerProfile: { select: { customerId: true } },
+          memberProfile: { select: { memberId: true, status: true } },
+        },
+      },
       // The list names Sold By by their Member ID or Customer ID, so the two
       // codes ride along with the Person.
       soldByPerson: {

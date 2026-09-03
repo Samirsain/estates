@@ -100,6 +100,15 @@ export const bookingRow = (b: Awaited<ReturnType<typeof listBookings>>[number]):
     primaryCustomer: b.primaryPerson.fullName,
     primaryCustomerId: b.primaryPerson.customerProfile?.customerId ?? null,
     primaryCustomerPersonId: b.primaryPersonId,
+    // Approved Changes §19 / acceptance 20 — frozen when commission was first
+    // generated, at Accounts approval. Null on a Booking never approved.
+    originalClassification: b.originalClassification,
+    // The buyer's Member ID only where they hold an Active Member profile now.
+    // Null keeps an ordinary Booking silent about a distinction it does not have.
+    buyerMemberIdNow:
+      b.primaryPerson.memberProfile?.status === "ACTIVE"
+        ? b.primaryPerson.memberProfile.memberId
+        : null,
     soldByType: b.soldByType,
     soldByName: b.soldByPerson?.fullName ?? null,
     soldByCode:
