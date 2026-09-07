@@ -1,5 +1,5 @@
 // Cancellation, Change Plot and Acquisition rules.
-// PRD.md §5, §11, §15; main-PRD.md §15, §16, §17.
+// prd-corrections.md §5, §11, §15; prd-complete.md §15, §16, §17.
 // Exact decimal arithmetic only (ARCHITECTURE §3.4). Percentages only — no
 // rupee value is calculated anywhere in this module.
 
@@ -105,7 +105,7 @@ export function likelyDuplicateReasons(
 export type PlotOutcome = { status: PlotStatus; message: string | null; isResale: boolean };
 
 /**
- * main-PRD §17.6 — on approval the property enters normal inventory as
+ * prd-complete §17.6 — on approval the property enters normal inventory as
  * Available + RESALE, and below 100% it shows Payment Pending. PRD §15 — an
  * active restriction still keeps the Plot Not Available; the RESALE tag is
  * independent of availability.

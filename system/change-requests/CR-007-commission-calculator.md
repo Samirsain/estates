@@ -1,7 +1,7 @@
 # CR-007 — A Commission Calculator inside the CRM
 
-Raised under [`PRD.md`](../PRD.md) §28 and the change-control rule in
-[`PHASES.md`](../PHASES.md).
+Raised under [`prd-corrections.md`](../prd-corrections.md) §28 and the change-control rule in
+[`delivery-phases.md`](../delivery-phases.md).
 
 | | |
 | --- | --- |
@@ -27,25 +27,25 @@ The calculator is not an oversight. It was named and removed, four times over.
 
 | Clause | Wording |
 | --- | --- |
-| `main-PRD.md` §30 | "Standalone calculator" — listed under "deliberately excluded or ignored by the owner… A vendor must not add them without a later approved change request" |
-| `main-PRD.md` §2 | "Standalone CRM calculator" — out of scope |
-| `main-PRD.md` §27 | "Calculator -> remove" — struck from the module list |
-| `PRD.md` §26 | The same exclusions "must not be added without a future approved change request" |
-| `ARCHITECTURE.md` §1 | "A standalone quotation calculator" — what this system is not |
-| `DESIGN.md` §1 | "Do not reintroduce removed top-level modules, Customer portal, service requests, document uploads, standalone calculator or rupee values." |
+| `prd-complete.md` §30 | "Standalone calculator" — listed under "deliberately excluded or ignored by the owner… A vendor must not add them without a later approved change request" |
+| `prd-complete.md` §2 | "Standalone CRM calculator" — out of scope |
+| `prd-complete.md` §27 | "Calculator -> remove" — struck from the module list |
+| `prd-corrections.md` §26 | The same exclusions "must not be added without a future approved change request" |
+| `architecture.md` §1 | "A standalone quotation calculator" — what this system is not |
+| `design.md` §1 | "Do not reintroduce removed top-level modules, Customer portal, service requests, document uploads, standalone calculator or rupee values." |
 
 Two further clauses bind the *shape* of anything approved here.
 
 | Clause | Wording |
 | --- | --- |
-| `ARCHITECTURE.md` §1 | "All rupee values and statutory accounting remain outside the CRM. The CRM stores percentages, statuses, dates, references, beneficiaries, relationships and audit facts." |
-| `main-PRD.md` RD-01 | "No rupee conversion or value calculation is performed in CRM." |
+| `architecture.md` §1 | "All rupee values and statutory accounting remain outside the CRM. The CRM stores percentages, statuses, dates, references, beneficiaries, relationships and audit facts." |
+| `prd-complete.md` RD-01 | "No rupee conversion or value calculation is performed in CRM." |
 
 And one clause already asks for something close to it, in a single place.
 
 | Clause | Wording |
 | --- | --- |
-| `DESIGN.md` §14.4 | Sold By correction: "Show before/after attribution and **calculated commission components**." |
+| `design.md` §14.4 | Sold By correction: "Show before/after attribution and **calculated commission components**." |
 
 ---
 
@@ -57,7 +57,7 @@ And one clause already asks for something close to it, in a single place.
 >
 > **2.2** The Calculator is **percentage only**. It never accepts a rupee amount,
 > never displays one, and never converts one. Every exclusion in
-> `ARCHITECTURE.md` §1 and `main-PRD.md` RD-01 stands unchanged.
+> `architecture.md` §1 and `prd-complete.md` RD-01 stands unchanged.
 >
 > **2.3** The Calculator **writes nothing**. It creates no Commission Record,
 > consumes no slot, moves no counter position, and raises no Commission Conflict.
@@ -91,7 +91,7 @@ And one clause already asks for something close to it, in a single place.
 
 ## 3. Why this is raised
 
-**The exclusion is express, so silence is not available.** `main-PRD.md` §4 —
+**The exclusion is express, so silence is not available.** `prd-complete.md` §4 —
 "a developer must not choose an older or easier rule when Version 3.0 is silent"
 — does not apply here, because the baseline is not silent. It names the
 calculator and removes it. Only an approved change request reopens that.
@@ -103,10 +103,10 @@ read-only preview of the commission engine, in percentages, with no quotation an
 no money in it. The owner is asked to decide whether that distinction holds. If
 it does not, this CR is withdrawn and the exclusion stands.
 
-**One clause already asks for the output.** `DESIGN.md` §14.4 requires the
+**One clause already asks for the output.** `design.md` §14.4 requires the
 calculated commission components to be shown before and after a Sold By
 correction. That is this screen, scoped to one correction. The rules are already
-implemented, tested (`COMMISSION-TEST-PLAN.md`) and rendered; what is missing is a
+implemented, tested (`commission-rules-and-test-plan.md`) and rendered; what is missing is a
 place to ask the question without a live Booking to ask it against.
 
 **The risk it removes.** Today a CRM or Accounts user answering "what will this
@@ -120,18 +120,18 @@ paper is where a wrong number reaches a Member.
 
 Nothing. No screen is removed, no field is dropped, no stored value changes.
 
-The line "Calculator" in `main-PRD.md` §27's removed-module list and in §30's
-exclusion list would need the owner's amendment on approval, and `DESIGN.md` §1's
+The line "Calculator" in `prd-complete.md` §27's removed-module list and in §30's
+exclusion list would need the owner's amendment on approval, and `design.md` §1's
 sentence would keep "rupee values" while losing "standalone calculator".
 
 ## 5. What this closes
 
-- `DESIGN.md` §14.4 — "Show before/after attribution and calculated commission
+- `design.md` §14.4 — "Show before/after attribution and calculated commission
   components" is satisfied by a component that exists, rather than by one written
   a second time for that screen alone.
 - The band table, the two counters, the entitlement slots and the 4% ceiling
   become answerable on screen instead of by hand from
-  `COMMISSION-TEST-PLAN.md` §2, §3 and §7.
+  `commission-rules-and-test-plan.md` §2, §3 and §7.
 
 ## 6. What is deliberately not included
 

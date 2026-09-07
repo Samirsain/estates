@@ -2,8 +2,8 @@
 
 **Date:** 22 August 2026
 **Status:** Design approved in session. Not implemented.
-**Governing spec:** [`system/plc.md`](../../../system/plc.md) §4, §7, §13, §15
-**Read with:** `PRD.md` §16, `DESIGN.md` §7, `main-PRD.md` §8.5
+**Governing spec:** [`system/plc-location-charge.md`](../../../system/plc-location-charge.md) §4, §7, §13, §15
+**Read with:** `prd-corrections.md` §16, `design.md` §7, `prd-complete.md` §8.5
 
 ---
 
@@ -14,10 +14,10 @@ screens they land on.
 
 | | |
 | --- | --- |
-| **#4** | Snapshot component breakdown carries no applicability source and no side evidence (`plc.md` §7.1) |
-| **#5** | Plot applicability is a bare `String[]` with no per-code record (`plc.md` §4.2, §13.3) |
-| **#6** | PLC percentages are `Decimal(6,3)` where the spec and the rest of this codebase use `Decimal(7,4)` (`plc.md` §2.1) |
-| **Plot Inventory screen** | Row actions are an unstructured pile of buttons; `DESIGN.md` §7.2's Plot detail does not exist; the Prepare Inventory grid takes PLC as free text |
+| **#4** | Snapshot component breakdown carries no applicability source and no side evidence (`plc-location-charge.md` §7.1) |
+| **#5** | Plot applicability is a bare `String[]` with no per-code record (`plc-location-charge.md` §4.2, §13.3) |
+| **#6** | PLC percentages are `Decimal(6,3)` where the spec and the rest of this codebase use `Decimal(7,4)` (`plc-location-charge.md` §2.1) |
+| **Plot Inventory screen** | Row actions are an unstructured pile of buttons; `design.md` §7.2's Plot detail does not exist; the Prepare Inventory grid takes PLC as free text |
 | **Projects screen** | Card layout, and the create form's fields |
 
 The Loyalty entitlement change is **not** here. It is
@@ -30,7 +30,7 @@ and waits on the owner's signature.
 
 These were settled in session. They are recorded because each one shrank the
 work, and a later reader will otherwise wonder why the spec is smaller than
-`plc.md` §13.3 implies.
+`plc-location-charge.md` §13.3 implies.
 
 | Decision | Consequence |
 | --- | --- |
@@ -78,7 +78,7 @@ enum PlcApplicabilitySource {
 
 Current state, updated in place. Change history goes to `AuditEvent`, written
 in the same transaction by `runCommand` — the trail already carries actor,
-time, reason and before/after, which is exactly what `plc.md` §4.2 asks for. A
+time, reason and before/after, which is exactly what `plc-location-charge.md` §4.2 asks for. A
 second bespoke history table would duplicate it.
 
 A row with `isApplicable = false` is a recorded removal, not a deletion.
@@ -102,7 +102,7 @@ A row with `isApplicable = false` is a recorded removal, not a deletion.
 evidence rather than used as a decision.
 
 **`includedInTotal` and `exclusionReason` will always be `true` and `null`.**
-`plc.md` §7.1 asks for them so a duplicate side can be shown as ignored, but
+`plc-location-charge.md` §7.1 asks for them so a duplicate side can be shown as ignored, but
 checkbox entry makes a duplicate structurally impossible: a checkbox cannot be
 ticked twice. They are stored so the shape matches the spec and so a future
 per-side entry model has somewhere to write. This is stated here so a reader
@@ -118,7 +118,7 @@ comparing the data to §7.1 finds an answer rather than an empty column.
 
 Every other percentage in this schema is already `Decimal(7,4)` — payment,
 ownership shares, commission, milestone, applied percent. These three are the
-outliers, so `plc.md` §2.1 and the codebase point the same way.
+outliers, so `plc-location-charge.md` §2.1 and the codebase point the same way.
 
 **Stored at four places, displayed at two.** `2.0000%` is noise on a screen.
 Display trims trailing zeros to a minimum of two decimals, and shows more only
@@ -164,7 +164,7 @@ it sources the codes.
 
 Effective PLC for Available / Not Active inventory is still derived on read and
 never stored, so publishing a version updates the inventory list by
-construction (`plc.md` §4.3).
+construction (`plc-location-charge.md` §4.3).
 
 ---
 
@@ -172,7 +172,7 @@ construction (`plc.md` §4.3).
 
 ### 5.1 Row actions
 
-One `⋯` menu per row, in the column `DESIGN.md` §7.1 names **Next action**. No
+One `⋯` menu per row, in the column `design.md` §7.1 names **Next action**. No
 primary button. Items are state-appropriate, most likely first.
 
 | Plot state | Menu |
@@ -188,19 +188,19 @@ primary button. Items are state-appropriate, most likely first.
 `→` items are links into `/bookings`, not actions. This is how the dead
 `Start Booking` button — permanently disabled with the tooltip "Booking Requests
 arrive in Phase 3", years after Phase 3 shipped — becomes true. `Book` on a held
-Plot is new: `DESIGN.md` §7.3 lists it and it has never existed.
+Plot is new: `design.md` §7.3 lists it and it has never existed.
 
 **Deliberately not on this screen:**
 
-- **Approve / Reject extension.** A maker-checker decision under `PRD.md` §8.5.
+- **Approve / Reject extension.** A maker-checker decision under `prd-corrections.md` §8.5.
   Deciding it inline, from a row that shows neither who asked nor why, is the
   thing maker-checker exists to prevent. It belongs to the Dashboard task queue.
 - **Cancel Booking, Change Plot, Prepare Allotment/Registry, Follow-up.**
-  `DESIGN.md` §7.3 lists them among Plot state actions, but each operates on a
+  `design.md` §7.3 lists them among Plot state actions, but each operates on a
   Booking. They live in `/bookings`, where the parties, schedule, payments,
   commission and review versions are visible. The menu offers `Open Booking →`
   instead of acting blind.
-- **Any combined "Make Available and Hold".** `DESIGN.md` §7.4 forbids it in
+- **Any combined "Make Available and Hold".** `design.md` §7.4 forbids it in
   those words.
 
 ### 5.2 Plot detail
@@ -208,7 +208,7 @@ Plot is new: `DESIGN.md` §7.3 lists it and it has never existed.
 An inline panel, opened from the row, loaded by a `loadPlotDetail(plotId)`
 server action. Same shape as the Booking detail.
 
-`DESIGN.md` §7.2's eight sections: Overview · Dimensions and boundaries · PLC ·
+`design.md` §7.2's eight sections: Overview · Dimensions and boundaries · PLC ·
 Current allocation · Customer/Booking link · Payment progress · Commission
 summary · Restriction and lifecycle history.
 
@@ -219,7 +219,7 @@ breakdown.
 
 ### 5.3 Prepare Inventory grid
 
-Bulk entry stays in the grid — `PRD.md` §16.4 asks for the Excel-style
+Bulk entry stays in the grid — `prd-corrections.md` §16.4 asks for the Excel-style
 preparation, and 500 Plots cannot be set up one panel at a time.
 
 | Today | Becomes |
@@ -243,7 +243,7 @@ them. Rows are still submitted together, and the grid still fails whole rather
 than saving half — the deliberate rule in `inventory-service.ts`.
 
 **Park facing is labelled, not linked.** `Plot.parkFacing` is a fact about the
-Plot (`PRD.md` §16.2 lists it); `PARK_FACING` is a charge that may or may not
+Plot (`prd-corrections.md` §16.2 lists it); `PARK_FACING` is a charge that may or may not
 apply. They look identical in the grid today and that is a real source of
 confusion. The columns are relabelled — *Park facing (Plot characteristic)* and
 *Location charge components* — so the difference reads at a glance. No logic
@@ -279,7 +279,7 @@ The name is read first. Place sits together — `type · city`, then
 and PLC version share one strip because all three answer "one number about this
 Project". No Project Code anywhere.
 
-An **External Resale Property Group** (`PRD.md` §11.6) is a container, not a
+An **External Resale Property Group** (`prd-corrections.md` §11.6) is a container, not a
 development Project, so its card shows the name, the type and that label alone —
 no plots, no PLC, no amenities.
 
@@ -293,7 +293,7 @@ reports and exports, because `Project.name` carries no uniqueness and two
 Projects may share one.
 
 Removing the Project RERA expiry breaks nothing: `RERA_EXPIRY_REMINDER` reads
-`memberProfile.reraExpiryDate` only (`jobs.ts:211`), and `PRD.md` §26 already
+`memberProfile.reraExpiryDate` only (`jobs.ts:211`), and `prd-corrections.md` §26 already
 excludes any Project RERA operational block.
 
 **Added:** City, and Amenities as a text area — one amenity per line, rendered
@@ -322,7 +322,7 @@ label over the inventory rather than a rule inside it.
 - **Project Code.** It is generated, hidden from the UI, and the key that ties
   a report or an export back to a Project. Once an export has left the building,
   changing the code breaks the way back to what it described.
-- **External Resale Property Group.** `PRD.md` §11.6 makes this the difference
+- **External Resale Property Group.** `prd-corrections.md` §11.6 makes this the difference
   between a development Project and an acquisition container. Flipping it after
   Plots or acquisitions exist changes what those existing records mean.
 
@@ -343,12 +343,12 @@ permission.
 
 ## 7. Terminology
 
-Two visible-term changes, both display only, both recorded in `DEVIATIONS.md`:
+Two visible-term changes, both display only, both recorded in `approved-deviations.md`:
 
 | Term | Today | Becomes | Approved wording says |
 | --- | --- | --- | --- |
-| PLC | "Location Charge (PLC %)" | **"Plot Location Charge (PLC %)"** | `main-PRD.md` §8.5 — "Use the visible term Location Charge (PLC %)" |
-| Project lifecycle | "Setup / Not Active" | **"Unreleased"** | `PRD.md` §16.1, `main-PRD.md` §16.1 |
+| PLC | "Location Charge (PLC %)" | **"Plot Location Charge (PLC %)"** | `prd-complete.md` §8.5 — "Use the visible term Location Charge (PLC %)" |
+| Project lifecycle | "Setup / Not Active" | **"Unreleased"** | `prd-corrections.md` §16.1, `prd-complete.md` §16.1 |
 
 Both contradict an explicit instruction in an approved document, so neither may
 be treated as silent. The enum value `SETUP_NOT_ACTIVE` does not change.
@@ -367,7 +367,7 @@ No permission is added or removed.
 
 Editing applicability is Project/Plot setup work and stays under `PLOT_SETUP`,
 which MD, Admin and PC already hold. Correcting a **frozen** snapshot remains
-`PLC_SNAPSHOT_CORRECT`, MD and Admin only, unchanged from `plc.md` §12.1.
+`PLC_SNAPSHOT_CORRECT`, MD and Admin only, unchanged from `plc-location-charge.md` §12.1.
 
 ---
 

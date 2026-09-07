@@ -1,4 +1,4 @@
-// Session token — ARCHITECTURE.md §9.1. Staff and Member portal are separate
+// Session token — architecture.md §9.1. Staff and Member portal are separate
 // security contexts. The token carries the account's session version, so a
 // password reset or emergency disable invalidates every existing session by
 // bumping that number in the database (PRD §17.1, §17.2).

@@ -1,5 +1,5 @@
 // Allotment/Registry completion, Delivered, export masking and Person Merge.
-// PRD.md §4, §21, §22; main-PRD.md §18; DESIGN.md §16.
+// prd-corrections.md §4, §21, §22; prd-complete.md §18; design.md §16.
 //
 // One route completes a Booking. There is no Allotment-then-Registry sequence
 // and no separate Confirm Delivery action — Delivered is what the completed
@@ -19,7 +19,7 @@ export type CompletionRoute = "ALLOTMENT" | "REGISTRY";
 
 export type AllotmentInput = {
   route: "ALLOTMENT";
-  /** main-PRD §18.4 — the route completes only once Allotment is given. */
+  /** prd-complete §18.4 — the route completes only once Allotment is given. */
   allotmentGiven: boolean;
   allotmentDate: Date | null;
   allotmentNumber: string | null;
@@ -38,7 +38,7 @@ export type CompletionInput = AllotmentInput | RegistryInput;
 
 const present = (value: string | null | undefined) => !!value && value.trim().length > 0;
 
-/** main-PRD §18.4, §18.5 — each route carries its own complete field set. */
+/** prd-complete §18.4, §18.5 — each route carries its own complete field set. */
 export function validateCompletion(input: CompletionInput): Check {
   if (input.route === "ALLOTMENT") {
     if (!input.allotmentGiven) {
@@ -63,7 +63,7 @@ export function validateCompletion(input: CompletionInput): Check {
 }
 
 /**
- * main-PRD §18.2 — the final registration buyer(s), their identity fields and
+ * prd-complete §18.2 — the final registration buyer(s), their identity fields and
  * the PAN decision. No document upload exists anywhere in this model.
  */
 export type FinalBuyer = {
@@ -98,7 +98,7 @@ export function validateFinalBuyers(buyers: readonly FinalBuyer[]): Check {
   return OK;
 }
 
-/** main-PRD §18.6 — every precondition, checked server-side before Delivered. */
+/** prd-complete §18.6 — every precondition, checked server-side before Delivered. */
 export function readyForCompletion(args: {
   status: string;
   activeProcess: string;

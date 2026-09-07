@@ -1,5 +1,5 @@
 // Holds, Member Hold Requests and the three-open-position limit.
-// PRD.md §8; DESIGN.md §9. All times are Asia/Kolkata.
+// prd-corrections.md §8; design.md §9. All times are Asia/Kolkata.
 
 import { istDay, istInstant } from "../tasks.ts";
 

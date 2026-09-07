@@ -1,4 +1,4 @@
-// Commission engine — PRD.md §6, §13, §14; main-PRD.md §14, §25 (compatibility
+// Commission engine — prd-corrections.md §6, §13, §14; prd-complete.md §14, §25 (compatibility
 // matrix), RD-02 (annual counters), RD-03 (4% cap).
 // Exact decimal arithmetic only (ARCHITECTURE §3.4): the 4% cap and the bands
 // are never judged on binary floating point.
@@ -19,7 +19,7 @@ const fail = (reason: string): Check => ({ ok: false, reason });
 
 /* ------------------------------------------------------------------ rates */
 
-/** main-PRD §14.2 — Direct Commission is 3% to the final selling Member. */
+/** prd-complete §14.2 — Direct Commission is 3% to the final selling Member. */
 export const DIRECT_PERCENT = "3";
 /** PRD §6.5 — Loyalty Bonus is 1%. */
 export const LOYALTY_PERCENT = "1";
@@ -28,7 +28,7 @@ export const SALE_CAP_PERCENT = new D(4);
 /** PRD §6.5 — combined lifetime maximum of three Loyalty Bonuses. */
 export const MAX_LOYALTY_SLOTS = 3;
 
-/** main-PRD §14.2 — the ordinary Direct milestone is 25% verified payment. */
+/** prd-complete §14.2 — the ordinary Direct milestone is 25% verified payment. */
 export const DIRECT_MILESTONE = "25";
 /** Invite, Royalty, Loyalty and a Member self-purchase all settle at 100%. */
 export const FULL_MILESTONE = "100";
@@ -496,16 +496,16 @@ function band(link: NetworkLink, label: string): Component["percent"] {
 }
 
 /**
- * main-PRD §25 — the approved compatibility matrix, implemented row by row.
+ * prd-complete §25 — the approved compatibility matrix, implemented row by row.
  * The final Sold By selection controls commission; Enquiry Source is historical
- * and never decides anything here (PRD §6.5, main-PRD §14.6).
+ * and never decides anything here (PRD §6.5, prd-complete §14.6).
  */
 export function generateCommission(input: CommissionInput): CommissionOutcome {
   const components: Component[] = [];
   const loyaltyAvailable = input.loyaltySlotsConsumed < MAX_LOYALTY_SLOTS;
 
   /* Row: Active Member buys personally — 3% Direct at 100%, nothing else, and
-     the inviting Member's opportunity is left untouched (main-PRD §14.2). */
+     the inviting Member's opportunity is left untouched (prd-complete §14.2). */
   if (input.buyerIsActiveMember) {
     if (input.soldByType !== "MEMBER" || input.soldByPersonId !== input.buyerPersonId) {
       return {
@@ -588,7 +588,7 @@ export function generateCommission(input: CommissionInput): CommissionOutcome {
 
   /* Sold By 3% Club. A first direct purchase earns nothing at all; a repeat
      direct purchase may earn Loyalty for the buyer and Royalty for the Member
-     who originally introduced them (main-PRD §14.5, §25). */
+     who originally introduced them (prd-complete §14.5, §25). */
   if (input.buyerHasPriorPurchase) {
     if (loyaltyAvailable) {
       components.push({
@@ -735,7 +735,7 @@ export type Eligibility = { state: EligibilityState; holdReason: HoldReason | nu
 const MEMBER_ROLES: CommissionType[] = ["DIRECT", "INVITE", "ROYALTY"];
 
 /**
- * main-PRD §14.7, §14.8 — eligibility is an axis of its own, separate from the
+ * prd-complete §14.7, §14.8 — eligibility is an axis of its own, separate from the
  * payment state. Deal-level and Member-level holds are decided first, because
  * they apply whether or not the milestone has been reached (PRD §15.3); only
  * then does the milestone decide; and the beneficiary conditions come last.
@@ -779,7 +779,7 @@ export function resolveEligibility(input: EligibilityInput): Eligibility {
   if (!input.beneficiaryBankVerified) return hold("BANK_VERIFICATION_PENDING");
 
   if (isMemberComponent) {
-    // Registered or Not Applicable satisfies the condition (main-PRD §14.7).
+    // Registered or Not Applicable satisfies the condition (prd-complete §14.7).
     if (input.reraStatus === "PENDING") return hold("RERA_PENDING");
     if (input.reraStatus === "EXPIRED") return hold("RERA_EXPIRED");
   }

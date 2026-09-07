@@ -1,5 +1,5 @@
 // One Booking, full page — everything the row used to unfold underneath itself,
-// and every action that used to sit in the row (DESIGN.md §10).
+// and every action that used to sit in the row (design.md §10).
 
 import { notFound } from "next/navigation";
 import { loadBookingsProps } from "../load";

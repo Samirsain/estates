@@ -7,7 +7,7 @@ is kept because the reconciliation rules it was written against remain in use as
 a standing invariant check (`npm run reconcile`), and because a future
 acquisition of another book would need exactly this document again.
 **Phase:** 7 — Migration, Hardening, UAT and Go-Live
-**Read with:** [`system/PRD.md`](../../../system/PRD.md) §27, [`system/main-PRD.md`](../../../system/main-PRD.md) §27.3, [`system/ARCHITECTURE.md`](../../../system/ARCHITECTURE.md) §13, [`system/GO-LIVE-EVIDENCE.md`](../../../system/GO-LIVE-EVIDENCE.md)
+**Read with:** [`system/prd-corrections.md`](../../../system/prd-corrections.md) §27, [`system/prd-complete.md`](../../../system/prd-complete.md) §27.3, [`system/architecture.md`](../../../system/architecture.md) §13, [`system/go-live-evidence.md`](../../../system/go-live-evidence.md)
 
 ---
 
@@ -171,7 +171,7 @@ Option 2 is cleaner and larger. Neither is in this design's scope; the importer
 supports both by keeping credential issuance in one place.
 - Customer portal accounts are **not** created — the model no longer exists.
   Their security history goes to the archive, which is what "disabled, not
-  deleted" means under a schema that has no such account (main-PRD §27.3.10).
+  deleted" means under a schema that has no such account (prd-complete §27.3.10).
 
 ### 6.3 Archive
 

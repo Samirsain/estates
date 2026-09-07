@@ -3,8 +3,8 @@
 ## Status
 
 **A second, larger pack arrived on 3 September 2026 and supersedes the first.**
-`3_Percent_Club_CRM_Dashboard_Approved_Changes (2).md` carries 46 business rules,
-27 change requests and 31 acceptance criteria, and it *changes* rules the first
+`approved-changes-pack.md` carries 46 business rules,
+27 change requests and 31 acceptance criteria, and it _changes_ rules the first
 pack established rather than only adding to them. Part Two of this log covers it.
 
 **Part One — the first pack (AC-01 … AC-07) — is complete, committed and now
@@ -14,9 +14,9 @@ Commission cap); the performance-cycle model it introduced is replaced by the
 second pack's CR-014.
 
 This document is the running record of what has been built against
-[`3_Percent_Club_CRM_Dashboard_Approved_Changes.md`](./3_Percent_Club_CRM_Dashboard_Approved_Changes.md)
+[`approved-changes-pack.md`](./approved-changes-pack.md)
 ("the pack") and its companion
-[`3_Percent_Club_Complete_Mock_Data_and_Test_Plan.md`](./3_Percent_Club_Complete_Mock_Data_and_Test_Plan.md)
+[`mock-data-v1.md`](./mock-data-v1.md)
 ("the test plan"). It follows the pack's section order.
 
 Each change carries an **AC-nn** reference that appears verbatim in the code
@@ -126,9 +126,9 @@ documents do not describe. See §6 for the full account.
 | --- | --- |
 | Pack §1 Royalty | "Royalty is earned through completed performance cycles, **not simply by recording a transaction**." |
 | Pack §1 Performance Cycles | "Performance cycles are earned based on completed qualifying activity." · "Partially completed cycles must not be treated as completed cycles." |
-| `PRD.md` §6.3 / `main-PRD.md` §14.4 | The qualifying activity for Royalty: introduced Customer, later direct purchase through 3% Club, no selling Member, first such purchase, **milestone 100% Payment Received**. |
-| `PRD.md` §6.3 | "Cancellation before legal completion restores the opportunity. **Legally completed purchase consumes the opportunity.**" |
-| `COMMISSION-TEST-PLAN.md` §1 | "**Legally completed:** the sale reached final delivery. Before that, it is not legally completed." |
+| `prd-corrections.md` §6.3 / `prd-complete.md` §14.4 | The qualifying activity for Royalty: introduced Customer, later direct purchase through 3% Club, no selling Member, first such purchase, **milestone 100% Payment Received**. |
+| `prd-corrections.md` §6.3 | "Cancellation before legal completion restores the opportunity. **Legally completed purchase consumes the opportunity.**" |
+| `commission-rules-and-test-plan.md` §1 | "**Legally completed:** the sale reached final delivery. Before that, it is not legally completed." |
 | Test plan TC-ROY-001 | "Given qualifying transactions satisfy **all** cycle conditions: mark cycle complete." |
 | Test plan TC-ROY-002 | "Given only **part** of the qualifying conditions are met: keep cycle pending. Do not pay/recognize earned royalty." |
 
@@ -156,7 +156,7 @@ and precisely what TC-ROY-002 exercises.
   against TC-ROY-002's "part".
 - **Eligibility is gated per record, not on the cycle aggregate.** One Member's
   cycle can hold qualifying transactions from several introduced Customers in
-  the same year, and `PRD.md` §6.3 gives each introduced Customer their own
+  the same year, and `prd-corrections.md` §6.3 gives each introduced Customer their own
   single entitlement. Gating on the aggregate would let one Customer's completed
   purchase release a different Customer's Royalty.
 - `refreshCycle()` **recomputes** the stored figures from the attached records
@@ -169,7 +169,7 @@ and precisely what TC-ROY-002 exercises.
 **Can a completed cycle become incomplete?** Only by reopening the delivery,
 which genuinely reverses the legal completion. A Buyback does **not**: see AC-05.
 
-**There is no target count, and there should not be one.** `PRD.md` §6.3 already
+**There is no target count, and there should not be one.** `prd-corrections.md` §6.3 already
 fixes the number of qualifying transactions per entitlement — "Royalty applies
 only to the Customer's **first** qualifying future direct purchase" and "may be
 generated only once per introduced Customer". A separate threshold would be an
@@ -187,13 +187,13 @@ invented second rule sitting on top of an approved one.
 
 ### AC-03 · Paid Early requires recorded MD approval
 
-**Verdict: Built. This deliberately overrides `PRD.md` §6.11.**
+**Verdict: Built. This deliberately overrides `prd-corrections.md` §6.11.**
 
-**Conflict, stated plainly.** `PRD.md` §6.11 says Paid Early "needs no extra
+**Conflict, stated plainly.** `prd-corrections.md` §6.11 says Paid Early "needs no extra
 MD/Admin approval". The pack says the opposite: approval is required, must be
 stored, and "without approval, the system must not mark the benefit as
 approved." The pack is the later approved baseline, so the pack wins and §6.11
-is superseded on this point. `PRD.md` needs the corresponding revision — AC-09.
+is superseded on this point. `prd-corrections.md` needs the corresponding revision — AC-09.
 
 **What was built.**
 
@@ -250,7 +250,7 @@ after the fact without going through the same validation.
 ### AC-05 · Buyback / unwind — Option B
 
 **Verdict: Corrected.** The first pass accepted this as already met. The second
-pass found the reversal did not follow `main-PRD.md` §14.12.
+pass found the reversal did not follow `prd-complete.md` §14.12.
 
 **What §14.12 actually requires — three cases, not one:**
 
@@ -303,7 +303,7 @@ Required rather than being silently reversed after the money left.
   the frozen `ruleVersion`: `DIRECT/SELF_PURCHASE/3%@100` against
   `DIRECT/THIRD_PARTY/3%@25`. AC-01's legacy recovery now depends on this.
 - The inviting Member's opportunity is deliberately left untouched by a personal
-  purchase, so it cannot be consumed twice (`main-PRD.md` §14.2).
+  purchase, so it cannot be consumed twice (`prd-complete.md` §14.2).
 - A Customer closing their own purchase as Sold By Customer is refused outright
   — the other double-count this rule guards against.
 - Where the buyer holds an Active Member capability and Sold By names anyone
@@ -449,10 +449,10 @@ the qualifying conditions are met: keep cycle pending" — was **unreachable by
 construction**. An approved acceptance test that can never be entered is proof
 the model behind it is wrong.
 
-The approved rule was available the whole time, in `PRD.md` §6.3 and
-`main-PRD.md` §14.4, which define the qualifying activity and its terminal state
+The approved rule was available the whole time, in `prd-corrections.md` §6.3 and
+`prd-complete.md` §14.4, which define the qualifying activity and its terminal state
 ("legally completed purchase consumes the opportunity"), and in
-`COMMISSION-TEST-PLAN.md` §1, which defines legal completion as final delivery.
+`commission-rules-and-test-plan.md` §1, which defines legal completion as final delivery.
 The first pass did not read them, having decided the question was unanswerable.
 
 **Corrected:** `PERFORMANCE_CYCLE_TARGET` and `PerformanceCycle.targetCount` are
@@ -546,7 +546,7 @@ historical-classification test on Rajesh Kumar step by step; a Royalty path take
 to legal completion so a performance cycle actually completes; a Member
 self-purchase and a Customer-closed Loyalty sale; the §16 Change Plot; three
 §15 recoveries; and **two Buybacks — one before and one after legal completion**,
-because main-PRD §14.12 treats those differently and only a dataset with both can
+because prd-complete §14.12 treats those differently and only a dataset with both can
 show it.
 
 **This blocks production acceptance.** The domain suite proves the rules in
@@ -558,32 +558,32 @@ and that the unwind branches as §14.12 requires.
 
 ## 8. Deviations left in place, on purpose
 
-The running system carries wording and headings that differ from `PRD.md` and
-`main-PRD.md`. **None was reverted in either pass.** They are unrelated to the
+The running system carries wording and headings that differ from `prd-corrections.md` and
+`prd-complete.md`. **None was reverted in either pass.** They are unrelated to the
 pack, already recorded, and changing them here would mix two unrelated pieces of
 work into one diff.
 
-- [`DEVIATIONS.md`](./DEVIATIONS.md) — the plain-language summary.
+- [`approved-deviations.md`](./approved-deviations.md) — the plain-language summary.
 - [`change-requests/`](./change-requests/) — CR-001 through CR-007, carrying the
-  formal fields and owner signature block `PRD.md` §28 requires.
+  formal fields and owner signature block `prd-corrections.md` §28 requires.
 
 ---
 
 ## 9. Open items
 
-### AC-09 · `PRD.md` §6.11 contradicts the pack on Paid Early
+### AC-09 · `prd-corrections.md` §6.11 contradicts the pack on Paid Early
 
 §6.11 states no MD/Admin approval is required. The pack requires it, and the
 pack is implemented. §6.11 needs the corresponding revision so the documents do
 not disagree with the running system.
 
-**Decision needed from:** Product Owner, as a `PRD.md` §28 change request.
+**Decision needed from:** Product Owner, as a `prd-corrections.md` §28 change request.
 
 ### AC-10 · Confirm "completed" means legal completion
 
 AC-02 now reads "completed qualifying activity" as reaching **legal completion**
-(final delivery), assembled from `PRD.md` §6.3, `main-PRD.md` §14.4 and the
-`COMMISSION-TEST-PLAN.md` §1 glossary. Every word of that chain is approved text,
+(final delivery), assembled from `prd-corrections.md` §6.3, `prd-complete.md` §14.4 and the
+`commission-rules-and-test-plan.md` §1 glossary. Every word of that chain is approved text,
 but the pack itself does not use the phrase "legal completion", so the reading is
 an inference rather than a quotation.
 
@@ -591,7 +591,7 @@ It is the only reading that gives "not simply by recording a transaction" any
 force and makes TC-ROY-002 reachable, so it is implemented rather than deferred.
 Confirmation is wanted; nothing is blocked on it.
 
-**Not open:** how many qualifying transactions complete a cycle. `PRD.md` §6.3
+**Not open:** how many qualifying transactions complete a cycle. `prd-corrections.md` §6.3
 fixes that at one per introduced Customer as a consequence of "may be generated
 only once per introduced Customer". There is no separate threshold and none is
 implemented.
@@ -681,8 +681,8 @@ outstanding.
 
 # PART TWO — the Approved Business Changes Pack of 3 September 2026
 
-Source: `3_Percent_Club_CRM_Dashboard_Approved_Changes (2).md`, with its companion
-dataset `mockdata-v2.md`. The first pack's file was removed from `system/` when
+Source: `approved-changes-pack.md`, with its companion
+dataset `mock-data-v2.md`. The first pack's file was removed from `system/` when
 this one arrived; Part One above remains the record of what was built for it, and
 of what is still true of the code.
 
@@ -736,7 +736,7 @@ The dependencies run one way, so the order is not a preference.
 7. **Recovery and negative account (CR-020 – CR-022).** New surface, and the
    payout rules in CR-018 land with it.
 8. **Portal and dashboard visibility (CR-026), reports (§40).**
-9. **The v2 dataset and the standing checks (`mockdata-v2.md` §41).**
+9. **The v2 dataset and the standing checks (`mock-data-v2.md` §41).**
 
 Nothing is written until the rule it implements is quoted in the code beside it,
 as Part One did with its AC-nn references. The pack's own instruction in §32
@@ -806,7 +806,7 @@ dataset.
 Two pieces of work outside the pack's own order, asked for while step 1 was
 being finished.
 
-**Land Inquiry Management** (`system/land-inequry-feture-.md`) is now built at
+**Land Inquiry Management** (`system/land-inquiry-feature.md`) is now built at
 `/land-inquiries`: pre-acquisition land sourcing, in the fourteen business
 sections the spec names. Three new tables — `LandInquiry`, `LandInquiryOwner`,
 `LandInquiryJamabandiEntry` — and nothing else new. The Person identity, the
@@ -839,8 +839,8 @@ been applied by `npm run db:constraints`. Fixed with the rest.
 
 **The dataset.** `npm run data:reset` clears the operating data and keeps the
 eight staff accounts and the people they sit on, so everyone can still sign in.
-`npm run uat:seed` then rebuilds `mockdata-v1.md`, and `npm run uat:seed:v2`
-builds `mockdata-v2.md` §3 – §13 beside it: four Projects, the two PLC versions,
+`npm run uat:seed` then rebuilds `mock-data-v1.md`, and `npm run uat:seed:v2`
+builds `mock-data-v2.md` §3 – §13 beside it: four Projects, the two PLC versions,
 all 78 Plots with the geometry their PLC seed implies, seventeen Members with the
 Invite counter spanning every band including position 10 at 0%, the Royalty and
 other Customer masters, twenty-two Enquiries and twelve Holds. The two datasets
@@ -864,7 +864,7 @@ with that 0% was nothing at all: `generateCommission` dropped any component
 whose rate was zero, so two things followed that the pack forbids. The Booking
 never showed who was in the position — a Member could not be told why their
 tenth invitee earned them nothing, because there was no record to point at. And
-the invited Member's one-time Invite opportunity stayed open, so their *next*
+the invited Member's one-time Invite opportunity stayed open, so their _next_
 sale would hand the inviter 1% at a position that had already been used.
 
 The fix is one guard removed on each side, Invite and Royalty, and then the
@@ -935,7 +935,7 @@ group a counter; the `*YearStart` columns stay as history and nothing writes
 them. This is what actually removes the annual reset: the position counter keeps
 climbing — past nine into CR-013's 0% band — until the cycle's own nine are
 complete and the next anniversary opens a new one. The earned upgrade is a fresh
-position 1 back at the top band, which is what an upgrade is *for*.
+position 1 back at the top band, which is what an upgrade is _for_.
 
 **CR-027** replaces `ANNUAL_COUNTER_RESET` with
 `PERFORMANCE_CYCLE_UPGRADE_CHECK`: per Member whose anniversary is today, per
@@ -950,7 +950,7 @@ Royalty used to hold on `PERFORMANCE_CYCLE_INCOMPLETE` until its cycle
 completed, which was AC-02's reading of the first pack. CR-004 states Royalty's
 milestone directly — 100% Payment Received, or an Approved Buyback — and CR-014
 makes a cycle nine positions wide. Keeping the old gate would have held every
-Royalty until eight *other* Customers had bought. So the hold is gone: the cycle
+Royalty until eight _other_ Customers had bought. So the hold is gone: the cycle
 decides an upgrade, not whether one commission may be paid. The hold reason is
 removed from the enum, the eligibility input no longer takes
 `performanceCycleComplete`, and `CommissionRecord` loses `performanceCycleId`

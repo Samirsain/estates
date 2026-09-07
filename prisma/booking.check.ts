@@ -1,4 +1,4 @@
-// Phase 3 service checks — PHASES.md Phase 3 "Tests", end to end against the
+// Phase 3 service checks — delivery-phases.md Phase 3 "Tests", end to end against the
 // real database and the real commands.
 // Run: npm run booking:check   (requires a seeded database)
 import assert from "node:assert/strict";

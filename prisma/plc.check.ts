@@ -1,4 +1,4 @@
-// PLC version status and snapshot correction evidence — system/plc.md §3,
+// PLC version status and snapshot correction evidence — system/plc-location-charge.md §3,
 // §5, §7.2, §11 and the acceptance tests in §19 (1–5, 11, 14, 31–35, 38).
 // Run: npm run plc:check   (requires a seeded database)
 //

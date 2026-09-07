@@ -1,4 +1,4 @@
-// Everything the Bookings screen needs, list or one Booking — DESIGN.md §10.
+// Everything the Bookings screen needs, list or one Booking — design.md §10.
 // Both routes render the same client, so both load the same props; a page file
 // may not export anything but a page, hence this module.
 

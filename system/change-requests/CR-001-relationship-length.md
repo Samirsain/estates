@@ -1,7 +1,7 @@
 # CR-001 — Relationship length shown for Members and Customers
 
-Raised under [`PRD.md`](../PRD.md) §28 and the change-control rule in
-[`PHASES.md`](../PHASES.md).
+Raised under [`prd-corrections.md`](../prd-corrections.md) §28 and the change-control rule in
+[`delivery-phases.md`](../delivery-phases.md).
 
 | | |
 | --- | --- |
@@ -56,7 +56,7 @@ the acceptance tests are written against.
 | Member portal — profile | An `Experience` row beside the Activation date |
 | Customers list | A line under the Customer name: `3 years 5 months as a Customer` |
 
-These screens are enumerated in [`DESIGN.md`](../DESIGN.md) §12.1, §12.2 and
+These screens are enumerated in [`design.md`](../design.md) §12.1, §12.2 and
 §13.1, and none of those lists includes this field. That is the gap this CR
 closes.
 
@@ -80,7 +80,7 @@ None. No status, transition or lifecycle is added, removed or altered.
 
 The field appears wherever the viewer may already see that Member or Customer
 row. It exposes no buyer-private data, so the Member portal privacy rule in
-`PRD.md` §23.1 is unaffected: a Member sees the length of their own membership
+`prd-corrections.md` §23.1 is unaffected: a Member sees the length of their own membership
 and nothing about anybody else.
 
 ---
@@ -91,7 +91,7 @@ and nothing about anybody else.
 
 Because the value is derived (clause 1.4), a migrated Member or Customer shows a
 correct figure the moment their dates arrive. No reconciliation rule in
-`ARCHITECTURE.md` §13 changes, and `npm run reconcile` gains no new check.
+`architecture.md` §13 changes, and `npm run reconcile` gains no new check.
 
 ---
 
@@ -115,7 +115,7 @@ Verified on screen for a Member (`2 years 5 months as a Member`) and for a
 Customer against a Booking dated 15 March 2023 (`3 years 5 months as a
 Customer`).
 
-**No existing acceptance test changes.** The go-live gates in `PRD.md` §27 are
+**No existing acceptance test changes.** The go-live gates in `prd-corrections.md` §27 are
 unaffected.
 
 ---

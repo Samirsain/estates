@@ -2,13 +2,13 @@
 
 **Status:** Design companion to the corrected v3.1 PRD  
 **Date:** 19 August 2026  
-**Read with:** [`PRD.md`](./PRD.md), [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+**Read with:** [`prd-corrections.md`](./prd-corrections.md), [`architecture.md`](./architecture.md)
 
 ---
 
 ## 1. Design Authority
 
-- `PRD.md` controls all business rules and terminology.
+- `prd-corrections.md` controls all business rules and terminology.
 - This file defines the approved screen structure, interaction patterns and visible states.
 - Hiding an action is not a substitute for server-side permission enforcement.
 - Do not reintroduce removed top-level modules, Customer portal, service requests, document uploads, standalone calculator or rupee values.
@@ -297,7 +297,7 @@ Columns:
 
 ### 7.1a Prepare Inventory grid
 
-The controlled Excel-style grid (`main-PRD.md` §16.4). One row per Plot:
+The controlled Excel-style grid (`prd-complete.md` §16.4). One row per Plot:
 
 - Plot Number
 - Plot Type

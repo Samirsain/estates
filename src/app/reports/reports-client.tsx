@@ -1,6 +1,6 @@
 "use client";
 
-// Reports — DESIGN.md §16; PRD.md §21.
+// Reports — design.md §16; prd-corrections.md §21.
 // Payment Received and Payment Given are separate reports by design, never one
 // merged money view (PRD §1.2).
 

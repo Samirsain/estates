@@ -1,6 +1,6 @@
 # Deployment
 
-**Read with:** [`GO-LIVE-EVIDENCE.md`](./GO-LIVE-EVIDENCE.md), [`ARCHITECTURE.md`](./ARCHITECTURE.md) §10.
+**Read with:** [`go-live-evidence.md`](./go-live-evidence.md), [`architecture.md`](./architecture.md) §10.
 
 ---
 

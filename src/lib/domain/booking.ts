@@ -1,5 +1,5 @@
 // Booking Requests, ownership shares and Payment Received rules.
-// PRD.md §9–§12, §24; DESIGN.md §10, §11; ARCHITECTURE.md §6.
+// prd-corrections.md §9–§12, §24; design.md §10, §11; architecture.md §6.
 // Exact decimal arithmetic only (ARCHITECTURE §3.4) — no binary float ever
 // touches a 100% schedule check, a share total or payment progress.
 
@@ -304,7 +304,7 @@ const TRANSITIONS: Record<BookingStatus, readonly BookingStatus[]> = {
   REQUEST_CANCELLED: [],
   // A reversal below 100% returns Payment Completed to Booked (PRD §12.7).
   // An approved Buyback closes the old sale from any live stage, including
-  // Delivered — main-PRD §17.2 lists papers-legally-transferred as a Buyback
+  // Delivered — prd-complete §17.2 lists papers-legally-transferred as a Buyback
   // stage, and §17.9 makes the old Booking closed history.
   BOOKED: ["PAYMENT_COMPLETED", "REFUND_PENDING", "BUYBACK_COMPLETED"],
   PAYMENT_COMPLETED: ["BOOKED", "REFUND_PENDING", "DELIVERED", "BUYBACK_COMPLETED"],
@@ -322,7 +322,7 @@ export function canTransition(from: BookingStatus, to: BookingStatus): Check {
 
 /** True while the Booking still holds its Plot as an active allocation. */
 export function holdsAllocation(status: BookingStatus): boolean {
-  // main-PRD §17.9 — an approved Buyback removes the previous Customer from the
+  // prd-complete §17.9 — an approved Buyback removes the previous Customer from the
   // active allocation, which is what frees the Plot for resale.
   return !["REQUEST_REJECTED", "REQUEST_CANCELLED", "CANCELLED", "BUYBACK_COMPLETED"].includes(
     status

@@ -1,6 +1,6 @@
 "use client";
 
-// Enquiry list, create and follow-up — DESIGN.md §8.
+// Enquiry list, create and follow-up — design.md §8.
 
 import React from "react";
 import { useRouter } from "next/navigation";
@@ -83,7 +83,7 @@ const OUTCOMES = [
   "BOOKING_DISCUSSION",
 ] as const;
 
-/** main-PRD §9.2 — the six sources, in the words the spec uses. */
+/** prd-complete §9.2 — the six sources, in the words the spec uses. */
 /** What the New Enquiry form offers, in the order it offers them. */
 const SOURCE_OPTIONS = ["DIRECT", "BY_MEMBER", "BY_CUSTOMER", "EXISTING_CUSTOMER"] as const;
 
@@ -97,7 +97,7 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 /**
- * A follow-up is due on a day, not at a minute — main-PRD §9.5 makes the time
+ * A follow-up is due on a day, not at a minute — prd-complete §9.5 makes the time
  * optional and nobody was setting it, so the form stopped asking. The task the
  * Enquiry raises still needs an instant, and this is it, in IST.
  */

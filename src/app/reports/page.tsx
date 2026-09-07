@@ -1,4 +1,4 @@
-// Reports — PRD.md §21; DESIGN.md §16.
+// Reports — prd-corrections.md §21; design.md §16.
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";

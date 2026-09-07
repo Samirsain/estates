@@ -1,4 +1,4 @@
-// Commission engine service — PRD.md §6, §13, §14; main-PRD §14.
+// Commission engine service — prd-corrections.md §6, §13, §14; prd-complete §14.
 // Records are generated when Accounts approves the Booking, so the 4% cap can
 // be judged before approval and the Booking shows what it will earn. The
 // one-shot entitlements are consumed only at the milestone, because the
@@ -906,11 +906,11 @@ export async function markCommissionPaid(args: {
 
 /* ------------------------------------------------- cancellation and holds */
 
-/** The Accounts review a Buyback's commission impact needs (main-PRD §14.12). */
+/** The Accounts review a Buyback's commission impact needs (prd-complete §14.12). */
 export const BUYBACK_COMMISSION_PURPOSE = "BUYBACK_COMMISSION_REVIEW";
 
 /**
- * AC-05 — the commission side of an unwind, following main-PRD §14.12, which
+ * AC-05 — the commission side of an unwind, following prd-complete §14.12, which
  * treats three cases differently rather than one:
  *
  *  - **Cancellation before legal completion** — unpaid records are Cancelled and
@@ -944,7 +944,7 @@ export async function cancelCommissionForBooking(
   const records = await tx.commissionRecord.findMany({ where: { bookingId, isCurrent: true } });
   const isBuyback = args.unwind === "BUYBACK";
 
-  // main-PRD §14.12 — the only case where the commission is left standing.
+  // prd-complete §14.12 — the only case where the commission is left standing.
   const remainsEarned = isBuyback && args.legallyCompleted;
 
   for (const record of records) {
@@ -961,7 +961,7 @@ export async function cancelCommissionForBooking(
           toState: record.payment,
           reason:
             `${args.reason}. The sale was legally completed before the Buyback, so this ` +
-            `commission remains earned (main-PRD §14.12).`,
+            `commission remains earned (prd-complete §14.12).`,
         },
       });
       continue;
@@ -994,7 +994,7 @@ export async function cancelCommissionForBooking(
     await closeTasksFor(tx, "Commission", record.id, actorRef, args.reason, COMMISSION_PAYMENT_PURPOSE);
   }
 
-  // main-PRD §14.12 — a Buyback's commission impact is decided by
+  // prd-complete §14.12 — a Buyback's commission impact is decided by
   // CRM/management and approved by Accounts on both sides of legal completion.
   // The system does not make that call; it makes sure it is asked for.
   if (isBuyback && records.length > 0) {
@@ -1014,7 +1014,7 @@ export async function cancelCommissionForBooking(
       dueAt: new Date(),
       decision: true,
       latestResult: remainsEarned
-        ? `${records.length} commission record(s) remain earned under main-PRD §14.12. Confirm ` +
+        ? `${records.length} commission record(s) remain earned under prd-complete §14.12. Confirm ` +
           `against the written arrangement, or raise a correction.`
         : `${records.length} commission record(s) stepped back. Confirm the CRM/management ` +
           `decision on the unpaid old-sale commission.`,

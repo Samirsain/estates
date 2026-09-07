@@ -1,6 +1,6 @@
 "use client";
 
-// Administration — DESIGN.md §17; PRD.md §17.2, §21, §22.
+// Administration — design.md §17; prd-corrections.md §17.2, §21, §22.
 
 import React from "react";
 import { useRouter } from "next/navigation";

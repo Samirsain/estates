@@ -1,4 +1,4 @@
-// Customers — DESIGN.md §12; main-PRD §6.
+// Customers — design.md §12; prd-complete §6.
 // The Customer ID is created at the first Hold, or at the first Booking Request
 // when no Hold came before it (PRD §5.2), so this list is exactly the people
 // who have reached that point.
@@ -75,7 +75,7 @@ export default async function CustomersPage() {
     personId: c.personId,
     customerId: c.customerId,
     name: c.person.fullName,
-    // The main list never shows full private details (main-PRD §6.1).
+    // The main list never shows full private details (prd-complete §6.1).
     mobileMasked: maskMobile(c.person.primaryMobile),
     city: c.person.city ?? "—",
     customerType: c.customerType,

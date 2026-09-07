@@ -1,6 +1,6 @@
 "use client";
 
-// The last line of defence — DESIGN.md §5.4.
+// The last line of defence — design.md §5.4.
 //
 // A user sees what went wrong in plain words and what they can do next. The
 // stack trace stays on the server: it names table and column structure, and this

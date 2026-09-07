@@ -1,4 +1,4 @@
-// Phase 7 hardening evidence — PHASES.md Phase 7 "Hardening"; PRD §27 gates
+// Phase 7 hardening evidence — delivery-phases.md Phase 7 "Hardening"; PRD §27 gates
 // 6, 7, 8 and 9; ARCHITECTURE §14.
 // Run: npm run phase7:check   (requires a seeded database)
 //

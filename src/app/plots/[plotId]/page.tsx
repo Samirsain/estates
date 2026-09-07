@@ -1,4 +1,4 @@
-// Plot detail page — DESIGN.md §7.2.
+// Plot detail page — design.md §7.2.
 //
 // One record, read top to bottom. Sections are separated by a hairline and by
 // whitespace rather than boxed: six equal cards on a single record communicate

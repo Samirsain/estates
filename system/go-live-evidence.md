@@ -1,8 +1,8 @@
 # Go-Live Evidence Map
 
 **Purpose:** what to run to produce each item of evidence the go-live gates in
-[`PRD.md`](./PRD.md) §27 and the acceptance evidence in
-[`ARCHITECTURE.md`](./ARCHITECTURE.md) §14 ask for.
+[`prd-corrections.md`](./prd-corrections.md) §27 and the acceptance evidence in
+[`architecture.md`](./architecture.md) §14 ask for.
 
 Everything below is produced from the running system. Nothing here is a
 substitute for the sign-offs, the UAT, or the vendor/company controls the same
@@ -51,7 +51,7 @@ npm run reconcile > reconciliation-<date>.txt
 ## 3. Migration reconciliation rules
 
 `npm run reconcile` checks, per
-[`ARCHITECTURE.md`](./ARCHITECTURE.md) §13 and [`main-PRD.md`](./main-PRD.md) §27.3:
+[`architecture.md`](./architecture.md) §13 and [`prd-complete.md`](./prd-complete.md) §27.3:
 
 | Rule | Clause |
 | --- | --- |

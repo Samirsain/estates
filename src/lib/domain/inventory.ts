@@ -1,4 +1,4 @@
-// Project and Plot rules — PRD.md §15, §16; DESIGN.md §7.
+// Project and Plot rules — prd-corrections.md §15, §16; design.md §7.
 // Exact decimal arithmetic only (ARCHITECTURE §3.4): no binary floating point
 // touches an area, a percentage or a share.
 

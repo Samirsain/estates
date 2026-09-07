@@ -9,11 +9,11 @@
 > Open sides / Park facing / Playground facing instead. Effective PLC now derives
 > from the Plot's four boundaries. See
 > [`system/change-requests/CR-005`](../../../system/change-requests/CR-005-plc-catalogue-and-derivation.md)
-> and [`system/DEVIATIONS.md`](../../../system/DEVIATIONS.md) D-05.
+> and [`system/approved-deviations.md`](../../../system/approved-deviations.md) D-05.
 >
 > | Task | Standing |
 > | --- | --- |
-> | 1 · precision | **Done**, and widened further — Plot area is four decimals too (`main-PRD.md` §23.1) |
+> | 1 · precision | **Done**, and widened further — Plot area is four decimals too (`prd-complete.md` §23.1) |
 > | 2 · `PlotPlcApplicability` table | **Dropped.** Applicability is derived, not stored |
 > | 3 · snapshot side evidence | **Done**, absorbed into the derivation |
 > | 4, 5, 6 · Project city, edit, card | **Done** as written |
@@ -67,9 +67,9 @@
 ## Global Constraints
 
 - **Branch `plc-lifecycle-and-portal-privacy`. Never push, never merge to `main`.** The user runs this on localhost.
-- **PLC is a percentage only.** No task may compute, store or display a rupee value derived from PLC (`plc.md` §2.1, §21).
-- **Never hard-delete a PLC record.** A removal is a recorded state, not a deletion (`plc.md` §11.1, §21).
-- **Effective PLC is derived on read, never stored** for Available / Not Active inventory (`plc.md` §4.3).
+- **PLC is a percentage only.** No task may compute, store or display a rupee value derived from PLC (`plc-location-charge.md` §2.1, §21).
+- **Never hard-delete a PLC record.** A removal is a recorded state, not a deletion (`plc-location-charge.md` §11.1, §21).
+- **Effective PLC is derived on read, never stored** for Available / Not Active inventory (`plc-location-charge.md` §4.3).
 - **`buildPlcSnapshot()` in `src/lib/domain/inventory.ts` is the only place effective PLC is computed.** No screen or service may re-implement the sum or the deduplication.
 - **Every state-changing command goes through `runCommand`** (`src/lib/services/command.ts`) so it carries an idempotency key, runs in one transaction, and writes its `AuditEvent`.
 - **Migrations are hand-written SQL** in `prisma/migrations/<timestamp>_<name>/migration.sql`, applied with `npx prisma migrate deploy`. Do not run `prisma migrate dev` — it can reset the remote development database.
@@ -103,7 +103,7 @@
 | `src/app/projects/page.tsx`, `projects-client.tsx`, `actions.ts` | Card, create form, edit |
 | `src/app/bookings/actions.ts`, `bookings-client.tsx` | Four-decimal display, terminology |
 | `src/lib/domain/domain.check.ts`, `prisma/plc.check.ts` | Evidence |
-| `system/DEVIATIONS.md` | The two visible-term changes |
+| `system/approved-deviations.md` | The two visible-term changes |
 
 ---
 
@@ -133,7 +133,7 @@ Append to `src/lib/domain/domain.check.ts`, immediately after the existing
 `assert.equal(snapshot.totalPercent.toFixed(3), "7.500");` block:
 
 ```ts
-/* ---------------------------------------------- PLC precision (plc.md §2.1) */
+/* ---------------------------------------------- PLC precision (plc-location-charge.md §2.1) */
 
 // Four decimals are carried through the calculation, not rounded away at three.
 const fine = buildPlcSnapshot(["ROAD"], [{ code: "ROAD", label: "Road", percent: "2.1250" }]);
@@ -165,7 +165,7 @@ In `src/lib/tasks.ts`, beside `formatIst`:
 
 ```ts
 /**
- * A percentage for a screen. Stored at four decimals (plc.md §2.1), but
+ * A percentage for a screen. Stored at four decimals (plc-location-charge.md §2.1), but
  * "2.0000%" is noise — trailing zeros go, and never below two decimals, so a
  * column of percentages stays aligned.
  */
@@ -204,7 +204,7 @@ Expected: PASS, ending `domain.check.ts OK`.
 Create `prisma/migrations/20260823090000_plc_applicability/migration.sql`:
 
 ```sql
--- plc.md §2.1 — PLC percentages carry four decimals, like every other
+-- plc-location-charge.md §2.1 — PLC percentages carry four decimals, like every other
 -- percentage in this schema.
 ALTER TABLE "PlcComponent"      ALTER COLUMN "percent"      TYPE DECIMAL(7,4);
 ALTER TABLE "PlcSnapshot"       ALTER COLUMN "totalPercent" TYPE DECIMAL(7,4);
@@ -254,7 +254,7 @@ Expected: migration applied, `tasks.check.ts OK`, `security.check.ts OK`,
 git add prisma/schema.prisma prisma/migrations src/lib/tasks.ts src/lib/domain src/lib/services src/app
 git commit -m "refactor: PLC percentages carry four decimals
 
-plc.md §2.1 asks for DECIMAL(7,4), and every other percentage in this schema —
+plc-location-charge.md §2.1 asks for DECIMAL(7,4), and every other percentage in this schema —
 payment, ownership shares, commission, milestone — already uses it. The three
 PLC columns were the outliers.
 
@@ -291,7 +291,7 @@ Append to `prisma/plc.check.ts`, immediately before the `await cleanup();` at th
 end of `main()`:
 
 ```ts
-  /* ============================== applicability rows (plc.md §4.2, §13.3) */
+  /* ============================== applicability rows (plc-location-charge.md §4.2, §13.3) */
 
   const applicability = await db.plotPlcApplicability.findMany({
     where: { plotId: plot.id },
@@ -358,7 +358,7 @@ Expected: FAIL — `setPlotPlcApplicability` is not exported, and
 In `prisma/schema.prisma`, add beside the other PLC models:
 
 ```prisma
-/// plc.md §4.2, §13.3 — which PLC categories apply to a Plot, one row each.
+/// plc-location-charge.md §4.2, §13.3 — which PLC categories apply to a Plot, one row each.
 /// Version-independent: the codes resolve against whichever version is
 /// published, so §4.3's recalculation happens by construction.
 model PlotPlcApplicability {
@@ -399,7 +399,7 @@ and its two comment lines, and add the back-relation:
 Append to `prisma/migrations/20260823090000_plc_applicability/migration.sql`:
 
 ```sql
--- plc.md §4.2, §13.3 — per-Plot applicability, one row per category.
+-- plc-location-charge.md §4.2, §13.3 — per-Plot applicability, one row per category.
 CREATE TYPE "PlcApplicabilitySource" AS ENUM ('MANUAL');
 
 CREATE TABLE "PlotPlcApplicability" (
@@ -436,7 +436,7 @@ ALTER TABLE "Plot" DROP COLUMN "plcComponentCodes";
 In `src/lib/services/inventory-service.ts`, add near the top of the PLC section:
 
 ```ts
-/** The categories that currently apply to a Plot (plc.md §4.2). */
+/** The categories that currently apply to a Plot (plc-location-charge.md §4.2). */
 export async function applicableCodes(tx: Tx, plotId: string): Promise<string[]> {
   const rows = await tx.plotPlcApplicability.findMany({
     where: { plotId, isApplicable: true },
@@ -451,7 +451,7 @@ And, at the end of the file, the command:
 
 ```ts
 /**
- * plc.md §4.2 — setting applicability for one Plot. A component that no longer
+ * plc-location-charge.md §4.2 — setting applicability for one Plot. A component that no longer
  * applies is marked, never deleted, and the whole change reaches AuditEvent
  * with its actor, time and before/after.
  */
@@ -491,7 +491,7 @@ export async function setPlotPlcApplicability(args: {
       const validCodes = new Set(version.components.map((c) => c.code));
       for (const entry of args.entries) {
         if (!validCodes.has(entry.code)) {
-          // plc.md §5.3 — an unknown code is refused, never silently dropped.
+          // plc-location-charge.md §5.3 — an unknown code is refused, never silently dropped.
           blocked(`PLC component "${entry.code}" is not in the Project's published rule version.`);
         }
       }
@@ -609,7 +609,7 @@ Re-run once before investigating.
 git add prisma src/lib/services src/app/plots
 git commit -m "feat: Plot PLC applicability becomes a table
 
-plc.md §13.3 asks for it, and the one thing it holds that nothing else can is
+plc-location-charge.md §13.3 asks for it, and the one thing it holds that nothing else can is
 the per-code reason — why this component applies to this Plot. Actor, time and
 before/after already reach AuditEvent through runCommand, so this table does not
 duplicate them.
@@ -641,7 +641,7 @@ inventory by construction rather than by copy-forward over every Plot."
 Append to `src/lib/domain/domain.check.ts`, after the precision block from Task 1:
 
 ```ts
-/* ------------------------------------- PLC snapshot evidence (plc.md §7.1) */
+/* ------------------------------------- PLC snapshot evidence (plc-location-charge.md §7.1) */
 
 const evidenced = buildPlcSnapshot(
   ["ROAD_FACING", "PARK_FACING"],
@@ -703,7 +703,7 @@ export type PlcSnapshotComponent = {
   code: string;
   label: string;
   percent: string;
-  /** plc.md §7.1 — how this component came to apply. */
+  /** plc-location-charge.md §7.1 — how this component came to apply. */
   applicabilitySource: "MANUAL";
   /** The Plot sides or characteristic that justify it, recorded as evidence. */
   sideEvidence: string | null;
@@ -719,7 +719,7 @@ export type PlcSnapshot = {
 export type PlcEvidence = { boundaries: readonly Boundary[]; parkFacing: boolean };
 
 /**
- * plc.md §7.1 — the sides that justify a category, written as evidence. This
+ * plc-location-charge.md §7.1 — the sides that justify a category, written as evidence. This
  * takes no decision: applicability is chosen by a person (§4.2), and a category
  * with nothing to point at is still charged.
  */
@@ -767,7 +767,7 @@ export function buildPlcSnapshot(
       applicabilitySource: "MANUAL",
       sideEvidence: sideEvidenceFor(code, evidence),
       // Always true and null: checkbox entry makes a duplicate structurally
-      // impossible, so there is nothing to exclude. Stored because plc.md §7.1
+      // impossible, so there is nothing to exclude. Stored because plc-location-charge.md §7.1
       // asks for the shape and a future per-side model would fill them.
       includedInTotal: true,
       exclusionReason: null,
@@ -847,7 +847,7 @@ Expected: all `OK`.
 git add src/lib prisma/plc.check.ts
 git commit -m "feat: PLC snapshots record the sides that justify each component
 
-plc.md §7.1 asks each frozen component to name the Plot side or characteristic
+plc-location-charge.md §7.1 asks each frozen component to name the Plot side or characteristic
 behind it. The Plot already holds that in PlotBoundary and parkFacing, so it is
 read at freeze time rather than asked for a second time.
 
@@ -1425,7 +1425,7 @@ In the same file, change the `LIFECYCLE_LABEL` map:
 ```ts
 const LIFECYCLE_LABEL: Record<string, string> = {
   // Screen wording only. The enum value stays SETUP_NOT_ACTIVE — see
-  // DEVIATIONS.md D-03.
+  // approved-deviations.md D-03.
   SETUP_NOT_ACTIVE: "Unreleased",
   ACTIVE: "Active",
   SOLD_OUT: "Sold Out",
@@ -1912,7 +1912,7 @@ export async function loadPlotDetail(plotId: string) {
 
 export type PlotDetail = NonNullable<Awaited<ReturnType<typeof loadPlotDetail>>>;
 
-/** plc.md §4.2 — set which components apply to this Plot, with a reason each. */
+/** plc-location-charge.md §4.2 — set which components apply to this Plot, with a reason each. */
 export async function setPlcApplicabilityAction(
   plotId: string,
   entries: Array<{ code: string; isApplicable: boolean; reason?: string }>,
@@ -2084,7 +2084,7 @@ thing the applicability table holds that the audit trail cannot."
 **Files:**
 
 - Modify: `src/app/plots/plots-client.tsx`, `src/app/bookings/bookings-client.tsx`, `src/app/projects/projects-client.tsx`
-- Modify: `system/DEVIATIONS.md`
+- Modify: `system/approved-deviations.md`
 
 **Interfaces:** none.
 
@@ -2100,7 +2100,7 @@ Replace every visible `Location Charge (PLC %)` and `Location charge (PLC)` with
 
 - [ ] **Step 2: Record both deviations**
 
-Append to `system/DEVIATIONS.md`, after D-02:
+Append to `system/approved-deviations.md`, after D-02:
 
 ```markdown
 ---
@@ -2115,12 +2115,12 @@ Append to `system/DEVIATIONS.md`, after D-02:
 
 | Screens now read | Approved documents say |
 | --- | --- |
-| **Plot Location Charge (PLC %)** | `main-PRD.md` §8.5 — "Use the visible term **Location Charge (PLC %)**"; `DESIGN.md` §7.1 lists the column as `Location Charge (PLC %)` |
-| **Unreleased** | `PRD.md` §16.1 and `main-PRD.md` §16.1 list the Project status as **Setup / Not Active** |
+| **Plot Location Charge (PLC %)** | `prd-complete.md` §8.5 — "Use the visible term **Location Charge (PLC %)**"; `design.md` §7.1 lists the column as `Location Charge (PLC %)` |
+| **Unreleased** | `prd-corrections.md` §16.1 and `prd-complete.md` §16.1 list the Project status as **Setup / Not Active** |
 
 ### Why it is recorded
 
-`main-PRD.md` §8.5 does not merely use a term, it instructs which term to show.
+`prd-complete.md` §8.5 does not merely use a term, it instructs which term to show.
 Changing it is small, but it is a departure from an explicit instruction, and a
 reviewer comparing the screens to the documents should find an answer here.
 
@@ -2156,10 +2156,10 @@ Expected: checks pass; `/plots`, `/projects` and a Booking detail all read
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/app system/DEVIATIONS.md
+git add src/app system/approved-deviations.md
 git commit -m "docs: record the two visible terms that differ from the baseline
 
-main-PRD §8.5 does not merely use the term Location Charge (PLC %), it instructs
+prd-complete §8.5 does not merely use the term Location Charge (PLC %), it instructs
 which term to show. Plot Location Charge departs from that, and Unreleased
 departs from PRD §16.1's Setup / Not Active.
 

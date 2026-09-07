@@ -1,5 +1,5 @@
 // Hold, Hold extension and Member Hold Request services.
-// PRD.md §8, §15; ARCHITECTURE.md §7.
+// prd-corrections.md §8, §15; architecture.md §7.
 
 import type { SoldByType } from "@prisma/client";
 import { db } from "@/lib/db";

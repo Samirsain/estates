@@ -1,6 +1,6 @@
 "use server";
 
-// Login — PRD.md §17.1. Invalid identifier and invalid password are
+// Login — prd-corrections.md §17.1. Invalid identifier and invalid password are
 // indistinguishable; every failure path returns the same generic error.
 
 import { cookies, headers } from "next/headers";

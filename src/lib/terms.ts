@@ -14,7 +14,7 @@ import path from "node:path";
  */
 export const MEMBER_TERMS_VERSION = "2026-08-22";
 
-const TERMS_PATH = path.join(process.cwd(), "system", "change-requests", "3%_T&C.md");
+const TERMS_PATH = path.join(process.cwd(), "system", "change-requests", "member-terms-and-conditions.md");
 
 export type TermsBlock =
   | { kind: "heading"; level: 1 | 2; text: string }

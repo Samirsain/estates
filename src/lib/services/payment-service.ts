@@ -1,5 +1,5 @@
 // Payment Received, corrections, schedule revision and the rolling follow-up
-// task. PRD.md §10, §12, §20, §24; DESIGN.md §11.
+// task. prd-corrections.md §10, §12, §20, §24; design.md §11.
 // Percentages only — no rupee value is stored or calculated anywhere here.
 
 import { Prisma } from "@prisma/client";
@@ -324,7 +324,7 @@ export async function confirmPaymentReceived(args: {
             toStatus: "PAYMENT_COMPLETED",
           },
         });
-        // main-PRD §18.1 — 100% creates the final-buyer and Allotment/Registry
+        // prd-complete §18.1 — 100% creates the final-buyer and Allotment/Registry
         // work, once per Booking.
         await ensureCompletionTasks(tx, args.bookingId);
       }

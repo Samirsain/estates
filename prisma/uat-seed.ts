@@ -1,5 +1,5 @@
 // The UAT dataset from
-// `system/3_Percent_Club_Complete_Mock_Data_and_Test_Plan.md` §1–§8.
+// `system/mock-data-v1.md` §1–§8.
 //
 //   npm run uat:seed
 //
@@ -884,7 +884,7 @@ async function main() {
   }
 
   /* (g) §10 Buyback / unwind — both sides of legal completion, because
-     main-PRD §14.12 treats them differently and only a dataset with both can
+     prd-complete §14.12 treats them differently and only a dataset with both can
      show it. */
 
   async function buyback(plotNumber: string, buyer: Made, complete: boolean) {

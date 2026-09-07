@@ -1,4 +1,4 @@
-// Change Plot on an approved Booking — PRD.md §5.3; main-PRD §16.4.
+// Change Plot on an approved Booking — prd-corrections.md §5.3; prd-complete §16.4.
 //
 // Same Project only, same Booking Number, same Primary Customer and Sold By.
 // The replacement Plot is blocked while under review and its PLC snapshot is

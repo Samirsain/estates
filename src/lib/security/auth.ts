@@ -1,4 +1,4 @@
-// Passwords and lockout — PRD.md §17.1; ARCHITECTURE.md §9.1.
+// Passwords and lockout — prd-corrections.md §17.1; architecture.md §9.1.
 // node:crypto only: scrypt for password hashing.
 //
 // CR-003 removed multi-factor authentication from the approved model, so the

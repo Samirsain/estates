@@ -1,6 +1,6 @@
 "use server";
 
-// Reports and exports — PRD.md §21; DESIGN.md §16.
+// Reports and exports — prd-corrections.md §21; design.md §16.
 // Reports are live. Exports are masked and logged, every time.
 
 import { requireStaff } from "@/lib/security/current-actor";
@@ -84,7 +84,7 @@ export type ActivityRow = {
   reason: string | null;
 };
 
-/** Activity History for one record (PRD §21; main-PRD §14.2). */
+/** Activity History for one record (PRD §21; prd-complete §14.2). */
 export async function activityHistoryAction(
   entity: string,
   entityId: string

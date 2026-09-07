@@ -212,7 +212,7 @@ export default function CalculatorClient({
   const [rate, setRate] = React.useState("");
 
   // The two parties the engine needs. Nothing else decides a commission
-  // combination (PRD §6.5, main-PRD §25): the final Sold By selection controls
+  // combination (PRD §6.5, prd-complete §25): the final Sold By selection controls
   // it, and the buyer carries the Loyalty and Royalty entitlements.
   const [soldByType, setSoldByType] = React.useState<SoldByType>("THREE_PERCENT_CLUB");
   const [soldByPersonId, setSoldByPersonId] = React.useState("");
@@ -833,7 +833,7 @@ export default function CalculatorClient({
             {splits.length === 0 && !conflict && engineRan && (
               <p className="rounded-xl border border-border/60 bg-secondary p-3 text-xs text-muted-foreground">
                 The engine generates no commission line for this combination — a first direct 3%
-                Club purchase earns nothing (main-PRD §14.5).
+                Club purchase earns nothing (prd-complete §14.5).
               </p>
             )}
 

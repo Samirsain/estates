@@ -1,4 +1,4 @@
-// Member portal — DESIGN.md §13, PRD.md §23.
+// Member portal — design.md §13, prd-corrections.md §23.
 // Only this Member's own records. No buyer identity beyond the people this
 // Member introduced, no Aadhaar/PAN/bank, no internal Accounts remarks.
 

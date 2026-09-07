@@ -1,4 +1,4 @@
-// Enquiries — DESIGN.md §8.
+// Enquiries — design.md §8.
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -61,7 +61,7 @@ export default async function EnquiriesPage() {
       include: { person: true },
       orderBy: { memberId: "asc" },
     }),
-    // A By Customer Enquiry names the Customer who sourced it (main-PRD §9.2).
+    // A By Customer Enquiry names the Customer who sourced it (prd-complete §9.2).
     db.customerProfile.findMany({
       include: { person: true },
       orderBy: { customerId: "asc" },

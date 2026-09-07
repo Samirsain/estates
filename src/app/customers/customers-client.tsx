@@ -1,6 +1,6 @@
 "use client";
 
-// Customers — DESIGN.md §12.1, §12.2.
+// Customers — design.md §12.1, §12.2.
 // The list is who someone is and what they bought. Aadhaar, PAN and bank sit
 // on the Customer's own page, where access to them is a deliberate step and is
 // logged (DESIGN §2.6, ARCHITECTURE §9.3) — not a column read past every day.

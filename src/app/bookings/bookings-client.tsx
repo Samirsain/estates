@@ -1,6 +1,6 @@
 "use client";
 
-// Bookings — DESIGN.md §10, §11.
+// Bookings — design.md §10, §11.
 // Actions are hidden by permission for clarity; the server re-checks every one
 // and the domain services re-check state on top of that (DESIGN §1).
 
@@ -254,7 +254,7 @@ function statusVariant(status: string) {
  * the courtesy, not the rule (progressAfter refuses anything above 100%).
  *
  * Payment Received and Payment Given are separate datasets and must never be
- * totalled together (main-PRD §1) — but the ceiling on one entry is the same
+ * totalled together (prd-complete §1) — but the ceiling on one entry is the same
  * arithmetic on both, so the field is shared and the caller passes its own max.
  */
 export function PaymentPercentInput({
@@ -3276,7 +3276,7 @@ export function FinalBuyersDialog({
 
 /**
  * Delivery in one dialog: who the papers go to, then the route that transfers
- * them. main-PRD §18 splits these into two tasks and the Bookings screen still
+ * them. prd-complete §18 splits these into two tasks and the Bookings screen still
  * shows them that way — but on an inventory row there is one thing left to do
  * to a paid-off Plot, and asking for it in two visits is two visits.
  *

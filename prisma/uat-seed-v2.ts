@@ -1,4 +1,4 @@
-// The v2 dataset from `system/mockdata-v2.md` §3 – §13, plus the Royalty
+// The v2 dataset from `system/mock-data-v2.md` §3 – §13, plus the Royalty
 // ownership cases from §9 and §16 that the code now implements.
 //
 //   npm run uat:seed:v2
@@ -503,7 +503,7 @@ async function main() {
         status: "PUBLISHED",
         effectiveFrom: new Date("2026-01-01"),
         publishedAt: new Date("2026-01-01"),
-        reason: "mockdata-v2 §5 configuration",
+        reason: "mock-data-v2 §5 configuration",
         components: { create: commercial ? COMMERCIAL_PLC : RESIDENTIAL_PLC },
       },
     });
@@ -520,7 +520,7 @@ async function main() {
           version: 2,
           status: "DRAFT",
           effectiveFrom: new Date("2026-10-01"),
-          reason: "mockdata-v2 §5 — Park Facing 3% to 3.5%, 40-ft Road 2% to 2.5%",
+          reason: "mock-data-v2 §5 — Park Facing 3% to 3.5%, 40-ft Road 2% to 2.5%",
           components: { create: RESIDENTIAL_PLC_V2 },
         },
       });
@@ -716,7 +716,7 @@ async function main() {
       actorRole: "CRM",
       plotId: prj1.plots[plotNumber],
       personId: customers[customerId].id,
-      remark: `mockdata-v2 §13 hold on ${plotNumber}`,
+      remark: `mock-data-v2 §13 hold on ${plotNumber}`,
     });
     holds[plotNumber] = (hold as { holdId: string }).holdId;
     count("holds");
@@ -871,7 +871,7 @@ async function main() {
 
   const line = "─".repeat(70);
   console.log(line);
-  console.log("mockdata-v2 dataset — §3 to §13, plus the §16 Royalty acceptance cases");
+  console.log("mock-data-v2 dataset — §3 to §13, plus the §16 Royalty acceptance cases");
   console.log(line);
   for (const [what, n] of Object.entries(counters)) console.log(`${what.padEnd(24)} ${n}`);
   console.log(line);

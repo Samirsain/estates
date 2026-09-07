@@ -2,16 +2,16 @@
 
 **Purpose:** anything the running system shows or does that the approved
 documents do not describe. Kept so that a reviewer comparing the screens to
-[`DESIGN.md`](./DESIGN.md) and [`main-PRD.md`](./main-PRD.md) finds an answer
+[`design.md`](./design.md) and [`prd-complete.md`](./prd-complete.md) finds an answer
 rather than a surprise.
 
 Both items below are now also raised formally in
 [`change-requests/`](./change-requests/) — CR-001 and CR-002 — in the form
-[`PRD.md`](./PRD.md) §28 requires. This file is the plain-language summary; the
+[`prd-corrections.md`](./prd-corrections.md) §28 requires. This file is the plain-language summary; the
 CRs carry the formal fields and the owner signature block.
 
 This is **not** a substitute for the change-control process in
-[`PRD.md`](./PRD.md) §28. That process governs changes affecting commission,
+[`prd-corrections.md`](./prd-corrections.md) §28. That process governs changes affecting commission,
 payment, inventory, identity, permissions or completion, and each one needs a
 Change Request ID, owner and exact approved wording.
 
@@ -42,11 +42,11 @@ A derived line reading, for example, `2 years 5 months as a Member`:
 
 The approved documents enumerate these screens and do not include it:
 
-- `DESIGN.md` §12.1 lists the Customer list fields: Customer ID, Name, Mobile,
+- `design.md` §12.1 lists the Customer list fields: Customer ID, Name, Mobile,
   City, Customer Type, Aadhaar ending, PAN Available/Not Available.
-- `DESIGN.md` §12.2 lists the Customer profile sections, and §13.1 the Member
+- `design.md` §12.2 lists the Customer profile sections, and §13.1 the Member
   profile sections. Neither includes an experience or tenure section.
-- Neither `PRD.md` nor `main-PRD.md` defines "experience", "tenure" or
+- Neither `prd-corrections.md` nor `prd-complete.md` defines "experience", "tenure" or
   "customer since" anywhere.
 
 ### How it behaves (D-01)
@@ -91,7 +91,7 @@ action shows the full value to MD and Admin only.
 This is **within** PRD RD-05 rather than a departure from it: the clause already
 grants the full value to specifically authorised MD/Admin and requires every
 access to be logged. It is recorded because the screen itself is new — the
-Administration section in `DESIGN.md` §17 does not enumerate it.
+Administration section in `design.md` §17 does not enumerate it.
 
 Every reveal writes a `SENSITIVE_ACCESS` security event naming the staff account
 that read it and the Person it was read for, so "who looked at whose Aadhaar,
@@ -110,13 +110,13 @@ and when" is always answerable. A role without the field permission gets a
 
 | Screens now read | Approved documents say |
 | --- | --- |
-| **Plot Location Charge (PLC %)** | `main-PRD.md` §8.5 — "Use the visible term **Location Charge (PLC %)**"; `DESIGN.md` §7.1 lists the column as `Location Charge (PLC %)` |
-| **Unreleased** | `PRD.md` §16.1 and `main-PRD.md` §16.1 list the Project status as **Setup / Not Active** |
-| **Area sq ft**, on the irregular-Plot field | `main-PRD.md` §16.2 calls it **Exact Area Override** |
+| **Plot Location Charge (PLC %)** | `prd-complete.md` §8.5 — "Use the visible term **Location Charge (PLC %)**"; `design.md` §7.1 lists the column as `Location Charge (PLC %)` |
+| **Unreleased** | `prd-corrections.md` §16.1 and `prd-complete.md` §16.1 list the Project status as **Setup / Not Active** |
+| **Area sq ft**, on the irregular-Plot field | `prd-complete.md` §16.2 calls it **Exact Area Override** |
 
 ### Why it is recorded (D-03)
 
-`main-PRD.md` §8.5 does not merely use a term, it instructs which term to show.
+`prd-complete.md` §8.5 does not merely use a term, it instructs which term to show.
 Departing from it is small, but it is a departure from an explicit instruction,
 and a reviewer comparing the screens to the documents should find an answer here
 rather than a surprise.
@@ -129,7 +129,7 @@ differs. No migration, no permission change, no status transition affected.
 
 The one place the new wording leaves the screen layer is the refusal a user
 reads when a Plot cannot be held: "The Project is still Unreleased and cannot
-accept a Hold or Booking." A blocked reason is shown verbatim (`DESIGN.md` §5.4),
+accept a Hold or Booking." A blocked reason is shown verbatim (`design.md` §5.4),
 so it has to speak the same language as the badge above it.
 
 **One thing to watch.** The Plot restriction `NOT_YET_RELEASED` displays as
@@ -170,13 +170,13 @@ The Project RERA expiry date is gone from the form and from the database. The
 
 ### Why it is recorded rather than raised as a change request (D-04)
 
-No approved document enumerates the Project's fields — `PRD.md` §16.1 defines
-the Project lifecycle and `main-PRD.md` §16.1 repeats it, but neither names a
+No approved document enumerates the Project's fields — `prd-corrections.md` §16.1 defines
+the Project lifecycle and `prd-complete.md` §16.1 repeats it, but neither names a
 Project Code, a RERA expiry or a Mixed type. These are implementation choices,
 so changing them alters no approved requirement.
 
 Removing the Project RERA expiry breaks nothing that reads it:
-`RERA_EXPIRY_REMINDER` works from `MemberProfile.reraExpiryDate`, and `PRD.md`
+`RERA_EXPIRY_REMINDER` works from `MemberProfile.reraExpiryDate`, and `prd-corrections.md`
 §26 already excludes any Project RERA operational block from scope.
 
 `ProjectType.MIXED` leaves the form only. The enum value survives, because
@@ -228,7 +228,7 @@ describe the same band in two different ways.
 
 **Nobody selects applicability per Plot either.** The Prepare Inventory grid's
 free-text `PLC codes` column is gone. In its place the grid asks what each of
-the four sides faces — the fields `main-PRD.md` §16.2 lists as binding and that
+the four sides faces — the fields `prd-complete.md` §16.2 lists as binding and that
 no screen had ever collected. Effective PLC is read from those sides:
 
 - the widest Road the Plot touches picks one road band, once, however many sides
@@ -243,20 +243,20 @@ domain rules the server runs on save.
 
 ### Why it is a deviation (D-05)
 
-`plc.md` §3.2 says "The actual PLC categories and their percentages must come
+`plc-location-charge.md` §3.2 says "The actual PLC categories and their percentages must come
 from authorised Project setup. Developers must not invent them", and §3.3 shows
 `ROAD_FACING` / `PARK_FACING` / `CORNER` as the example codes. Fixing four
 categories in code reads against the letter of that.
 
 It is recorded rather than resisted because the categories here were specified
-by the owner, not invented by development, and because `main-PRD.md` — the
+by the owner, not invented by development, and because `prd-complete.md` — the
 binding baseline — never enumerates PLC categories at all. §16.3 states only
 that PLC is a percentage, that each distinct component is charged once, and that
 the same category on multiple sides is not charged repeatedly. All three still
 hold, and the second and third now hold _by construction_ rather than by asking
 a person not to type the same code twice.
 
-`plc.md` §2.3 requires deduplication by a stable category key rather than by
+`plc-location-charge.md` §2.3 requires deduplication by a stable category key rather than by
 display label. That requirement is met exactly: the key is the category enum, it
 survives a label change, and the label is no longer stored at all.
 
@@ -266,7 +266,7 @@ survives a label change, and the label is no longer stored at all.
 
 The codes column stored a decision that had to be kept in step with the
 boundaries by hand; nothing now stores applicability, so the two cannot drift.
-`main-PRD.md` §16.2 lists **Park Facing** as a Plot field, and it is still shown
+`prd-complete.md` §16.2 lists **Park Facing** as a Plot field, and it is still shown
 — derived from a `PARK` boundary rather than from a separate flag that could
 contradict the sides recorded beside it. The migration moves an existing
 `parkFacing = true` onto a free side rather than discarding it.
@@ -280,22 +280,22 @@ stays compulsory — it decides a band rather than describing a side.
 
 ### What this added (D-05)
 
-**Edit Plot Details** (`main-PRD.md` §8.4) existed in the approved documents but
+**Edit Plot Details** (`prd-complete.md` §8.4) existed in the approved documents but
 had never been built, so a wrong road width was wrong for the life of the Plot.
 It is now a command under the §8.7 correction rules: a compulsory reason, old
 and new values in History, and revalidation of PLC. The revalidation needs no
 code of its own — effective PLC derives from the boundaries on every read, so an
 Available Plot is correct the moment the correction saves. A frozen Hold or
-Booking snapshot is deliberately not moved (`plc.md` §7.2); the screen reports
+Booking snapshot is deliberately not moved (`plc-location-charge.md` §7.2); the screen reports
 that it no longer matches, and correcting it stays the separate audited decision
 it already was.
 
-`prepareInventory` also now enforces `main-PRD.md` §8.1 — a Commercial Project
+`prepareInventory` also now enforces `prd-complete.md` §8.1 — a Commercial Project
 cannot contain a Residential Plot — which nothing had checked.
 
 ### Precision (D-05)
 
-`main-PRD.md` §23.1 sets four decimal places for percentages **and for Plot
+`prd-complete.md` §23.1 sets four decimal places for percentages **and for Plot
 area**. Percentages were at three and area at three. Both are now at four, with
 display still normalising to two unless the value carries more.
 
@@ -319,7 +319,7 @@ dialog in `src/app/plots/plots-client.tsx`; the category picker in
 
 ### What changed (D-06)
 
-`ARCHITECTURE.md` §3.1 says one immutable `Person` may hold several
+`architecture.md` §3.1 says one immutable `Person` may hold several
 capabilities, and lists **Staff** beside **Customer** and **Member** as three of
 them. Create a staff account therefore offered every Person who did not already
 have one, which meant the dropdown listed the company's Members and Customers.

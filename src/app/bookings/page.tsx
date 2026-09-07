@@ -1,4 +1,4 @@
-// Bookings — DESIGN.md §10, §11.
+// Bookings — design.md §10, §11.
 
 import { loadBookingsProps } from "./load";
 import BookingsClient from "./bookings-client";

@@ -192,7 +192,7 @@ export async function exportReport(args: {
   return { rows, exportId: log.id, rowCount: rows.length };
 }
 
-/** PRD §21, main-PRD §14.2 — Activity History for one record. */
+/** PRD §21, prd-complete §14.2 — Activity History for one record. */
 export async function activityHistory(entity: string, entityId: string) {
   if (!entity.trim() || !entityId.trim()) blocked("An entity and record are required.");
   return db.auditEvent.findMany({

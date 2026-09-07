@@ -1,4 +1,4 @@
-// Members — DESIGN.md §13; PRD.md §13, §14.3.
+// Members — design.md §13; prd-corrections.md §13, §14.3.
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -24,7 +24,7 @@ export default async function MembersPage() {
       take: 300,
     }),
     // A Person can become a Member only once, so anyone already carrying a
-    // Member profile is out of the list (main-PRD §7.1).
+    // Member profile is out of the list (prd-complete §7.1).
     db.person.findMany({
       where: { memberProfile: null, mergeStatus: { not: "MERGED_AWAY" } },
       select: { id: true, fullName: true, primaryMobile: true },

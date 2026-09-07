@@ -1,4 +1,4 @@
-// Forgot password — PRD.md §17.1. Staff context only; the Member portal has its
+// Forgot password — prd-corrections.md §17.1. Staff context only; the Member portal has its
 // own recovery path through the CRM.
 //
 // Identity is proven by the shared recovery key rather than by an email link:

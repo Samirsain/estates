@@ -2,13 +2,13 @@
 
 **Status:** Delivery plan companion to the corrected v3.1 PRD  
 **Date:** 19 August 2026  
-**Read with:** [`PRD.md`](./PRD.md), [`ARCHITECTURE.md`](./ARCHITECTURE.md), [`DESIGN.md`](./DESIGN.md)
+**Read with:** [`prd-corrections.md`](./prd-corrections.md), [`architecture.md`](./architecture.md), [`design.md`](./design.md)
 
 ---
 
 ## 1. Delivery Rules
 
-1. Business rules are taken from `PRD.md`.
+1. Business rules are taken from `prd-corrections.md`.
 2. No phase may introduce a superseded Customer portal, service-request module, document upload, standalone calculator or rupee ledger.
 3. A later phase must not weaken a control completed in an earlier phase.
 4. Real Booking, payment or commission operations must remain disabled until the applicable go-live gates are passed.
@@ -380,7 +380,7 @@ Move from the earlier implementation to the approved baseline safely.
 
 ### Go-live gates
 
-All gates in `PRD.md` must pass, including:
+All gates in `prd-corrections.md` must pass, including:
 
 - Signed requirements
 - Permission and transition tests

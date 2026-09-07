@@ -1,6 +1,6 @@
 "use client";
 
-// Dashboard — DESIGN.md §6 (views, task row, actions, Add Task),
+// Dashboard — design.md §6 (views, task row, actions, Add Task),
 // §4.1 (overdue red / urgent yellow, red wins), §19 (empty, loading, blocked).
 
 import React from "react";

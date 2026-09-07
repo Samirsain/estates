@@ -1,6 +1,6 @@
 "use client";
 
-// Plot Inventory table and state actions — DESIGN.md §7.
+// Plot Inventory table and state actions — design.md §7.
 // Actions are hidden by permission for clarity; the server re-checks every one.
 
 import React from "react";

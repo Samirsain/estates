@@ -1,4 +1,4 @@
-// Audit writer — ARCHITECTURE.md §5.5, §9.
+// Audit writer — architecture.md §5.5, §9.
 // Append-only: this function only ever inserts. Nothing updates or deletes an
 // AuditEvent, and every payload passes through redaction first.
 

@@ -1,4 +1,4 @@
-// Buyback, Purchase for Resale and Payment Given — PRD §11; main-PRD §17.
+// Buyback, Purchase for Resale and Payment Given — PRD §11; prd-complete §17.
 //
 // The acquisition side mirrors the sale side's protected mechanics (PRD §11.2)
 // but stays a separate dataset throughout: Payment Given entries never mix with
@@ -87,7 +87,7 @@ export type AcquisitionCreateResult = {
 };
 
 /**
- * main-PRD §17.1 — a Buyback names the Booking it takes back; a Purchase for
+ * prd-complete §17.1 — a Buyback names the Booking it takes back; a Purchase for
  * Resale names the outside property instead. Both carry a Payment Given
  * schedule from the start, because approval needs 20% confirmed against it.
  */
@@ -190,7 +190,7 @@ export async function createAcquisition(args: {
           blocked(`This Plot already has an active acquisition (${existing.acquisitionNo}).`);
         }
 
-        // main-PRD §17.9 on submission — the Plot is blocked, Buyback Under
+        // prd-complete §17.9 on submission — the Plot is blocked, Buyback Under
         // Process is visible, and unpaid old-sale commission goes on hold. The
         // hold itself is derived from activeProcess by the commission rules.
         await tx.booking.update({
@@ -737,7 +737,7 @@ export async function decideAcquisition(args: {
 
       let plotId = acquisition.plotId;
 
-      // main-PRD §17.4 — an external property enters inventory on approval.
+      // prd-complete §17.4 — an external property enters inventory on approval.
       if (!plotId && acquisition.type === "PURCHASE_FOR_RESALE") {
         if (!acquisition.resaleGroupId) {
           blocked(
@@ -793,7 +793,7 @@ export async function decideAcquisition(args: {
         data: { status: "APPROVED", ...decision },
       });
 
-      // main-PRD §17.9 — the old Booking becomes closed history and the previous
+      // prd-complete §17.9 — the old Booking becomes closed history and the previous
       // Customer leaves the active allocation. Its one-shot commission slots
       // reopen only where the sale had not reached legal completion
       // (PRD §6.1, §6.5): a Delivered Booking was legally completed.
@@ -811,7 +811,7 @@ export async function decideAcquisition(args: {
             closeReason: `Buyback ${acquisition.acquisitionNo} approved — ${args.note}`,
           },
         });
-        // AC-05 — main-PRD §14.12 treats a Buyback differently from a plain
+        // AC-05 — prd-complete §14.12 treats a Buyback differently from a plain
         // cancellation, and differently again either side of legal completion.
         await cancelCommissionForBooking(tx, acquisition.sourceBooking.id, args.actorRef, {
           legallyCompleted,
@@ -840,7 +840,7 @@ export async function decideAcquisition(args: {
           },
         });
 
-        // main-PRD §17.9 — the paper task depends on how far the old sale got.
+        // prd-complete §17.9 — the paper task depends on how far the old sale got.
         const completion = await tx.bookingCompletion.findFirst({
           where: { bookingId: acquisition.sourceBooking.id, reopenedAt: null },
         });

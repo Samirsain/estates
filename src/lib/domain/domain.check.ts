@@ -1,4 +1,4 @@
-// Phase 2 to 6 domain checks — PHASES.md Phase 2-6 "Tests".
+// Phase 2 to 6 domain checks — delivery-phases.md Phase 2-6 "Tests".
 // Run: node src/lib/domain/domain.check.ts
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -992,7 +992,7 @@ assert.equal(
 assert.ok(counterYearRolled(activation, "2025-02-28", new Date("2026-03-05T06:00:00Z")));
 assert.ok(!counterYearRolled(activation, "2026-02-28", new Date("2026-03-05T06:00:00Z")));
 
-/* ------------------------------- main-PRD §25 compatibility matrix, by row */
+/* ------------------------------- prd-complete §25 compatibility matrix, by row */
 
 // Member closes a third-party sale: 3% Direct at 25% + the inviter's band at 100%.
 assert.deepEqual(
@@ -1056,7 +1056,7 @@ assert.equal(
 }
 
 // Active Member buys personally: 3% Direct at 100%, and nothing else. The
-// inviting Member's opportunity is deliberately left untouched (main-PRD §14.2).
+// inviting Member's opportunity is deliberately left untouched (prd-complete §14.2).
 const selfPurchase = generateCommission({
   ...baseInput,
   soldByType: "MEMBER",
@@ -1438,7 +1438,7 @@ assert.equal(
   );
 
   // Activated on the approval date itself counts as a Member: activation cannot
-  // be backdated (main-PRD §7.1), so it genuinely preceded the approval.
+  // be backdated (prd-complete §7.1), so it genuinely preceded the approval.
   assert.equal(
     resolved(classifyApprovedBooking({ ...base, memberActivationDate: APPROVED })).classification,
     "MEMBER",
@@ -1676,7 +1676,7 @@ assert.deepEqual(
 
 /* ------------------------------------------ approval and cancellation */
 
-// main-PRD §17.6 — Available + RESALE, and Payment Pending while below 100%.
+// prd-complete §17.6 — Available + RESALE, and Payment Pending while below 100%.
 const acqApproved = plotStateAfterAcquisitionApproval("NONE", null, "40");
 assert.equal(acqApproved.status, "AVAILABLE");
 assert.equal(acqApproved.isResale, true);
@@ -1880,7 +1880,7 @@ assert.deepEqual(
 );
 assert.equal(validateCompletion({ ...registry, registryDate: null }).ok, false);
 
-// main-PRD §18.2, §18.6 — the completion preconditions.
+// prd-complete §18.2, §18.6 — the completion preconditions.
 const buyer = {
   personId: "p1",
   aadhaarRecorded: true,
@@ -2168,7 +2168,7 @@ const greenPlayOnly = buildPlcSnapshot([{ side: "SOUTH", kind: "PLAYGROUND" }] a
 assert.equal(greenPlayOnly.components[0].label, "Playground facing");
 assert.equal(greenPlayOnly.totalPercent.toString(), "5");
 
-// Two park sides are still one charge (plc.md §2.3).
+// Two park sides are still one charge (plc-location-charge.md §2.3).
 const greenTwoParks = buildPlcSnapshot(
   [
     { side: "NORTH", kind: "PARK" },

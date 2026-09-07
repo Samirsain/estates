@@ -1,7 +1,7 @@
 /*
  * Plot Rate & Area Calculator — the arithmetic only.
  *
- * PRD §1.2 and main-PRD §1: the CRM is not a rupee ledger. It stores no deal
+ * PRD §1.2 and prd-complete §1: the CRM is not a rupee ledger. It stores no deal
  * value, rate, payment amount or commission amount, and no rupee column exists
  * in the schema. Nothing here changes that. This module takes an area and a
  * rate, returns a number, and the number lives in the browser for as long as

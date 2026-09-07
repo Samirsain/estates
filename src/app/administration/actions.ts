@@ -1,6 +1,6 @@
 "use server";
 
-// Administration — PRD.md §17.2, §22; DESIGN.md §17.
+// Administration — prd-corrections.md §17.2, §22; design.md §17.
 // Every action re-checks permission on the server; the hidden button is never
 // the control (DESIGN §1).
 
@@ -219,7 +219,7 @@ function oneTimePassword(): string {
  * or through a Member-submitted Enquiry, and both of those are the people the
  * company sells to.
  *
- * DEVIATIONS.md D-01 — a Member or Customer is refused a staff account.
+ * approved-deviations.md D-01 — a Member or Customer is refused a staff account.
  * ARCHITECTURE §3.1 lists Staff beside Customer and Member as capabilities one
  * Person may hold; the business rule is that the two sides stay separate.
  */
@@ -651,7 +651,7 @@ export async function staffDetailAction(
  * Correcting what was taken down when the account was created — a mistyped
  * mobile, a move to another city, an email nobody had at the time.
  *
- * Date of birth and address are deliberately absent: main-PRD.md lists both as
+ * Date of birth and address are deliberately absent: prd-complete.md lists both as
  * Aadhaar fields, so they belong with the protected values and their logged
  * reveal, not in a plain contact form.
  */

@@ -1,4 +1,4 @@
-// Administration — PRD.md §17.2, §21, §22; DESIGN.md §17.
+// Administration — prd-corrections.md §17.2, §21, §22; design.md §17.
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function AdministrationPage() {
   const actor = await requireStaff("STAFF_MANAGE");
   // A staff mobile is the company's own employee contact, and nothing in
-  // main-PRD.md's Visibility rule masks it — that rule names Aadhaar and PAN.
+  // prd-complete.md's Visibility rule masks it — that rule names Aadhaar and PAN.
   // Whoever administers staff has to be able to phone them: "verified by
   // phone" is the reason a password reset asks for. Customers and Members are
   // outside people and stay masked wherever they appear.

@@ -1,6 +1,6 @@
 // Server-side actor resolution. Every request re-checks role, account status
 // and session version — a valid-looking cookie is never trusted on its own
-// (ARCHITECTURE.md §9.2, PHASES.md Phase 1 "direct URL cannot bypass").
+// (architecture.md §9.2, delivery-phases.md Phase 1 "direct URL cannot bypass").
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";

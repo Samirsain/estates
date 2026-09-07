@@ -1,7 +1,7 @@
 # CR-004 — Loyalty Bonus split into two separate three-deal allowances
 
-Raised under [`PRD.md`](../PRD.md) §28 and the change-control rule in
-[`PHASES.md`](../PHASES.md).
+Raised under [`prd-corrections.md`](../prd-corrections.md) §28 and the change-control rule in
+[`delivery-phases.md`](../delivery-phases.md).
 
 | | |
 | --- | --- |
@@ -25,13 +25,13 @@ single lifetime allowance of three.
 
 | Clause | Wording |
 | --- | --- |
-| `PRD.md` §6.5 | "Combined lifetime maximum: three Loyalty Bonuses." |
-| `PRD.md` §6.5 | "The three may be any combination of introduced-buyer sales and repeat personal purchases." |
-| `main-PRD.md` §14.5 | "One combined lifetime maximum of three Loyalty Bonuses per Customer." |
-| `main-PRD.md` §14.5 | "The three may be any combination of introduced-buyer deals and repeat personal purchases." |
-| `main-PRD.md` §25 | "Customer closes sale for different buyer … 1% … **Lifetime Loyalty limit applies**" |
-| `main-PRD.md` §27 test 61 | "Customer lifetime Loyalty count never exceeds three." |
-| `PHASES.md` Phase 4 | "Loyalty maximum three lifetime slots" |
+| `prd-corrections.md` §6.5 | "Combined lifetime maximum: three Loyalty Bonuses." |
+| `prd-corrections.md` §6.5 | "The three may be any combination of introduced-buyer sales and repeat personal purchases." |
+| `prd-complete.md` §14.5 | "One combined lifetime maximum of three Loyalty Bonuses per Customer." |
+| `prd-complete.md` §14.5 | "The three may be any combination of introduced-buyer deals and repeat personal purchases." |
+| `prd-complete.md` §25 | "Customer closes sale for different buyer … 1% … **Lifetime Loyalty limit applies**" |
+| `prd-complete.md` §27 test 61 | "Customer lifetime Loyalty count never exceeds three." |
+| `delivery-phases.md` Phase 4 | "Loyalty maximum three lifetime slots" |
 
 The word doing the work in every one of these is **combined**. A Customer who
 closes three sales for different buyers has no Loyalty left for their own repeat
@@ -64,8 +64,8 @@ purchase, and the reverse is equally true.
 > **2.5** A Loyalty-qualifying Booking cancelled before legal completion
 > reopens the slot **in the allowance it was consumed from**, not in the other.
 >
-> **2.6** The clauses in `PRD.md` §6.5, `main-PRD.md` §14.5, the `main-PRD.md`
-> §25 matrix note and `main-PRD.md` §27 test 61 that describe a single combined
+> **2.6** The clauses in `prd-corrections.md` §6.5, `prd-complete.md` §14.5, the `prd-complete.md`
+> §25 matrix note and `prd-complete.md` §27 test 61 that describe a single combined
 > maximum of three are withdrawn and replaced by 2.1 to 2.5.
 
 ---
@@ -120,7 +120,7 @@ component, not how much any single sale may carry.
 ## 5. Migration impact
 
 **None expected.** This is a new business starting with an empty database — the
-position `GO-LIVE-EVIDENCE.md` records when it marks go-live gate 6 not
+position `go-live-evidence.md` records when it marks go-live gate 6 not
 applicable. If no Loyalty opportunity has been consumed before this ships, the
 enum split is a schema change over empty rows.
 
@@ -142,7 +142,7 @@ reconciliation rule already does.
 **Changed** — these assert the combined maximum and must be rewritten to the new
 rule:
 
-- `main-PRD.md` §27 test 61 — "Customer lifetime Loyalty count never exceeds
+- `prd-complete.md` §27 test 61 — "Customer lifetime Loyalty count never exceeds
   three" becomes a per-allowance assertion
 - `commission.check.ts` — the exhaustion path, which today consumes three of one
   route and expects the other route to be refused. Under this CR it must expect
@@ -188,8 +188,8 @@ Nothing is implemented. These are the places the change will land once signed.
 By signing, the owner:
 
 1. approves the wording in section 2 as a requirement of the system;
-2. withdraws the combined-maximum clauses in `PRD.md` §6.5, `main-PRD.md` §14.5,
-   the `main-PRD.md` §25 matrix note and `main-PRD.md` §27 test 61; and
+2. withdraws the combined-maximum clauses in `prd-corrections.md` §6.5, `prd-complete.md` §14.5,
+   the `prd-complete.md` §25 matrix note and `prd-complete.md` §27 test 61; and
 3. accepts the cost stated in section 4 — that the maximum lifetime Loyalty
    exposure per Customer doubles from three deals to six.
 

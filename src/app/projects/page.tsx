@@ -1,4 +1,4 @@
-// Projects and PLC rules — PRD.md §16.1, §16.3.
+// Projects and PLC rules — prd-corrections.md §16.1, §16.3.
 
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";

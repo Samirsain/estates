@@ -1,6 +1,6 @@
 "use client";
 
-// Projects and PLC rules — DESIGN.md §7; PRD.md §16.
+// Projects and PLC rules — design.md §7; prd-corrections.md §16.
 
 import React from "react";
 import { useRouter } from "next/navigation";

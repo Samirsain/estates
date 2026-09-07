@@ -1,5 +1,5 @@
 // Member activation and the two network counters.
-// PRD.md RD-02, §6.2, §6.3, §6.4; main-PRD §7.1, §14.3, §14.4;
+// prd-corrections.md RD-02, §6.2, §6.3, §6.4; prd-complete §7.1, §14.3, §14.4;
 // Approved Changes (2) CR-001 – CR-004.
 //
 // An Invite position is assigned once, at activation. A Royalty position is
@@ -238,7 +238,7 @@ export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string
 }
 
 /**
- * main-PRD §7.1 — only Admin or MD may activate a Member. The Member ID and the
+ * prd-complete §7.1 — only Admin or MD may activate a Member. The Member ID and the
  * Network position become active at activation, and activation cannot be
  * backdated.
  */
@@ -285,7 +285,7 @@ export async function activateMember(args: {
         blocked("A Registered RERA status requires the Registration Number.");
       }
 
-      // Activation is now; it cannot be backdated (main-PRD §7.1).
+      // Activation is now; it cannot be backdated (prd-complete §7.1).
       const activationDate = new Date();
       const memberId =
         person.memberProfile?.memberId ?? (await nextReference(tx, "MEM", "Member"));
@@ -499,7 +499,7 @@ export async function setMemberStatus(args: {
 }
 
 /**
- * main-PRD §19.5 — Not Applicable always states why, Registered carries the
+ * prd-complete §19.5 — Not Applicable always states why, Registered carries the
  * Registration Number, and Pending or Expired may hold commission. Changing the
  * status reassesses every unpaid record rather than waiting for the next event.
  */

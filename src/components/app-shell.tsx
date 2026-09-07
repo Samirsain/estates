@@ -1,8 +1,8 @@
 "use client";
 
-// Staff application shell — DESIGN.md §3.1, which set six top-level areas.
+// Staff application shell — design.md §3.1, which set six top-level areas.
 // Hiding a nav item is presentation only; server-side permission enforcement
-// is the real control (DESIGN.md §1).
+// is the real control (design.md §1).
 
 import React from "react";
 import { usePathname } from "next/navigation";

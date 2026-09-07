@@ -1,6 +1,6 @@
 "use client";
 
-// Acquisitions — DESIGN.md §15; PRD.md §11; main-PRD §17.
+// Acquisitions — design.md §15; prd-corrections.md §11; prd-complete §17.
 // Payment Given is its own dataset here and is never shown beside Payment
 // Received (PRD §1.2).
 
@@ -310,7 +310,7 @@ export default function AcquisitionsClient({
           {/* Payment Given is incremental like Payment Received, so the
               ceiling is what is left of the deal, not a flat 100. Same
               clamped field, its own number — the two ledgers are never
-              totalled together (main-PRD §1). */}
+              totalled together (prd-complete §1). */}
           <Field
             label={`Payment Given This Time (%) — ${remainingPercent(dialog.row.paymentGivenPercent)}% remaining`}
           >

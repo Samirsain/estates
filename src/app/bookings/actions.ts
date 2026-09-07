@@ -1,6 +1,6 @@
 "use server";
 
-// Booking and Payment server actions — DESIGN.md §10, §11.
+// Booking and Payment server actions — design.md §10, §11.
 // Every action re-checks permission on the server. Hiding a button is never the
 // control (DESIGN §1), and the domain services re-check state on top of this.
 

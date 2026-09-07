@@ -1,5 +1,5 @@
-// Role, record and field authorisation — PRD.md §3; ARCHITECTURE.md §9.2.
-// Deny by default. Hiding a button is never the control (DESIGN.md §1).
+// Role, record and field authorisation — prd-corrections.md §3; architecture.md §9.2.
+// Deny by default. Hiding a button is never the control (design.md §1).
 
 export type StaffRole = "MD" | "ADMIN" | "ACCOUNTS" | "CRM" | "MIS" | "PC";
 export type Role = StaffRole | "MEMBER";
@@ -60,7 +60,7 @@ export type Action =
   | "SOLD_BY_CORRECTION_RAISE"
   | "SOLD_BY_CORRECTION_APPROVE"
   | "COMMISSION_PROCESS"
-  // Completion (PRD §4; main-PRD §18)
+  // Completion (PRD §4; prd-complete §18)
   | "FINAL_BUYER_RECORD"
   | "COMPLETION_RECORD"
   | "DELIVERY_REOPEN"
@@ -191,7 +191,7 @@ export function assertDifferentActor(makerRef: string, checkerRef: string): void
 }
 
 /**
- * DEVIATIONS.md D-06 — staff are the company's own employees; Members and
+ * approved-deviations.md D-06 — staff are the company's own employees; Members and
  * Customers are the people the company sells to, and the two sides do not
  * cross. ARCHITECTURE §3.1 lists Staff beside Customer and Member as
  * capabilities one Person may hold, so nothing in the schema stops this: the

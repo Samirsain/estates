@@ -1,4 +1,4 @@
-// Task service — PRD.md §20; DESIGN.md §6.
+// Task service — prd-corrections.md §20; design.md §6.
 // The duplicate-prevention key is Record + Purpose, backed by a partial unique
 // index, so a retry or a concurrent job cannot create a second Pending task.
 
@@ -304,7 +304,7 @@ export async function taskSubjects(
   }
   for (const a of acquisitions) {
     // A Purchase for Resale has no Plot until approval, and carries the
-    // external property's own name and number instead (main-PRD §17.4).
+    // external property's own name and number instead (prd-complete §17.4).
     add(a.id, {
       project: a.plot?.project.name ?? a.propertyName,
       plot: a.plot?.plotNumber ?? a.propertyNumber,

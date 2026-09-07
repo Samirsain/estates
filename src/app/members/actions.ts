@@ -1,6 +1,6 @@
 "use server";
 
-// Member and bank server actions — DESIGN.md §12.2, §13; PRD.md §13, §14.3.
+// Member and bank server actions — design.md §12.2, §13; prd-corrections.md §13, §14.3.
 // Every action re-checks permission on the server (DESIGN §1).
 
 import { revalidatePath } from "next/cache";

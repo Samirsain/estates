@@ -1,6 +1,6 @@
 "use client";
 
-// Member portal UI — DESIGN.md §3.2, §13.
+// Member portal UI — design.md §3.2, §13.
 // Apple Parchment Light Theme — High-End Clean Minimalist Aesthetics.
 
 import { eligibilityLabel, type CommissionType } from "@/lib/domain/commission";

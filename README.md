@@ -33,7 +33,7 @@ Browser ──▶ Next.js (server components, server actions, /api routes)
 | `src/lib/security/` | Permissions, sessions, passwords and lockout, Aadhaar/PAN encryption and blind indexing |
 | `src/lib/migration/` | The reconciliation rules a migrated database must satisfy |
 | `prisma/` | Schema, migrations, the constraints Prisma cannot express, seed, and the check suite |
-| `system/` | The approved requirements. `PRD.md` and `main-PRD.md` govern; the code follows them |
+| [`system/`](./system) | The approved requirements — see [`system/README.md`](./system/README.md) for what each document is. `prd-complete.md` governs; the code follows it |
 
 ---
 
@@ -77,7 +77,7 @@ The database checks write and purge tagged data, so they refuse to run unless
 
 The scheduler is not automatic. Until something calls `/api/jobs`, Hold expiry,
 payment reminders and RERA alerts do not happen — see
-[`system/DEPLOYMENT.md`](./system/DEPLOYMENT.md).
+[`system/deployment.md`](./system/deployment.md).
 
 `/api/health` answers 200 only when the database is reachable and every secret is
 configured, and it reports the last successful run of each job.
@@ -86,8 +86,8 @@ configured, and it reports the last successful run of each job.
 
 ## Before go-live
 
-[`system/GO-LIVE-EVIDENCE.md`](./system/GO-LIVE-EVIDENCE.md) maps each of the
-twelve gates in `PRD.md` §27 to the command that produces its evidence, and states
+[`system/go-live-evidence.md`](./system/go-live-evidence.md) maps each of the
+twelve gates in `prd-corrections.md` §27 to the command that produces its evidence, and states
 plainly which gates this repository cannot satisfy on its own — backup rehearsal,
 UAT, and company ownership of the production accounts. Gate 6, migration, does
 not apply: this is a new business with no legacy data.

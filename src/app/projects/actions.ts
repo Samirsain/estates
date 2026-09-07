@@ -1,6 +1,6 @@
 "use server";
 
-// Project and PLC setup server actions — PRD.md §16.1, §16.3.
+// Project and PLC setup server actions — prd-corrections.md §16.1, §16.3.
 
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";

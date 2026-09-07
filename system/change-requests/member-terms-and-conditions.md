@@ -13,12 +13,15 @@ Submitting an application does not itself create membership, commission or busin
 2.2 Nature of the relationship
 The Member is an independent business associate.
 Unless a separate written agreement states otherwise, the Member is not:
+
 - An employee of the Company.
 - A partner, shareholder or franchisee.
 - A legal representative of the Company.
 - An exclusive agent of the Company.
 - Authorised to bind the Company, developer, promoter, seller or Customer.
+
 Membership does not guarantee:
+
 - Income.
 - Leads.
 - Sales.

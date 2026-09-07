@@ -1,4 +1,4 @@
-// Phase 6 service checks — PHASES.md Phase 6 "Tests", end to end against the
+// Phase 6 service checks — delivery-phases.md Phase 6 "Tests", end to end against the
 // real database and the real commands.
 // Run: npm run phase6:check   (requires a seeded database)
 import assert from "node:assert/strict";
@@ -146,7 +146,7 @@ async function main() {
     })
   );
 
-  // main-PRD §18.6 — Aadhaar must be on record for every final buyer.
+  // prd-complete §18.6 — Aadhaar must be on record for every final buyer.
   const noAadhaar = await makePerson("No Aadhaar", "9500000602", null);
   await recordFinalBuyers({
     idempotencyKey: key(),

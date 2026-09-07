@@ -1,4 +1,4 @@
-// Phase 5 service checks — PHASES.md Phase 5 "Tests", end to end against the
+// Phase 5 service checks — delivery-phases.md Phase 5 "Tests", end to end against the
 // real database and the real commands.
 // Run: npm run phase5:check   (requires a seeded database)
 import assert from "node:assert/strict";
@@ -192,7 +192,7 @@ async function main() {
     })
   );
 
-  // main-PRD §15.4 — No Payment Received cannot be used when payment exists.
+  // prd-complete §15.4 — No Payment Received cannot be used when payment exists.
   await expectBlocked(/No Payment Received cannot be used/, () =>
     decideCancellation({
       idempotencyKey: key(),

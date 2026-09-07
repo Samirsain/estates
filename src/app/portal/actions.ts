@@ -1,6 +1,6 @@
 "use server";
 
-// Member portal commands — PRD.md §8, §23; DESIGN.md §13.
+// Member portal commands — prd-corrections.md §8, §23; design.md §13.
 // Every command is scoped to the signed-in Member. The portal never returns
 // another Person's details, buyer identity or internal remarks.
 

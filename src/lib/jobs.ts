@@ -1,4 +1,4 @@
-// Scheduled jobs — PRD.md §18; ARCHITECTURE.md §10.
+// Scheduled jobs — prd-corrections.md §18; architecture.md §10.
 // Asia/Kolkata, idempotent, and safe to re-run: every job selects by current
 // state, so a retry or a catch-up after downtime changes nothing twice.
 

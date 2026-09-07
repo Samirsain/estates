@@ -1,7 +1,7 @@
 # Change Request Register
 
 Every change to the approved v3.1 baseline is raised here before it is treated as
-a requirement, in the form [`PRD.md`](../PRD.md) §28 sets out: Change Request ID,
+a requirement, in the form [`prd-corrections.md`](../prd-corrections.md) §28 sets out: Change Request ID,
 Owner, Exact approved wording, Affected screens/data/statuses, Permission impact,
 Migration impact, Acceptance-test impact, Release target.
 
@@ -29,7 +29,7 @@ Migration impact, Acceptance-test impact, Release target.
 A change affecting commission, payment, inventory, identity, permissions or legal
 completion must be raised here. A display-only change need not be, but recording
 it costs little and answers the reviewer who compares the screens against
-[`DESIGN.md`](../DESIGN.md) — which is why CR-001 is here.
+[`design.md`](../design.md) — which is why CR-001 is here.
 
-[`DEVIATIONS.md`](../DEVIATIONS.md) is the plain-language summary of the same two
+[`approved-deviations.md`](../approved-deviations.md) is the plain-language summary of the same two
 items, for readers who want the shape of the change without the formal fields.

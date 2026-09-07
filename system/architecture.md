@@ -3,15 +3,15 @@
 **Status:** Final technical architecture companion to the corrected v3.1 PRD  
 **Date:** 19 August 2026  
 **Document owner:** 3% Club / Thirty Milestones LLP  
-**Read with:** [`PRD.md`](./PRD.md)
+**Read with:** [`prd-corrections.md`](./prd-corrections.md)
 
 ---
 
 ## 1. Authority and Interpretation
 
-1. `PRD.md` contains the binding business rules.
+1. `prd-corrections.md` contains the binding business rules.
 2. This file translates those rules into an implementation architecture.
-3. Where this file conflicts with `PRD.md`, `PRD.md` controls.
+3. Where this file conflicts with `prd-corrections.md`, `prd-corrections.md` controls.
 4. Version 3.0 remains the full product baseline except where corrected v3.1 expressly changes or adds a rule.
 5. No developer may use an older draft or existing code behavior to restore a removed rule.
 6. Any unresolved ambiguity must become a numbered Change Request before implementation.
@@ -775,4 +775,4 @@ Before go-live, the vendor must provide:
 - Backup restoration evidence
 - Migration reconciliation report
 - Security and sensitive-access test evidence
-- Requirement-to-test traceability to `PRD.md`
+- Requirement-to-test traceability to `prd-corrections.md`

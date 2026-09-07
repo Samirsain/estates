@@ -1,6 +1,6 @@
 // Booking Request, Accounts decision, cancellation, ownership shares and
 // Primary Customer change.
-// PRD.md §9, §11, §12, §13; DESIGN.md §10; ARCHITECTURE.md §6.2, §7.
+// prd-corrections.md §9, §11, §12, §13; design.md §10; architecture.md §6.2, §7.
 
 import type { Prisma, SoldByType } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -709,7 +709,7 @@ export async function decideBookingRequest(args: {
       // Linked Member is stored. It runs before generation because it is what
       // decides whether this buyer has a Royalty band at all.
       await syncRoyaltyLink(tx, booking.primaryPersonId, args.actorRef);
-      // main-PRD §11.5 — the payment and commission engines start on approval.
+      // prd-complete §11.5 — the payment and commission engines start on approval.
       await generateForBooking(tx, args.bookingId, args.actorRef);
       await reassessCommission(tx, args.bookingId, args.actorRef);
       await tx.bookingEvent.create({
@@ -878,7 +878,7 @@ export async function cancelBooking(args: {
       const move = canTransition(booking.status, "REFUND_PENDING");
       if (!move.ok) blocked(move.reason);
 
-      // main-PRD §15.4 — a rejection must restore the exact previous state, so
+      // prd-complete §15.4 — a rejection must restore the exact previous state, so
       // it is captured now rather than reconstructed later from history.
       await tx.cancellationRequest.create({
         data: {

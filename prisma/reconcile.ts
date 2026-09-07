@@ -1,4 +1,4 @@
-// The migration reconciliation report — PHASES.md Phase 7; ARCHITECTURE §13.12.
+// The migration reconciliation report — delivery-phases.md Phase 7; ARCHITECTURE §13.12.
 // Run: npm run reconcile            (prints the report)
 //      npm run reconcile > report.txt   (the copy that gets signed)
 //

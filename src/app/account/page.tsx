@@ -1,4 +1,4 @@
-// My Account — PRD.md §17.1.
+// My Account — prd-corrections.md §17.1.
 // Staff and Members both land here to change their own password.
 
 import { redirect } from "next/navigation";

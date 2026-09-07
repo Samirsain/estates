@@ -1,7 +1,7 @@
 # CR-006 — Recorded acceptance of the Member Terms and Privacy Notice at portal sign-in
 
-Raised under [`PRD.md`](../PRD.md) §28 and the change-control rule in
-[`PHASES.md`](../PHASES.md).
+Raised under [`prd-corrections.md`](../prd-corrections.md) §28 and the change-control rule in
+[`delivery-phases.md`](../delivery-phases.md).
 
 | | |
 | --- | --- |
@@ -20,16 +20,16 @@ to Member portal sign-in and a new record against the Member.
 
 | Clause | Wording |
 | --- | --- |
-| `main-PRD.md` §17.1 | "Member login uses Member ID; mobile alone is insufficient." |
-| `main-PRD.md` §22.4 | Member reset rules |
-| `main-PRD.md` §7.1 | Member activation |
-| `main-PRD.md` §30 | Excludes a "Personal-data request and privacy-complaint workflow" |
-| `PRD.md` §23.5 | Append-only histories |
+| `prd-complete.md` §17.1 | "Member login uses Member ID; mobile alone is insufficient." |
+| `prd-complete.md` §22.4 | Member reset rules |
+| `prd-complete.md` §7.1 | Member activation |
+| `prd-complete.md` §30 | Excludes a "Personal-data request and privacy-complaint workflow" |
+| `prd-corrections.md` §23.5 | Append-only histories |
 
 The baseline describes no Terms acceptance at any point in the Member journey.
 The Terms document itself does:
 
-> `3%_T&C.md` §2.1 — "A person becomes a Member only after: … **The person
+> `member-terms-and-conditions.md` §2.1 — "A person becomes a Member only after: … **The person
 > accepts the applicable Terms and Privacy Notice.** … The Member profile is
 > activated."
 
@@ -64,7 +64,7 @@ This closes that gap.
 
 ## 3. Why it is raised rather than simply built
 
-`main-PRD.md`'s hierarchy §4 requires a numbered change request where the
+`prd-complete.md`'s hierarchy §4 requires a numbered change request where the
 baseline is silent and a developer would otherwise choose a rule. The baseline
 is silent on Terms acceptance, and this adds a step a Member must pass to reach
 the portal — a change to an authentication flow, which §28 governs.
@@ -75,7 +75,7 @@ A checkbox shown at every sign-in and stored nowhere answers no question that
 would ever be asked of it, and a checkbox next to an unopened link answers the
 wrong one. The questions that get asked are "did this Member
 accept?", "which version?" and "when?" — and only a record answers them. It is
-also the shape `PRD.md` §23.5 asks for: append-only, never overwritten.
+also the shape `prd-corrections.md` §23.5 asks for: append-only, never overwritten.
 
 The sequence this produces:
 
@@ -105,7 +105,7 @@ Unique on Member and version, so a repeated submission cannot create a second
 row for the same version.
 
 The IP is kept for a later dispute about who accepted. It is never used to
-identify or locate anyone, which is the boundary `3%_T&C.md` §5 draws.
+identify or locate anyone, which is the boundary `member-terms-and-conditions.md` §5 draws.
 
 ## 6. What is deliberately not included
 

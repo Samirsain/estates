@@ -1,4 +1,4 @@
-// Idempotency — PRD.md §19; ARCHITECTURE.md §8.
+// Idempotency — prd-corrections.md §19; architecture.md §8.
 // A repeated key returns the original result. The same key with materially
 // different input is a conflict, not a second write.
 

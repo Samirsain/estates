@@ -1,6 +1,6 @@
-// Enquiry attribution — PRD.md §6.4, §7; DESIGN.md §8.
+// Enquiry attribution — prd-corrections.md §6.4, §7; design.md §8.
 
-/** main-PRD §9.2 — the six ways an Enquiry arrives. */
+/** prd-complete §9.2 — the six ways an Enquiry arrives. */
 export type EnquirySource =
   | "ONLINE"
   | "SITE_VISIT"

@@ -1,4 +1,4 @@
-// Dashboard task model — PRD.md §20 (task rules), DESIGN.md §4.1, §6.
+// Dashboard task model — prd-corrections.md §20 (task rules), design.md §4.1, §6.
 // Percentage-only: no rupee field exists here by design.
 
 // One source of truth for roles — the permission matrix owns it.

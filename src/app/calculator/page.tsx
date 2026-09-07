@@ -1,6 +1,6 @@
 // Plot Rate & Area Calculator — a calculation utility, not a ledger.
 //
-// PRD §1.2 and main-PRD §1: the CRM stores no deal value, rate or rupee amount,
+// PRD §1.2 and prd-complete §1: the CRM stores no deal value, rate or rupee amount,
 // and no rupee column exists in the schema. Nothing here writes anything. This
 // page reads Projects, Plots and the published PLC version the Plot Inventory
 // already reads, hands them to the browser, and the arithmetic happens there.
@@ -120,7 +120,7 @@ export default async function CalculatorPage() {
        * These are the current, non-superseded CommissionRecord rows the engine
        * produced for the Booking (PRD §6.9) — the calculator reads them and does
        * not re-derive who earns what. They carry a percentage and no rupee value
-       * (PRD §6, main-PRD §1.2), which is exactly what a percentage is for: the
+       * (PRD §6, prd-complete §1.2), which is exactly what a percentage is for: the
        * screen applies it to the figure the user calculated, and the result is
        * never written back.
        */

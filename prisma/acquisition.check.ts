@@ -1,5 +1,5 @@
-// Acquisition, Payment Given and Buying Commission checks — PHASES.md Phase 5
-// "Tests"; PRD §11; main-PRD §17.
+// Acquisition, Payment Given and Buying Commission checks — delivery-phases.md Phase 5
+// "Tests"; PRD §11; prd-complete §17.
 // Run: npm run acquisition:check   (requires a seeded database)
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
@@ -199,7 +199,7 @@ async function main() {
   });
   assert.equal(approved.status, "APPROVED");
 
-  // main-PRD §17.6 — back in inventory as RESALE, and Payment Pending below 100%.
+  // prd-complete §17.6 — back in inventory as RESALE, and Payment Pending below 100%.
   const returnedPlot = await db.plot.findUniqueOrThrow({ where: { id: plotA.id } });
   assert.equal(returnedPlot.status, "AVAILABLE");
   assert.equal(returnedPlot.isResale, true, "an acquisition adds the RESALE tag");
@@ -401,7 +401,7 @@ async function main() {
     note: "Verified.",
   });
 
-  // main-PRD §17.4 — the outside property enters inventory on approval.
+  // prd-complete §17.4 — the outside property enters inventory on approval.
   assert.ok(externalApproved.plotId, "an approved Purchase for Resale creates its Plot");
   const externalPlot = await db.plot.findUniqueOrThrow({ where: { id: externalApproved.plotId! } });
   assert.equal(externalPlot.projectId, resaleGroup.id, "it lands in the External Resale Property Group");

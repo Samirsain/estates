@@ -1440,7 +1440,7 @@ Rules:
 
 - No additional MD/Admin approval is required.
   > **Superseded on this point by the Approved Changes pack, 3 September 2026.**
-  > [`3_Percent_Club_CRM_Dashboard_Approved_Changes.md`](./3_Percent_Club_CRM_Dashboard_Approved_Changes.md)
+  > [`approved-changes-pack.md`](./approved-changes-pack.md)
   > §1 "Paid Early MD Approval" requires the approved MD approval, requires it
   > stored with approver, date/time and the related transaction/member, and
   > states that without it "the system must not mark the benefit as approved".
@@ -1710,7 +1710,7 @@ If the acquisition is cancelled before any new buyer process exists:
 
 - No fixed maximum percentage.
   > **Superseded on this point by the Approved Changes pack, 3 September 2026.**
-  > [`3_Percent_Club_CRM_Dashboard_Approved_Changes.md`](./3_Percent_Club_CRM_Dashboard_Approved_Changes.md)
+  > [`approved-changes-pack.md`](./approved-changes-pack.md)
   > §1 "Buying Commission" caps it at **5%**, to be "enforced by the system, not
   > only by dashboard display", with any figure above the cap "prevented or
   > flagged for correction". Implemented as `BUYING_CAP_PERCENT` in the domain,
@@ -2917,7 +2917,7 @@ Rules:
 
 - No additional MD/Admin approval is required.
   > **Superseded on this point by the Approved Changes pack, 3 September 2026.**
-  > [`3_Percent_Club_CRM_Dashboard_Approved_Changes.md`](./3_Percent_Club_CRM_Dashboard_Approved_Changes.md)
+  > [`approved-changes-pack.md`](./approved-changes-pack.md)
   > §1 "Paid Early MD Approval" requires the approved MD approval, requires it
   > stored with approver, date/time and the related transaction/member, and
   > states that without it "the system must not mark the benefit as approved".

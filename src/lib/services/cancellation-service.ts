@@ -1,5 +1,5 @@
 // The Accounts decision on a formal cancellation.
-// main-PRD §15.4; PRD §7.2, §15.
+// prd-complete §15.4; PRD §7.2, §15.
 //
 // Approval cancels the Booking and returns the Plot through the one shared
 // restriction-aware rule, adding no RESALE tag. Rejection restores the exact
@@ -24,7 +24,7 @@ export type CancellationDecisionResult = {
 };
 
 /**
- * main-PRD §15.4 — at 0% Accounts may approve with No Payment Received. Where
+ * prd-complete §15.4 — at 0% Accounts may approve with No Payment Received. Where
  * payment exists the decision carries a Payment Reference No. and an action
  * date, and never a rupee amount.
  */

@@ -1,4 +1,4 @@
-// Plot Inventory — DESIGN.md §7.1 columns and §7.3 state actions.
+// Plot Inventory — design.md §7.1 columns and §7.3 state actions.
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -55,7 +55,7 @@ export default async function PlotsPage({
   );
 
   // Paid in full and not yet Delivered. Allotment or Registry is recorded
-  // against this one, which is what turns the Plot Delivered (main-PRD §18.6).
+  // against this one, which is what turns the Plot Delivered (prd-complete §18.6).
   const completedBookings = Object.fromEntries(
     liveBookings
       .filter((b) => b.status === "PAYMENT_COMPLETED")

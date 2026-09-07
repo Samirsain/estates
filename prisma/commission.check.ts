@@ -1,4 +1,4 @@
-// Phase 4 service checks — PHASES.md Phase 4 "Tests", end to end against the
+// Phase 4 service checks — delivery-phases.md Phase 4 "Tests", end to end against the
 // real database and the real commands.
 // Run: npm run commission:check   (requires a seeded database)
 import assert from "node:assert/strict";
@@ -417,7 +417,7 @@ async function main() {
     soldByType: "THREE_PERCENT_CLUB",
   });
 
-  // A first direct purchase earns nothing at all (main-PRD §25).
+  // A first direct purchase earns nothing at all (prd-complete §25).
   assert.deepEqual(
     (await currentRecords(correctionBooking)).map((r) => r.type),
     [],
@@ -966,7 +966,7 @@ async function main() {
     completion: { route: "REGISTRY", advocateName: "S. Menon", registryDate: today },
   });
 
-  /* PRD §6.3, §6.5, main-PRD §14.12 — a Buyback AFTER legal completion keeps
+  /* PRD §6.3, §6.5, prd-complete §14.12 — a Buyback AFTER legal completion keeps
      what was earned. The cycle must not be un-completed by it. */
 
   const beforeUnwind = await royalty();
@@ -986,7 +986,7 @@ async function main() {
       "stays consumed (PRD §6.3, §6.5), so the position it filled stays filled"
   );
 
-  // main-PRD §14.12 — "Original sale commission normally remains earned".
+  // prd-complete §14.12 — "Original sale commission normally remains earned".
   const afterUnwind = await royalty();
   assert.equal(
     afterUnwind.payment,

@@ -1,4 +1,4 @@
-// Phase 1 control checks — PHASES.md Phase 1 "Tests".
+// Phase 1 control checks — delivery-phases.md Phase 1 "Tests".
 // Run: node src/lib/security/security.check.ts
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -306,7 +306,7 @@ assert.ok(!verifyRecoveryKey("3preclub@2026"), "a prefix of the recovery key is 
 assert.ok(!verifyRecoveryKey("3preclub@2026fgpassX"), "a longer string is refused");
 assert.ok(!verifyRecoveryKey(""), "an empty recovery key is refused");
 
-// DEVIATIONS.md D-06 — staff are employees; the selling side never gets a
+// approved-deviations.md D-06 — staff are employees; the selling side never gets a
 // login. ARCHITECTURE §3.1 permits one Person to hold all three capabilities,
 // so nothing but this rule stops a Member being handed a staff account.
 const member = { memberProfile: { memberId: "MEM-0217" }, customerProfile: null, staffAccount: null };

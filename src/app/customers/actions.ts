@@ -1,6 +1,6 @@
 "use server";
 
-// Customer server actions — DESIGN.md §12; main-PRD §6.
+// Customer server actions — design.md §12; prd-complete §6.
 // The Customer has no portal (PRD §1.3); this is the staff-side profile only.
 
 import { requireStaff } from "@/lib/security/current-actor";

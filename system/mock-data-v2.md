@@ -102,6 +102,7 @@ MD/Admin MFA = enabled.
 | PRJ-004 | TEST Heritage Meadows | Bikaner, Rajasthan | Residential | Sold Out |
 
 Use:
+
 - PRJ-001 as primary commission Project.
 - PRJ-002 as second Project for lifetime/cross-project proof.
 - PRJ-003 to prove Not Active blocks normal Hold/Booking.
@@ -121,10 +122,12 @@ Use:
 | PLC-COMM | Commercial Frontage | 4% |
 
 Create Version 2 effective 2026-10-01:
+
 - Park Facing 3% → 3.5%
 - 40-ft Road 2% → 2.5%
 
 Test:
+
 - latest version for Available;
 - Hold/Booking freeze;
 - same category on multiple sides charged once;
@@ -218,6 +221,7 @@ Test:
 | PRJ-004 | HM-006 | 30x60 | 1800 | Park Facing 3% | Sold Out |
 
 Special setup:
+
 - AG-037 uses newer PLC before CP01.
 - AG-039/040 reserved for Buyback acceleration.
 - MC-001 Hold attempted while Not Active.
@@ -250,6 +254,7 @@ Special setup:
 | M202 | Rohit Verma | Sri Ganganagar | 2027-02-01 | M002 | Voluntary Customer-to-Member conversion | Active |
 
 Compliance seed:
+
 - M001–M112: Aadhaar Available, Bank Verified, RERA Registered.
 - M113: Bank Pending and RERA Pending initially, later corrected.
 - M201: no inviter.
@@ -302,6 +307,7 @@ Expected:
 | C211 | Sana Kothari | M001 | Cycle2 Pos1 | 1% |
 
 Critical seed:
+
 - for C201, let Enquiry be entered by M102 but first qualifying sale be M001.
 - expected Royalty Linked Member = M001.
 - repeat similarly for other Customers with intentionally different Enquiry sources.
@@ -348,6 +354,7 @@ This must prove Invite and Royalty cycles can be on different cycle numbers.
 | C320 | Varun Oberoi | Customer | Cancellation/recovery |
 
 Also create synthetic buyers:
+
 - W001–W011
 - L-BUYER-1 to L-BUYER-4
 - CTM-BUYER-3 to CTM-BUYER-7
@@ -375,6 +382,7 @@ Required examples:
 | E008–E020 | various | mixed | follow-up/Plot-wise enquiry cases |
 
 Expected:
+
 - no Enquiry creates Royalty Link;
 - Active Enquiry gets one pending follow-up task;
 - separate Plot-wise Enquiries remain separate;
@@ -490,6 +498,7 @@ Also test withdrawal, expiry, different Customers on same Plot, and extension-af
 | ACQ4 | TEST External House 31 | EXT-S04 | C304 | 2% | 100%, then acquisition unwind | Buying Commission becomes recoverable |
 
 Buying Commission:
+
 - Acquisition Price base outside CRM.
 - hard max 5%.
 - one beneficiary.
@@ -517,12 +526,14 @@ Buying Commission:
 # 17. LOYALTY ACCEPTANCE TESTS
 
 C303:
+
 - close #1 → Loyalty 1.
 - close #2 → Loyalty 2.
 - close #3 → Loyalty 3.
 - attempt #4 → Sold By Customer blocked.
 
 Also test:
+
 - first personal purchase = no repeat Loyalty;
 - repeat direct purchase = Loyalty if slot remains;
 - mixed 2 closing + 1 repeat = total 3;
@@ -535,6 +546,7 @@ Also test:
 # 18. CUSTOMER → MEMBER
 
 ## C301 → M201
+
 - exactly 3 Loyalty used.
 - conversion via Company membership invitation.
 - no inviter.
@@ -542,6 +554,7 @@ Also test:
 - past Customer sales do not create Royalty.
 
 ## C302 → M202
+
 - 1 Loyalty used.
 - voluntarily converts before 3.
 - M002 recorded as inviter before activation.
@@ -555,25 +568,35 @@ Also test:
 
 Must test separately:
 
-### Invite
+## Invite
+
 30% Payment Received + Approved Buyback:
+
 - Direct already earned at 25%.
 - Invite becomes eligible before 100%.
 
-### Royalty
+## Royalty
+
 60% + Approved Buyback:
+
 - Royalty becomes eligible before 100%.
 
-### Loyalty
+## Loyalty
+
 70% + Approved Buyback:
+
 - Loyalty becomes eligible before 100%.
 
-### Direct not accelerated
+## Direct not accelerated
+
 Member self-purchase 60% + Approved Buyback:
+
 - Direct remains pending until 100%.
 
-### Unwind
+## Unwind
+
 If Buyback later unwinds:
+
 - if source remains <100%, accelerated Invite/Royalty/Loyalty reverses and opportunity reopens;
 - if source reached 100%, normal milestone preserves it.
 
@@ -584,6 +607,7 @@ If Buyback later unwinds:
 Use references `TST-PR-<Booking>-<n>`.
 
 Minimum:
+
 1. 0% approved Booking.
 2. 24% → Direct pending.
 3. 25% → third-party Direct Ready.
@@ -605,6 +629,7 @@ Minimum:
 Use `TST-PG-<Acquisition>-<n>`.
 
 Test:
+
 - 19% → acquisition approval threshold not met.
 - 20% → approval threshold met.
 - 99% → Buying Commission pending.
@@ -618,15 +643,18 @@ Test:
 # 22. PAID EARLY
 
 ## Valid
+
 - below normal milestone;
 - MD approves;
 - compulsory reason/ref/date;
 - no second payout at normal milestone.
 
 ## Invalid
+
 - Accounts attempts without MD approval → blocked.
 
 ## Later invalid
+
 - cancellation/buyback unwind/correction → Accounts Adjustment Required / Recovery Outstanding.
 
 ---
@@ -635,25 +663,29 @@ Test:
 
 CRM stores status/reference, not rupee amount.
 
-### REC-001 Member
+## REC-001 Member
+
 - M113 paid then sale cancelled.
 - `Recovery Outstanding / Negative Account`.
 - external ref `TST-REC-001`.
 - unresolved for 15 calendar days → deactivate M113.
 - new Member sale/payout blocked.
 
-### REC-002 corrected beneficiary
+## REC-002 corrected beneficiary
+
 - M101 paid.
 - Sold By corrected to M102.
 - M101 Recovery Outstanding.
 - MD may approve M102 payout before old recovery clears.
 
-### REC-003 Customer
+## REC-003 Customer
+
 - Customer Loyalty paid then cancelled.
 - future Loyalty blocked.
 - Membership activation blocked until Recovery Cleared.
 
-### REC-004 Buying
+## REC-004 Buying
+
 - ACQ4 Buying Commission paid.
 - acquisition itself unwound.
 - beneficiary Recovery Outstanding.
@@ -673,6 +705,7 @@ Commissionable Sale Value = **₹51,00,000**
 Exclude taxes/pass-through charges.
 
 Calculate externally:
+
 - 3%
 - 1%
 - 0.5%
@@ -687,6 +720,7 @@ CRM stores percentage and payout reference/date/status only.
 # 25. PAYOUT TESTS
 
 For each Ready commission:
+
 - verified bank required;
 - pay within 7 working days;
 - no minimum threshold;
@@ -701,6 +735,7 @@ For each Ready commission:
 # 26. ELIGIBILITY HOLDS
 
 Using M113:
+
 1. Bank Pending → hold.
 2. Bank Verified → recheck.
 3. RERA Pending → Member commission hold.
@@ -717,12 +752,14 @@ Customer Loyalty does not inherit Member RERA hold unless person is operating as
 # 27. SOLD BY CORRECTIONS
 
 Test:
+
 - Member A → Member B unpaid.
 - Member A → Member B after payment.
 - Member → 3% CLUB.
 - 3% CLUB → Member.
 
 Expected:
+
 - old current records superseded;
 - paid old beneficiary recovery if needed;
 - new correct records only;
@@ -734,6 +771,7 @@ Expected:
 # 28. PRIMARY CUSTOMER / SHARES
 
 Test:
+
 1. one final buyer = 100% default.
 2. two buyers total 100%.
 3. total 90% blocked from Delivered.
@@ -750,6 +788,7 @@ Test:
 
 ## Same Project
 AG-036 → AG-037:
+
 - same Booking;
 - same Customer/Sold By;
 - replacement PLC snapshot frozen;
@@ -758,6 +797,7 @@ AG-036 → AG-037:
 
 ## Cross Project
 AG-038 → CV-001:
+
 - same-Booking Change Plot blocked;
 - require Cancel Booking + new Booking Request.
 
@@ -768,6 +808,7 @@ Also test replacement Plot previously held by same Customer → use Hold PLC sna
 # 30. BOOKING REVIEW SNAPSHOT
 
 Freeze at submission:
+
 - Primary/Additional Customers
 - shares
 - Project/Plot
@@ -787,6 +828,7 @@ Approve one Booking at 0% Payment Received.
 # 31. CANCELLATION
 
 Before approval:
+
 - close request;
 - no Refund Pending;
 - no permanent Booking cancellation;
@@ -794,6 +836,7 @@ Before approval:
 - restore Plot/Hold.
 
 After approval:
+
 - Refund Pending;
 - Accounts verification;
 - commission cancellation/adjustment;
@@ -805,6 +848,7 @@ After approval:
 # 32. PROJECT / RESTRICTION
 
 Test:
+
 - Not Active blocks normal Hold/Booking.
 - activate PRJ-003 → permitted.
 - Sold Out does not kill ongoing approved work.
@@ -819,6 +863,7 @@ Test:
 # 33. PLOT GEOMETRY
 
 Test:
+
 - uniqueness = Project + Plot Type + Plot Number.
 - duplicate blocked.
 - same number in other Project allowed.
@@ -833,9 +878,11 @@ Test:
 # 34. ALLOTMENT / REGISTRY / DELIVERED
 
 DEL1:
+
 - Allotment route data complete → Delivered once.
 
 DEL2:
+
 - Registry route data complete → Delivered once.
 
 Do not create Allotment-then-Registry third route.
@@ -851,11 +898,13 @@ Incorrect Delivered reopen:
 Use C317A/C317B as same real test person.
 
 Create:
+
 - one unique Loyalty event in A;
 - one unique in B;
 - one duplicate event in both if test harness allows.
 
 After merge:
+
 - duplicate event counts once;
 - Loyalty rebuilt from unique qualifying events;
 - max consumed = 3;
@@ -869,6 +918,7 @@ After merge:
 # 36. REFERENCE CORRECTION
 
 For Payment Received, Payment Given and commission payout:
+
 1. select wrong ref;
 2. compulsory reason;
 3. old ref Superseded;
@@ -883,6 +933,7 @@ Global active Payment Reference uniqueness must remain.
 # 37. MEMBER PORTAL PRIVACY
 
 Member may see:
+
 - Project
 - Plot
 - commission type
@@ -896,6 +947,7 @@ Member may see:
 - Recovery Outstanding status
 
 Member must not see:
+
 - buyer identity/mobile/Customer ID
 - Aadhaar/PAN/bank
 - other Members' data
@@ -907,6 +959,7 @@ Member must not see:
 # 38. SCHEDULED JOBS
 
 Test controlled dates for:
+
 1. Hold Expiry.
 2. Member Hold Request expiry.
 3. Instalment Overdue.
@@ -925,6 +978,7 @@ Test controlled dates for:
 # 39. IDEMPOTENCY / CONCURRENCY
 
 Double-submit:
+
 - Hold
 - Hold Request
 - Booking Request
@@ -941,6 +995,7 @@ Double-submit:
 Second identical action must not duplicate.
 
 Same-second Invite test:
+
 - two sales by same invited Member reach qualifying point at same verified timestamp;
 - lower permanent Booking Number wins;
 - inviter paid once.
@@ -950,6 +1005,7 @@ Same-second Invite test:
 # 40. REPORT / EXPORT
 
 Reports must:
+
 - use current non-superseded commission only;
 - not double-count merged Persons;
 - separate Payment Received from Payment Given;

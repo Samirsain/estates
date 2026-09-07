@@ -1,7 +1,7 @@
 # CR-002 — Administration screen for reading a full Aadhaar or PAN
 
-Raised under [`PRD.md`](../PRD.md) §28 and the change-control rule in
-[`PHASES.md`](../PHASES.md).
+Raised under [`prd-corrections.md`](../prd-corrections.md) §28 and the change-control rule in
+[`delivery-phases.md`](../delivery-phases.md).
 
 | | |
 | --- | --- |
@@ -36,7 +36,7 @@ baseline.
 > Each reveal is its own request and its own logged event.
 >
 > **1.5** No Aadhaar or PAN value is included in any export. Exports remain
-> masked under `PRD.md` §21.
+> masked under `prd-corrections.md` §21.
 >
 > **1.6** The screen adds no way to edit, upload or delete an Aadhaar or PAN. The
 > no-upload model in RD-05 is unchanged.
@@ -51,7 +51,7 @@ baseline.
 | --- | --- |
 | Administration | New `Aadhaar / PAN` tab: masked list, per-Person **Reveal** |
 
-`DESIGN.md` §17 describes Administration but does not enumerate this tab. That
+`design.md` §17 describes Administration but does not enumerate this tab. That
 is the gap this CR closes.
 
 ### Data
@@ -64,14 +64,14 @@ defines.
 ### Statuses
 
 None added or altered. Aadhaar Status and PAN Status keep the meanings in
-`PRD.md` §14.1 and §14.2.
+`prd-corrections.md` §14.1 and §14.2.
 
 ---
 
 ## 3. Permission impact
 
 **No new permission.** The screen exercises the existing `AADHAAR_FULL` field
-permission, which `PRD.md` RD-05 already grants to specifically authorised
+permission, which `prd-corrections.md` RD-05 already grants to specifically authorised
 MD/Admin.
 
 What changes is that the permission now has a screen. Before this CR the
@@ -104,7 +104,7 @@ Existing coverage, unchanged and still passing:
   payload
 
 **New tests the owner should require before go-live**, as part of the gate 8
-security testing in `PRD.md` §27:
+security testing in `prd-corrections.md` §27:
 
 1. A reveal by MD writes exactly one `SENSITIVE_ACCESS` event naming the reader
    and the Person read.

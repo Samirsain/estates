@@ -1,4 +1,4 @@
-// Migration reconciliation — PHASES.md Phase 7; ARCHITECTURE §13; main-PRD §27.3.
+// Migration reconciliation — delivery-phases.md Phase 7; ARCHITECTURE §13; prd-complete §27.3.
 //
 // Every rule here is an invariant the approved model guarantees. Run it against
 // the staging copy after a migration rehearsal and against production before
@@ -33,7 +33,7 @@ export type ReconciliationReport = {
 
 /* ------------------------------------------------------------ record counts */
 
-/** main-PRD §27.3 — "verify no protected record is lost". */
+/** prd-complete §27.3 — "verify no protected record is lost". */
 export async function recordCounts(): Promise<Record<string, number>> {
   const [
     persons,

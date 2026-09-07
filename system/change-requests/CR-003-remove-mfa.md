@@ -1,7 +1,7 @@
 # CR-003 — Multi-factor authentication removed
 
-Raised under [`PRD.md`](../PRD.md) §28 and the change-control rule in
-[`PHASES.md`](../PHASES.md).
+Raised under [`prd-corrections.md`](../prd-corrections.md) §28 and the change-control rule in
+[`delivery-phases.md`](../delivery-phases.md).
 
 | | |
 | --- | --- |
@@ -22,9 +22,9 @@ approved until signed.
 
 | Clause | Wording |
 | --- | --- |
-| `PRD.md` §3.1 | "MFA remains mandatory for MD and Admin." |
-| `PRD.md` §17.1 | "MFA mandatory for MD/Admin." |
-| `PRD.md` §27 gate 8 | "Security/access testing and MD/Admin MFA pass." |
+| `prd-corrections.md` §3.1 | "MFA remains mandatory for MD and Admin." |
+| `prd-corrections.md` §17.1 | "MFA mandatory for MD/Admin." |
+| `prd-corrections.md` §27 gate 8 | "Security/access testing and MD/Admin MFA pass." |
 
 ---
 
@@ -140,7 +140,7 @@ applies; the MFA half of it is withdrawn by clause 2.3.
 By signing, the owner:
 
 1. approves the wording in section 2 as a requirement of the system;
-2. withdraws the MFA clauses in `PRD.md` §3.1, §17.1 and gate 8; and
+2. withdraws the MFA clauses in `prd-corrections.md` §3.1, §17.1 and gate 8; and
 3. accepts the risk stated in section 4 — that a single password now reaches full
    Aadhaar and PAN visibility, staff account creation, password resets and Person
    Merge approval.

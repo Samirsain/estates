@@ -1,4 +1,4 @@
-// Project and PLC rule setup — PRD.md §16.1, §16.3; main-PRD §16.
+// Project and PLC rule setup — prd-corrections.md §16.1, §16.3; prd-complete §16.
 //
 // PLC is a percentage only. A rule change never rewrites history: it creates the
 // next version, and Holds and Bookings keep the snapshot they froze.

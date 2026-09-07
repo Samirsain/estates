@@ -1,6 +1,6 @@
 "use server";
 
-// Acquisition and Payment Given server actions — PRD.md §11; main-PRD §17.
+// Acquisition and Payment Given server actions — prd-corrections.md §11; prd-complete §17.
 // Every action re-checks permission on the server (DESIGN §1).
 
 import { revalidatePath } from "next/cache";

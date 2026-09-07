@@ -1,4 +1,4 @@
-// Protected identity values — PRD.md §14, RD-05; ARCHITECTURE.md §9.3.
+// Protected identity values — prd-corrections.md §14, RD-05; architecture.md §9.3.
 // Aadhaar and PAN are protected fields, never uploaded documents. Plaintext is
 // encrypted at rest; duplicate detection uses a keyed blind index so no
 // searchable plaintext column exists.

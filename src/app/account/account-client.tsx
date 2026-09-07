@@ -1,6 +1,6 @@
 "use client";
 
-// My Account — DESIGN.md §18; PRD.md §17.1.
+// My Account — design.md §18; prd-corrections.md §17.1.
 // Members see this without the staff shell; staff see it inside their shell.
 
 import React from "react";

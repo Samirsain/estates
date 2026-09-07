@@ -1,6 +1,6 @@
 "use client";
 
-// Members — DESIGN.md §13.1, §13.2; PRD.md §13, §14.3.
+// Members — design.md §13.1, §13.2; prd-corrections.md §13, §14.3.
 // Actions are hidden by permission for clarity; the server re-checks every one.
 
 import { eligibilityLabel, type CommissionType } from "@/lib/domain/commission";

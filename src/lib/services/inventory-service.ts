@@ -1,4 +1,4 @@
-// Project and Plot setup — PRD.md §15, §16; DESIGN.md §7.
+// Project and Plot setup — prd-corrections.md §15, §16; design.md §7.
 
 import type { BoundaryKind, BoundarySide, PlotType } from "@prisma/client";
 import { db } from "@/lib/db";

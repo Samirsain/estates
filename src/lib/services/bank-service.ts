@@ -1,4 +1,4 @@
-// Bank details — PRD.md §14.3; main-PRD §19.4.
+// Bank details — prd-corrections.md §14.3; prd-complete §19.4.
 // CRM enters, Accounts verifies, and the existing verified bank stays active
 // while the replacement is Pending. A pending replacement never puts every
 // Ready commission on hold by itself (PRD §14.3).

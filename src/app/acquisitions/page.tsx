@@ -1,4 +1,4 @@
-// Acquisitions — Buyback and Purchase for Resale. PRD.md §11; main-PRD §17.
+// Acquisitions — Buyback and Purchase for Resale. prd-corrections.md §11; prd-complete §17.
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";

@@ -1,5 +1,5 @@
 // Final buyer details, the one-route Allotment/Registry completion and the
-// Delivered state. PRD §4; main-PRD §18.
+// Delivered state. PRD §4; prd-complete §18.
 //
 // Delivered is not a button: it is what a completed route means. There is no
 // Confirm Delivery action anywhere in this file.
@@ -41,7 +41,7 @@ async function bookingLabel(tx: Tx, bookingId: string): Promise<string> {
 }
 
 /**
- * main-PRD §18.1 — 100% Payment Received creates the final-buyer and
+ * prd-complete §18.1 — 100% Payment Received creates the final-buyer and
  * Allotment/Registry work once. `ensureTask` keys on Record + Purpose, so a
  * repeated payment confirmation or a job catch-up creates nothing twice.
  */
@@ -84,7 +84,7 @@ export type FinalBuyerInput = {
   dateOfBirth: Date;
   address: string;
   /**
-   * main-PRD §18.2 lists the Aadhaar Number among the final buyer details, and
+   * prd-complete §18.2 lists the Aadhaar Number among the final buyer details, and
    * a registry cannot be recorded without one. Blank where the Person already
    * has it on file — an Aadhaar already recorded is never overwritten here.
    */
@@ -98,7 +98,7 @@ export type FinalBuyerInput = {
 };
 
 /**
- * main-PRD §18.2 — Primary Customer, Additional Customer(s), Aadhaar, Date of
+ * prd-complete §18.2 — Primary Customer, Additional Customer(s), Aadhaar, Date of
  * Birth, Address and the PAN decision. The final registration buyer may differ
  * from the commercial Booking Customer, so both stay distinguishable: this
  * writes FINAL_REGISTRATION parties and never touches the COMMERCIAL rows.
@@ -483,7 +483,7 @@ export async function reopenDelivered(args: {
       // AC-02 — a delivery recorded in error and reopened takes the qualifying
       // activity's completion back with it. This is the one path that may
       // un-complete a cycle: a Buyback deliberately does not (PRD §6.3, §6.5,
-      // main-PRD §14.12), because there the sale really did legally complete.
+      // prd-complete §14.12), because there the sale really did legally complete.
       await onLegalCompletionChanged(tx, args.bookingId, args.actorRef, {
         completed: false,
         reason: `Delivery reopened — ${args.reason}`,

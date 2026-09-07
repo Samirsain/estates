@@ -1,4 +1,4 @@
-// Enquiry service — PRD.md §6.4, §7; DESIGN.md §8.
+// Enquiry service — prd-corrections.md §6.4, §7; design.md §8.
 
 import type { EnquirySource, FollowUpOutcome } from "@prisma/client";
 import { db } from "@/lib/db";
