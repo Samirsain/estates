@@ -14,6 +14,7 @@ import {
   summarise,
   type Task,
   type TaskView,
+  recordHref,
   recordReference,
 } from "./tasks.ts";
 
@@ -126,6 +127,32 @@ assert.equal(
 // Neither is the placeholder an unlinked manual task carries.
 assert.equal(recordReference({ id: "UNLINKED:STF-0001", name: "Not linked" }), null);
 assert.equal(recordReference({ id: "", name: "Not linked" }), null);
+
+/* ------------------------------------------ where Open Review actually goes */
+
+const uuid = "bdedd579-75a3-4085-8e8b-d811cf666424";
+
+// A Booking decision opens the row the Bookings list already knows how to focus.
+assert.equal(recordHref({ kind: "Booking", id: uuid }), `/bookings?booking=${uuid}`);
+assert.equal(recordHref({ kind: "Booking Request", id: uuid }), `/bookings?booking=${uuid}`);
+assert.equal(recordHref({ kind: "Plot", id: uuid }), `/plots/${uuid}`);
+
+// Acquisitions have no per-record route, so the list is the honest destination.
+assert.equal(recordHref({ kind: "Acquisition", id: uuid }), "/acquisitions");
+
+// A Commission is approved on its Booking's screen and the task holds the
+// commission's own id, so the Booking comes from the resolved subject.
+const bookingId = "9c1f0a2e-1111-4222-8333-444455556666";
+assert.equal(
+  recordHref({ kind: "Commission", id: uuid }, { project: null, plot: null, partyRef: null, partyName: null, reference: null, bookingId }),
+  `/bookings?booking=${bookingId}`
+);
+// Unresolved, there is nowhere honest to send anyone.
+assert.equal(recordHref({ kind: "Commission", id: uuid }), null);
+
+// A reference someone typed is not a route id, whatever the kind says.
+assert.equal(recordHref({ kind: "Customer", id: "CUS-3390" }), null);
+assert.equal(recordHref({ kind: "Booking", id: "UNLINKED:STF-0001" }), null);
 
 // Decimal feet read back as feet and inches — the inverse of what the Plot
 // form parses, so 25' 5" typed in is 25' 5" shown.

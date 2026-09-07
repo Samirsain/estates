@@ -244,6 +244,7 @@ export async function taskSubjects(
               id: true,
               booking: {
                 select: {
+                  id: true,
                   bookingNumber: true,
                   requestNo: true,
                   project: { select: { name: true } },
@@ -317,6 +318,9 @@ export async function taskSubjects(
       project: r.booking?.project.name ?? null,
       plot: r.booking?.plot.plotNumber ?? null,
       reference: r.booking?.bookingNumber ?? r.booking?.requestNo ?? null,
+      // A Commission review happens on the Booking, so the row needs the
+      // Booking's id, not only its number.
+      bookingId: r.booking?.id ?? null,
       ...party(r.beneficiaryPerson),
     });
   }
