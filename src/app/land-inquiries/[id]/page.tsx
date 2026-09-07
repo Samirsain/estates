@@ -236,7 +236,6 @@ export default async function LandInquiryDetailPage({
                 : "—"
             }
           />
-          <Row label="Dimensions" value={dash(inquiry.dimensions)} />
           <Row
             label="Frontage"
             value={
@@ -253,8 +252,6 @@ export default async function LandInquiryDetailPage({
                 : "—"
             }
           />
-          <Row label="Shape" value={dash(inquiry.shape)} />
-          <Row label="Boundaries" value={dash(inquiry.boundaries)} />
         </Section>
 
         <Section index={6} title="Land Category / Use">

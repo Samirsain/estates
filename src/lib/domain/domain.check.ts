@@ -2581,6 +2581,7 @@ assert.equal(
     receivedFrom: "ANOTHER_DEALER",
     sourcePersonId: null,
     anotherDealerMobile: "+91 98765-43210",
+    anotherDealerName: "Ramesh Property Dealers",
   }),
   null,
   "a dealer mobile is accepted the way people type it"
@@ -2590,13 +2591,41 @@ assert.match(
     receivedFrom: "ANOTHER_DEALER",
     sourcePersonId: "p1",
     anotherDealerMobile: "9876543210",
+    anotherDealerName: "Ramesh Property Dealers",
   }) ?? "",
   /never a Person on file/,
   "an Another Dealer inquiry can never carry a Person id"
 );
 assert.match(
-  validateReceivedFrom({ receivedFrom: "ANOTHER_DEALER", sourcePersonId: null, anotherDealerMobile: "12345" }) ?? "",
+  validateReceivedFrom({
+    receivedFrom: "ANOTHER_DEALER",
+    sourcePersonId: null,
+    anotherDealerMobile: "12345",
+    anotherDealerName: "Ramesh Property Dealers",
+  }) ?? "",
   /valid 10-digit/
+);
+
+// A number with nobody attached is a call nobody can make twice.
+assert.match(
+  validateReceivedFrom({
+    receivedFrom: "ANOTHER_DEALER",
+    sourcePersonId: null,
+    anotherDealerMobile: "9876543210",
+    anotherDealerName: "  ",
+  }) ?? "",
+  /dealer's name/
+);
+
+// And the name is as inquiry-local as the mobile: neither belongs anywhere else.
+assert.match(
+  validateReceivedFrom({
+    receivedFrom: "MEMBER",
+    sourcePersonId: "p1",
+    anotherDealerMobile: null,
+    anotherDealerName: "Ramesh Property Dealers",
+  }) ?? "",
+  /applies only to an Another Dealer/
 );
 assert.equal(
   validateReceivedFrom({

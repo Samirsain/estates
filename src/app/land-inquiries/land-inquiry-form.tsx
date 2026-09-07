@@ -201,7 +201,13 @@ export default function LandInquiryForm({
   /** Spec §5 — changing the source type clears whatever the old one held, so
    *  a Member id can never travel with an Another Dealer inquiry. */
   const setReceivedFrom = (receivedFrom: LandInquiryInput["receivedFrom"]) =>
-    setForm((f) => ({ ...f, receivedFrom, sourcePersonId: null, anotherDealerMobile: null }));
+    setForm((f) => ({
+      ...f,
+      receivedFrom,
+      sourcePersonId: null,
+      anotherDealerMobile: null,
+      anotherDealerName: null,
+    }));
 
   /**
    * Spec §11 — one measurement shown in three units. The box the user typed in
@@ -297,14 +303,24 @@ export default function LandInquiryForm({
             </Field>
           )}
           {form.receivedFrom === "ANOTHER_DEALER" && (
-            <Field label="Dealer Mobile Number">
-              <Input
-                className="h-9"
-                value={form.anotherDealerMobile ?? ""}
-                onChange={(e) => set("anotherDealerMobile", e.target.value)}
-                placeholder="10-digit mobile"
-              />
-            </Field>
+            <>
+              <Field label="Dealer Name">
+                <Input
+                  className="h-9"
+                  value={form.anotherDealerName ?? ""}
+                  onChange={(e) => set("anotherDealerName", e.target.value)}
+                  placeholder="As told on the call"
+                />
+              </Field>
+              <Field label="Dealer Mobile Number">
+                <Input
+                  className="h-9"
+                  value={form.anotherDealerMobile ?? ""}
+                  onChange={(e) => set("anotherDealerMobile", e.target.value)}
+                  placeholder="10-digit mobile"
+                />
+              </Field>
+            </>
           )}
           {form.receivedFrom === "THREE_PERCENT_CLUB" && (
             <Field label="Source">
@@ -330,8 +346,9 @@ export default function LandInquiryForm({
         </Grid>
         {form.receivedFrom === "ANOTHER_DEALER" && (
           <p className="mt-2 text-[11px] text-muted-foreground">
-            A dealer&apos;s mobile is kept on this inquiry only. No Person, Customer, Member or
-            portal record is created for it, and the same number may appear on other inquiries.
+            A dealer&apos;s name and mobile are kept on this inquiry only. No Person, Customer,
+            Member or portal record is created for them, and the same dealer may appear on other
+            inquiries as an unrelated pair of strings.
           </p>
         )}
       </Section>
@@ -577,12 +594,6 @@ export default function LandInquiryForm({
 
         <div className="mt-3">
           <Grid>
-            <Field label="Dimensions">
-              <Input className="h-9" value={form.dimensions} onChange={(e) => set("dimensions", e.target.value)} />
-            </Field>
-            <Field label="Shape">
-              <Input className="h-9" value={form.shape} onChange={(e) => set("shape", e.target.value)} />
-            </Field>
             <Field label="Frontage">
               <div className="flex gap-2">
                 <Input className="h-9" value={form.frontageValue} onChange={(e) => set("frontageValue", e.target.value)} />
@@ -610,15 +621,6 @@ export default function LandInquiryForm({
               </div>
             </Field>
           </Grid>
-          <div className="mt-3">
-            <Field label="Boundaries">
-              <textarea
-                className={`${inputClass} h-16 py-2`}
-                value={form.boundaries}
-                onChange={(e) => set("boundaries", e.target.value)}
-              />
-            </Field>
-          </div>
         </div>
       </Section>
 

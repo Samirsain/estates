@@ -112,10 +112,14 @@ function validate(input: LandInquiryInput) {
  */
 async function resolveSource(tx: Tx, input: LandInquiryInput) {
   if (input.receivedFrom === "ANOTHER_DEALER") {
-    return { sourcePersonId: null, anotherDealerMobile: normaliseMobile(input.anotherDealerMobile!) };
+    return {
+      sourcePersonId: null,
+      anotherDealerMobile: normaliseMobile(input.anotherDealerMobile!),
+      anotherDealerName: input.anotherDealerName!.trim(),
+    };
   }
   if (input.receivedFrom === "THREE_PERCENT_CLUB") {
-    return { sourcePersonId: null, anotherDealerMobile: null };
+    return { sourcePersonId: null, anotherDealerMobile: null, anotherDealerName: null };
   }
 
   const person = await tx.person.findUnique({
@@ -136,7 +140,7 @@ async function resolveSource(tx: Tx, input: LandInquiryInput) {
   if (input.receivedFrom === "CUSTOMER" && !person!.customerProfile) {
     blocked("That person is not a Customer. Pick a Customer, or change Received From.");
   }
-  return { sourcePersonId: person!.id, anotherDealerMobile: null };
+  return { sourcePersonId: person!.id, anotherDealerMobile: null, anotherDealerName: null };
 }
 
 /** The scalar columns, shared by create and update so the two cannot drift. */
@@ -149,6 +153,7 @@ function scalarData(input: LandInquiryInput, source: Awaited<ReturnType<typeof r
     receivedFrom: input.receivedFrom,
     sourcePersonId: source.sourcePersonId,
     anotherDealerMobile: source.anotherDealerMobile,
+    anotherDealerName: source.anotherDealerName,
     assignedToId: input.assignedToId || null,
 
     district: text(input.district),
@@ -166,13 +171,10 @@ function scalarData(input: LandInquiryInput, source: Awaited<ReturnType<typeof r
     areaSourceUnit: input.areaSourceValue.trim() ? input.areaSourceUnit : null,
     areaSourceValue: decimal(input.areaSourceValue),
 
-    dimensions: text(input.dimensions),
     frontageValue: decimal(input.frontageValue),
     frontageUnit: input.frontageValue.trim() ? input.frontageUnit : null,
     roadWidthValue: decimal(input.roadWidthValue),
     roadWidthUnit: input.roadWidthValue.trim() ? input.roadWidthUnit : null,
-    shape: text(input.shape),
-    boundaries: text(input.boundaries),
 
     landCategory: input.landCategory,
     currentLandUse: text(input.currentLandUse),
@@ -269,6 +271,7 @@ export async function createLandInquiry(args: {
         receivedFrom: args.input.receivedFrom,
         sourcePersonId: args.input.sourcePersonId,
         anotherDealerMobile: args.input.anotherDealerMobile,
+        anotherDealerName: args.input.anotherDealerName,
       },
     },
     async (tx) => {
@@ -300,6 +303,7 @@ export async function createLandInquiry(args: {
             receivedFrom: inquiry.receivedFrom,
             sourcePersonId: inquiry.sourcePersonId,
             anotherDealerMobile: inquiry.anotherDealerMobile,
+            anotherDealerName: inquiry.anotherDealerName,
             assignedToId: inquiry.assignedToId,
             owners: children.owners.length,
             jamabandiEntries: children.entries.length,
@@ -687,6 +691,7 @@ export async function listLandInquiries(filters: LandInquiryListFilters) {
       { owners: { some: { ownerName: { contains: q, mode: "insensitive" } } } },
       { jamabandiEntries: { some: { khasraNo: { contains: q, mode: "insensitive" } } } },
       { sourcePerson: { fullName: { contains: q, mode: "insensitive" } } },
+      { anotherDealerName: { contains: q, mode: "insensitive" } },
       ...(mobile.length >= 4
         ? [
             { anotherDealerMobile: { contains: mobile } },

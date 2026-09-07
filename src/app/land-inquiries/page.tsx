@@ -62,11 +62,14 @@ export default async function LandInquiriesPage({
       inquiryNo: row.inquiryNo,
       date: formatIstDate(row.inquiryDate),
       receivedFrom: row.receivedFrom,
-      // Spec §2.2 — an Another Dealer inquiry has a number and no name,
-      // because that is genuinely all the company was given.
+      // Spec §2.2 — an Another Dealer inquiry names nobody on file, but it
+      // does carry the dealer's own name beside the number now: a column of
+      // bare mobiles was nobody anyone could ask about.
       source:
-        row.sourcePerson?.fullName ??
-        (row.receivedFrom === "ANOTHER_DEALER" ? row.anotherDealerMobile : "3% Club") ??
+        row.sourcePerson?.fullName ||
+        (row.receivedFrom === "ANOTHER_DEALER"
+          ? [row.anotherDealerName, row.anotherDealerMobile].filter(Boolean).join(" · ")
+          : "3% Club") ||
         "—",
       primaryOwner: primary?.ownerName ?? null,
       additionalOwners: Math.max(row.owners.length - 1, 0),

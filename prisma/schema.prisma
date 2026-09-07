@@ -2021,11 +2021,16 @@ model LandInquiry {
 
   receivedFrom        LandInquiryReceivedFrom
   /// Member and Customer name an existing Person. 3% Club is the company
-  /// itself and names nobody; Another Dealer names nobody and carries a mobile.
+  /// itself and names nobody; Another Dealer creates no Person and carries its
+  /// own name and mobile on the inquiry.
   sourcePersonId      String?
   sourcePerson        Person?                 @relation("LandInquirySource", fields: [sourcePersonId], references: [id])
   /// Spec §2.2 — inquiry-local, deliberately not unique, and never an identity.
   anotherDealerMobile String?
+  /// The dealer's name, as told on the call. Inquiry-local like the mobile: it
+  /// creates, reuses and matches no Person, and two inquiries naming the same
+  /// dealer are still two unrelated strings.
+  anotherDealerName   String?
 
   status LandInquiryStatus @default(WORKING)
   stage  LandInquiryStage  @default(NEW)
@@ -2049,13 +2054,10 @@ model LandInquiry {
   areaSourceUnit  LandMetricSourceUnit?
   areaSourceValue Decimal?              @db.Decimal(20, 6)
 
-  dimensions     String?
   frontageValue  Decimal?    @db.Decimal(18, 4)
   frontageUnit   LinearUnit?
   roadWidthValue Decimal?    @db.Decimal(18, 4)
   roadWidthUnit  LinearUnit?
-  shape          String?
-  boundaries     String?
 
   landCategory       LandCategory?
   currentLandUse     String?
