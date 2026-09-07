@@ -486,8 +486,8 @@ const PLOT_STATUS_LABEL: Record<string, string> = {
  * respect: choose from the list, and what was chosen is echoed underneath as
  * the reference over the name, so a wrong pick is visible before submitting.
  *
- * It carries no label of its own: it sits inside the Enquiry Source field,
- * beside the choice that asked for it, and that field is already named.
+ * It carries no label of its own: it sits inside a Field that already names
+ * it — "Which Member" or "Which Customer", on the row under the Source.
  */
 function SourcePersonPicker({
   name,
@@ -675,57 +675,68 @@ function CreateEnquiryDialog({
             several Customers and their shares. */}
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <Field label="Customer">
+            {/* Anyone on file, Member or Customer. The list always held both —
+                only the label said Customer, so nobody looked for a Member
+                here and those Enquiries got filed against the wrong person. */}
+            <Field label="Enquiry For">
               <PersonPicker
                 required
                 value={personId}
                 onChange={setPersonId}
                 newOptionLabel="+ New Person — enter details"
-                placeholder="Search by name, mobile or Customer ID"
-                options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+                placeholder="Search by name, mobile, Member ID or Customer ID"
+                options={people.map((p) => ({
+                  id: p.id,
+                  label: personLabel(p, p.customerId ? "CUSTOMER" : "MEMBER"),
+                }))}
               />
             </Field>
           </div>
 
-          {/* One question, one box, the way the Hold form asks it: the kind of
-              Source and the Member or Customer behind it share a row, so
-              choosing By Member fills the space beside the choice instead of
-              pushing another field into the form. */}
+          {/* Two questions, two rows, the way the Hold form asks them: who the
+              Enquiry is for, and who it came through. They are usually two
+              different people, and the second used to sit on the tail of the
+              first's dropdown where it read as part of the same answer. */}
           <div className="sm:col-span-2">
             <Field label="Enquiry Source">
-              <div className="flex gap-2">
-                <select
-                  className={`${inputClass} w-44 shrink-0`}
-                  value={source}
-                  onChange={(e) => setSource(e.target.value)}
-                >
-                  {SOURCE_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {SOURCE_LABEL[value]}
-                    </option>
-                  ))}
-                </select>
-                {source === "BY_MEMBER" && (
-                  <SourcePersonPicker
-                    key="member"
-                    className="min-w-0 flex-1"
-                    name="sourceMemberId"
-                    placeholder="Search by Member ID or name"
-                    options={members}
-                  />
-                )}
-                {source === "BY_CUSTOMER" && (
-                  <SourcePersonPicker
-                    key="customer"
-                    className="min-w-0 flex-1"
-                    name="sourceCustomerId"
-                    placeholder="Search by Customer ID or name"
-                    options={customers}
-                  />
-                )}
-              </div>
+              <select
+                className={`${inputClass} w-full`}
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+              >
+                {SOURCE_OPTIONS.map((value) => (
+                  <option key={value} value={value}>
+                    {SOURCE_LABEL[value]}
+                  </option>
+                ))}
+              </select>
             </Field>
           </div>
+
+          {source === "BY_MEMBER" && (
+            <div className="sm:col-span-2">
+              <Field label="Which Member">
+                <SourcePersonPicker
+                  key="member"
+                  name="sourceMemberId"
+                  placeholder="Search by Member ID or name"
+                  options={members}
+                />
+              </Field>
+            </div>
+          )}
+          {source === "BY_CUSTOMER" && (
+            <div className="sm:col-span-2">
+              <Field label="Which Customer">
+                <SourcePersonPicker
+                  key="customer"
+                  name="sourceCustomerId"
+                  placeholder="Search by Customer ID or name"
+                  options={customers}
+                />
+              </Field>
+            </div>
+          )}
 
           {personId === "NEW" && (
             <div className="grid gap-2 sm:col-span-2 sm:grid-cols-3">

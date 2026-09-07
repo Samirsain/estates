@@ -508,6 +508,15 @@ export function listPlots(projectId?: string) {
         where: { status: { in: ["ACTIVE", "FROZEN"] } },
         include: {
           person: true,
+          // Who asked for the Hold, beside who it is for. The two are often
+          // different people — a Member gets one done for a Customer — and the
+          // row printed only the second of them.
+          sourcedByPerson: {
+            include: {
+              memberProfile: { select: { memberId: true } },
+              customerProfile: { select: { customerId: true } },
+            },
+          },
           // Decided requests as well as the pending one: an Admin deciding a
           // further extension is deciding it against the ones before it.
           extensionRequests: { orderBy: { createdAt: "desc" }, take: 5 },

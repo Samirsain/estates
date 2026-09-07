@@ -142,6 +142,14 @@ export default async function PlotsPage({
             id: hold.id,
             heldForName: hold.person.fullName,
             heldForPersonId: hold.person.id,
+            // Who got the Hold done — a Member for a Customer, a Customer for
+            // a Member, or the 3% Club itself.
+            sourcedByType: hold.sourcedByType,
+            sourcedByName: hold.sourcedByPerson?.fullName ?? null,
+            sourcedByRef:
+              hold.sourcedByPerson?.memberProfile?.memberId ??
+              hold.sourcedByPerson?.customerProfile?.customerId ??
+              null,
             expiresAt: hold.expiresAt.toISOString(),
             extensionCount: hold.extensionCount,
             // "There is a request" used to mean "there is a pending request",

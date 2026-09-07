@@ -113,6 +113,10 @@ export type PlotRowView = {
     id: string;
     heldForName: string;
     heldForPersonId: string;
+    /** Who asked for it: the 3% Club, a Member, or a Customer (PRD §11.4). */
+    sourcedByType: SoldByType;
+    sourcedByName: string | null;
+    sourcedByRef: string | null;
     expiresAt: string;
     extensionCount: number;
     pendingExtension: boolean;
@@ -217,6 +221,20 @@ const statusRank = (status: string) => {
  * question. A native title rather than a tooltip component: it needs no script,
  * and a screen reader reads it out where a styled div would not.
  */
+/**
+ * Who asked for the Hold, in the words the row has space for.
+ *
+ * A Hold has two people in it and the row was printing one. A Member gets one
+ * done for a Customer, a Customer for a Member, and the 3% Club does its own —
+ * "Held for Sneha Ojha" alone does not say which of those happened.
+ */
+function holdRequestedBy(hold: NonNullable<PlotRowView["hold"]>): string {
+  if (hold.sourcedByType === "THREE_PERCENT_CLUB") return "3% Club direct";
+  const kind = hold.sourcedByType === "MEMBER" ? "Member" : "Customer";
+  const who = [hold.sourcedByRef, hold.sourcedByName].filter(Boolean).join(" · ");
+  return who ? `Requested by ${kind} ${who}` : `Requested by a ${kind}`;
+}
+
 function statusReason(plot: PlotRowView, because: string | null): string | null {
   const parts: string[] = [];
 
@@ -224,6 +242,7 @@ function statusReason(plot: PlotRowView, because: string | null): string | null 
 
   if (plot.hold) {
     parts.push(`Held for ${plot.hold.heldForName}`);
+    parts.push(holdRequestedBy(plot.hold));
     parts.push(
       plot.hold.frozen
         ? "Timer frozen — a Booking Request is under review"
@@ -891,6 +910,17 @@ export default function PlotsClient({
     [people]
   );
 
+  // Who a Hold can be for. A Member buys plots too — for themselves, or through
+  // a Customer who brought it to them — and the list used to offer Customers
+  // only, so those Holds had to be filed against the wrong person.
+  const holdForOptions = React.useMemo(
+    () =>
+      people
+        .filter((p) => p.customerId || p.memberId)
+        .map((p) => ({ id: p.id, label: personLabel(p, p.customerId ? "CUSTOMER" : "MEMBER") })),
+    [people]
+  );
+
   const visible = rows.filter(
     (r) =>
       (projectFilter === "ALL" || r.projectId === projectFilter) &&
@@ -1313,11 +1343,16 @@ export default function PlotsClient({
                         </span>
                       )}
                       {plot.hold && (
-                        <span className="mt-1 block text-[11px] font-medium text-foreground">
-                          {plot.hold.frozen
-                            ? "Hold timer frozen — Booking Request under review"
-                            : `Expires ${formatIstDate(plot.hold.expiresAt)}`}
-                        </span>
+                        <>
+                          <span className="mt-1 block text-[11px] text-muted-foreground">
+                            Held for {plot.hold.heldForName} · {holdRequestedBy(plot.hold)}
+                          </span>
+                          <span className="mt-1 block text-[11px] font-medium text-foreground">
+                            {plot.hold.frozen
+                              ? "Hold timer frozen — Booking Request under review"
+                              : `Expires ${formatIstDate(plot.hold.expiresAt)}`}
+                          </span>
+                        </>
                       )}
                     </td>
                     {/* What the charge is for, not what it comes to. The
@@ -1489,17 +1524,17 @@ export default function PlotsClient({
           onClose={() => setDialog(null)}
           fields={
             <>
-              <Field label="Customer">
-                {/* Customers only, because placing the Hold is what makes one:
-                    a walk-in typed here is issued a Customer ID by the same
-                    match-or-create the Enquiry form uses. */}
+              <Field label="Hold For">
+                {/* Anyone already on file, Member or Customer. A walk-in typed
+                    here is issued a Customer ID by the same match-or-create the
+                    Enquiry form uses — placing the Hold is what makes one. */}
                 <PersonPicker
                   required
                   value={holdPerson}
                   onChange={setHoldPerson}
                   newOptionLabel="+ New Customer — enter name and mobile"
-                  placeholder="Search by Customer ID, name or mobile"
-                  options={customerOptions}
+                  placeholder="Search by Member ID, Customer ID, name or mobile"
+                  options={holdForOptions}
                 />
               </Field>
               {holdPerson === "NEW" && (
@@ -1510,51 +1545,51 @@ export default function PlotsClient({
               )}
 
               {/* Two questions, in the order they are asked on the phone: who
-                  it is for, and who got it done — the Booking form's Sold By,
-                  asked here so the credit is on the record from the Hold. Kind
-                  and name share one row, so choosing Member does not push a
-                  second field into the form. */}
-              <Field label="Hold By">
-                <div className="flex gap-2">
-                  <select
-                    className={`${inputClass} w-36 shrink-0`}
-                    value={holdSourceType}
-                    onChange={(e) => {
-                      setHoldSourceType(e.target.value as SoldByType);
-                      setHoldSourcePerson("");
-                    }}
-                  >
-                    <option value="THREE_PERCENT_CLUB">3% Club</option>
-                    <option value="MEMBER">Member</option>
-                    <option value="CUSTOMER">Customer</option>
-                  </select>
-                  {holdSourceType !== "THREE_PERCENT_CLUB" && (
-                    <PersonPicker
-                      className="flex-1"
-                      required
-                      value={holdSourcePerson}
-                      onChange={setHoldSourcePerson}
-                      placeholder={
-                        holdSourceType === "MEMBER"
-                          ? "Search by Member ID or name"
-                          : "Search by Customer ID, name or mobile"
-                      }
-                      // Only what the choice beside it says. `members` is
-                      // Active Members by construction, and an Active Member is
-                      // kept out of the Customer list because the credit would
-                      // have to be recorded as Member anyway (PRD §6.7).
-                      options={
-                        holdSourceType === "MEMBER"
-                          ? members.map((m) => ({
-                              id: m.personId,
-                              label: `${m.memberId} · ${m.fullName}`,
-                            }))
-                          : customerOptions.filter((o) => !activeMemberPersonIds.has(o.id))
-                      }
-                    />
-                  )}
-                </div>
+                  it is for, and on whose asking. Kind and person are their own
+                  rows: a Hold placed for a Customer by a Member is two people,
+                  and squeezing the second onto the tail of a dropdown read as
+                  one. */}
+              <Field label="Requested By">
+                <select
+                  className={`${inputClass} w-full`}
+                  value={holdSourceType}
+                  onChange={(e) => {
+                    setHoldSourceType(e.target.value as SoldByType);
+                    setHoldSourcePerson("");
+                  }}
+                >
+                  <option value="THREE_PERCENT_CLUB">3% Club — direct</option>
+                  <option value="MEMBER">Member</option>
+                  <option value="CUSTOMER">Customer</option>
+                </select>
               </Field>
+
+              {holdSourceType !== "THREE_PERCENT_CLUB" && (
+                <Field label={holdSourceType === "MEMBER" ? "Which Member" : "Which Customer"}>
+                  <PersonPicker
+                    required
+                    value={holdSourcePerson}
+                    onChange={setHoldSourcePerson}
+                    placeholder={
+                      holdSourceType === "MEMBER"
+                        ? "Search by Member ID or name"
+                        : "Search by Customer ID, name or mobile"
+                    }
+                    // Only what the row above it says. `members` is Active
+                    // Members by construction, and an Active Member is kept out
+                    // of the Customer list because the credit would have to be
+                    // recorded as Member anyway (PRD §6.7).
+                    options={
+                      holdSourceType === "MEMBER"
+                        ? members.map((m) => ({
+                            id: m.personId,
+                            label: `${m.memberId} · ${m.fullName}`,
+                          }))
+                        : customerOptions.filter((o) => !activeMemberPersonIds.has(o.id))
+                    }
+                  />
+                </Field>
+              )}
 
               <PastHolds rows={dialog.plot.pastHolds} />
             </>
