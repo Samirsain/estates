@@ -289,7 +289,8 @@ export default async function CustomerDetailPage({
                 <Stat
                   // CR-002 — the Member who was Sold By on this Customer's first
                   // qualifying purchase. The Member ID is what it is filed
-                  // under, so it leads and the name confirms it.
+                  // under, so it leads; the name goes on the line beneath it,
+                  // where every other Stat puts what confirms its answer.
                   label="Royalty linked to"
                   value={
                     <Link
@@ -299,12 +300,15 @@ export default async function CustomerDetailPage({
                       {customer.royaltyLinkedMember.memberId}
                     </Link>
                   }
+                  // The name, and what the link is worth once it is settled. A
+                  // link still provisional adds nothing here: the position and
+                  // rate it would carry are not decided yet.
                   hint={
                     customer.royaltyLinkFinalAt
-                      ? `${customer.royaltyLinkedMember.person.fullName} · position ${
+                      ? `${customer.royaltyLinkedMember.person.fullName} · Position ${
                           customer.royaltyPosition ?? "—"
                         } at ${customer.royaltyRatePercent?.toFixed(2) ?? "—"}%`
-                      : `${customer.royaltyLinkedMember.person.fullName} · provisional until the first purchase reaches 100% Payment Received or an Approved Buyback`
+                      : customer.royaltyLinkedMember.person.fullName
                   }
                 />
               )}

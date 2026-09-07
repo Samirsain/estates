@@ -554,11 +554,12 @@ function MemberDetailPanel({
             <p className="text-xs text-muted-foreground">No commission generated for this Member yet.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[44rem] text-xs">
+              <table className="w-full min-w-[48rem] text-xs">
                 <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="py-1">Booking</th>
-                    <th className="py-1">Project · Plot</th>
+                    <th className="py-1">Project</th>
+                    <th className="py-1">Plot</th>
                     <th className="py-1">Type</th>
                     <th className="py-1 text-right">%</th>
                     <th className="py-1">Eligibility</th>
@@ -576,10 +577,8 @@ function MemberDetailPanel({
                           </span>
                         )}
                       </td>
-                      <td className="py-1">
-                        {c.project}
-                        <span className="block text-[11px] text-muted-foreground">{c.plot}</span>
-                      </td>
+                      <td className="py-1">{c.project}</td>
+                      <td className="whitespace-nowrap py-1">{c.plot}</td>
                       <td className="py-1">{c.type}</td>
                       <td className="py-1 text-right tabular-nums">{c.percent}</td>
                       <td className="py-1">
