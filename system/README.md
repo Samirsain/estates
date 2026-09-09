@@ -36,6 +36,12 @@ too.
 | --- | --- |
 | [`land-inquiry-feature.md`](./land-inquiry-feature.md) | Land Inquiry Management (`/land-inquiries`) — implementation-ready specification. |
 
+## As built
+
+| File | What it is |
+| --- | --- |
+| [`as-built-land-inquiry-and-profiles.md`](./as-built-land-inquiry-and-profiles.md) | What the running dashboard does today: the Land Inquiry flow, the Customer → Member conversion, and the Customer and Member profile screens field by field. Read from the code, not from the requirements. |
+
 ## Testing
 
 | File | What it is |
