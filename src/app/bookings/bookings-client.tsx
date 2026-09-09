@@ -170,6 +170,9 @@ const STATUS_LABEL: Record<string, string> = {
   REFUND_PENDING: "Refund Pending",
   CANCELLED: "Cancelled",
   DELIVERED: "Delivered",
+  // The end of a Buyback, and a status like any other here: without a label it
+  // printed as BUYBACK_COMPLETED and was missing from the status filter.
+  BUYBACK_COMPLETED: "Buyback Completed",
 };
 
 /**
@@ -612,7 +615,7 @@ export default function BookingsClient({
                 <th className="px-3 py-1.5">Customer</th>
                 <th className="px-3 py-1.5">Sold By</th>
                 <th className="w-[14rem] px-3 py-1.5">Status</th>
-                <th className="w-[8rem] px-3 py-1.5 text-right">Payment Received</th>
+                <th className="w-[8rem] px-3 py-1.5 text-right">Payment</th>
               </tr>
             </thead>
             <tbody>

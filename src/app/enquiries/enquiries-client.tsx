@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
+import { FOLLOW_UP_OUTCOME_LABEL } from "@/lib/domain/enquiry";
 import {
   addIstDays,
   formatPlotSize,
@@ -362,7 +363,11 @@ export default function EnquiriesClient({
                     </td>
                     <td>
                       <Cell
-                        value={e.lastOutcome ? humanise(e.lastOutcome) : "No follow-up yet"}
+                        value={
+                          e.lastOutcome
+                            ? (FOLLOW_UP_OUTCOME_LABEL[e.lastOutcome] ?? humanise(e.lastOutcome))
+                            : "No follow-up yet"
+                        }
                         under={e.nextFollowUpAt ? `next ${formatIstDate(e.nextFollowUpAt)}` : null}
                       />
                     </td>
@@ -834,7 +839,7 @@ function FollowUpDialog({
           <ul className="space-y-1">
             {history.map((h, i) => (
               <li key={i}>
-                {formatIst(h.at)} — {humanise(h.outcome)}
+                {formatIst(h.at)} — {FOLLOW_UP_OUTCOME_LABEL[h.outcome] ?? humanise(h.outcome)}
                 {h.remark ? ` · ${h.remark}` : ""}
                 {h.nextAt ? ` · next ${formatIstDate(h.nextAt)}` : ""}
               </li>
@@ -859,7 +864,7 @@ function FollowUpDialog({
           <select name="outcome" defaultValue="CONTACTED" className={inputClass}>
             {OUTCOMES.map((o) => (
               <option key={o} value={o}>
-                {humanise(o)}
+                {FOLLOW_UP_OUTCOME_LABEL[o] ?? humanise(o)}
               </option>
             ))}
           </select>

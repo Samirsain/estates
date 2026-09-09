@@ -621,7 +621,7 @@ async function main() {
         actorRole: "CRM",
         enquiryId: created.enquiryId,
         outcome: "CONTACTED",
-        remark: "Spoke to the customer.",
+        remark: "Wants a corner plot.",
         nextAt: day(5),
       });
     }
@@ -632,7 +632,7 @@ async function main() {
         actorRole: "CRM",
         enquiryId: created.enquiryId,
         outcome: "SITE_VISIT_PLANNED",
-        remark: "Site visit requested for the weekend.",
+        remark: "Prefers Saturday morning.",
         nextAt: day(4),
       });
     }
@@ -643,7 +643,7 @@ async function main() {
         actorRole: "CRM",
         enquiryId: created.enquiryId,
         outcome: "BOOKING_DISCUSSION",
-        remark: "Site visit completed; negotiating the rate.",
+        remark: "Visited. Negotiating the rate.",
         nextAt: day(2),
       });
     }

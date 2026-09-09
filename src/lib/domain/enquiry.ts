@@ -17,6 +17,22 @@ export type EnquirySource =
  * (`syncRoyaltyLink`).
  */
 
+/**
+ * What a follow-up ended in, in the words a person would use.
+ *
+ * The enum was being shown by lowercasing it and swapping underscores for
+ * spaces, which put "site visit planned" on a task line — machine output, not
+ * a sentence anyone wrote. The Enquiries screen and the task line both read
+ * from here, so the two cannot say it differently.
+ */
+export const FOLLOW_UP_OUTCOME_LABEL: Record<string, string> = {
+  CONTACTED: "Contacted",
+  NOT_ANSWERED: "No answer",
+  CALL_LATER: "Call later",
+  SITE_VISIT_PLANNED: "Site visit planned",
+  BOOKING_DISCUSSION: "Discussing booking",
+};
+
 /** DESIGN §8.2 — Source Person is required for By Member and By Customer. */
 export function validateSource(
   source: EnquirySource,

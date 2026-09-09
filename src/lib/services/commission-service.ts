@@ -1013,11 +1013,15 @@ export async function cancelCommissionForBooking(
       assigneeRole: "ACCOUNTS",
       dueAt: new Date(),
       decision: true,
-      latestResult: remainsEarned
-        ? `${records.length} commission record(s) remain earned under prd-complete §14.12. Confirm ` +
-          `against the written arrangement, or raise a correction.`
-        : `${records.length} commission record(s) stepped back. Confirm the CRM/management ` +
-          `decision on the unpaid old-sale commission.`,
+      latestResult: (() => {
+        // One line on a task row, so it says what happened and who has to look
+        // at it. The clause naming the spec section and the one spelling out
+        // both ways to respond were paragraph, not row.
+        const n = `${records.length} commission record${records.length === 1 ? "" : "s"}`;
+        return remainsEarned
+          ? `${n} still earned. Check against the written arrangement.`
+          : `${n} stepped back. Confirm the decision on the unpaid old sale.`;
+      })(),
     });
   }
 

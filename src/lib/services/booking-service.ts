@@ -1474,7 +1474,11 @@ export async function decideSoldByCorrection(args: {
         assigneeRole: "ACCOUNTS",
         dueAt: new Date(),
         decision: true,
-        latestResult: regenerated.conflict ?? `${regenerated.generated} current record(s) after the correction.`,
+        latestResult:
+          regenerated.conflict ??
+          `${regenerated.generated} commission record${
+            regenerated.generated === 1 ? "" : "s"
+          } after the correction.`,
       });
 
       await tx.bookingEvent.create({
