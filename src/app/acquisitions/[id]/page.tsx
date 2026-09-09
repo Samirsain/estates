@@ -1,34 +1,31 @@
-// Acquisitions — Buyback and Purchase for Resale. prd-corrections.md §11; prd-complete §17.
+// One Buyback or Purchase for Resale, in full.
+//
+// The deal used to open as a panel inside its own list row, which meant the
+// whole record had to fit in the space under a table. It has a page now, and
+// the list row links to it.
 
+import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
-import AcquisitionsClient from "./acquisitions-client";
-import { acquisitionInclude, toAcquisitionRow } from "./row-view";
+import { acquisitionInclude, toAcquisitionRow } from "../row-view";
+import AcquisitionDetailClient from "./detail-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function AcquisitionsPage() {
+export default async function AcquisitionDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
   const actor = await requireStaff("REPORT_VIEW");
 
-  const [acquisitions, buybackable, people, resaleGroups] = await Promise.all([
-    db.acquisition.findMany({
-      include: acquisitionInclude,
-      orderBy: { submittedAt: "desc" },
-      take: 200,
-    }),
-    // A Buyback applies to an approved Booking that is not already under another
-    // major process (ARCHITECTURE §6.3).
-    db.booking.findMany({
-      where: {
-        status: { in: ["BOOKED", "PAYMENT_COMPLETED", "DELIVERED"] },
-        activeProcess: "NONE",
-      },
-      include: { plot: true, project: true, primaryPerson: true },
-      orderBy: { bookingDate: "desc" },
-      take: 300,
-    }),
+  const [acquisition, people] = await Promise.all([
+    db.acquisition.findUnique({ where: { id }, include: acquisitionInclude }),
+    // Only the Buying Commission dialog needs these, and only on a live deal —
+    // but the picker is rendered by the same client, so they travel with it.
     db.person.findMany({
       where: { mergeStatus: { not: "MERGED_AWAY" } },
       select: {
@@ -41,15 +38,12 @@ export default async function AcquisitionsPage() {
       orderBy: { fullName: "asc" },
       take: 500,
     }),
-    // PRD §11.6 — the External Resale Property Group an outside purchase lands in.
-    db.project.findMany({
-      select: { id: true, name: true, projectCode: true },
-      orderBy: { name: "asc" },
-    }),
   ]);
 
+  if (!acquisition) notFound();
+
   return (
-    <AcquisitionsClient
+    <AcquisitionDetailClient
       role={actor.role}
       actorName={actor.name}
       staffAccountId={actor.staffAccountId}
@@ -61,12 +55,7 @@ export default async function AcquisitionsPage() {
         correctGiven: can(actor.role, "PAYMENT_CORRECT", actor.extraPermissions),
         recordCommission: can(actor.role, "BUYING_COMMISSION_RECORD", actor.extraPermissions),
       }}
-      rows={acquisitions.map(toAcquisitionRow)}
-      buybackable={buybackable.map((b) => ({
-        id: b.id,
-        label: `${b.bookingNumber ?? b.requestNo} · ${b.project.name} ${b.plot.plotNumber} · ${b.primaryPerson.fullName}`,
-        primaryPersonId: b.primaryPersonId,
-      }))}
+      row={toAcquisitionRow(acquisition)}
       people={people.map((p) => ({
         id: p.id,
         fullName: p.fullName,
@@ -74,7 +63,6 @@ export default async function AcquisitionsPage() {
         customerId: p.customerProfile?.customerId ?? null,
         memberId: p.memberProfile?.memberId ?? null,
       }))}
-      resaleGroups={resaleGroups}
     />
   );
 }
