@@ -140,7 +140,11 @@ export async function syncPaymentFollowUp(tx: Tx, bookingId: string, actorRef: s
     .reduce((sum, i) => sum.add(i.scheduledPercent.sub(i.receivedPercent)), new D(0));
 
   const recordName = `${booking.bookingNumber ?? booking.requestNo} · ${booking.project.name} ${booking.plot.plotNumber}`;
-  const result = `Total due by this date: ${totalDue.toFixed(2)}% (instalment ${next.seq})`;
+  // The row has one truncated line for this, so it leads with the two things
+  // being read: how much is due, and which instalment it is. Trailing zeros go
+  // — 30% reads as 30%, and a 30.5% split still keeps the half it needs.
+  const due = totalDue.toFixed(2).replace(/\.?0+$/, "");
+  const result = `Due ${due}% · Instalment ${next.seq}`;
 
   const existing = await tx.task.findFirst({
     where: { recordKind: "Booking", recordId: bookingId, purpose: "PAYMENT_FOLLOW_UP", status: "PENDING" },

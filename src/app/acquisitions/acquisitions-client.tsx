@@ -5,8 +5,9 @@
 // Received (PRD §1.2).
 
 import React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Ban, ChevronDown, Coins, Plus, Wallet } from "lucide-react";
+import { Plus, Wallet } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { PersonLink } from "@/components/person-link";
@@ -15,97 +16,30 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
-import { formatIst, istDay, remainingPercent, type StaffRole } from "@/lib/tasks";
+import { istDay, type StaffRole } from "@/lib/tasks";
 import { capPercent, percentSum } from "@/lib/domain/shares";
-import { PaymentPercentInput } from "@/app/bookings/bookings-client";
+import { AcquisitionDialogs } from "./acquisition-dialogs";
 import {
-  cancelAcquisitionAction,
-  confirmPaymentGivenAction,
-  correctPaymentGivenAction,
+  STATUS_LABEL,
+  TYPE_LABEL,
+  newKey,
+  type AcquisitionRowView,
+  type Dialog,
+  type Permissions,
+  type PersonView,
+} from "./types";
+import {
   createAcquisitionAction,
-  decideAcquisitionAction,
-  recordBuyingCommissionAction,
   type ActionResult,
   type ScheduleRowInput,
 } from "./actions";
 
-export type EntryView = {
-  id: string;
-  percent: string;
-  paidOn: string;
-  status: string;
-  reference: string;
-  confirmedByRef: string;
-  reason: string | null;
-};
 
-export type AcquisitionRowView = {
-  id: string;
-  acquisitionNo: string;
-  type: string;
-  status: string;
-  property: string;
-  project: string;
-  plotNumber: string;
-  /** CONSTANT_CASE from the schema, or null for a property outside inventory. */
-  plotType: string | null;
-  location: string | null;
-  seller: string;
-  sellerPersonId: string;
-  arrangedBy: string;
-  arrangedByPersonId: string | null;
-  arrangedByType: string;
-  sourceBooking: string | null;
-  purchaseDate: string;
-  paymentGivenPercent: string;
-  remark: string;
-  decisionNote: string | null;
-  closedReason: string | null;
-  submittedByRef: string;
-  instalments: Array<{ seq: number; scheduled: string; received: string; dueDate: string }>;
-  entries: EntryView[];
-  commission: {
-    beneficiary: string;
-    beneficiaryPersonId: string;
-    percent: string;
-    eligibility: string;
-    payment: string;
-  } | null;
-};
+/** The one row button, sized like Inventory's. */
+const rowButton = "h-7 px-2 text-[11px]";
 
-type PersonView = {
-  id: string;
-  fullName: string;
-  mobileMasked: string;
-  /** CUS-3390 / MEM-0012, where the Person holds that profile at all. */
-  customerId: string | null;
-  memberId: string | null;
-};
-type Permissions = {
-  create: boolean;
-  decide: boolean;
-  cancel: boolean;
-  confirmGiven: boolean;
-  correctGiven: boolean;
-  recordCommission: boolean;
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  PENDING_APPROVAL: "Waiting Approval",
-  APPROVED: "Approved",
-  REJECTED: "Rejected",
-  CANCELLED: "Deal Cancelled",
-};
-
-const newKey = () => `acq-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
-type Dialog =
-  | { kind: "NEW" }
-  | { kind: "PAY"; row: AcquisitionRowView }
-  | { kind: "CORRECT"; row: AcquisitionRowView; entry: EntryView }
-  | { kind: "DECIDE"; row: AcquisitionRowView; approve: boolean }
-  | { kind: "CANCEL"; row: AcquisitionRowView }
-  | { kind: "COMMISSION"; row: AcquisitionRowView };
+/** New Buyback is the list's own dialog; every other one is shared. */
+type ListDialog = Dialog | { kind: "NEW" };
 
 export default function AcquisitionsClient({
   role,
@@ -127,10 +61,9 @@ export default function AcquisitionsClient({
   resaleGroups: Array<{ id: string; name: string; projectCode: string }>;
 }) {
   const router = useRouter();
-  const [dialog, setDialog] = React.useState<Dialog | null>(null);
+  const [dialog, setDialog] = React.useState<ListDialog | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<{ ok: boolean; text: string } | null>(null);
-  const [open, setOpen] = React.useState<string | null>(null);
 
   async function run(action: () => Promise<ActionResult>) {
     setBusy(true);
@@ -191,10 +124,16 @@ export default function AcquisitionsClient({
                 {rows.map((row) => (
                   <React.Fragment key={row.id}>
                     <tr className="h-14 border-t border-border/40">
+                      {/* The deal itself is the link to the deal. Everything
+                          that used to unfold under this row now has a page. */}
                       <td className="px-4 py-3">
-                        <div className="font-medium text-foreground">
-                          {row.type === "BUYBACK" ? "Buyback" : "Purchase for Resale"}
-                        </div>
+                        <Link
+                          href={`/acquisitions/${row.id}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {TYPE_LABEL[row.type] ?? row.type}
+                        </Link>
+                        <div className="text-muted-foreground">{row.acquisitionNo}</div>
                       </td>
                       <td className="px-4 py-3">
                         {row.project}
@@ -240,32 +179,27 @@ export default function AcquisitionsClient({
                           {STATUS_LABEL[row.status] ?? row.status}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-center">
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          onClick={() => setOpen(open === row.id ? null : row.id)}
-                        >
-                          {open === row.id ? "Close" : "Open"}
-                          <ChevronDown
-                            className={`ml-1.5 h-3.5 w-3.5 transition-transform duration-200 ${
-                              open === row.id ? "rotate-180" : ""
-                            }`}
-                          />
-                        </Button>
+                      {/* Payment is the one action taken against a row while
+                          reading a list. Approve, Reject, Cancel and the
+                          commission need the record in front of you, so they
+                          are on the deal's own page. */}
+                      <td className="px-4 py-3">
+                        <div className="flex justify-center gap-1.5">
+                          {permissions.confirmGiven &&
+                          (row.status === "PENDING_APPROVAL" || row.status === "APPROVED") ? (
+                            <Button
+                              className={rowButton}
+                              variant="outline"
+                              onClick={() => setDialog({ kind: "PAY", row })}
+                            >
+                              <Wallet className="mr-1 h-3 w-3" /> Payment
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
-                    {open === row.id && (
-                      <tr className="border-t border-border/40 bg-muted">
-                        <td colSpan={8} className="px-4 py-4">
-                          <Detail
-                            row={row}
-                            permissions={permissions}
-                            onAction={(d) => setDialog(d)}
-                          />
-                        </td>
-                      </tr>
-                    )}
                   </React.Fragment>
                 ))}
               </tbody>
@@ -285,363 +219,14 @@ export default function AcquisitionsClient({
         />
       )}
 
-      {dialog?.kind === "PAY" && (
-        <FormDialog
-          title="Confirm Payment Given"
-          subtitle={`${dialog.row.acquisitionNo} · ${dialog.row.property}`}
-          consequence="Percentage only, allocated to the oldest unpaid instalment first. The reference must be unique across Payment Received and Payment Given."
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(f) =>
-            run(() =>
-              confirmPaymentGivenAction(
-                {
-                  acquisitionId: dialog.row.id,
-                  percent: String(f.get("percent")),
-                  paidOn: String(f.get("paidOn")),
-                  reference: String(f.get("reference")),
-                  remark: String(f.get("remark") ?? ""),
-                },
-                newKey()
-              )
-            )
-          }
-        >
-          {/* Payment Given is incremental like Payment Received, so the
-              ceiling is what is left of the deal, not a flat 100. Same
-              clamped field, its own number — the two ledgers are never
-              totalled together (prd-complete §1). */}
-          <Field
-            label={`Payment Given This Time (%) — ${remainingPercent(dialog.row.paymentGivenPercent)}% remaining`}
-          >
-            <PaymentPercentInput max={remainingPercent(dialog.row.paymentGivenPercent)} />
-          </Field>
-          <Field label="Payment Date">
-            <Input type="date" name="paidOn" required defaultValue={istDay(new Date())} />
-          </Field>
-          <Field label="Payment Reference No.">
-            <Input name="reference" required />
-          </Field>
-          <Field label="Remark">
-            <Input name="remark" />
-          </Field>
-        </FormDialog>
-      )}
-
-      {dialog?.kind === "CORRECT" && (
-        <FormDialog
-          title="Correct Payment Given"
-          subtitle={`${dialog.row.acquisitionNo} · entry ${dialog.entry.percent}% · ${dialog.entry.reference}`}
-          consequence="The original entry is superseded, never deleted. Falling below 100% shows Payment Pending again and steps the Buying Commission back; below 20% the property stops being sellable."
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(f) =>
-            run(() =>
-              correctPaymentGivenAction(
-                {
-                  entryId: dialog.entry.id,
-                  percent: String(f.get("percent")),
-                  paidOn: String(f.get("paidOn")),
-                  reference: String(f.get("reference")),
-                  reason: String(f.get("reason")),
-                },
-                newKey()
-              )
-            )
-          }
-        >
-          {/* The entry being corrected is taken off the total first, exactly
-              as correctPaymentGiven does server-side, so its own percentage is
-              not counted against itself. */}
-          <Field
-            label={`Corrected percentage (%) — up to ${remainingPercent(
-              Number(dialog.row.paymentGivenPercent) - Number(dialog.entry.percent)
-            )}%`}
-          >
-            <PaymentPercentInput
-              max={remainingPercent(
-                Number(dialog.row.paymentGivenPercent) - Number(dialog.entry.percent)
-              )}
-              defaultValue={dialog.entry.percent}
-            />
-          </Field>
-          <Field label="Payment Date">
-            <Input type="date" name="paidOn" required defaultValue={istDay(dialog.entry.paidOn)} />
-          </Field>
-          <Field label="Replacement Payment Reference No.">
-            <Input name="reference" required />
-          </Field>
-          <Field label="Reason — compulsory">
-            <Input name="reason" required minLength={3} />
-          </Field>
-        </FormDialog>
-      )}
-
-      {dialog?.kind === "DECIDE" && (
-        <FormDialog
-          title={dialog.approve ? "Approve deal" : "Reject deal"}
-          subtitle={`${dialog.row.acquisitionNo} · ${dialog.row.property}`}
-          consequence={
-            dialog.approve
-              ? "The property enters normal inventory as Available + RESALE. A Buyback closes the old Booking as Buyback Completed and removes the previous Customer from the allocation."
-              : "The prior state is restored exactly and the Booking is released from Buyback Pending."
-          }
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(f) =>
-            run(() =>
-              decideAcquisitionAction(dialog.row.id, dialog.approve, String(f.get("note")), newKey())
-            )
-          }
-        >
-          <Field label="Remark — compulsory">
-            <Input name="note" required minLength={3} />
-          </Field>
-        </FormDialog>
-      )}
-
-      {dialog?.kind === "CANCEL" && (
-        <FormDialog
-          title="Cancel deal"
-          subtitle={`${dialog.row.acquisitionNo} · ${dialog.row.property}`}
-          consequence="The property becomes Not Available — Deal Cancelled and must not remain sellable. Payment Given history stays, and Accounts adjustment work is created where payment already happened."
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(f) =>
-            run(() => cancelAcquisitionAction(dialog.row.id, String(f.get("reason")), newKey()))
-          }
-        >
-          <Field label="Reason — compulsory">
-            <Input name="reason" required minLength={3} />
-          </Field>
-        </FormDialog>
-      )}
-
-      {dialog?.kind === "COMMISSION" && (
-        <FormDialog
-          title="Record Buying Commission"
-          subtitle={`${dialog.row.acquisitionNo} · arranged by ${dialog.row.arrangedBy}`}
-          consequence="One beneficiary per deal, outside the 4% sale cap, payable only at 100% Payment Given. The seller cannot be the beneficiary."
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(f) =>
-            run(() =>
-              recordBuyingCommissionAction(
-                {
-                  acquisitionId: dialog.row.id,
-                  beneficiaryPersonId: String(f.get("beneficiaryPersonId")),
-                  percent: String(f.get("percent")),
-                },
-                newKey()
-              )
-            )
-          }
-        >
-          <Field label="Beneficiary">
-            <PersonPicker
-              name="beneficiaryPersonId"
-              required
-              options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
-            />
-          </Field>
-          <Field label="Percentage (%)">
-            <Input name="percent" required inputMode="decimal" />
-          </Field>
-        </FormDialog>
-      )}
+      <AcquisitionDialogs
+        dialog={dialog && dialog.kind !== "NEW" ? dialog : null}
+        people={people}
+        busy={busy}
+        run={run}
+        onClose={() => setDialog(null)}
+      />
     </AppShell>
-  );
-}
-
-/* --------------------------------------------------------------- detail */
-
-function Detail({
-  row,
-  permissions,
-  onAction,
-}: {
-  row: AcquisitionRowView;
-  permissions: Permissions;
-  onAction: (d: Dialog) => void;
-}) {
-  const live = row.status === "PENDING_APPROVAL" || row.status === "APPROVED";
-
-  return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Payment Given schedule
-        </h3>
-        {row.instalments.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No live schedule.</p>
-        ) : (
-          <ul className="space-y-1 text-xs">
-            {row.instalments.map((i) => (
-              <li key={i.seq} className="flex justify-between gap-3">
-                <span>
-                  Instalment {i.seq} · due {formatIst(i.dueDate)}
-                </span>
-                <span className="tabular-nums">
-                  {i.received}% of {i.scheduled}%
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <h3 className="pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Payment Given entries
-        </h3>
-        {row.entries.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Nothing confirmed yet.</p>
-        ) : (
-          <ul className="space-y-1 text-xs">
-            {row.entries.map((entry) => (
-              <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2">
-                <span>
-                  {entry.percent}% · {entry.reference} · {formatIst(entry.paidOn)}
-                  {entry.status === "SUPERSEDED" && (
-                    <Badge variant="outline" className="ml-2">
-                      Superseded
-                    </Badge>
-                  )}
-                </span>
-                {entry.status === "CONFIRMED" && permissions.correctGiven && live && (
-                  <Button size="sm" variant="ghost" onClick={() => onAction({ kind: "CORRECT", row, entry })}>
-                    Correct
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Record
-        </h3>
-        <dl className="space-y-1 text-xs">
-          <Row label="Purchase Date" value={formatIst(row.purchaseDate)} />
-          <Row label="Raised by" value={row.submittedByRef} />
-          <Row label="Remark" value={row.remark} />
-          {row.sourceBooking && <Row label="Old Booking" value={row.sourceBooking} />}
-          {row.decisionNote && <Row label="Decision" value={row.decisionNote} />}
-          {row.closedReason && <Row label="Closed" value={row.closedReason} />}
-        </dl>
-
-        <h3 className="pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Buying Commission
-        </h3>
-        {row.commission ? (
-          <p className="text-xs">
-            <PersonLink
-              personId={row.commission.beneficiaryPersonId}
-              name={row.commission.beneficiary}
-            />{" "}
-            · {row.commission.percent}% ·{" "}
-            <Badge variant="outline">{row.commission.eligibility}</Badge>{" "}
-            <Badge variant="outline">{row.commission.payment}</Badge>
-          </p>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            {row.arrangedByType === "THREE_PERCENT_CLUB"
-              ? "A 3% Club deal earns no Buying Commission."
-              : "Not recorded yet."}
-          </p>
-        )}
-
-        <div className="flex flex-wrap gap-2 pt-2">
-          {live && permissions.confirmGiven && (
-            <Button size="sm" variant="outline" onClick={() => onAction({ kind: "PAY", row })}>
-              <Wallet className="mr-2 h-3.5 w-3.5" /> Confirm Payment Given
-            </Button>
-          )}
-          {row.status === "PENDING_APPROVAL" && permissions.decide && (
-            <>
-              <Button size="sm" onClick={() => onAction({ kind: "DECIDE", row, approve: true })}>
-                Approve
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onAction({ kind: "DECIDE", row, approve: false })}
-              >
-                Reject
-              </Button>
-            </>
-          )}
-          {live &&
-            permissions.recordCommission &&
-            !row.commission &&
-            row.arrangedByType !== "THREE_PERCENT_CLUB" && (
-              <Button size="sm" variant="ghost" onClick={() => onAction({ kind: "COMMISSION", row })}>
-                <Coins className="mr-2 h-3.5 w-3.5" /> Record Buying Commission
-              </Button>
-            )}
-          {live && permissions.cancel && (
-            <Button size="sm" variant="ghost" onClick={() => onAction({ kind: "CANCEL", row })}>
-              <Ban className="mr-2 h-3.5 w-3.5" /> Cancel deal
-            </Button>
-          )}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-3">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="text-right">{value}</dd>
-    </div>
-  );
-}
-
-/* --------------------------------------------------------------- dialogs */
-
-function FormDialog({
-  title,
-  subtitle,
-  consequence,
-  busy,
-  children,
-  onClose,
-  onSubmit,
-}: {
-  title: string;
-  subtitle: string;
-  consequence: string;
-  busy: boolean;
-  children: React.ReactNode;
-  onClose: () => void;
-  onSubmit: (form: FormData) => void;
-}) {
-  return (
-    <Modal title={title} onClose={onClose}>
-      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
-        <p className="font-semibold text-foreground">{subtitle}</p>
-        <p className="mt-1 text-muted-foreground">{consequence}</p>
-      </div>
-      <form
-        className="space-y-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSubmit(new FormData(e.currentTarget));
-        }}
-      >
-        {children}
-        <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" size="sm" onClick={onClose}>
-            Back
-          </Button>
-          <Button type="submit" size="sm" disabled={busy}>
-            {busy ? "Processing…" : "Confirm"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 

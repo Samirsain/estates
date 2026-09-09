@@ -309,7 +309,7 @@ export async function createAcquisition(args: {
         assigneeRole: "ACCOUNTS",
         dueAt: new Date(),
         decision: true,
-        latestResult: "Waiting for at least 20% Payment Given.",
+        latestResult: "Waiting on 20% Payment Given.",
       });
 
       return {
@@ -637,9 +637,10 @@ export async function syncGivenFollowUp(tx: Tx, acquisitionId: string, actorRef:
     title: "Payment Given Follow-up",
     assigneeRole: "ACCOUNTS",
     dueAt: next.dueDate,
-    latestResult: `Instalment ${next.seq}: ${next.scheduledPercent
+    latestResult: `Due ${next.scheduledPercent
       .sub(next.receivedPercent)
-      .toFixed(2)}% still due`,
+      .toFixed(2)
+      .replace(/\.?0+$/, "")}% · Instalment ${next.seq}`,
   });
 }
 

@@ -443,11 +443,12 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
             <p className="text-xs text-muted-foreground">No commission records yet.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[40rem] text-xs">
+              <table className="w-full min-w-[46rem] text-xs">
                 <thead className="border-b border-border/50 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="pb-2">Booking</th>
-                    <th className="pb-2">Project · Plot</th>
+                    <th className="pb-2">Project</th>
+                    <th className="pb-2">Plot</th>
                     <th className="pb-2">Type</th>
                     <th className="w-[5rem] pb-2 pr-6 text-right">%</th>
                     <th className="pb-2">Eligibility</th>
@@ -479,33 +480,29 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
                           </span>
                         )}
                       </td>
+                      {/* Project and Plot are two facts and now two columns:
+                          stacked in one cell they sorted and scanned as a
+                          single string. */}
                       <td className="py-2">
+                        <span className="inline-flex items-center gap-1.5">
+                          <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0">
+                            {c.booking?.project.name ?? c.acquisition?.plot?.project.name ?? "—"}
+                          </span>
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap py-2">
                         {(() => {
                           const plot = c.booking?.plot ?? c.acquisition?.plot ?? null;
-                          const project =
-                            c.booking?.project.name ?? c.acquisition?.plot?.project.name ?? "—";
                           const label = plot
                             ? `${plot.plotType.replaceAll("_", " ")} ${plot.plotNumber}`
                             : (c.acquisition?.propertyNumber ?? "—");
-                          return (
-                            <span className="inline-flex items-center gap-1.5">
-                              <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                              <span className="min-w-0">
-                                <span className="block">{project}</span>
-                                <span className="block text-[11px] text-muted-foreground">
-                                  {plot ? (
-                                    <Link
-                                      href={`/plots/${plot.id}`}
-                                      className="text-primary hover:underline"
-                                    >
-                                      {label}
-                                    </Link>
-                                  ) : (
-                                    label
-                                  )}
-                                </span>
-                              </span>
-                            </span>
+                          return plot ? (
+                            <Link href={`/plots/${plot.id}`} className="text-primary hover:underline">
+                              {label}
+                            </Link>
+                          ) : (
+                            label
                           );
                         })()}
                       </td>

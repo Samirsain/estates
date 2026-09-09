@@ -489,10 +489,11 @@ export default function PortalClient({ data }: { data: PortalData }) {
               <p className="text-muted-foreground">No commission has been generated for you yet.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[32rem] text-xs">
+                <table className="w-full min-w-[38rem] text-xs">
                   <thead className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border/50">
                     <tr>
-                      <th className="pb-2">Project · Plot</th>
+                      <th className="pb-2">Project</th>
+                      <th className="pb-2">Plot</th>
                       <th className="pb-2">Type</th>
                       <th className="pb-2 text-right">%</th>
                       <th className="pb-2 text-right">Milestone</th>
@@ -502,9 +503,9 @@ export default function PortalClient({ data }: { data: PortalData }) {
                   <tbody className="divide-y divide-border/50">
                     {data.commissions.map((c, index) => (
                       <tr key={index}>
-                        <td className="py-2.5">
-                          <span className="font-semibold text-foreground">{c.project}</span>
-                          <span className="block text-[11px] font-medium text-primary">{c.plot}</span>
+                        <td className="py-2.5 font-semibold text-foreground">{c.project}</td>
+                        <td className="whitespace-nowrap py-2.5 font-medium text-primary">
+                          {c.plot}
                         </td>
                         <td className="py-2.5 text-foreground">{COMMISSION_LABEL[c.type] ?? c.type}</td>
                         <td className="py-2.5 text-right tabular-nums font-semibold text-primary">{c.percent}</td>

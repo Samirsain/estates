@@ -454,7 +454,7 @@ export async function setMemberStatus(args: {
             assigneeRole: "CRM",
             dueAt: new Date(),
             urgent: true,
-            latestResult: `${pending} Pending Hold Request(s) need a CRM decision.`,
+            latestResult: `${pending} hold request${pending === 1 ? "" : "s"} waiting on CRM.`,
           });
         }
       } else {

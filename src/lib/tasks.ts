@@ -43,6 +43,12 @@ export type TaskSubject = {
   partyName: string | null;
   /** BKG-000002, ENQ-000045, ACQ-000004 — the record's own permanent reference. */
   reference: string | null;
+  /**
+   * The Booking this record is reviewed on, where that is not the record
+   * itself. A Commission is approved on its Booking's screen and the task
+   * carries the commission's own id, so the link needs this to go anywhere.
+   */
+  bookingId?: string | null;
 };
 
 export type Task = {
@@ -304,6 +310,46 @@ const INTERNAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 export function recordReference(record: { id: string; name: string }): string | null {
   if (!record.id || record.id.startsWith("UNLINKED:") || INTERNAL_ID.test(record.id)) return null;
   return record.id;
+}
+
+/**
+ * Where a task's record is opened, or nothing.
+ *
+ * A decision — Approve or Reject — is never taken on the Dashboard row: it is
+ * taken on the record's own review snapshot, which is the only place that has
+ * the numbers being approved. So the row links there instead.
+ *
+ * Only a record the job raised can be linked, because only that one holds a
+ * database id a route can take. A task someone typed against "CUS-3390" holds
+ * the reference they typed, which no route resolves — those get no link.
+ */
+export function recordHref(
+  record: { kind: RecordKind | string; id: string },
+  subject?: TaskSubject | null
+): string | null {
+  // Approved on its Booking, not on itself — and the Booking is only known
+  // once the record has been resolved.
+  if (record.kind === "Commission") {
+    return subject?.bookingId ? `/bookings?booking=${subject.bookingId}` : null;
+  }
+  if (!INTERNAL_ID.test(record.id)) return null;
+  switch (record.kind) {
+    case "Booking":
+    case "Booking Request":
+      // /bookings already knows how to focus one row (bookings/page.tsx).
+      return `/bookings?booking=${record.id}`;
+    case "Plot":
+      return `/plots/${record.id}`;
+    case "Member":
+      return `/members/${record.id}`;
+    case "Customer":
+      return `/customers/${record.id}`;
+    // Acquisitions have no per-record route yet, so the link lands on the list.
+    case "Acquisition":
+      return "/acquisitions";
+    default:
+      return null;
+  }
 }
 
 /**

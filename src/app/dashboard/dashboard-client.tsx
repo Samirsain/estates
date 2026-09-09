@@ -5,20 +5,27 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Clock, Plus, CheckCircle2, Link2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, Plus, CheckCircle2 } from "lucide-react";
 import { addTaskAction, completeTaskAction, reviseTaskAction, type ActionResult } from "./actions";
 import { AppShell } from "@/components/app-shell";
 import { STAFF_ROLES } from "@/lib/security/permissions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Field, Modal } from "@/components/ui/modal";
 import {
   addIstDays,
   emphasis,
   filterTasks,
-  formatDue,
+  formatIst,
+  formatIstDate,
   istDay,
   istInstant,
   sortTasks,
@@ -30,6 +37,7 @@ import {
   type StaffRole,
   type Task,
   type TaskView,
+  recordHref,
   recordReference,
 } from "@/lib/tasks";
 
@@ -90,6 +98,7 @@ export default function DashboardClient({
   const [showAllAssignees, setShowAllAssignees] = React.useState(seesAllWork);
   const [range, setRange] = React.useState<DateRange | undefined>();
   const [revising, setRevising] = React.useState<Task | null>(null);
+  const [detailing, setDetailing] = React.useState<Task | null>(null);
   const [adding, setAdding] = React.useState(false);
   const [blocked, setBlocked] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -251,11 +260,26 @@ export default function DashboardClient({
           // A wide table on a narrow screen scrolls inside its own card rather
           // than taking the page sideways with it.
           <Card className="overflow-x-auto">
-            <table className="w-full min-w-[62rem] text-xs">
+            {/* Fixed layout: auto layout let one long project name or task
+                line re-cut every column under it, so the same field sat at a
+                different x in every row. Widths are set once, here. */}
+            <table className="w-full min-w-[68rem] table-fixed text-xs">
+              <colgroup>
+                <col className="w-[12%]" />
+                <col className="w-[6%]" />
+                <col className="w-[11%]" />
+                <col className="w-[10%]" />
+                <col className="w-[12%]" />
+                <col className="w-[20%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+                <col className="w-[9%]" />
+              </colgroup>
               <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                 <tr className="border-b border-border">
                   <th className="py-2 pl-3 pr-2 font-semibold">Project</th>
                   <th className="px-2 py-2 font-semibold">Plot</th>
+                  <th className="px-2 py-2 font-semibold">Booking No.</th>
                   <th className="px-2 py-2 font-semibold">Member / Customer</th>
                   <th className="px-2 py-2 font-semibold">Name</th>
                   <th className="px-2 py-2 font-semibold">Task</th>
@@ -267,18 +291,11 @@ export default function DashboardClient({
               <tbody>
                 {visible.map((task) => {
                   const state = EMPHASIS_STYLE[emphasis(task, now)];
-                  // Where the record resolved, its own reference is the one
-                  // thing the columns do not already carry. Where it did not —
-                  // a manual task typed against free text — the stored line is
-                  // all there is, so it stands in.
-                  const detail = [
-                    task.subject
-                      ? task.subject.reference
-                      : (recordReference(task.record) ?? task.record.name),
-                    task.latestResult,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ");
+                  // The record's own reference — BKG-000002, ENQ-000045 — is a
+                  // column of its own, and the one cell that opens the task.
+                  const reference =
+                    task.subject?.reference ?? recordReference(task.record) ?? task.record.name;
+                  const href = recordHref(task.record, task.subject);
 
                   return (
                     <tr
@@ -286,75 +303,127 @@ export default function DashboardClient({
                       className="border-b border-border/60 align-top last:border-b-0 hover:bg-secondary/50"
                     >
                       <td className={`py-2 pl-3 pr-2 ${state.row}`}>
-                        {task.subject?.project ?? "—"}
+                        <span className="block truncate" title={task.subject?.project ?? undefined}>
+                          {task.subject?.project ?? "—"}
+                        </span>
                       </td>
-                      <td className="px-2 py-2">{task.subject?.plot ?? "—"}</td>
-                      <td className="px-2 py-2 text-primary">{task.subject?.partyRef ?? "—"}</td>
-                      <td className="px-2 py-2">{task.subject?.partyName ?? "—"}</td>
+                      {/* A plot number is one token — it never wraps. */}
                       <td className="px-2 py-2">
-                        <span className="font-medium">{task.title}</span>
-                        <span className="ml-1.5 text-muted-foreground">({task.record.kind})</span>
-                        {detail && (
-                          <span className="block text-[11px] text-muted-foreground">{detail}</span>
+                        <span className="block truncate" title={task.subject?.plot ?? undefined}>
+                          {task.subject?.plot ?? "—"}
+                        </span>
+                      </td>
+                      {/* The reference is the row's handle: it opens the whole
+                          task, which no column has room to print. */}
+                      <td className="px-2 py-2">
+                        <button
+                          type="button"
+                          className="block w-full truncate text-left font-medium text-primary underline-offset-2 hover:underline"
+                          title={`${reference} — open task details`}
+                          onClick={() => setDetailing(task)}
+                        >
+                          {reference}
+                        </button>
+                      </td>
+                      <td className="px-2 py-2 text-primary">
+                        <span className="block truncate" title={task.subject?.partyRef ?? undefined}>
+                          {task.subject?.partyRef ?? "—"}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2">
+                        <span className="block truncate" title={task.subject?.partyName ?? undefined}>
+                          {task.subject?.partyName ?? "—"}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2">
+                        {/* The one column that wraps. Everything else on the
+                            row is a reference or a name and reads at a glance
+                            cut short; the task itself does not, so it takes
+                            the lines it needs rather than an ellipsis. */}
+                        <span className="block break-words font-medium">{task.title}</span>
+                        {task.latestResult && (
+                          <span className="block break-words text-[11px] text-muted-foreground">
+                            {task.latestResult}
+                          </span>
                         )}
                       </td>
+                      {/* The date alone — the clock time is not what anyone
+                          scans this column for — and under it whether that date
+                          has already gone by. */}
                       <td className="whitespace-nowrap px-2 py-2 text-muted-foreground">
-                        <span className="flex items-center gap-1.5">
-                          {state.label && (
+                        <span className="block text-foreground">{formatIstDate(task.dueAt)}</span>
+                        {state.label && (
+                          <span className="mt-1 block">
                             <Badge variant={state.label === "Overdue" ? "destructive" : "warning"}>
                               {state.label}
                             </Badge>
-                          )}
-                          <span>
-                            <Clock className="mr-1 inline h-3 w-3" />
-                            {formatDue(task.dueAt, now)}
                           </span>
-                        </span>
+                        )}
                         {task.revisions > 0 && (
                           <span className="block text-[11px]">Revised ×{task.revisions}</span>
                         )}
                       </td>
+                      {/* Name on the line, role under it: the two together
+                          overflowed a column this narrow on one line. */}
                       <td className="px-2 py-2 text-muted-foreground">
-                        {task.assigneeName} ({task.assigneeRole})
+                        <span className="block truncate" title={task.assigneeName}>
+                          {task.assigneeName}
+                        </span>
+                        <span className="block truncate text-[11px]">{task.assigneeRole}</span>
                       </td>
                       <td className="py-2 pl-2 pr-3">
-                        <span className="flex items-center justify-end gap-1.5">
+                        <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                           {task.status === "COMPLETED" ? (
                             <span className="flex items-center gap-1 whitespace-nowrap text-emerald-700">
                               <CheckCircle2 className="h-4 w-4" /> Completed
                             </span>
                           ) : task.decision ? (
+                            // Approve / Reject is taken on the record's review
+                            // snapshot, not here — so this opens that record.
+                            // It sat disabled, which read as a broken button
+                            // rather than as a pointer to where the work is.
                             <Button
                               size="xs"
                               variant="outline"
                               className={taskButton}
-                              disabled
-                              title="Approve / Reject happens on the record's review snapshot."
+                              disabled={!href}
+                              title={
+                                href
+                                  ? "Approve / Reject happens on the record's review snapshot."
+                                  : "This record has no screen to open — find it from its own list."
+                              }
+                              onClick={href ? () => router.push(href) : undefined}
                             >
                               Open Review
                             </Button>
                           ) : (
-                            <>
-                              <Button
-                                size="xs"
-                                variant="outline"
-                                className={taskButton}
-                                disabled={readOnly || busy}
-                                title={readOnly ? "MIS is read-only." : undefined}
-                                onClick={() => setRevising(task)}
-                              >
-                                Revise
-                              </Button>
-                              <Button
-                                size="xs"
-                                className={taskButton}
-                                disabled={readOnly || busy}
-                                title={readOnly ? "MIS is read-only." : undefined}
-                                onClick={() => run(() => completeTaskAction(task.id, newKey()))}
-                              >
-                                Done
-                              </Button>
-                            </>
+                            // Two buttons per row was two buttons wide on every
+                            // row, for one click on a handful of them. One
+                            // named trigger, and the choice inside it.
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  className={taskButton}
+                                  disabled={readOnly || busy}
+                                  title={readOnly ? "MIS is read-only." : undefined}
+                                >
+                                  Action
+                                  <ChevronDown className="ml-1 h-3 w-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onSelect={() => run(() => completeTaskAction(task.id, newKey()))}
+                                >
+                                  Done
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => setRevising(task)}>
+                                  Revise
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           )}
                         </span>
                       </td>
@@ -366,6 +435,8 @@ export default function DashboardClient({
           </Card>
         )}
       </div>
+
+      {detailing && <TaskDetailsDialog task={detailing} onClose={() => setDetailing(null)} />}
 
       {revising && (
         <ReviseDialog
@@ -397,6 +468,51 @@ export default function DashboardClient({
 
 /** Native <dialog>: focus trap, Esc-to-close and backdrop for free. */
 
+/**
+ * Everything the row had to leave out.
+ *
+ * The table prints the eight fields worth scanning across a hundred rows. The
+ * rest of a task — its purpose, what kind of record it hangs off, whether it
+ * recurs, how often it has been pushed, the clock time it is actually due —
+ * lives here, one click off the reference.
+ */
+function TaskDetailsDialog({ task, onClose }: { task: Task; onClose: () => void }) {
+  const s = task.subject;
+  const rows: [string, string][] = [
+    ["Task", task.title],
+    ["Purpose", task.purpose],
+    ["Record", `${task.record.kind} · ${recordReference(task.record) ?? task.record.name}`],
+    ["Reference", s?.reference ?? "—"],
+    ["Project", s?.project ?? "—"],
+    ["Plot", s?.plot ?? "—"],
+    ["Member / Customer", s?.partyRef ?? "—"],
+    ["Name", s?.partyName ?? "—"],
+    ["Due", formatIst(task.dueAt)],
+    ["Status", task.status === "COMPLETED" ? "Completed" : task.urgent ? "Pending · Urgent" : "Pending"],
+    ["Assignee", `${task.assigneeName} (${task.assigneeRole})`],
+    ["Recurrence", task.recurrence ?? "NONE"],
+    ["Revised", String(task.revisions)],
+    ["Latest result", task.latestResult ?? "—"],
+  ];
+
+  return (
+    <Modal title={task.title} description={task.record.name} onClose={onClose}>
+      <dl className="divide-y divide-border/60 text-xs">
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid grid-cols-[10rem_1fr] gap-3 py-2">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="break-words font-medium">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="flex justify-end">
+        <Button size="sm" variant="outline" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </Modal>
+  );
+}
 
 function ReviseDialog({
   task,

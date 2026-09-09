@@ -169,17 +169,22 @@ export function validateReceivedFrom(input: {
   receivedFrom: LandInquiryReceivedFrom;
   sourcePersonId: string | null;
   anotherDealerMobile: string | null;
+  anotherDealerName?: string | null;
 }): string | null {
   const person = input.sourcePersonId?.trim() || null;
   const mobile = input.anotherDealerMobile?.trim() || null;
+  const dealerName = input.anotherDealerName?.trim() || null;
 
   if (input.receivedFrom === "ANOTHER_DEALER") {
-    if (person) return "Another Dealer records a mobile number only, never a Person on file.";
+    if (person) return "Another Dealer records a name and mobile only, never a Person on file.";
+    // A number with nobody attached is what the follow-up call was missing.
+    if (!dealerName) return "Enter the dealer's name.";
     if (!mobile) return "Enter the dealer's mobile number.";
     if (!isValidMobile(mobile)) return "Enter a valid 10-digit Indian mobile number.";
     return null;
   }
   if (mobile) return "A dealer mobile number applies only to an Another Dealer inquiry.";
+  if (dealerName) return "A dealer name applies only to an Another Dealer inquiry.";
   if (input.receivedFrom === "THREE_PERCENT_CLUB") {
     return person ? "A 3% Club inquiry is the company's own, so it names no source Person." : null;
   }
@@ -380,6 +385,7 @@ export type LandInquiryInput = {
   receivedFrom: LandInquiryReceivedFrom;
   sourcePersonId: string | null;
   anotherDealerMobile: string | null;
+  anotherDealerName: string | null;
   assignedToId: string | null;
 
   district: string;
@@ -394,13 +400,10 @@ export type LandInquiryInput = {
   areaSourceUnit: LandMetricSourceUnit | null;
   areaSourceValue: string;
 
-  dimensions: string;
   frontageValue: string;
   frontageUnit: LinearUnit | null;
   roadWidthValue: string;
   roadWidthUnit: LinearUnit | null;
-  shape: string;
-  boundaries: string;
 
   landCategory: LandCategory | null;
   currentLandUse: string;
@@ -451,6 +454,7 @@ export const emptyInput = (): LandInquiryInput => ({
   receivedFrom: "MEMBER",
   sourcePersonId: null,
   anotherDealerMobile: null,
+  anotherDealerName: null,
   assignedToId: null,
   district: "",
   tehsil: "",
@@ -461,13 +465,10 @@ export const emptyInput = (): LandInquiryInput => ({
   areaBiswa: "",
   areaSourceUnit: "SQ_M",
   areaSourceValue: "",
-  dimensions: "",
   frontageValue: "",
   frontageUnit: "FT",
   roadWidthValue: "",
   roadWidthUnit: "FT",
-  shape: "",
-  boundaries: "",
   landCategory: null,
   currentLandUse: "",
   masterPlanZonalUse: "",

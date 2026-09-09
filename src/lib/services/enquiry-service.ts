@@ -2,7 +2,7 @@
 
 import type { EnquirySource, FollowUpOutcome } from "@prisma/client";
 import { db } from "@/lib/db";
-import { validateSource } from "@/lib/domain/enquiry";
+import { FOLLOW_UP_OUTCOME_LABEL, validateSource } from "@/lib/domain/enquiry";
 import { blocked, nextReference, runCommand, type Tx } from "./command";
 import { completeTask, ensureTask, reviseTask } from "./task-service";
 
@@ -234,7 +234,7 @@ export async function recordFollowUp(args: {
           task.id,
           args.actorRef,
           args.nextAt,
-          args.outcome.replaceAll("_", " ").toLowerCase(),
+          FOLLOW_UP_OUTCOME_LABEL[args.outcome] ?? args.outcome,
           args.remark
         );
       }
