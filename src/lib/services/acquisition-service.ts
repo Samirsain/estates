@@ -72,9 +72,9 @@ async function acquisitionLabel(tx: Tx, acquisitionId: string): Promise<string> 
     include: { plot: { include: { project: true } } },
   });
   if (acquisition.plot) {
-    return `${acquisition.acquisitionNo} · ${acquisition.plot.project.name} ${acquisition.plot.plotNumber}`;
+    return `${acquisition.plot.project.name} ${acquisition.plot.plotNumber}`;
   }
-  return `${acquisition.acquisitionNo} · ${acquisition.propertyName} ${acquisition.propertyNumber}`;
+  return `${acquisition.propertyName} ${acquisition.propertyNumber}`;
 }
 
 /* ------------------------------------------------------------ create */
@@ -187,7 +187,7 @@ export async function createAcquisition(args: {
           where: { plotId, status: { in: ["PENDING_APPROVAL", "APPROVED"] } },
         });
         if (existing) {
-          blocked(`This Plot already has an active acquisition (${existing.acquisitionNo}).`);
+          blocked("This Plot already has an active Buyback or Resale.");
         }
 
         // prd-complete §17.9 on submission — the Plot is blocked, Buyback Under
@@ -232,9 +232,7 @@ export async function createAcquisition(args: {
         };
         for (const existing of candidates) {
           if (existing.duplicateKey === duplicateKey) {
-            blocked(
-              `An active acquisition already exists for this property (${existing.acquisitionNo}).`
-            );
+            blocked("An active Buyback or Resale already exists for this property.");
           }
           const reasons = likelyDuplicateReasons(candidate, {
             propertyName: existing.propertyName ?? "",
@@ -244,7 +242,7 @@ export async function createAcquisition(args: {
             areaSqFt: existing.areaSqFt?.toString() ?? null,
           });
           if (reasons.length >= 2) {
-            duplicateWarnings.push(`${existing.acquisitionNo}: ${reasons.join(", ")}`);
+            duplicateWarnings.push(`${existing.propertyName ?? "an existing deal"}: ${reasons.join(", ")}`);
           }
         }
         if (duplicateWarnings.length > 0 && !args.acknowledgeDuplicate) {
@@ -809,7 +807,7 @@ export async function decideAcquisition(args: {
             status: "BUYBACK_COMPLETED",
             activeProcess: "NONE",
             closedAt: new Date(),
-            closeReason: `Buyback ${acquisition.acquisitionNo} approved — ${args.note}`,
+            closeReason: `Buyback approved — ${args.note}`,
           },
         });
         // AC-05 — prd-complete §14.12 treats a Buyback differently from a plain
@@ -817,7 +815,7 @@ export async function decideAcquisition(args: {
         await cancelCommissionForBooking(tx, acquisition.sourceBooking.id, args.actorRef, {
           legallyCompleted,
           unwind: "BUYBACK",
-          reason: `Buyback ${acquisition.acquisitionNo} approved`,
+          reason: "Buyback approved",
         });
         // CR-002 — an Approved Buyback is the alternative milestone that makes
         // the Royalty Linked Member of that first purchase final, without
@@ -828,7 +826,7 @@ export async function decideAcquisition(args: {
           "Booking",
           acquisition.sourceBooking.id,
           args.actorRef,
-          `Buyback ${acquisition.acquisitionNo} approved.`
+          "Buyback approved."
         );
         await tx.bookingEvent.create({
           data: {
@@ -871,7 +869,7 @@ export async function decideAcquisition(args: {
             data: {
               reopenedAt: new Date(),
               reopenedByRef: args.actorRef,
-              reopenReason: `Buyback ${acquisition.acquisitionNo} approved`,
+              reopenReason: "Buyback approved",
             },
           });
         }

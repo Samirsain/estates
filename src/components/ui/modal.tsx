@@ -5,6 +5,7 @@
 // come from the platform rather than from a dependency (DESIGN §18).
 
 import React from "react";
+import { NO_STEPPER } from "./input";
 
 export function Modal({
   title,
@@ -12,6 +13,7 @@ export function Modal({
   onClose,
   children,
   wide,
+  width,
   centerTitle,
 }: {
   title: string;
@@ -20,6 +22,8 @@ export function Modal({
   children: React.ReactNode;
   /** Wide is for grids and side-by-side comparisons. */
   wide?: boolean;
+  /** A width class, where a sheet sits between the two standard sizes. */
+  width?: string;
   /** A form that reads top to bottom centres its heading over the column. */
   centerTitle?: boolean;
 }) {
@@ -31,14 +35,16 @@ export function Modal({
       ref={ref}
       onClose={onClose}
       className={`${
-        wide ? "w-[min(72rem,96vw)]" : "w-[min(40rem,94vw)]"
+        width ?? (wide ? "w-[min(72rem,96vw)]" : "w-[min(40rem,94vw)]")
       } rounded-[20px] border border-border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/40 backdrop:backdrop-blur-xs`}
     >
       <div className="space-y-3.5 p-5">
-        <div className={centerTitle ? "text-center" : undefined}>
-          <h2 className="text-base font-semibold">{title}</h2>
-          {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
-        </div>
+        {title && (
+          <div className={centerTitle ? "text-center" : undefined}>
+            <h2 className="text-base font-semibold">{title}</h2>
+            {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+          </div>
+        )}
         {children}
       </div>
     </dialog>
@@ -54,6 +60,10 @@ export function Field({ label, children }: { label: string; children: React.Reac
   );
 }
 
-/** Shared input styling for the plain selects and number fields in forms. */
+/**
+ * Shared input styling for the plain selects and number fields in forms. The
+ * stepper arrows are off for the same reason they are off in `Input`: a figure
+ * on these forms is typed, never nudged by a stray click.
+ */
 export const inputClass =
-  "h-9 w-full rounded-lg border border-input bg-card px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+  `h-9 w-full rounded-lg border border-input bg-card px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${NO_STEPPER}`;

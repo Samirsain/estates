@@ -163,6 +163,8 @@ assert.ok(!canViewField("MEMBER" as Role, "BUYER_IDENTITY"), "portal never expos
 assert.ok(!canViewField("MEMBER" as Role, "AADHAAR_FULL"));
 assert.ok(canViewField("ACCOUNTS", "BANK_FULL"));
 assert.ok(!canViewField("CRM", "BANK_FULL"));
+assert.ok(canViewField("MD", "MOBILE_FULL") && canViewField("ADMIN", "MOBILE_FULL"));
+assert.ok(!canViewField("CRM", "MOBILE_FULL"), "a contact number stays masked below MD/Admin");
 
 assert.throws(() => assertDifferentActor("STF-1", "STF-1"), /different staff accounts/);
 assert.doesNotThrow(() => assertDifferentActor("STF-1", "STF-2"));

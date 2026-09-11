@@ -89,8 +89,6 @@ export default function AcquisitionDetailClient({
                 {TYPE_LABEL[row.type] ?? row.type}
               </h1>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <span>{row.acquisitionNo}</span>
-                <span>·</span>
                 <span>{row.property}</span>
                 <Badge
                   variant={
@@ -157,7 +155,6 @@ export default function AcquisitionDetailClient({
         <div className="grid gap-4 md:grid-cols-2">
           <Section title="Record">
             <Row label="Deal" value={TYPE_LABEL[row.type] ?? row.type} />
-            <Row label="Reference" value={row.acquisitionNo} />
             <Row label="Project" value={row.project} />
             <Row label="Plot No." value={row.plotNumber} />
             {row.plotType && (

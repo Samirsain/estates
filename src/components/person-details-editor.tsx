@@ -174,20 +174,20 @@ export function PersonDetailsEditor({
                 router.refresh();
               }}
             >
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Bank
-                </h3>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  {bank
-                    ? `On file: •••• ${bank.accountLastFour}. Saving replaces it — the old account stays in History.`
-                    : "Saved as the account to pay to. A previous one is superseded, never deleted."}
-                </p>
-              </div>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Bank
+              </h3>
 
               <div className="grid gap-3 sm:grid-cols-2">
+                {/* The account on file shows as the placeholder, last four only —
+                    the number itself is never sent to the form. */}
                 <Field label="Account Number">
-                  <Input name="accountNumber" required inputMode="numeric" />
+                  <Input
+                    name="accountNumber"
+                    required
+                    inputMode="numeric"
+                    placeholder={bank ? `\u2022\u2022\u2022\u2022 ${bank.accountLastFour}` : undefined}
+                  />
                 </Field>
                 <Field label="IFSC">
                   <Input

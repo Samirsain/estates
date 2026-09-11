@@ -15,10 +15,12 @@ This is **not** a substitute for the change-control process in
 payment, inventory, identity, permissions or completion, and each one needs a
 Change Request ID, owner and exact approved wording.
 
-Of the two below, **D-01 touches none of those areas** — it is display only.
+Of the two oldest, **D-01 touches none of those areas** — it is display only.
 **D-02 touches identity**, so its change request is required rather than
 optional, and neither may be treated as approved until its owner signature is in
-place.
+place. **D-07 touches commission and is the one open item**: its change request
+(CR-007) is raised and unsigned while the screen it describes is already
+running.
 
 ---
 
@@ -360,3 +362,95 @@ takes the employee's `fullName`, `mobile` and optional `city` instead of a
 `src/app/administration/administration-client.tsx`. `staffCandidatesAction` is
 deleted. The refusal itself is `refuseStaffAccountFor` in
 `src/lib/security/permissions.ts`, checked in `src/lib/security/security.check.ts`.
+
+---
+
+## D-07 · The Plot Rate & Area Calculator works in rupees, and applies CR-017
+
+**Formal record:** [CR-007](./change-requests/CR-007-commission-calculator.md) — approved in
+principle on 10 September 2026 and amended (§2.2, §6) to describe what was
+approved. **Its section 7 signature line is still to be signed.**
+
+**Date:** 10 September 2026
+**Approved by:** Product Owner (verbally, during the build session)
+**Governed area touched:** commission — so [`prd-corrections.md`](./prd-corrections.md) §28 applies
+and the CR-007 signature is what makes it approved
+
+### What exists (D-07)
+
+`/calculator` — the Plot Rate & Area Calculator. A Project and Plot are chosen,
+a rate per Sq. Ft. or Sq. Yd. and an Authorised Discount are typed, and the
+screen shows:
+
+- the Plot as it stands — Status, Size, Area, Location, PLC percentage;
+- the **Commissionable Sale Value**, worked line by line;
+- what each of the four commissions would be, in percent **and in rupees**,
+  with the engine's own eligibility verdict beside it.
+
+Since 10 September 2026 that value follows CR-017 exactly:
+
+> **Commissionable Sale Value = (Base Property Value + Applicable PLC Value) − Authorised Discount**
+
+Base is area × rate, the PLC percentage is applied to the base as a sum, and the
+discount — a percentage or a figure — comes off the two together. Every
+commission percentage is then a share of that value, not of the base.
+`mock-data-v2.md` §24's own worked example (50,00,000 + 2,00,000 − 1,00,000 =
+51,00,000) is an assertion in `domain.check.ts`.
+
+### Why it is a deviation (D-07)
+
+The approved documents exclude both the screen and the arithmetic, by name:
+
+| Clause | Wording |
+| --- | --- |
+| `prd-complete.md` §2, §27, §30 | "Standalone CRM calculator" — out of scope; "Calculator -> remove"; excluded, "a vendor must not add them without a later approved change request" |
+| `prd-corrections.md` §26 | The same exclusions "must not be added without a future approved change request" |
+| `architecture.md` §1 | "A standalone quotation calculator" — what this system is not; "All rupee values and statutory accounting remain outside the CRM" |
+| `design.md` §1 | "Do not reintroduce removed top-level modules… standalone calculator or rupee values" |
+| `prd-complete.md` §2600, `prd-corrections.md` §40 | "No rupee conversion or value calculation is performed in CRM" |
+| `plc-location-charge.md` §2.1 | "PLC must not be converted into rupee value inside the CRM" — and no plot value, rate or total price may be stored |
+| `CR-007` §6 | "**No rupee, in or out.** Not as an input, not as an output, not as a hint" |
+
+CR-017 itself is headed **"Commissionable Sale Value outside CRM"**: the pack
+puts this worksheet in Accounts' hands, not the CRM's. The screen exists because
+a quote is asked for while the buyer is still in the room, and the alternative
+is the same arithmetic done on paper from a percentage the CRM refuses to
+multiply out.
+
+### How it behaves (D-07)
+
+- **Nothing is stored, and nothing is sent.** No model, no column, no migration,
+  no server action. The rate and the discount live in React state for as long as
+  the tab is open. `rate-calculator.ts` says so in its own header, and the file
+  imports nothing that could write.
+- **The rupee never reaches the server.** No `"use server"` function on this
+  screen takes a rate, a discount or a value.
+- **The rules are the engine's, not the screen's.** `generateCommission()` — the
+  function a real Booking runs — decides the combination, the bands, the
+  entitlements and the 4% ceiling. The screen multiplies; it does not judge.
+  Its refusals appear as they would on a Booking.
+- **Nothing is saved, shared, printed or exported** from it, per CR-007 §6.
+- **The percentages the CRM stores are untouched.** PLC stays a percentage
+  everywhere it is persisted; the rupee exists only in the browser's own
+  arithmetic, the way a calculator on the desk would produce it.
+
+### What is still open (D-07)
+
+**CR-007 is approved in principle and still unsigned.** Its §2.2 and §6 were
+amended on 10 September 2026 so the wording describes the screen that exists —
+the original "percentage only… never accepts a rupee amount" is kept inside the
+clause so the change is visible — and its §8 records what was built and when.
+What is left is the signature itself: `prd-corrections.md` §28 asks for an
+owner's mark on a governed-area change, and a verbal approval in a build session
+is not that mark. The code was also written before the approval, first as commit
+`93941ef` (3 September 2026); that order is recorded in CR-007 rather than
+tidied away.
+
+### Where it lives (D-07)
+
+`src/app/calculator/page.tsx` and `src/app/calculator/calculator-client.tsx` —
+the screen. `src/lib/domain/rate-calculator.ts` — `calculateRate()`,
+`buildQuote()` (CR-017) and `rupeesInWords()`, all pure and all client-side.
+The arithmetic is asserted in `src/lib/domain/domain.check.ts`, including the
+pack's own worked example.
+

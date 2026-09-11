@@ -56,6 +56,7 @@ export async function updateProject(args: {
   location?: string | null;
   locationUrl?: string | null;
   driveUrl?: string | null;
+  renderUrl?: string | null;
   city?: string | null;
   amenities?: string | null;
   reraNumber?: string | null;
@@ -80,6 +81,7 @@ export async function updateProject(args: {
         location: string | null;
         locationUrl: string | null;
         driveUrl: string | null;
+        renderUrl: string | null;
         city: string | null;
         amenities: string | null;
         reraNumber: string | null;
@@ -90,6 +92,7 @@ export async function updateProject(args: {
         location: project.location,
         locationUrl: project.locationUrl,
         driveUrl: project.driveUrl,
+        renderUrl: project.renderUrl,
         city: project.city,
         amenities: project.amenities,
         reraNumber: project.reraNumber,
@@ -105,6 +108,7 @@ export async function updateProject(args: {
           location: args.location?.trim() || null,
           locationUrl: normaliseLink(args.locationUrl, "Location link"),
           driveUrl: normaliseLink(args.driveUrl, "Structure and layout link"),
+          renderUrl: normaliseLink(args.renderUrl, "3D Visuals link"),
           city: args.city?.trim() || null,
           amenities: args.amenities?.trim() || null,
           reraNumber: args.reraNumber?.trim() || null,
@@ -163,6 +167,7 @@ export async function createProject(args: {
   location?: string | null;
   locationUrl?: string | null;
   driveUrl?: string | null;
+  renderUrl?: string | null;
   city?: string | null;
   /** One amenity per line. */
   amenities?: string | null;
@@ -195,6 +200,7 @@ export async function createProject(args: {
           location: args.location?.trim() || null,
           locationUrl: normaliseLink(args.locationUrl, "Location link"),
           driveUrl: normaliseLink(args.driveUrl, "Structure and layout link"),
+          renderUrl: normaliseLink(args.renderUrl, "3D Visuals link"),
           city: args.city?.trim() || null,
           amenities: args.amenities?.trim() || null,
           reraNumber: args.reraNumber?.trim() || null,

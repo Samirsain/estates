@@ -92,11 +92,18 @@ export function MemberActions({
       result.ok && result.linkPath
         ? `${origin}${result.linkPath}`
         : `${origin}/portal/login?loginId=${member.memberId}`;
+    // The password is printed only while the account still has its initial
+    // one — the server checks. Once changed or reset, the invite points the
+    // Member at their own password instead of one that no longer works.
+    const passwordLine =
+      result.ok && result.initialPassword
+        ? `🔑 Initial Password: ${result.initialPassword}\nPlease change it after you log in.`
+        : `🔑 Password: the one you set. Forgotten it? Ask the 3% Club office to reset it.`;
     const text =
       `🌟 Welcome to 3% Real Estate Club Member Portal!\n\n` +
       `Hi ${member.name}, your Member account (${member.memberId}) is active.\n\n` +
       `🔗 Instant Auto-Login Link (Direct Portal Access):\n${link}\n\n` +
-      `🆔 Member ID: ${member.memberId}\n🔑 Initial Password: ChangeMe#2026\n\n` +
+      `🆔 Member ID: ${member.memberId}\n${passwordLine}\n\n` +
       `Click the link above to log in automatically and access your portal!`;
 
     try {

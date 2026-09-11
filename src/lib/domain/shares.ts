@@ -12,7 +12,8 @@
 
 export type ShareRow = { sharePercent: string };
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
+/** Percentages are read to two places, so they are added up to two places. */
+export const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /*
  * A column of percentage inputs that has to add up to 100 — ownership shares,

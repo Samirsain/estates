@@ -7,6 +7,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import {
+  INITIAL_PORTAL_PASSWORD,
   burnPasswordTime,
   hashPassword,
   isLocked,
@@ -138,7 +139,7 @@ async function attemptMemberLogin(form: FormData): Promise<Outcome> {
       where: { memberId: loginId },
     });
     if (memberProfile && memberProfile.status === "ACTIVE") {
-      const defaultPasswordHash = hashPassword("ChangeMe#2026");
+      const defaultPasswordHash = hashPassword(INITIAL_PORTAL_PASSWORD);
       account = await db.portalAccount.create({
         data: {
           memberProfileId: memberProfile.id,

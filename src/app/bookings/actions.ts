@@ -174,7 +174,7 @@ export async function reviseBookingRequestAction(
     refresh();
     return {
       ok: true,
-      message: `Review version ${result.reviewVersion} created. The previous version stays in History.`,
+      message: "The corrected request is with Accounts. The earlier one stays in History.",
     };
   } catch (error) {
     return toResult(error);

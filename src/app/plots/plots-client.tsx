@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { PersonLink } from "@/components/person-link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Input, NO_STEPPER } from "@/components/ui/input";
 import { Field, Modal } from "@/components/ui/modal";
 import type { SoldByType } from "@prisma/client";
 import { PersonPicker, personLabel } from "@/components/person-picker";
@@ -47,6 +47,7 @@ import {
 import {
   formatIst,
   formatIstDate,
+  formatIstDateTime,
   formatPercent,
   formatDimension,
   formatPlotSize,
@@ -138,6 +139,8 @@ export type PlotRowView = {
 
 export type HoldRequestView = {
   id: string;
+  /** The row the request is shown on. */
+  plotId: string;
   project: string;
   plot: string;
   plotStatus: string;
@@ -246,7 +249,7 @@ function statusReason(plot: PlotRowView, because: string | null): string | null 
     parts.push(
       plot.hold.frozen
         ? "Timer frozen — a Booking Request is under review"
-        : `Expires ${formatIst(plot.hold.expiresAt)}`
+        : `Expires ${formatIstDateTime(plot.hold.expiresAt)}`
     );
     if (plot.hold.extensionCount > 0) {
       parts.push(`${plot.hold.extensionCount} extension(s) so far`);
@@ -311,7 +314,7 @@ const rowButton = "h-7 flex-1 basis-0 px-1.5 text-[11px]";
 const statusBadge = "w-[7.5rem] justify-center whitespace-normal text-center leading-tight";
 
 const inputClass =
-  "h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+  `h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${NO_STEPPER}`;
 
 /** Filters sit inline and size to their content, unlike a form field. */
 const filterClass =
@@ -823,6 +826,10 @@ export default function PlotsClient({
   staffRef,
   permissions,
   initialProject,
+  initialStatus,
+  initialPlotId,
+  initialOpen,
+  forPerson,
 }: {
   role: StaffRole;
   actorName: string;
@@ -832,6 +839,13 @@ export default function PlotsClient({
   projects: ProjectView[];
   /** A Project id from ?project=, or "ALL". */
   initialProject: string;
+  /** A Plot status from ?status=, or "ALL". */
+  initialStatus: string;
+  /** From a Plot's own page: ?plot= narrows the list to it, ?open= starts an action on it. */
+  initialPlotId: string | null;
+  initialOpen: string | null;
+  /** From ?for= on a Customer profile: Hold and Book open with this person chosen. */
+  forPerson: { personId: string; label: string } | null;
   people: PersonView[];
   /** Active Members only — the Hold By list, and the Booking form's Sold By. */
   members: MemberView[];
@@ -861,12 +875,14 @@ export default function PlotsClient({
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [projectFilter, setProjectFilter] = React.useState(initialProject);
-  const [statusFilter, setStatusFilter] = React.useState("ALL");
+  const [statusFilter, setStatusFilter] = React.useState(initialStatus);
   // The Action column groups the rows by the status that decides their
   // buttons. Off by default, because the plain list is plot order and that is
   // how inventory is read out on site.
   const [grouped, setGrouped] = React.useState(false);
-  const [search, setSearch] = React.useState("");
+  const [search, setSearch] = React.useState(
+    () => rows.find((r) => r.id === initialPlotId)?.plotNumber ?? ""
+  );
   // "" until picked, "NEW" for a buyer typed on the form.
   const [holdPerson, setHoldPerson] = React.useState("");
   // Who got the Hold done, in the Booking form's own three answers. The 3%
@@ -876,7 +892,7 @@ export default function PlotsClient({
   const [holdSourcePerson, setHoldSourcePerson] = React.useState("");
   const [dialog, setDialog] = React.useState<
     | { kind: "HOLD"; plot: PlotRowView }
-    | { kind: "AVAILABLE"; plot: PlotRowView }
+    | { kind: "AVAILABLE"; plot: PlotRowView; thenHold?: boolean }
     | { kind: "CANCEL_HOLD"; plot: PlotRowView }
     | { kind: "EXTEND"; plot: PlotRowView }
     | { kind: "DECIDE_REQUEST"; request: HoldRequestView; approve: boolean }
@@ -886,12 +902,50 @@ export default function PlotsClient({
     | { kind: "PAY"; plot: PlotRowView; row: BookingRowView }
     | { kind: "DELIVER"; row: BookingRowView }
     | null
-  >(null);
+  >(() => {
+    // Opened from the Plot's own page. Only what that row would itself offer is
+    // opened — the same status and permission tests as its buttons.
+    const plot = rows.find((r) => r.id === initialPlotId);
+    if (!plot) return null;
+    switch (initialOpen) {
+      case "HOLD":
+        return plot.status === "AVAILABLE" && permissions.hold ? { kind: "HOLD", plot } : null;
+      case "AVAILABLE":
+        return plot.status === "NOT_AVAILABLE" && permissions.makeAvailable ? { kind: "AVAILABLE", plot } : null;
+      case "AVAILABLE_HOLD":
+        return plot.status === "NOT_AVAILABLE" && permissions.makeAvailable && permissions.hold
+          ? { kind: "AVAILABLE", plot, thenHold: true }
+          : null;
+      case "DELIVER":
+        return plot.status === "PAYMENT_COMPLETED" &&
+          completedBookings[plot.id] &&
+          permissions.recordFinalBuyers &&
+          permissions.recordCompletion
+          ? { kind: "DELIVER", row: completedBookings[plot.id] }
+          : null;
+      case "EXTEND":
+        return plot.hold && !plot.hold.pendingExtension && permissions.extend ? { kind: "EXTEND", plot } : null;
+      case "CANCEL_HOLD":
+        return plot.status === "HOLD" && plot.hold && permissions.hold ? { kind: "CANCEL_HOLD", plot } : null;
+      case "BOOK":
+        return permissions.book && bookable.some((p) => p.id === plot.id) ? { kind: "BOOK", plot } : null;
+      default:
+        return null;
+    }
+  });
 
   // The Booking behind a row — its submitted snapshot for a review, its parties
   // for final buyers. Too much to ship with every inventory row, so it is
   // fetched when one Booking is actually opened.
   const [bookingDetail, setBookingDetail] = React.useState<BookingDetail | null>(null);
+
+  // Deliver opened straight from the Plot's page needs its Booking's parties,
+  // which a click on the row would have fetched.
+  React.useEffect(() => {
+    if (dialog?.kind === "DELIVER") loadBookingDetail(dialog.row.id).then(setBookingDetail);
+    // Once, on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Members are Active by construction here, so this is the whole test. */
   const activeMemberPersonIds = React.useMemo(
@@ -982,6 +1036,12 @@ export default function PlotsClient({
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Plot Inventory</h1>
+            {forPerson && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                For <span className="font-semibold text-foreground">{forPerson.label}</span> — press
+                Hold or Book on a Plot.
+              </p>
+            )}
           </div>
           {permissions.setup && (
             <Button size="sm" variant="gradient" asChild>
@@ -1048,64 +1108,6 @@ export default function PlotsClient({
               )}
               <span>{notice.text}</span>
             </p>
-          </Card>
-        )}
-
-        {/* DESIGN §9.3 — the Member Hold Request queue lives inside Plot
-            Inventory, not as its own top-level tab. */}
-        {permissions.reviewRequests && holdRequests.length > 0 && (
-          <Card className="space-y-3 p-4">
-            <div>
-              <h2 className="text-sm font-semibold">Member Hold Requests — {holdRequests.length} Pending</h2>
-              <p className="text-xs font-medium text-foreground">
-                Each request names the actual buyer. A request expires on the working-day cut-off and
-                cannot be approved after that.
-              </p>
-            </div>
-            <ul className="space-y-2">
-              {holdRequests.map((r) => (
-                <li
-                  key={r.id}
-                  className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border/50 p-3"
-                >
-                  <div className="min-w-0 space-y-0.5 text-xs">
-                    <p className="text-sm font-semibold">
-                      {r.project} · <span className="text-primary">{r.plot}</span>
-                      <Badge variant="outline" className="ml-2">
-                        Queue #{r.queuePosition}
-                      </Badge>
-                    </p>
-                    <p className="font-medium text-foreground">
-                      For <PersonLink personId={r.buyerPersonId} name={r.buyer} /> · requested by{" "}
-                      <PersonLink personId={r.memberPersonId} name={r.member} as="member" />
-                    </p>
-                    <p className="font-medium text-foreground">
-                      Submitted {formatIst(r.createdAt)} · expires {formatIst(r.expiresAt)}
-                      {r.plotStatus !== "AVAILABLE"
-                        ? ` · Plot is now ${STATUS_LABEL[r.plotStatus] ?? r.plotStatus}`
-                        : ""}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => setDialog({ kind: "DECIDE_REQUEST", request: r, approve: false })}
-                    >
-                      Reject
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => setDialog({ kind: "DECIDE_REQUEST", request: r, approve: true })}
-                    >
-                      Approve
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
           </Card>
         )}
 
@@ -1203,6 +1205,9 @@ export default function PlotsClient({
                   // rather than a widening.
                   const shown = shownFor(plot);
                   const why = statusReason(plot, shown.because);
+                  // DESIGN §9.3 — a Member Hold Request is about one Plot, so
+                  // it is read and decided on that Plot's row, in queue order.
+                  const requests = holdRequests.filter((r) => r.plotId === plot.id);
                   // Only the first row of a group carries the heading, and only
                   // while the rows are grouped at all.
                   const opensGroup =
@@ -1283,13 +1288,13 @@ export default function PlotsClient({
                     <td className="px-3 py-2 text-center tabular-nums">
                       {/* Both figures are quoted, so both are read at the same
                           size. Only the unit steps back. */}
-                      <span className="block font-semibold text-foreground">
+                      <span className="block whitespace-nowrap font-semibold text-foreground">
                         {formatQuantity(plot.areaSqFt)}
                         <span className="ml-1 text-[11px] font-medium text-foreground">
                           sq ft
                         </span>
                       </span>
-                      <span className="block font-semibold text-foreground">
+                      <span className="block whitespace-nowrap font-semibold text-foreground">
                         {formatQuantity(plot.areaSqYd)}
                         <span className="ml-1 text-[11px] font-medium text-foreground">
                           sq yd
@@ -1354,6 +1359,20 @@ export default function PlotsClient({
                           </span>
                         </>
                       )}
+                      {requests.map((r) => (
+                        <span key={r.id} className="mt-1 block text-[11px] font-medium text-amber-800">
+                          Hold Request #{r.queuePosition} · for{" "}
+                          <PersonLink personId={r.buyerPersonId} name={r.buyer} /> · via{" "}
+                          <PersonLink
+                            personId={r.memberPersonId}
+                            name={r.member.split(" · ")[0]}
+                            as="member"
+                          />
+                          <span className="block text-muted-foreground">
+                            Request expires {formatIstDateTime(r.expiresAt)}
+                          </span>
+                        </span>
+                      ))}
                     </td>
                     {/* What the charge is for, not what it comes to. The
                         percentage is on the Plot's own page — a column of them
@@ -1401,7 +1420,7 @@ export default function PlotsClient({
                           <Button
                             className={rowButton}
                             onClick={() => {
-                              setHoldPerson("");
+                              setHoldPerson(forPerson?.personId ?? "");
                               setDialog({ kind: "HOLD", plot });
                             }}
                           >
@@ -1489,6 +1508,40 @@ export default function PlotsClient({
                               Deliver
                             </Button>
                           )}
+
+                        {/* The Member Hold Requests on this Plot. A request
+                            expires at the working-day cut-off and cannot be
+                            approved after it. */}
+                        {permissions.reviewRequests && requests.length > 0 && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button className={rowButton} disabled={busy}>
+                                Hold Request
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start">
+                              {requests.flatMap((r) => [
+                                <DropdownMenuItem
+                                  key={`${r.id}-approve`}
+                                  onSelect={() =>
+                                    setDialog({ kind: "DECIDE_REQUEST", request: r, approve: true })
+                                  }
+                                >
+                                  Approve — {r.buyer}
+                                </DropdownMenuItem>,
+                                <DropdownMenuItem
+                                  key={`${r.id}-reject`}
+                                  className="text-red-700 focus:text-red-700"
+                                  onSelect={() =>
+                                    setDialog({ kind: "DECIDE_REQUEST", request: r, approve: false })
+                                  }
+                                >
+                                  Reject — {r.buyer}
+                                </DropdownMenuItem>,
+                              ])}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
 
                         {/* A Booking may start from an Available Plot or from a
                             Hold — submitBookingRequest takes holdId as optional
@@ -1621,6 +1674,7 @@ export default function PlotsClient({
         <BookingFormDialog
           title="Start Booking Request"
           initialPlotId={dialog.plot.id}
+          initialPersonId={forPerson?.personId}
           // Every row has its own Book button, so clicking one has already
           // chosen the Plot. Changing it inside the form would only ever be a
           // way to book something other than the row that was clicked.
@@ -1728,8 +1782,11 @@ export default function PlotsClient({
 
       {dialog?.kind === "AVAILABLE" && (
         <ConfirmDialog
-          title="Make Available"
+          title={dialog.thenHold ? "Make Available & Hold" : "Make Available"}
           plot={dialog.plot}
+          consequence={
+            dialog.thenHold ? "Once the Plot is Available, the Hold form opens on it." : undefined
+          }
           busy={busy}
           onClose={() => setDialog(null)}
           fields={
@@ -1737,7 +1794,15 @@ export default function PlotsClient({
               <Input name="reason" required minLength={3} />
             </Field>
           }
-          onSubmit={(f) => run(() => makeAvailableAction(dialog.plot.id, String(f.get("reason")), newKey()))}
+          onSubmit={async (f) => {
+            const { plot, thenHold } = dialog;
+            const ok = await run(() => makeAvailableAction(plot.id, String(f.get("reason")), newKey()));
+            // The second half of Make Available & Hold, on the Plot now Available.
+            if (ok && thenHold) {
+              setHoldPerson(forPerson?.personId ?? "");
+              setDialog({ kind: "HOLD", plot: { ...plot, status: "AVAILABLE" } });
+            }
+          }}
         />
       )}
 
@@ -1763,7 +1828,7 @@ export default function PlotsClient({
         <ConfirmDialog
           title="Request Hold extension"
           plot={dialog.plot}
-          consequence={`Requesting an extension does not pause the Hold timer. Current expiry: ${formatIst(
+          consequence={`Requesting an extension does not pause the Hold timer. Current expiry: ${formatIstDateTime(
             dialog.plot.hold.expiresAt
           )}. ${
             dialog.plot.hold.extensionCount >= 1
@@ -1775,7 +1840,15 @@ export default function PlotsClient({
           fields={
             <>
               <Field label="Additional hours">
-                <input name="hours" type="number" min={1} max={168} defaultValue={24} className={inputClass} />
+                <input
+                  name="hours"
+                  type="number"
+                  min={1}
+                  max={168}
+                  defaultValue={24}
+                  className={inputClass}
+                  onWheel={(e) => e.currentTarget.blur()}
+                />
               </Field>
               <Field label="Reason — compulsory">
                 <Input name="reason" required minLength={3} />
@@ -1804,7 +1877,7 @@ export default function PlotsClient({
             dialog.approve
               ? "The new expiry applies from the original expiry, not from now."
               : "The Hold keeps its existing expiry."
-          } Reviewing never pauses the timer — current expiry ${formatIst(
+          } Reviewing never pauses the timer — current expiry ${formatIstDateTime(
             dialog.plot.hold.expiresAt
           )}.${
             dialog.plot.hold.pendingExtensionReason
@@ -2452,7 +2525,8 @@ export function PrepareInventoryForm({
                 type="number"
                 min={1}
                 max={500}
-                className="h-7 w-16 rounded-lg border border-border bg-card px-2 text-xs text-foreground tabular-nums focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
+                className={`h-7 w-16 rounded-lg border border-border bg-card px-2 text-xs text-foreground tabular-nums focus:outline-none focus:ring-1 focus:ring-ring transition-colors ${NO_STEPPER}`}
+                onWheel={(e) => e.currentTarget.blur()}
                 value={bulkCount}
                 onChange={(e) => setBulkCount(e.target.value)}
                 title="Number of plots to add"

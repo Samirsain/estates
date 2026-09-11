@@ -5,6 +5,8 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { PersonLink } from "@/components/person-link";
 import { AlertTriangle, ChevronDown, Plus, CheckCircle2 } from "lucide-react";
 import { addTaskAction, completeTaskAction, reviseTaskAction, type ActionResult } from "./actions";
 import { AppShell } from "@/components/app-shell";
@@ -29,7 +31,6 @@ import {
   istDay,
   istInstant,
   sortTasks,
-  summarise,
   type DateRange,
   type Emphasis,
   type RecordKind,
@@ -121,7 +122,6 @@ export default function DashboardClient({
     return sortTasks(filterTasks(scoped, view, now, range), now);
   }, [tasks, view, now, range, role, showAllAssignees]);
 
-  const stats = now ? summarise(tasks.filter((t) => showAllAssignees || t.assigneeRole === role), now) : null;
 
   /** Every write carries a fresh idempotency key, so a double click writes once. */
   async function run(action: () => Promise<ActionResult>) {
@@ -146,18 +146,6 @@ export default function DashboardClient({
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {stats ? (
-                <>
-                  {stats.pending} Pending · {stats.overdue} Overdue ·{" "}
-                  {stats.urgent} Urgent · {stats.completed} Completed —{" "}
-                  {showAllAssignees ? "all assignees" : `assigned to ${role}`} ·
-                  times in Asia/Kolkata
-                </>
-              ) : (
-                "Loading tasks…"
-              )}
-            </p>
           </div>
           <div className="flex items-center gap-3">
             {seesAllWork && (
@@ -293,8 +281,13 @@ export default function DashboardClient({
                   const state = EMPHASIS_STYLE[emphasis(task, now)];
                   // The record's own reference — BKG-000002, ENQ-000045 — is a
                   // column of its own, and the one cell that opens the task.
+                  // A Buyback or Resale is named by what it is. Its internal
+                  // ACQ number is off the screens by request, and the Plot
+                  // column beside this one says which deal it is.
                   const reference =
-                    task.subject?.reference ?? recordReference(task.record) ?? task.record.name;
+                    task.record.kind === "Acquisition"
+                      ? "Buyback / Resale"
+                      : (task.subject?.reference ?? recordReference(task.record) ?? task.record.name);
                   const href = recordHref(task.record, task.subject);
 
                   return (
@@ -307,11 +300,23 @@ export default function DashboardClient({
                           {task.subject?.project ?? "—"}
                         </span>
                       </td>
-                      {/* A plot number is one token — it never wraps. */}
+                      {/* A plot number is one token — it never wraps. It is
+                          also the way into the Plot, as it is everywhere else
+                          the number is printed. */}
                       <td className="px-2 py-2">
-                        <span className="block truncate" title={task.subject?.plot ?? undefined}>
-                          {task.subject?.plot ?? "—"}
-                        </span>
+                        {task.subject?.plotId && task.subject.plot ? (
+                          <Link
+                            href={`/plots/${task.subject.plotId}`}
+                            className="block truncate text-primary hover:underline"
+                            title={task.subject.plot}
+                          >
+                            {task.subject.plot}
+                          </Link>
+                        ) : (
+                          <span className="block truncate" title={task.subject?.plot ?? undefined}>
+                            {task.subject?.plot ?? "—"}
+                          </span>
+                        )}
                       </td>
                       {/* The reference is the row's handle: it opens the whole
                           task, which no column has room to print. */}
@@ -325,14 +330,31 @@ export default function DashboardClient({
                           {reference}
                         </button>
                       </td>
-                      <td className="px-2 py-2 text-primary">
+                      {/* The Member or Customer ID, and the name beside it,
+                          both open the Person they belong to. */}
+                      <td className="px-2 py-2">
                         <span className="block truncate" title={task.subject?.partyRef ?? undefined}>
-                          {task.subject?.partyRef ?? "—"}
+                          {task.subject?.partyRef ? (
+                            <PersonLink
+                              personId={task.subject.partyPersonId}
+                              name={task.subject.partyRef}
+                            />
+                          ) : (
+                            "—"
+                          )}
                         </span>
                       </td>
                       <td className="px-2 py-2">
                         <span className="block truncate" title={task.subject?.partyName ?? undefined}>
-                          {task.subject?.partyName ?? "—"}
+                          {task.subject?.partyName ? (
+                            <PersonLink
+                              personId={task.subject.partyPersonId}
+                              name={task.subject.partyName}
+                              className="text-foreground"
+                            />
+                          ) : (
+                            "—"
+                          )}
                         </span>
                       </td>
                       <td className="px-2 py-2">
@@ -481,8 +503,17 @@ function TaskDetailsDialog({ task, onClose }: { task: Task; onClose: () => void 
   const rows: [string, string][] = [
     ["Task", task.title],
     ["Purpose", task.purpose],
-    ["Record", `${task.record.kind} · ${recordReference(task.record) ?? task.record.name}`],
-    ["Reference", s?.reference ?? "—"],
+    // A Buyback or Resale carries an ACQ number the screens no longer print,
+    // so the record reads as the deal it is, placed by its Plot below.
+    ...(task.record.kind === "Acquisition"
+      ? ([
+          ["Record", "Buyback / Resale"],
+          ["Reference", s?.plot ?? "—"],
+        ] as [string, string][])
+      : ([
+          ["Record", `${task.record.kind} · ${recordReference(task.record) ?? task.record.name}`],
+          ["Reference", s?.reference ?? "—"],
+        ] as [string, string][])),
     ["Project", s?.project ?? "—"],
     ["Plot", s?.plot ?? "—"],
     ["Member / Customer", s?.partyRef ?? "—"],
@@ -492,7 +523,7 @@ function TaskDetailsDialog({ task, onClose }: { task: Task; onClose: () => void 
     ["Assignee", `${task.assigneeName} (${task.assigneeRole})`],
     ["Recurrence", task.recurrence ?? "NONE"],
     ["Revised", String(task.revisions)],
-    ["Latest result", task.latestResult ?? "—"],
+    ["What happened", task.latestResult ?? "—"],
   ];
 
   return (
@@ -580,12 +611,15 @@ function ReviseDialog({
   );
 }
 
-function AddTaskDialog({
+export function AddTaskDialog({
   now,
+  record,
   onClose,
   onSubmit,
 }: {
   now: Date;
+  /** Set when the task is added from a record's own page: it is linked to that record. */
+  record?: { kind: string; id: string; name: string };
   onClose: () => void;
   onSubmit: (input: Parameters<typeof addTaskAction>[0]) => void;
 }) {
@@ -603,9 +637,9 @@ function AddTaskDialog({
           const title = String(f.get("title"));
           onSubmit({
             title,
-            recordKind: String(f.get("kind")),
-            recordId: String(f.get("recordId") ?? ""),
-            recordName: String(f.get("recordName") ?? ""),
+            recordKind: record?.kind ?? String(f.get("kind")),
+            recordId: record?.id ?? String(f.get("recordId") ?? ""),
+            recordName: record?.name ?? String(f.get("recordName") ?? ""),
             assigneeRole: f.get("assigneeRole") as StaffRole,
             assigneeName: String(f.get("assigneeName")),
             dueAtIso: istInstant(String(f.get("date")), String(f.get("time"))),
@@ -654,23 +688,29 @@ function AddTaskDialog({
             </span>
           </Field>
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Link to">
-            <select name="kind" defaultValue="Customer" className={inputClass}>
-              {RECORD_KINDS.map(({ kind, label }) => (
-                <option key={kind} value={kind}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Record ID">
-            <Input name="recordId" placeholder="CUS-3390" />
-          </Field>
-          <Field label="Record name">
-            <Input name="recordName" placeholder="Vikram Shah" />
-          </Field>
-        </div>
+        {record ? (
+          <p className="text-xs text-muted-foreground">
+            Linked to <span className="font-semibold text-foreground">{record.name}</span>
+          </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Link to">
+              <select name="kind" defaultValue="Customer" className={inputClass}>
+                {RECORD_KINDS.map(({ kind, label }) => (
+                  <option key={kind} value={kind}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Record ID">
+              <Input name="recordId" placeholder="CUS-3390" />
+            </Field>
+            <Field label="Record name">
+              <Input name="recordName" placeholder="Vikram Shah" />
+            </Field>
+          </div>
+        )}
         <Field label="Remark">
           <Input name="remark" />
         </Field>

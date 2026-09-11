@@ -133,6 +133,7 @@ export default function EnquiriesClient({
   customers,
   staff,
   canManage,
+  startFor,
 }: {
   role: StaffRole;
   actorName: string;
@@ -152,6 +153,8 @@ export default function EnquiriesClient({
   customers: Array<{ id: string; label: string }>;
   staff: Array<{ id: string; label: string; isSelf: boolean }>;
   canManage: boolean;
+  /** A Person id from ?for=: New Enquiry opens straight away for them. */
+  startFor: string | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
@@ -159,7 +162,10 @@ export default function EnquiriesClient({
   const [statusFilter, setStatusFilter] = React.useState("ACTIVE");
   const [assigneeFilter, setAssigneeFilter] = React.useState("ALL");
   const [search, setSearch] = React.useState("");
-  const [creating, setCreating] = React.useState(false);
+  // null when closed; otherwise the Person the form opens with ("" for nobody).
+  const [creating, setCreating] = React.useState<string | null>(
+    canManage && startFor ? startFor : null
+  );
   const [followUp, setFollowUp] = React.useState<EnquiryRowView | null>(null);
   const [closing, setClosing] = React.useState<EnquiryRowView | null>(null);
 
@@ -201,7 +207,7 @@ export default function EnquiriesClient({
             <h1 className="text-2xl font-bold tracking-tight">Enquiries</h1>
           </div>
           {canManage && (
-            <Button size="sm" variant="gradient" onClick={() => setCreating(true)}>
+            <Button size="sm" variant="gradient" onClick={() => setCreating("")}>
               <Plus className="mr-1 h-4 w-4" /> New Enquiry
             </Button>
           )}
@@ -409,8 +415,9 @@ export default function EnquiriesClient({
         )}
       </div>
 
-      {creating && (
+      {creating !== null && (
         <CreateEnquiryDialog
+          initialPersonId={creating}
           projects={projects}
           plots={plots}
           people={people}
@@ -418,10 +425,10 @@ export default function EnquiriesClient({
           customers={customers}
           staff={staff}
           busy={busy}
-          onClose={() => setCreating(false)}
+          onClose={() => setCreating(null)}
           onSubmit={async (input) => {
             const done = await run(() => createEnquiryAction(input, newKey()));
-            if (done) setCreating(false);
+            if (done) setCreating(null);
           }}
         />
       )}
@@ -537,6 +544,7 @@ function SourcePersonPicker({
  * first-time caller is captured here instead of having to exist already.
  */
 function CreateEnquiryDialog({
+  initialPersonId,
   projects,
   plots,
   people,
@@ -547,6 +555,7 @@ function CreateEnquiryDialog({
   onClose,
   onSubmit,
 }: {
+  initialPersonId: string;
   projects: Array<{ id: string; name: string }>;
   plots: PlotOption[];
   people: Array<{
@@ -566,7 +575,7 @@ function CreateEnquiryDialog({
 }) {
   // "NEW" is a marker for this form only, exactly as the Booking form uses it:
   // a blank personId with a name and mobile beside it is a first-time caller.
-  const [personId, setPersonId] = React.useState("");
+  const [personId, setPersonId] = React.useState(initialPersonId);
   const [projectId, setProjectId] = React.useState("");
   const [plotId, setPlotId] = React.useState("");
   const [source, setSource] = React.useState("DIRECT");

@@ -184,7 +184,10 @@ async function accountsBookingTask(
     assigneeRole: "ACCOUNTS",
     dueAt: new Date(Date.now() + BOOKING_DECISION_DAYS * 86_400_000),
     decision: true,
-    latestResult: `Review version ${version}`,
+    // The team reading this line is not technical: a Booking Request that
+    // came back corrected is "sent again", not "version 3". How many times
+    // it happened is already the Revised count on the task.
+    latestResult: version === 1 ? "Sent to Accounts to check" : "Corrected and sent again to Accounts",
   });
 }
 
@@ -391,7 +394,7 @@ export async function reviseBookingRequest(args: {
   schedule: ScheduleInput[];
   reason: string;
 }) {
-  if (!args.reason.trim()) blocked("A compulsory reason is required to replace a Booking Request version.");
+  if (!args.reason.trim()) blocked("A compulsory reason is required to send a corrected Booking Request.");
   // Exactly one Primary, shares total 100 — checked on the unresolved list; a
   // first-time buyer's personId is resolved inside the transaction below.
   primaryOf(args.parties);
@@ -424,7 +427,7 @@ export async function reviseBookingRequest(args: {
       const pending = await tx.bookingReviewVersion.findFirst({
         where: { bookingId: args.bookingId, status: "PENDING" },
       });
-      if (!pending) blocked("There is no pending review version to replace.");
+      if (!pending) blocked("There is no Booking Request waiting for a decision to correct.");
 
       await validateSoldBy(tx, args.soldByType, args.soldByPersonId ?? null);
 
@@ -511,7 +514,7 @@ export async function reviseBookingRequest(args: {
         "Booking",
         args.bookingId,
         args.actorRef,
-        `Replaced by review version ${version} — ${args.reason}`,
+        `Corrected and sent again — ${args.reason}`,
         "BOOKING_REVIEW"
       );
       await accountsBookingTask(

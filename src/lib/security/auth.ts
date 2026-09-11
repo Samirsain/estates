@@ -18,6 +18,22 @@ export function validatePassword(password: string): string | null {
   return null;
 }
 
+/**
+ * The password a new Member portal account starts with, until the Member
+ * changes it or an Admin resets it. One place, so the account and the invite
+ * message cannot disagree about it.
+ */
+export const INITIAL_PORTAL_PASSWORD = "ChangeMe#2026";
+
+/** A one-time password is shown once and never stored in clear anywhere. */
+export function oneTimePassword(): string {
+  // 18 base32 characters — comfortably above the 10-character minimum and easy
+  // to read out over a phone without ambiguous characters.
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = randomBytes(18);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+}
+
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 
 /** Stored form: scrypt$N$r$p$<salt hex>$<hash hex>. Never logged, never audited. */

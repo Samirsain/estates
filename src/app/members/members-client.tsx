@@ -11,6 +11,7 @@ import { AlertTriangle, CheckCircle2, Eye, Plus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { IdentityFacts } from "@/components/protected-identity";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
@@ -55,6 +56,8 @@ export type MemberRowView = {
   portalStatus: string | null;
   aadhaarStatus: string;
   panStatus: string;
+  aadhaarMasked: string;
+  panMasked: string;
   invitedCount: number;
   introducedCount: number;
   /** Bookings this Member sold that became a sale — see the members loader. */
@@ -67,6 +70,7 @@ type Permissions = {
   enterBank: boolean;
   verifyBank: boolean;
   viewFullBank: boolean;
+  viewFullIdentity: boolean;
 };
 
 const RERA_LABEL: Record<string, string> = {
@@ -454,7 +458,7 @@ function MemberDetailPanel({
   permissions: Permissions;
   onAction: (d: Dialog) => void;
 }) {
-  const [tab, setTab] = React.useState<"NETWORK" | "COMMISSION" | "BANK">("NETWORK");
+  const [tab, setTab] = React.useState<"NETWORK" | "COMMISSION" | "BANK" | "IDENTITY">("NETWORK");
   const [revealed, setRevealed] = React.useState<Record<string, string>>({});
   const [revealing, setRevealing] = React.useState<string | null>(null);
   const [revealError, setRevealError] = React.useState<string | null>(null);
@@ -466,7 +470,7 @@ function MemberDetailPanel({
   return (
     <Card className="space-y-4 p-4">
       <div className="flex flex-wrap gap-2">
-        {(["NETWORK", "COMMISSION", "BANK"] as const).map((t) => (
+        {(["NETWORK", "COMMISSION", "BANK", "IDENTITY"] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -537,7 +541,7 @@ function MemberDetailPanel({
                     </span>
                     <span className="tabular-nums text-muted-foreground">
                       {c.position === null
-                        ? "Provisional — no position until the first purchase completes"
+                        ? "Not confirmed yet — no position until the first purchase is fully paid"
                         : `Position ${c.position} · ${c.ratePercent}%`}
                     </span>
                   </li>
@@ -717,8 +721,30 @@ function MemberDetailPanel({
           )}
         </div>
       )}
+
+      {/* Aadhaar and PAN were on file but on no screen — the only way to read a
+          Member's was Administration. They live with the Member now, masked,
+          with the same logged reveal the Customer profile has. */}
+      {tab === "IDENTITY" && (
+        <div className="space-y-3 text-xs">
+          <IdentityFacts
+            personId={row.personId}
+            canReveal={permissions.viewFullIdentity}
+            aadhaarMasked={row.aadhaarMasked}
+            aadhaarHint={statusHint(row.aadhaarStatus)}
+            panMasked={row.panMasked}
+            panHint={statusHint(row.panStatus)}
+          />
+        </div>
+      )}
     </Card>
   );
+}
+
+/** AVAILABLE adds nothing to a number already on screen, so it says nothing. */
+function statusHint(status: string): string | undefined {
+  if (status === "AVAILABLE") return undefined;
+  return status.charAt(0) + status.slice(1).toLowerCase().replaceAll("_", " ");
 }
 
 /* ---------------------------------------------------------------- dialogs */

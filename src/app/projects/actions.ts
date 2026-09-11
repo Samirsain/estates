@@ -35,6 +35,7 @@ export type ProjectFields = {
   location: string;
   locationUrl: string;
   driveUrl: string;
+  renderUrl: string;
   city: string;
   amenities: string;
   reraNumber: string;
@@ -64,6 +65,7 @@ export async function createProjectAction(
       location: input.location || null,
       locationUrl: input.locationUrl || null,
       driveUrl: input.driveUrl || null,
+      renderUrl: input.renderUrl || null,
       city: input.city || null,
       amenities: input.amenities || null,
       reraNumber: input.reraNumber || null,
@@ -224,6 +226,7 @@ export async function updateProjectAction(
       location: input.location || null,
       locationUrl: input.locationUrl || null,
       driveUrl: input.driveUrl || null,
+      renderUrl: input.renderUrl || null,
       city: input.city || null,
       amenities: input.amenities || null,
       reraNumber: input.reraNumber || null,

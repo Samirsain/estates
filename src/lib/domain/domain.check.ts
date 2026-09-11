@@ -4,7 +4,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { matchPeople, personLabel } from "./person-search.ts";
 import { capPercent, capShare, percentRoom, percentSum, shareRoom, shareSum } from "./shares.ts";
-import { calculateRate, formatRupees, parsePercent } from "./rate-calculator.ts";
+import {
+  fillForward,
+  removeRow,
+  scheduleTotal as typedTotal,
+} from "./schedule-edit.ts";
+import {
+  buildQuote,
+  calculateRate,
+  formatRupees,
+  parsePercent,
+  rupeesInWords,
+} from "./rate-calculator.ts";
 import {
   canReopenDelivered,
   maskExportRow,
@@ -139,7 +150,7 @@ import {
   validateBuyingCommission,
   validateChangePlot,
 } from "./acquisition.ts";
-import { istDay, formatIst } from "../tasks.ts";
+import { istDay, formatIst, formatIstDateTime } from "../tasks.ts";
 
 /** Reads the reason off a failed Check so the assertions stay one-liners. */
 const asReason = (check: Check) => (check.ok ? "" : check.reason);
@@ -590,7 +601,14 @@ assert.equal(decideExtension(false, expiry, 24, new Date("2026-08-20T06:00:00Z")
 // Wednesday 19 Aug 2026, 11:30 IST — before the 17:00 cut-off.
 const beforeCutOff = new Date("2026-08-19T06:00:00Z");
 assert.equal(istDay(holdRequestExpiry(beforeCutOff)), "2026-08-19");
-assert.match(formatIst(holdRequestExpiry(beforeCutOff)), /19\/08\/2026 11:59 PM/);
+// A Hold expiry is one of the few facts that keeps its clock time: the cut-off
+// is inside the day, and the date alone would read as end of day.
+assert.match(formatIstDateTime(holdRequestExpiry(beforeCutOff)), /19\/08\/2026 11:59 PM/);
+assert.equal(
+  formatIst(holdRequestExpiry(beforeCutOff)),
+  "19/08/2026",
+  "everything else is the date alone"
+);
 
 // Same day 18:00 IST — after the cut-off, so it rolls to the next working day.
 const afterCutOff = new Date("2026-08-19T12:30:00Z");
@@ -2757,5 +2775,126 @@ assert.match(mapPinError("26.9124", "") ?? "", /both latitude and longitude/);
 assert.match(mapPinError("95", "75.7873") ?? "", /Latitude/);
 assert.match(mapPinError("26.9124", "200") ?? "", /Longitude/);
 assert.equal(mapPinError("26.9124", "75.7873"), null);
+
+/* ------------------------------------- Payment Schedule, while it is typed */
+// PRD §11 — the column cannot be built past 100, and the last row carries what
+// is left. A schedule the server would refuse never reaches the screen.
+const sched = (...percents: string[]) =>
+  percents.map((percent, i) => ({ seq: i + 1, percent, dueDate: `2026-01-0${i + 1}` }));
+const percents = (rows: { percent: string }[]) => rows.map((r) => r.percent);
+
+// 30 typed into the first: the second reads 70 on its own.
+assert.deepEqual(percents(fillForward(sched("30", "0"), 0)), ["30", "70"]);
+// 100 in the first leaves the second nothing — 50 typed into it lands on 0.
+assert.deepEqual(percents(fillForward(sched("100", "50"), 1)), ["100", "0"]);
+// And no order of typing gets the total over 100.
+assert.equal(typedTotal(fillForward(sched("60", "60", "60"), 2)), 100);
+// Typing the last row leaves it alone: the shortfall shows as Remaining.
+assert.deepEqual(percents(fillForward(sched("30", "20"), 1)), ["30", "20"]);
+
+// A schedule opens blank, so the whole 100 is still to be placed, and the row
+// stays blank until it is typed into — no invented 100 to clear first.
+assert.equal(typedTotal(sched("")), 0);
+assert.deepEqual(percents(fillForward(sched(""), 0)), [""]);
+// Typing the first row fills the second with what is left of the 100.
+assert.deepEqual(percents(fillForward(sched("30", ""), 0)), ["30", "70"]);
+
+// A removed instalment gives its percentage to the row above it.
+assert.deepEqual(percents(removeRow(sched("30", "20", "50"), 1)), ["50", "50"]);
+// The first row has no row above, so its share goes to the row taking its place.
+assert.deepEqual(percents(removeRow(sched("30", "20", "50"), 0)), ["50", "50"]);
+// Removing the last row hands it up rather than re-deriving it away.
+assert.deepEqual(percents(removeRow(sched("30", "20", "50"), 2)), ["30", "70"]);
+// Seq numbers close up behind the removed row.
+assert.deepEqual(
+  removeRow(sched("30", "20", "50"), 1).map((r) => r.seq),
+  [1, 2]
+);
+
+/* ------------------------------------ CR-017 — Commissionable Sale Value */
+// approved-changes-pack §18: (Base + Applicable PLC) − Authorised Discount,
+// and mock-data-v2 §24 works it through on real numbers.
+{
+  const priced = calculateRate({
+    rateType: "SQ_FT",
+    rate: "5000",
+    areaSqFt: "1000",
+    areaSqYd: "111.1111",
+  });
+  assert.ok(priced.ok);
+  assert.equal(priced.total.toFixed(2), "5000000.00", "the pack's base of 50,00,000");
+
+  // The pack's own worksheet: base 50,00,000, PLC 2,00,000 (4%), discount
+  // 1,00,000 → 51,00,000.
+  const packed = buildQuote({
+    base: priced.total,
+    areaUsed: priced.areaUsed,
+    plcPercent: "4",
+    discountMode: "AMOUNT",
+    discount: "100000",
+  });
+  assert.equal(packed.plc.toFixed(2), "200000.00");
+  assert.equal(packed.gross.toFixed(2), "5200000.00");
+  assert.equal(packed.commissionable.toFixed(2), "5100000.00", "CR-017 worked example");
+  // Per Sq. Ft.: 5,000 base + 200 PLC − 100 discount = 5,100 final.
+  assert.equal(packed.rates?.base.toFixed(2), "5000.00");
+  assert.equal(packed.rates?.plc.toFixed(2), "200.00");
+  assert.equal(packed.rates?.discount.toFixed(2), "100.00");
+  assert.equal(packed.rates?.final.toFixed(2), "5100.00", "final rate = base + PLC − discount");
+
+  const quote = (mode: "PERCENT" | "AMOUNT", raw: string, plc: string | null = "10") =>
+    buildQuote({
+      base: priced.total,
+      areaUsed: priced.areaUsed,
+      plcPercent: plc,
+      discountMode: mode,
+      discount: raw,
+    });
+
+  // A percentage discount comes off base and PLC together, not off the base
+  // alone — the pack subtracts it from the sum of the two.
+  assert.equal(quote("PERCENT", "10").gross.toFixed(2), "5500000.00");
+  assert.equal(quote("PERCENT", "10").discount.toFixed(2), "550000.00");
+  assert.equal(quote("PERCENT", "10").commissionable.toFixed(2), "4950000.00");
+
+  // No PLC on the Plot is not an error; the base stands on its own.
+  assert.equal(quote("PERCENT", "", null).plc.toFixed(2), "0.00");
+  assert.equal(quote("PERCENT", "", null).commissionable.toFixed(2), "5000000.00");
+
+  // Nothing typed, nonsense typed, and a negative all leave the figure alone.
+  for (const raw of ["", "   ", "abc", "-5", "0"]) {
+    assert.equal(quote("PERCENT", raw).commissionable.toFixed(2), "5500000.00", raw);
+    assert.equal(quote("AMOUNT", raw).discount.toFixed(2), "0.00", raw);
+  }
+
+  // A quote never goes below zero, whichever way it is overshot.
+  assert.equal(quote("PERCENT", "150").commissionable.toFixed(2), "0.00");
+  assert.equal(quote("AMOUNT", "9999999").commissionable.toFixed(2), "0.00");
+  assert.equal(quote("AMOUNT", "9999999").discount.toFixed(2), "5500000.00");
+}
+
+/* ------------------------------------------------------- rupees in words */
+// The Indian system, because that is how the figure is read aloud here.
+assert.equal(
+  rupeesInWords("1061409"),
+  "Ten Lakh Sixty One Thousand Four Hundred Nine Rupees Only"
+);
+assert.equal(rupeesInWords("0"), "Zero Rupees Only");
+assert.equal(rupeesInWords("100"), "One Hundred Rupees Only");
+assert.equal(rupeesInWords("10000000"), "One Crore Rupees Only", "a crore, not ten million");
+assert.equal(
+  rupeesInWords("28333.34"),
+  "Twenty Eight Thousand Three Hundred Thirty Three Rupees Only",
+  "rupees only, the paise are dropped"
+);
+assert.equal(
+  rupeesInWords("18887850"),
+  "One Crore Eighty Eight Lakh Eighty Seven Thousand Eight Hundred Fifty Rupees Only"
+);
+assert.equal(
+  rupeesInWords("119"),
+  "One Hundred Nineteen Rupees Only",
+  "the teens are not tens plus ones"
+);
 
 console.log("domain.check.ts OK");

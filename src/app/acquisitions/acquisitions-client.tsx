@@ -17,7 +17,14 @@ import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
 import { istDay, type StaffRole } from "@/lib/tasks";
-import { capPercent, percentSum } from "@/lib/domain/shares";
+import { round2 } from "@/lib/domain/shares";
+import {
+  addDays,
+  fillDatesForward,
+  fillForward,
+  removeRow,
+  scheduleTotal,
+} from "@/lib/domain/schedule-edit";
 import { AcquisitionDialogs } from "./acquisition-dialogs";
 import {
   STATUS_LABEL,
@@ -133,14 +140,22 @@ export default function AcquisitionsClient({
                         >
                           {TYPE_LABEL[row.type] ?? row.type}
                         </Link>
-                        <div className="text-muted-foreground">{row.acquisitionNo}</div>
                       </td>
                       <td className="px-4 py-3">
                         {row.project}
                         {row.location && <div className="text-muted-foreground">{row.location}</div>}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-foreground">{row.plotNumber}</div>
+                        {row.plotId ? (
+                          <Link
+                            href={`/plots/${row.plotId}`}
+                            className="block font-medium text-primary hover:underline"
+                          >
+                            {row.plotNumber}
+                          </Link>
+                        ) : (
+                          <div className="font-medium text-foreground">{row.plotNumber}</div>
+                        )}
                         {row.plotType && (
                           <div className="text-muted-foreground">
                             {row.plotType.replaceAll("_", " ").toLowerCase()}
@@ -230,33 +245,6 @@ export default function AcquisitionsClient({
   );
 }
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
-function fillForward(rows: ScheduleRowInput[], typedIndex = -1): ScheduleRowInput[] {
-  const out = rows.map((r, i) => ({ ...r, seq: i + 1 }));
-  const last = out.length - 1;
-  if (last < 1 || typedIndex === last) return out;
-  const others = out.reduce((sum, r, i) => (i === last ? sum : sum + (Number(r.percent) || 0)), 0);
-  out[last] = { ...out[last], percent: String(Math.max(0, round2(100 - others))) };
-  return out;
-}
-
-const scheduleTotal = (rows: ScheduleRowInput[]) => percentSum(rows.map((r) => r.percent));
-
-function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
-
-function fillDatesForward(rows: ScheduleRowInput[], changedIndex: number): ScheduleRowInput[] {
-  const out = rows.map((r) => ({ ...r }));
-  for (let i = changedIndex + 1; i < out.length; i++) {
-    if (out[i].dueDate <= out[i - 1].dueDate) {
-      out[i] = { ...out[i], dueDate: addDays(out[i - 1].dueDate, 1) };
-    }
-  }
-  return out;
-}
 
 function NewAcquisitionDialog({
   busy,
@@ -279,9 +267,11 @@ function NewAcquisitionDialog({
     "THREE_PERCENT_CLUB" | "MEMBER" | "CUSTOMER"
   >("THREE_PERCENT_CLUB");
   const [sourceBookingId, setSourceBookingId] = React.useState("");
+  // Two rows, both blank: the split is the buyer's to type, and typing the
+  // first fills the second with what is left.
   const [schedule, setSchedule] = React.useState<ScheduleRowInput[]>([
-    { seq: 1, percent: "25", dueDate: today },
-    { seq: 2, percent: "75", dueDate: addDays(today, 30) },
+    { seq: 1, percent: "", dueDate: today },
+    { seq: 2, percent: "", dueDate: addDays(today, 30) },
   ]);
   const [acknowledge, setAcknowledge] = React.useState(false);
 
@@ -428,25 +418,15 @@ function NewAcquisitionDialog({
                 required
                 value={line.percent}
                 placeholder="%"
+                // A row that already holds a number is retyped, not edited.
+                onFocus={(e) => e.target.select()}
                 // max="100" only blocks the submit; it lets 150 be typed and
-                // then argues. Capping at what the other instalments have left
-                // means the column cannot be built past 100 in the first
-                // place — 80 typed where 60 is already spoken for lands on 40.
+                // then argues. fillForward caps the row at what the rows above
+                // it leave, so the column cannot be built past 100 at all.
                 onChange={(e) =>
                   setSchedule(
                     fillForward(
-                      schedule.map((r, i) =>
-                        i === index
-                          ? {
-                              ...r,
-                              percent: capPercent(
-                                schedule.map((x) => x.percent),
-                                index,
-                                e.target.value
-                              ),
-                            }
-                          : r
-                      ),
+                      schedule.map((r, i) => (i === index ? { ...r, percent: e.target.value } : r)),
                       index
                     )
                   )
@@ -472,7 +452,7 @@ function NewAcquisitionDialog({
                   type="button"
                   size="xs"
                   variant="ghost"
-                  onClick={() => setSchedule(fillForward(schedule.filter((_, i) => i !== index)))}
+                  onClick={() => setSchedule(removeRow(schedule, index))}
                 >
                   Remove
                 </Button>

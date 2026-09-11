@@ -31,6 +31,7 @@
     "data:reset": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reset-data.ts",
     "uat:seed:v2": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/uat-seed-v2.ts",
     "uat:seed": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/uat-seed.ts",
+    "seed:showcase": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/showcase-seed.ts",
     "rotate:key": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/rotate-key.ts",
     "reset:password": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reset-password.ts",
     "jobs:run": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/run-jobs.ts"
@@ -50,6 +51,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^11.11.17",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.460.0",
     "next": "^15.5.25",
     "react": "^18.3.1",

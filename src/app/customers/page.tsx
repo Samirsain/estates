@@ -6,6 +6,7 @@
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { maskMobile } from "@/lib/security/identity";
+import { canViewField } from "@/lib/security/permissions";
 import CustomersClient, { type CustomerRowView } from "./customers-client";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,10 @@ export default async function CustomersPage() {
           // tie and the Project column names one deal, not whichever row the
           // database happened to return first.
           submittedAt: true,
+          // End User or Investor is decided per purchase, on the Booking. The
+          // CustomerProfile column of the same name is written by nothing, so
+          // the list reads the deal it is showing rather than a blank field.
+          customerType: true,
           project: { select: { name: true } },
           plot: {
             select: { id: true, plotNumber: true, plotType: true },
@@ -75,21 +80,18 @@ export default async function CustomersPage() {
     personId: c.personId,
     customerId: c.customerId,
     name: c.person.fullName,
-    // The main list never shows full private details (prd-complete §6.1).
-    mobileMasked: maskMobile(c.person.primaryMobile),
+    // The list is masked for everyone whose work does not need the number;
+    // MD and Admin read it whole (prd-complete §6.1).
+    mobileMasked: canViewField(actor.role, "MOBILE_FULL")
+      ? c.person.primaryMobile
+      : maskMobile(c.person.primaryMobile),
     city: c.person.city ?? "—",
-    customerType: c.customerType,
+    customerType: latest.get(c.personId)?.customerType ?? null,
     project: latest.get(c.personId)?.project.name ?? null,
     plotNumber: latest.get(c.personId)?.plot.plotNumber ?? null,
     plotType: latest.get(c.personId)?.plot.plotType.replaceAll("_", " ") ?? null,
     plotId: latest.get(c.personId)?.plot.id ?? null,
     otherBookings: Math.max((bookingCount.get(c.personId) ?? 0) - 1, 0),
-    // CR-002 — the Member ID the Royalty link is filed under; the name under
-    // it is who that is, the same way the Members list reads Invited by.
-    royaltyMember: c.royaltyLinkedMember?.memberId ?? null,
-    royaltyMemberName: c.royaltyLinkedMember?.person.fullName ?? null,
-    royaltyMemberProfileId: c.royaltyLinkedMemberId,
-    royaltyLinkProvisional: c.royaltyLinkFinalAt === null,
     loyaltySlotsConsumed: c.loyaltySlotsConsumed,
   }));
 

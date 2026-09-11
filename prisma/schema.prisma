@@ -482,6 +482,8 @@ model Project {
   locationUrl String?
   /// Where the structure and layout documents live, http(s) only.
   driveUrl    String?
+  /// The 3D visuals or walkthrough, wherever they are hosted. http(s) only.
+  renderUrl   String?
   city        String?
   /// One amenity per line. Rendered as bullets on the Project card.
   amenities   String?

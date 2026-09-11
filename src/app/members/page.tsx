@@ -3,7 +3,8 @@
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
-import { maskMobile } from "@/lib/security/identity";
+import { maskAadhaar, maskMobile, maskPan } from "@/lib/security/identity";
+import { canViewField } from "@/lib/security/permissions";
 import { experienceSince } from "@/lib/domain/commission";
 import MembersClient, { type MemberRowView } from "./members-client";
 
@@ -11,6 +12,8 @@ export const dynamic = "force-dynamic";
 
 export default async function MembersPage() {
   const actor = await requireStaff();
+  // MD and Admin read a contact number whole; everyone else gets the mask.
+  const fullMobile = canViewField(actor.role, "MOBILE_FULL");
 
   const [members, activatable, deals] = await Promise.all([
     db.memberProfile.findMany({
@@ -81,9 +84,12 @@ export default async function MembersPage() {
     commissionHold: m.commissionHold,
     commissionHoldReason: m.commissionHoldReason,
     portalStatus: m.portalAccount?.status ?? null,
-    // PRD RD-05 — normal users see the last four digits only.
+    // PRD RD-05 — normal users see the last four digits only. MD and Admin
+    // ask for the whole value from the panel, which logs the read.
     aadhaarStatus: m.person.aadhaarStatus,
     panStatus: m.person.panStatus,
+    aadhaarMasked: m.person.aadhaarLastFour ? maskAadhaar(m.person.aadhaarLastFour) : "Not recorded",
+    panMasked: m.person.panMasked ? maskPan(m.person.panMasked) : "Not recorded",
     invitedCount: m._count.invitedMembers,
     introducedCount: m._count.introducedCustomers,
     dealCount: dealsByPerson.get(m.personId) ?? 0,
@@ -97,7 +103,7 @@ export default async function MembersPage() {
       rows={rows}
       activatable={activatable.map((p) => ({
         id: p.id,
-        label: `${p.fullName} · ${maskMobile(p.primaryMobile)}`,
+        label: `${p.fullName} · ${fullMobile ? p.primaryMobile : maskMobile(p.primaryMobile)}`,
       }))}
       permissions={{
         activate: can(actor.role, "MEMBER_ACTIVATE"),
@@ -105,6 +111,7 @@ export default async function MembersPage() {
         enterBank: can(actor.role, "BANK_DETAILS_ENTER"),
         verifyBank: can(actor.role, "BANK_VERIFY"),
         viewFullBank: can(actor.role, "REPORT_VIEW") && (actor.role === "MD" || actor.role === "ADMIN" || actor.role === "ACCOUNTS"),
+        viewFullIdentity: canViewField(actor.role, "AADHAAR_FULL"),
       }}
     />
   );

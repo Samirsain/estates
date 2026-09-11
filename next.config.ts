@@ -21,7 +21,10 @@ const SECURITY_HEADERS = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      // `next dev` compiles chunks with eval-source-map, so without
+      // 'unsafe-eval' nothing hydrates locally — the page sits on its loading
+      // state forever. The production bundle has no eval, so it stays strict.
+      `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "font-src 'self' data:",
