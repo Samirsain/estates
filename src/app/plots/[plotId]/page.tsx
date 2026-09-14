@@ -323,7 +323,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   const plot = await getPlot(plotId);
   if (!plot) notFound();
 
-  const [bookings, movedAway, acquisitions, enquiries, corrections, pendingRequests] = await Promise.all([
+  const [bookings, movedAway, acquisitions, enquiries, corrections, pendingRequests, plcCorrections] =
+    await Promise.all([
     db.booking.findMany({
       where: { plotId: plot.id },
       include: {
@@ -398,6 +399,18 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
       take: 50,
     }),
     listPendingHoldRequests(),
+    // A corrected PLC is a new snapshot superseding the old one, with the
+    // compulsory reason on it (PLC spec §11.1) — not a PLOT_DETAILS_CORRECTED
+    // audit row, so the history has to read it from the snapshots themselves.
+    db.plcSnapshot.findMany({
+      where: { plotId: plot.id, supersededById: { not: null } },
+      include: {
+        supersededBy: { include: { ruleVersion: { select: { version: true } } } },
+        ruleVersion: { select: { version: true } },
+      },
+      orderBy: { frozenAt: "desc" },
+      take: 50,
+    }),
   ]);
 
   // The same queue Plot Inventory reads, so the #1, #2 here match the row there.
@@ -581,6 +594,21 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             .filter(Boolean)
             .join(" — ") || undefined,
         by: c.actorRef,
+      })
+    ),
+    // "PLC: 7.00% → 9.00% — Park side recorded" (PLC spec §11.1).
+    ...plcCorrections.map(
+      (snapshot): HistoryItem => ({
+        at: snapshot.supersededBy!.frozenAt,
+        title: "PLC corrected",
+        detail:
+          [
+            `PLC: ${snapshot.totalPercent.toFixed(2)}% → ${snapshot.supersededBy!.totalPercent.toFixed(2)}%`,
+            snapshot.supersededBy!.correctionReason,
+          ]
+            .filter(Boolean)
+            .join(" — "),
+        by: "SYSTEM",
       })
     ),
   ]);
