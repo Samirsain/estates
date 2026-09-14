@@ -363,7 +363,7 @@ export default async function MemberDetailPage({
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
-      <div className="mx-auto max-w-5xl space-y-5 md:space-y-6">
+      <div className="mx-auto max-w-5xl space-y-4">
         {/* Back on the left; what staff can do to this Member on the right. */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
@@ -426,7 +426,7 @@ export default async function MemberDetailPage({
         </div>
 
         {/* 1 Header · 2 Summary */}
-        <Card className="p-5 md:p-6">
+        <Card className="p-4 md:p-5">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <UserCheck className="h-6 w-6" />
@@ -498,7 +498,7 @@ export default async function MemberDetailPage({
         </Card>
 
         {/* 3 Contact & Identity · 4 RERA · 5 Bank */}
-        <div className="grid gap-5 md:gap-6 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-3">
           <Section fill title="Contact" icon={<UserCheck className="h-3.5 w-3.5" />}>
             <Row label="Mobile" value={contact(member.person.primaryMobile)} />
             {member.person.altMobile && (
@@ -599,7 +599,7 @@ export default async function MemberDetailPage({
         </div>
 
         {/* 6 Network */}
-        <div className="grid gap-5 md:gap-6 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           <Section
             fill
             title={`Members invited (${member.invitedMembers.length})`}

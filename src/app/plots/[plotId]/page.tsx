@@ -630,10 +630,17 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   ].sort((a, b) => b.at.getTime() - a.at.getTime());
 
   const hasPast = pastDeals.length + acquisitions.length + enquiries.length > 0;
+  /* Whether anything is allocated, pending or past on this Plot. An Available
+     Plot with none of it used to get three bordered cards saying "No Booking",
+     "Not completed yet" and "No earlier deals" — three boxes to say nothing
+     three times, next to a column tall enough to hold the drawing. The header
+     badge already says Available; the cards only repeated it. */
+  const hasDeal = Boolean(current || liveAcquisition);
+  const hasDealColumn = hasDeal || hasPast || requests.length > 0;
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
-      <div className="mx-auto max-w-5xl space-y-5 md:space-y-6">
+      <div className="mx-auto max-w-5xl space-y-4">
         {/* Back on the left; everything that can be done to this Plot on the right. */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
@@ -728,7 +735,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
         </div>
 
         {/* 1 Header */}
-        <Card className="p-5 md:p-6">
+        <Card className="p-4 md:p-5">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <MapPin className="h-6 w-6" />
@@ -771,7 +778,13 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             that. Side by side, the two questions a Plot page is opened with —
             what is this Plot, and who has it — are both answered without
             scrolling, and the deal column fills the height the drawing makes. */}
-        <div className="grid items-start gap-5 md:gap-6 md:grid-cols-2">
+        <div
+          className={
+            hasDealColumn
+              ? "grid items-start gap-4 md:grid-cols-2"
+              : "space-y-4"
+          }
+        >
         {/* 2 PLC · 3 Layout · 4 Dimensions · 5 Boundaries — one column, read
             top to bottom: what the Plot is worth extra for, what it looks like,
             what it measures, and what it abuts. It was three columns side by
@@ -805,7 +818,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             )}
           </div>
 
-          <div className="mt-5 min-w-0 border-t border-border/60 pt-4">
+          <div className="mt-4 min-w-0 border-t border-border/60 pt-3">
             <SubHeading>Layout</SubHeading>
             {plot.widthFt && plot.lengthFt ? (
               <div className="mt-2 flex justify-center">
@@ -836,7 +849,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             )}
           </div>
 
-          <div className="mt-5 min-w-0 border-t border-border/60 pt-4">
+          <div className="mt-4 min-w-0 border-t border-border/60 pt-3">
             <SubHeading>Dimensions</SubHeading>
             <Row
               label="Width × Length"
@@ -870,7 +883,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             {plot.exactAreaReason && <Row label="Override reason" value={plot.exactAreaReason} />}
           </div>
 
-          <div className="mt-5 min-w-0 border-t border-border/60 pt-4">
+          <div className="mt-4 min-w-0 border-t border-border/60 pt-3">
             <SubHeading>Boundaries</SubHeading>
             {SIDES.map((side) => {
               const b = bySide.get(side);
@@ -890,7 +903,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
           </div>
 
           {position && (
-            <div className="mt-5 flex flex-wrap items-baseline justify-between gap-2 border-t border-border/60 pt-4">
+            <div className="mt-4 flex flex-wrap items-baseline justify-between gap-2 border-t border-border/60 pt-3">
               <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 Position
               </span>
@@ -901,7 +914,9 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
 
         {/* 5 Current Allocation · Booking · 6 Completion · Commission ·
             Hold Requests · 7 Past Deals — everything about the deal, stacked. */}
-        <div className="space-y-5 md:space-y-6">
+        {hasDealColumn && (
+        <div className="space-y-4">
+          {hasDeal && (
           <Section title="Current Allocation · Booking" icon={<FileText className="h-3.5 w-3.5" />}>
             {current ? (
               <>
@@ -975,11 +990,13 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 <Row label="Seller" value={person(liveAcquisition.sellerPerson, { mobile: true })} />
                 <Row label="Payment Given" value={paymentGiven} />
               </>
-            ) : (
-              <p className="text-xs text-muted-foreground">No Booking on this Plot.</p>
-            )}
+            ) : null}
           </Section>
+          )}
 
+          {/* Only once there is a sale to complete: "Not completed yet" is a
+              pending step on a Booking, and nothing at all without one. */}
+          {current && (
           <Section title="Completion" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
             {completion ? (
               completion.route === "ALLOTMENT" ? (
@@ -1013,6 +1030,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               <p className="text-xs text-muted-foreground">Not completed yet.</p>
             )}
           </Section>
+          )}
 
         {/* Commission on the deal holding this Plot — percentages only, never a
             rupee amount. Superseded lines stay on the Booking page. */}
@@ -1096,12 +1114,10 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
           </Section>
         )}
 
-        {/* 7 Past Deals */}
+        {/* 7 Past Deals — a card only when there are some. */}
+        {hasPast && (
         <Section title="Past Deals" icon={<Layers className="h-3.5 w-3.5" />}>
-          {!hasPast ? (
-            <p className="text-xs text-muted-foreground">No earlier deals, acquisitions or open enquiries.</p>
-          ) : (
-            <div className="space-y-4">
+          <div className="space-y-4">
               {pastDeals.length > 0 && (
                 <div>
                   <SubHeading>Earlier Bookings</SubHeading>
@@ -1183,9 +1199,10 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 </div>
               )}
             </div>
-          )}
           </Section>
+        )}
         </div>
+        )}
         </div>
 
         {/* 8 History — the one block that is about neither side, so it runs the

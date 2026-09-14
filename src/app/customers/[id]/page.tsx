@@ -316,7 +316,7 @@ export default async function CustomerDetailPage({
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
-      <div className="mx-auto max-w-5xl space-y-5 md:space-y-6">
+      <div className="mx-auto max-w-5xl space-y-4">
         {/* Back on the left; everything staff can start from this Customer on
             the right, in the order a sale runs. Each one opens the screen that
             already does it, with this Customer chosen. */}
@@ -392,7 +392,7 @@ export default async function CustomerDetailPage({
         </div>
 
         {/* Header and Summary — who they are, then four answers on one line. */}
-        <Card className="p-5 md:p-6">
+        <Card className="p-4 md:p-5">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <User className="h-6 w-6" />
@@ -463,7 +463,7 @@ export default async function CustomerDetailPage({
 
         {/* Alerts — only when something is due. */}
         {hasAlerts && (
-          <Card className="border-amber-500/40 p-5 md:p-6">
+          <Card className="border-amber-500/40 p-4 md:p-5">
             <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-800">
               <AlertTriangle className="h-3.5 w-3.5" />
               Needs action
@@ -512,7 +512,7 @@ export default async function CustomerDetailPage({
         )}
 
         {/* Who they are, how they prove it, where the money goes. */}
-        <div className="grid gap-5 md:gap-6 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-3">
           <Section fill title="Contact" icon={<User className="h-3.5 w-3.5" />}>
             <Row label="Mobile" value={contact(customer.person.primaryMobile)} />
             {customer.person.altMobile && (
@@ -807,7 +807,7 @@ export default async function CustomerDetailPage({
             />
           </dl>
 
-          <div className="mt-5 border-t border-border/60 pt-4">
+          <div className="mt-4 border-t border-border/60 pt-3">
             <p className="pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               Commission
             </p>

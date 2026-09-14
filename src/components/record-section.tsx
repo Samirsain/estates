@@ -33,15 +33,15 @@ export function Section({
   children: React.ReactNode;
 }) {
   return (
-    <Card className={cn("p-5 md:p-6", fill && "flex h-full flex-col")}>
-      <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-3">
+    <Card className={cn("p-4 md:p-5", fill && "flex h-full flex-col")}>
+      <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-2.5">
         <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
           {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
           <span className="truncate">{title}</span>
         </h2>
         {aside}
       </div>
-      <div className="mt-4 min-w-0">{children}</div>
+      <div className="mt-3 min-w-0">{children}</div>
     </Card>
   );
 }
