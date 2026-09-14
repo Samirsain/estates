@@ -419,9 +419,16 @@ export default async function CustomerDetailPage({
             <Stat label="Properties" value={`${bookedCount} booked · ${deliveredCount} delivered`} />
             <Stat label="Loyalty slots" value={`${customer.loyaltySlotsConsumed} of 3 used`} />
             {/* CR-002 — the Member who was Sold By on the first qualifying
-                purchase. Provisional until that purchase is paid in full or
-                bought back; CR-003's "No Royalty Member" when that purchase was
-                sold by the 3% Club or a Customer. */}
+                purchase; CR-003's nobody when that purchase was sold by the 3%
+                Club or a Customer.
+
+                Shaped like the Member profile's "Invited by", which answers the
+                same question on that side: a short value and the person's name
+                under it. It used to carry a sentence for a value and a hint
+                that wrapped onto a second line, which left this one column
+                taller than the three beside it. Where the link stands and which
+                position it took moved down to Loyalty & commission — that block
+                is already about exactly this and has the room. */}
             {customer.royaltyLinkedMember ? (
               <Stat
                 label="Royalty linked to"
@@ -433,22 +440,23 @@ export default async function CustomerDetailPage({
                     {customer.royaltyLinkedMember.memberId}
                   </Link>
                 }
+                // An unconfirmed link can still move to a different Member, so
+                // that is the fact worth the one line here — the name is on the
+                // Member's own page, the standing is not.
                 hint={
                   customer.royaltyLinkFinalAt
-                    ? `${customer.royaltyLinkedMember.person.fullName} · Position ${
-                        customer.royaltyPosition ?? "—"
-                      } at ${customer.royaltyRatePercent?.toFixed(2) ?? "—"}%`
-                    : `${customer.royaltyLinkedMember.person.fullName} · Provisional`
+                    ? customer.royaltyLinkedMember.person.fullName
+                    : "Provisional"
                 }
               />
             ) : customer.royaltyLinkFirstBookingId ? (
               <Stat
                 label="Royalty linked to"
-                value="No Royalty Member"
-                hint="First purchase sold by 3% Club or a Customer"
+                value="None"
+                hint="Not sold by a Member"
               />
             ) : (
-              <Stat label="Royalty linked to" value="—" hint="No qualifying purchase yet" />
+              <Stat label="Royalty linked to" value="—" hint="No qualifying purchase" />
             )}
           </dl>
         </Card>
@@ -783,7 +791,18 @@ export default async function CustomerDetailPage({
                     : "Provisional"
               }
               hint={
-                customer.royaltyLinkFinalAt ? formatIst(customer.royaltyLinkFinalAt) : undefined
+                customer.royaltyLinkFinalAt
+                  ? [
+                      formatIst(customer.royaltyLinkFinalAt),
+                      customer.royaltyPosition
+                        ? `Position ${customer.royaltyPosition} at ${
+                            customer.royaltyRatePercent?.toFixed(2) ?? "—"
+                          }%`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : undefined
               }
             />
           </dl>
