@@ -25,10 +25,12 @@ import { auditHistory, mergeHistory, newestFirst } from "@/lib/profile-history";
 import { TYPE_LABEL } from "@/app/acquisitions/types";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PersonDetailsEditor } from "@/components/person-details-editor";
 import { PersonLink } from "@/components/person-link";
 import { Row } from "@/components/fact-row";
+import { Section, Stat } from "@/components/record-section";
 import { AccountNumber, IdentityValue } from "@/components/protected-identity";
 import { MergeButton } from "@/app/customers/[id]/merge-button";
 import { MemberActions } from "./member-actions";
@@ -93,42 +95,6 @@ const TH = "pb-2 pr-4 text-left text-[11px] font-medium uppercase tracking-wide 
 const TD = "py-2.5 pr-4 align-top";
 const SUB = "block text-[11px] text-muted-foreground";
 
-/** Every block on the page is the same card: a quiet title, then its content. */
-function Section({
-  title,
-  icon,
-  aside,
-  children,
-}: {
-  title: string;
-  icon?: React.ReactNode;
-  aside?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="flex h-full flex-col p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {icon}
-          {title}
-        </h2>
-        {aside}
-      </div>
-      <div className="mt-3">{children}</div>
-    </Card>
-  );
-}
-
-/** A Summary answer: the label is quiet, the answer is not. */
-function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: React.ReactNode }) {
-  return (
-    <div className="min-w-0 md:px-4 md:first:pl-0">
-      <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 text-sm font-semibold text-foreground">{value}</dd>
-      {hint && <dd className="text-[11px] text-muted-foreground">{hint}</dd>}
-    </div>
-  );
-}
 
 /** One row of a network list: the id, the name under it, the band opposite. */
 function NetworkRow({
@@ -165,10 +131,13 @@ export default async function MemberDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ commissions?: string }>;
+  searchParams: Promise<{ commissions?: string; ctype?: string }>;
 }) {
   const actor = await requireStaff();
-  const [{ id }, { commissions: commissionView }] = await Promise.all([params, searchParams]);
+  const [{ id }, { commissions: commissionView, ctype }] = await Promise.all([
+    params,
+    searchParams,
+  ]);
   // Superseded records are hidden by default; ?commissions=all shows them.
   const showAllCommissions = commissionView === "all";
 
@@ -211,8 +180,19 @@ export default async function MemberDetailPage({
         ...(showAllCommissions ? {} : { isCurrent: true }),
       },
       include: {
-        booking: { include: { project: true, plot: true } },
-        acquisition: { include: { plot: { include: { project: true } } } },
+        booking: {
+          include: {
+            project: true,
+            plot: true,
+            primaryPerson: { include: { customerProfile: { select: { customerId: true } } } },
+          },
+        },
+        acquisition: {
+          include: {
+            plot: { include: { project: true } },
+            sellerPerson: { include: { customerProfile: { select: { customerId: true } } } },
+          },
+        },
       },
       orderBy: [{ isCurrent: "desc" }, { createdAt: "desc" }],
       take: 100,
@@ -351,6 +331,31 @@ export default async function MemberDetailPage({
     })),
   ]);
 
+  /* CR — the Commission block filters on two axes at once, both on the URL so
+     the page stays a server component: which records (Current / All) and which
+     kind of benefit. Only the kinds this Member actually holds get a chip; a
+     fixed row of five would leave two or three dead buttons on most profiles. */
+  const commissionTypes = [...new Set(commissions.map((c) => c.type))].sort();
+  const activeType = commissionTypes.includes(ctype as (typeof commissionTypes)[number])
+    ? ctype
+    : null;
+  const shownCommissions = activeType
+    ? commissions.filter((c) => c.type === activeType)
+    : commissions;
+  const commissionHref = (type: string | null) => {
+    const query = [
+      showAllCommissions ? "commissions=all" : "",
+      type ? `ctype=${type}` : "",
+    ].filter(Boolean);
+    return `/members/${member.id}${query.length ? `?${query.join("&")}` : ""}`;
+  };
+  const viewHref = (all: boolean) => {
+    const query = [all ? "commissions=all" : "", activeType ? `ctype=${activeType}` : ""].filter(
+      Boolean
+    );
+    return `/members/${member.id}${query.length ? `?${query.join("&")}` : ""}`;
+  };
+
   const filterLink = (active: boolean) =>
     active
       ? "rounded-md bg-secondary px-2 py-0.5 font-semibold text-foreground"
@@ -358,7 +363,7 @@ export default async function MemberDetailPage({
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
-      <div className="mx-auto max-w-5xl space-y-4">
+      <div className="mx-auto max-w-5xl space-y-5 md:space-y-6">
         {/* Back on the left; what staff can do to this Member on the right. */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
@@ -421,7 +426,7 @@ export default async function MemberDetailPage({
         </div>
 
         {/* 1 Header · 2 Summary */}
-        <Card className="p-4">
+        <Card className="p-5 md:p-6">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <UserCheck className="h-6 w-6" />
@@ -493,8 +498,8 @@ export default async function MemberDetailPage({
         </Card>
 
         {/* 3 Contact & Identity · 4 RERA · 5 Bank */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Section title="Contact" icon={<UserCheck className="h-3.5 w-3.5" />}>
+        <div className="grid gap-5 md:gap-6 md:grid-cols-3">
+          <Section fill title="Contact" icon={<UserCheck className="h-3.5 w-3.5" />}>
             <Row label="Mobile" value={contact(member.person.primaryMobile)} />
             {member.person.altMobile && (
               <Row label="Alternate Mobile" value={contact(member.person.altMobile)} />
@@ -508,7 +513,7 @@ export default async function MemberDetailPage({
           {/* Aadhaar sits with RERA and PAN with the bank, so the three cards
               carry an even share of the page. Last four and status; the full
               number only to MD and Admin, and every read is logged. */}
-          <Section title="RERA & Aadhaar" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
+          <Section fill title="Identity" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
             {/* Every RERA row says RERA. A bare "Status" sat above Aadhaar in the
                 same card and read as Aadhaar's status. */}
             <Row
@@ -553,31 +558,6 @@ export default async function MemberDetailPage({
               }
               hint={words(member.person.aadhaarStatus)}
             />
-          </Section>
-
-          <Section title="Bank & PAN" icon={<Banknote className="h-3.5 w-3.5" />}>
-            {bank ? (
-              <>
-                <Row label="Bank" value={bank.bankName} />
-                <Row label="Holder" value={bank.accountHolder} />
-                {/* No status line: bank details are verified as they are
-                    entered, so it only ever said "Verified". */}
-                <Row
-                  label="Account"
-                  value={
-                    <AccountNumber
-                      bankDetailId={bank.id}
-                      lastFour={bank.accountLastFour}
-                      canReveal={canViewField(actor.role, "BANK_FULL")}
-                    />
-                  }
-                />
-                <Row label="IFSC" value={bank.ifsc} />
-                <Row label="Branch" value={bank.branchName ?? "—"} />
-              </>
-            ) : (
-              <p className="text-xs text-muted-foreground">No bank details recorded.</p>
-            )}
             <Row
               label="PAN"
               value={
@@ -591,12 +571,38 @@ export default async function MemberDetailPage({
               hint={words(member.person.panStatus)}
             />
           </Section>
+
+          <Section fill title="Bank" icon={<Banknote className="h-3.5 w-3.5" />}>
+            {bank ? (
+              <>
+                {/* No status line: bank details are verified as they are
+                    entered, so it only ever said "Verified". */}
+                <Row
+                  label="Account"
+                  value={
+                    <AccountNumber
+                      bankDetailId={bank.id}
+                      lastFour={bank.accountLastFour}
+                      canReveal={canViewField(actor.role, "BANK_FULL")}
+                    />
+                  }
+                />
+                <Row label="IFSC" value={bank.ifsc} />
+                <Row label="Bank" value={bank.bankName} />
+                <Row label="Branch" value={bank.branchName ?? "—"} />
+                <Row label="Holder" value={bank.accountHolder} />
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">No bank details recorded.</p>
+            )}
+          </Section>
         </div>
 
         {/* 6 Network */}
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-5 md:gap-6 md:grid-cols-2">
           <Section
-            title={`Members Invited (${member.invitedMembers.length})`}
+            fill
+            title={`Members invited (${member.invitedMembers.length})`}
             icon={<Users className="h-3.5 w-3.5" />}
           >
             {member.invitedMembers.length === 0 ? (
@@ -622,7 +628,8 @@ export default async function MemberDetailPage({
           </Section>
 
           <Section
-            title={`Royalty Linked Customers (${royaltyLinkedCustomers.length})`}
+            fill
+            title={`Royalty linked Customers (${royaltyLinkedCustomers.length})`}
             icon={<Users className="h-3.5 w-3.5" />}
           >
             {royaltyLinkedCustomers.length === 0 ? (
@@ -652,7 +659,7 @@ export default async function MemberDetailPage({
           </Section>
         </div>
 
-        <Section title="Invite & Royalty Cycles" icon={<Layers className="h-3.5 w-3.5" />}>
+        <Section title="Invite & Royalty cycles" icon={<Layers className="h-3.5 w-3.5" />}>
           {member.performanceCycles.length === 0 ? (
             <p className="text-xs text-muted-foreground">No cycle has opened yet.</p>
           ) : (
@@ -697,7 +704,7 @@ export default async function MemberDetailPage({
 
         {/* 7 Deals */}
         <Section
-          title={`Bookings Sold by this Member (${soldBookings.length})`}
+          title={`Bookings sold (${soldBookings.length})`}
           icon={<FileText className="h-3.5 w-3.5" />}
         >
           {soldBookings.length === 0 ? (
@@ -751,8 +758,18 @@ export default async function MemberDetailPage({
         </Section>
 
         <Section
-          title={`Hold Requests & Enquiries (${requestsAndEnquiries.length})`}
+          title={`Hold requests & enquiries (${requestsAndEnquiries.length})`}
           icon={<MapPin className="h-3.5 w-3.5" />}
+          aside={
+            /* An empty list is the one that most needs somewhere to go. The
+               Enquiry screen is not pre-filled with this Member: it fills
+               ?for= with the person *making* the enquiry, and a Member is the
+               source of one, not the one making it. Staff pick "By Member"
+               there. */
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/enquiries">Start Enquiry</Link>
+            </Button>
+          }
         >
           {requestsAndEnquiries.length === 0 ? (
             <p className="text-xs text-muted-foreground">No Hold Requests or Enquiries yet.</p>
@@ -789,90 +806,131 @@ export default async function MemberDetailPage({
           )}
         </Section>
 
-        {/* 8 Commission — percentages only, never a rupee amount. */}
+        {/* 8 Commission — five columns, because five is what this queue is read
+            for: which Project, which Plot, whose sale, what kind of benefit,
+            and where it stands. The rate and the milestone were the rule
+            behind the row, not the row; they live on the Booking, which the
+            Plot cell still links to. */}
         <Section
-          title="Commission Records"
+          title="Commission"
           icon={<Layers className="h-3.5 w-3.5" />}
           aside={
-            <div className="flex gap-1 text-[11px]">
-              <Link href={`/members/${member.id}`} scroll={false} className={filterLink(!showAllCommissions)}>
+            <div className="flex flex-wrap items-center justify-end gap-1 text-[11px]">
+              {commissionTypes.length > 1 && (
+                <>
+                  <Link href={commissionHref(null)} scroll={false} className={filterLink(!activeType)}>
+                    All
+                  </Link>
+                  {commissionTypes.map((type) => (
+                    <Link
+                      key={type}
+                      href={commissionHref(type)}
+                      scroll={false}
+                      className={filterLink(activeType === type)}
+                    >
+                      {words(type)}
+                    </Link>
+                  ))}
+                  <span aria-hidden className="mx-1 h-3 w-px bg-border" />
+                </>
+              )}
+              <Link href={viewHref(false)} scroll={false} className={filterLink(!showAllCommissions)}>
                 Current
               </Link>
-              <Link
-                href={`/members/${member.id}?commissions=all`}
-                scroll={false}
-                className={filterLink(showAllCommissions)}
-              >
+              <Link href={viewHref(true)} scroll={false} className={filterLink(showAllCommissions)}>
                 All
               </Link>
             </div>
           }
         >
-          {commissions.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No commission records yet.</p>
+          {shownCommissions.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {commissions.length === 0
+                ? "No commission records yet."
+                : "Nothing of this kind on this Member."}
+            </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[52rem] text-xs">
+              <table className="w-full min-w-[44rem] text-xs">
                 <thead className="border-b border-border/50">
                   <tr>
-                    <th className={TH}>Booking</th>
+                    <th className={TH}>Project</th>
                     <th className={TH}>Plot</th>
+                    <th className={TH}>Customer</th>
                     <th className={TH}>Type</th>
-                    <th className={`${TH} text-right`}>%</th>
-                    <th className={`${TH} text-right`}>Milestone</th>
-                    <th className={TH}>Eligibility</th>
-                    <th className={`${TH} pr-0`}>Payment</th>
+                    <th className={`${TH} pr-0`}>Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
-                  {commissions.map((c) => {
+                  {shownCommissions.map((c) => {
                     const plot = c.booking?.plot ?? c.acquisition?.plot ?? null;
-                    const project = c.booking?.project.name ?? c.acquisition?.plot?.project.name ?? null;
+                    const project =
+                      c.booking?.project.name ?? c.acquisition?.plot?.project.name ?? "—";
+                    // A Booking has a buyer; a Buyback or Resale has a seller.
+                    // Either way it is the person the row is about.
+                    const person = c.booking?.primaryPerson ?? c.acquisition?.sellerPerson ?? null;
                     return (
                       <tr key={c.id}>
+                        <td className={`${TD} font-medium`}>{project}</td>
                         <td className={TD}>
+                          {plot ? (
+                            <Link
+                              href={`/plots/${plot.id}`}
+                              className="font-semibold text-primary hover:underline"
+                            >
+                              {plot.plotNumber}
+                            </Link>
+                          ) : (
+                            <span className="font-semibold">
+                              {c.acquisition?.propertyNumber ?? "—"}
+                            </span>
+                          )}
+                          {/* The row still has to lead somewhere: this is the
+                              record the rate and the milestone are on. */}
                           {c.booking ? (
                             <Link
                               href={`/bookings/${c.booking.id}`}
-                              className="font-semibold text-primary hover:underline"
+                              className={`${SUB} text-primary hover:underline`}
                             >
                               {c.booking.bookingNumber ?? c.booking.requestNo}
                             </Link>
                           ) : c.acquisition ? (
                             <Link
                               href={`/acquisitions/${c.acquisition.id}`}
-                              className="font-semibold text-primary hover:underline"
+                              className={`${SUB} text-primary hover:underline`}
                             >
                               {TYPE_LABEL[c.acquisition.type] ?? "Buyback / Resale"}
                             </Link>
-                          ) : (
-                            "—"
-                          )}
+                          ) : null}
                           {!c.isCurrent && <span className={SUB}>Superseded</span>}
                         </td>
                         <td className={TD}>
-                          {plot ? (
-                            <Link href={`/plots/${plot.id}`} className="font-medium text-primary hover:underline">
-                              {plot.plotNumber}
-                            </Link>
+                          {person ? (
+                            <PersonLink
+                              personId={person.id}
+                              name={person.fullName}
+                              className="font-medium"
+                            />
                           ) : (
-                            <span className="font-medium">{c.acquisition?.propertyNumber ?? "—"}</span>
+                            "—"
                           )}
-                          {project && <span className={SUB}>{project}</span>}
-                          {plot && <span className={SUB}>{titleWords(plot.plotType)}</span>}
+                          {person?.customerProfile && (
+                            <span className={SUB}>{person.customerProfile.customerId}</span>
+                          )}
                         </td>
                         <td className={`${TD} font-medium`}>{words(c.type)}</td>
-                        <td className={`${TD} text-right font-medium tabular-nums`}>{c.percent.toFixed(2)}%</td>
-                        <td className={`${TD} text-right tabular-nums`}>{c.milestonePercent.toFixed(0)}%</td>
-                        <td className={TD}>
-                          {eligibilityLabel(c.eligibility, c.type as CommissionType)}
-                          {c.holdReason && (
-                            <span className="block text-[11px] text-amber-700">{words(c.holdReason)}</span>
-                          )}
-                        </td>
                         <td className={`${TD} pr-0`}>
+                          <span className="font-medium">
+                            {eligibilityLabel(c.eligibility, c.type as CommissionType)}
+                          </span>
+                          {" · "}
                           {PAYMENT_LABEL[c.payment] ?? c.payment}
-                          {c.paidOn && <span className={SUB}>Paid {formatIst(c.paidOn)}</span>}
+                          {c.holdReason && (
+                            <span className="block text-[11px] text-amber-700">
+                              {words(c.holdReason)}
+                            </span>
+                          )}
+                          {c.paidOn && <span className={SUB}>{formatIst(c.paidOn)}</span>}
                         </td>
                       </tr>
                     );
@@ -883,34 +941,37 @@ export default async function MemberDetailPage({
           )}
         </Section>
 
-        {/* 9 Member Access · 10 History */}
-        <div className="grid gap-4 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
-          <Section title="Member Access" icon={<KeyRound className="h-3.5 w-3.5" />}>
-            {portal ? (
-              <div className="space-y-3">
-                <div>
-                  <Row
-                    label="Portal account"
-                    value={
-                      <Badge variant={portalState === "Active" ? "success" : "destructive"}>{portalState}</Badge>
-                    }
-                  />
-                  <Row
-                    label="Last login"
-                    value={portal.lastLoginAt ? formatIstDateTime(portal.lastLoginAt) : "Never"}
-                  />
-                  <Row label="Terms accepted" value={termsAccepted ? "Yes" : "No"} />
-                </div>
-                {canManage && (
-                  <PortalAccess memberProfileId={member.id} memberId={member.memberId} locked={portalLocked} />
-                )}
+        {/* 9 Member access */}
+        <Section title="Member access" icon={<KeyRound className="h-3.5 w-3.5" />}>
+          {portal ? (
+            <div className="space-y-3">
+              {/* Three short facts across, not stacked: the block runs the full
+                  width of the page, and three one-line answers down the left of
+                  it left the rest of the row empty. */}
+              <div className="grid gap-x-6 sm:grid-cols-2 md:grid-cols-3">
+                <Row
+                  label="Portal account"
+                  value={
+                    <Badge variant={portalState === "Active" ? "success" : "destructive"}>{portalState}</Badge>
+                  }
+                />
+                <Row
+                  label="Last login"
+                  value={portal.lastLoginAt ? formatIstDateTime(portal.lastLoginAt) : "Never"}
+                />
+                <Row label="Terms accepted" value={termsAccepted ? "Yes" : "No"} />
               </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">No portal account yet.</p>
-            )}
-          </Section>
+              {canManage && (
+                <PortalAccess memberProfileId={member.id} memberId={member.memberId} locked={portalLocked} />
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No portal account yet.</p>
+          )}
+        </Section>
 
-          <Section title="History" icon={<History className="h-3.5 w-3.5" />}>
+        {/* 10 History — last and full width, as on the Customer profile. */}
+        <Section title="History" icon={<History className="h-3.5 w-3.5" />}>
             {history.length === 0 ? (
               <p className="text-xs text-muted-foreground">Nothing recorded yet.</p>
             ) : (
@@ -929,8 +990,7 @@ export default async function MemberDetailPage({
                 ))}
               </ul>
             )}
-          </Section>
-        </div>
+        </Section>
       </div>
     </AppShell>
   );

@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Row } from "@/components/fact-row";
+import { Section } from "@/components/record-section";
 import { PersonLink } from "@/components/person-link";
 import {
   canEditPlotDetails,
@@ -142,29 +143,6 @@ const BENEFICIARY = {
 /** One list-row shape for Past Deals: what, who, and how it ended. */
 const DEAL_ROW =
   "flex flex-col gap-1 py-2.5 sm:grid sm:grid-cols-[9rem_minmax(0,1fr)_auto] sm:items-center sm:gap-4";
-
-/** Every block on the page is the same card: a quiet title, then its content. */
-function Section({
-  title,
-  icon,
-  children,
-}: {
-  title: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    // Sized by its own content: two cards side by side no longer stretch the
-    // shorter one into an empty box.
-    <Card className="p-4">
-      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {icon}
-        {title}
-      </h2>
-      <div className="mt-3 min-w-0">{children}</div>
-    </Card>
-  );
-}
 
 /** A sub-list heading inside Past Deals. */
 function SubHeading({ children }: { children: React.ReactNode }) {
@@ -625,7 +603,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
-      <div className="mx-auto max-w-5xl space-y-4">
+      <div className="mx-auto max-w-5xl space-y-5 md:space-y-6">
         {/* Back on the left; everything that can be done to this Plot on the right. */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
@@ -720,7 +698,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
         </div>
 
         {/* 1 Header */}
-        <Card className="p-4">
+        <Card className="p-5 md:p-6">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <MapPin className="h-6 w-6" />
@@ -840,7 +818,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
         </Section>
 
         {/* 5 Current Allocation · Booking · 6 Completion */}
-        <div className="grid items-start gap-4 md:grid-cols-2">
+        <div className="grid items-start gap-5 md:gap-6 md:grid-cols-2">
           <Section title="Current Allocation · Booking" icon={<FileText className="h-3.5 w-3.5" />}>
             {current ? (
               <>
