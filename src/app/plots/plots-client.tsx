@@ -1124,8 +1124,8 @@ export default function PlotsClient({
           </Card>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[62rem] border-separate border-spacing-y-2 text-sm">
-              <thead className="text-left text-[11px] font-semibold uppercase tracking-wide text-foreground">
+            <table className="w-full min-w-[62rem] border-collapse text-sm">
+              <thead className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-3 py-1">Plot</th>
                   <th className="w-[9.5rem] px-3 py-1 text-center">Size (W × L)</th>
@@ -1229,21 +1229,23 @@ export default function PlotsClient({
                       </td>
                     </tr>
                   )}
-                  {/* A 1px outline and no fill: the row is a card in outline
-                      only. A table in border-separate paints no border on the
-                      <tr>, so the cells paint it — border-y across the row, and
-                      the two end cells close it off. */}
+                  {/* One hairline under the row, which is the house rule:
+                      chrome is separated by a line and a change of canvas,
+                      never by elevation. The row used to be drawn as an
+                      outlined card floating in a 2px gap, which made a table of
+                      forty plots read as forty separate objects and left the
+                      column headings hanging over nothing. */}
                   <tr
                     // One vertical alignment for the whole row. Status, PLC and
                     // the action were centred while Plot, Size, Area and
                     // Location hung from the top, so every column started on a
                     // different line.
-                    className="h-14 rounded-xl align-middle [&>td]:border-y [&>td]:border-border"
+                    className="h-14 border-b border-border/60 align-middle transition-colors hover:bg-secondary/50"
                   >
                     {/* The Plot is the subject; the Project and type are what
                         it belongs to, so they read under it rather than as a
                         column repeating one name down the whole list. */}
-                    <td className="rounded-l-xl border-l border-border px-3 py-2">
+                    <td className="px-3 py-2">
                       <Link
                         href={`/plots/${plot.id}`}
                         className="font-semibold text-primary hover:underline"
@@ -1401,7 +1403,7 @@ export default function PlotsClient({
                     <td className="px-3 py-2 text-center text-sm font-semibold tabular-nums">
                       {plot.plc ? `${Number(plot.plc.totalPercent).toFixed(2)}%` : "—"}
                     </td>
-                    <td className="w-px whitespace-nowrap rounded-r-xl border-r border-border py-2 pl-3 pr-2">
+                    <td className="w-px whitespace-nowrap py-2 pl-3 pr-2">
                       {/* The thing to do to this Plot now, on the row — or a
                           menu, once there is more than one — and then Book.
                           Both solid: the row offers two things and neither is
