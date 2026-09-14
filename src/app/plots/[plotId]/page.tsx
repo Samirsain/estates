@@ -16,6 +16,8 @@ import {
   ArrowLeft,
   Calculator,
   CheckCircle2,
+  Clock,
+  Lock as LockIcon,
   FileText,
   History,
   Layers,
@@ -340,6 +342,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
           orderBy: { role: "asc" },
         },
         completions: { where: { reopenedAt: null } },
+        // The charge as it stood when this Booking froze it (PLC spec §7.1).
+        plcSnapshot: { include: { ruleVersion: { select: { version: true } } } },
         scheduleVersions: { where: { status: "ACTIVE" }, include: { instalments: true } },
         cancellations: { orderBy: { requestedAt: "desc" }, take: 1 },
         commissions: {
@@ -639,6 +643,36 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
      badge already says Available; the cards only repeated it. */
   const hasDeal = Boolean(current || liveAcquisition);
 
+  /* PRD §10.2 — the Hold, read in full. */
+  const hold = plot.holds[0] ?? null;
+  const nowMs = Date.now();
+  /* A frozen Hold's clock is stopped: what is left is the figure banked when
+     the Booking Request was raised, not the wall clock (PRD §10.5). */
+  const holdRemainingMs = hold
+    ? (hold.frozenRemainingMs ?? hold.expiresAt.getTime() - nowMs)
+    : 0;
+  const spanWords = (ms: number) => {
+    if (ms <= 0) return "expired";
+    const hours = Math.floor(ms / 3_600_000);
+    if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+    return `${hours}h ${Math.floor((ms % 3_600_000) / 60_000)}m`;
+  };
+
+  /* The PLC frozen on whatever holds the Plot now, against what the sides
+     would earn today. Only worth a line when the two differ — a Plot whose
+     rules have not moved says nothing. */
+  const frozen = current?.plcSnapshot ?? hold?.plcSnapshot ?? null;
+  const frozenPercent = frozen ? frozen.totalPercent.toFixed(2) : null;
+  const frozenDiffers = Boolean(plc && frozenPercent && frozenPercent !== plc.total);
+
+  /* Plot details are the Plot's own facts until something commits them
+     (inventory.ts: canEditPlotDetails). The page says which thing. */
+  const lockReason = canEditPlotDetails(plot.status)
+    ? null
+    : current
+      ? `${STATUS_LABEL[plot.status] ?? plot.status} — the Booking holds these details.`
+      : "A committed Plot's details are frozen.";
+
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
       <div className="mx-auto max-w-5xl space-y-4">
@@ -885,7 +919,11 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                     hint={c.evidence || undefined}
                   />
                 ))}
-                <Row label="Total" value={<span className="tabular-nums">{plc.total}%</span>} />
+                <Row
+                  label="Total"
+                  value={<span className="tabular-nums">{plc.total}%</span>}
+                  hint={version ? `Version ${version.version}` : undefined}
+                />
               </>
             ) : (
               <p className="mt-2 text-xs text-muted-foreground">{plcIssue}</p>
@@ -906,6 +944,84 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
         {/* 5 Current Allocation · Booking · 6 Completion — the deal, stacked
             in the column beside the Plot. */}
         <div className="space-y-4">
+          {/* Why editing is closed. Only when it is — an editable Plot has
+              nothing to explain. */}
+          {lockReason && (
+            <Section title="Details locked" icon={<LockIcon className="h-3.5 w-3.5" />}>
+              <p className="text-xs text-muted-foreground">{lockReason}</p>
+            </Section>
+          )}
+
+          {/* PRD §10.2 — the Hold, in full: who it is for, who got it done, how
+              long is left on it and who is answerable for it. */}
+          {hold && (
+            <Section title="Current Allocation · Hold" icon={<Clock className="h-3.5 w-3.5" />}>
+              <Row label="Held for" value={person(hold.person, { mobile: true })} />
+              <Row
+                label="Sourced by"
+                value={
+                  hold.sourcedByPerson
+                    ? (hold.sourcedByPerson.memberProfile?.memberId ??
+                      hold.sourcedByPerson.fullName)
+                    : "3% Club"
+                }
+                hint={hold.sourcedByPerson?.fullName}
+              />
+              <Row label="Created" value={formatIstDateTime(hold.startsAt)} />
+              <Row
+                label="Expires"
+                value={formatIstDateTime(hold.expiresAt)}
+                hint={hold.frozenAt ? undefined : spanWords(holdRemainingMs)}
+              />
+              {/* PRD §10.5 — a Booking Request stops the clock, and the figure
+                  banked here is restored exactly if Accounts reject it. */}
+              {hold.frozenAt && (
+                <Row
+                  label="Frozen"
+                  value={spanWords(holdRemainingMs)}
+                  hint={`Stopped ${formatIstDateTime(hold.frozenAt)} for the Booking Request`}
+                />
+              )}
+              <Row label="Hold age" value={spanWords(nowMs - hold.startsAt.getTime())} />
+              <Row
+                label="Extensions"
+                value={hold.extensionCount === 0 ? "None" : String(hold.extensionCount)}
+              />
+              <Row label="Responsible CRM" value={hold.responsibleStaffId ?? "—"} />
+              {hold.plcSnapshot && (
+                <Row
+                  label="PLC snapshot"
+                  value={
+                    <span className="tabular-nums">
+                      {hold.plcSnapshot.totalPercent.toFixed(2)}%
+                    </span>
+                  }
+                  hint={`Version ${hold.plcSnapshot.ruleVersion.version} · frozen ${formatIst(
+                    hold.plcSnapshot.frozenAt
+                  )}`}
+                />
+              )}
+            </Section>
+          )}
+
+          {/* The charge this Plot is committed at, when the rules have moved
+              since. The frozen figure is the one that counts (PLC spec §10.3);
+              this only says the two no longer agree. */}
+          {frozenDiffers && (
+            <Section title="Frozen vs current PLC" icon={<Percent className="h-3.5 w-3.5" />}>
+              <Row
+                label="Frozen on this deal"
+                value={<span className="tabular-nums">{frozenPercent}%</span>}
+                hint={`Version ${frozen!.ruleVersion.version} · ${formatIst(frozen!.frozenAt)}`}
+              />
+              <Row
+                label="Current rules"
+                value={<span className="tabular-nums">{plc!.total}%</span>}
+                hint="What the sides would earn today"
+              />
+            </Section>
+          )}
+
           {hasDeal && (
           <Section title="Current Allocation · Booking" icon={<FileText className="h-3.5 w-3.5" />}>
             {current ? (
