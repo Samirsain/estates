@@ -171,11 +171,11 @@ function PlotShape({
   const l = Number(lengthFt);
   if (!(w > 0) || !(l > 0)) return null;
 
-  const scale = 240 / Math.max(w, l);
-  const bw = Math.max(92, w * scale);
-  const bh = Math.max(92, l * scale);
-  const padX = 26;
-  const padY = 30;
+  const scale = 210 / Math.max(w, l);
+  const bw = Math.max(88, w * scale);
+  const bh = Math.max(88, l * scale);
+  const padX = 150;
+  const padY = 52;
   const x = padX;
   const y = padY;
   const x2 = x + bw;
@@ -191,10 +191,10 @@ function PlotShape({
   } as const;
 
   const marks = {
-    NORTH: { letter: [cx, y - 14] },
-    SOUTH: { letter: [cx, y2 + 14] },
-    WEST: { letter: [x - 14, cy] },
-    EAST: { letter: [x2 + 14, cy] },
+    NORTH: { letter: [cx, y - 14], label: [cx, y - 34], anchor: "middle" },
+    SOUTH: { letter: [cx, y2 + 16], label: [cx, y2 + 36], anchor: "middle" },
+    WEST: { letter: [x - 14, cy], label: [x - 30, cy], anchor: "end" },
+    EAST: { letter: [x2 + 14, cy], label: [x2 + 30, cy], anchor: "start" },
   } as const;
 
   const spoken = SIDES.filter((side) => sides[side])
@@ -202,7 +202,7 @@ function PlotShape({
     .join(", ");
 
   return (
-    <figure className="m-0 w-full max-w-[19rem]">
+    <figure className="m-0 w-full">
       <svg
         viewBox={`0 0 ${bw + padX * 2} ${bh + padY * 2}`}
         className="block h-auto w-full overflow-visible text-foreground"
@@ -235,20 +235,38 @@ function PlotShape({
         >
           {formatPlotSize(widthFt, lengthFt)}
         </text>
-        {/* The compass only. What each side abuts is named in the list beside
-            the drawing, where it has room to be read. */}
-        {SIDES.map((side) => (
-          <text
-            key={side}
-            x={marks[side].letter[0]}
-            y={marks[side].letter[1]}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            className="fill-current text-[13px] font-bold"
-          >
-            {side.charAt(0)}
-          </text>
-        ))}
+        {/* The compass letter on each side, and what that side abuts just
+            beyond it. The drawing now has the card's full width, so the
+            viewBox is scaled up rather than down and this text renders larger
+            than its nominal size instead of smaller. */}
+        {SIDES.map((side) => {
+          const mark = marks[side];
+          return (
+            <g key={side}>
+              <text
+                x={mark.letter[0]}
+                y={mark.letter[1]}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                className="fill-current text-[13px] font-bold"
+              >
+                {side.charAt(0)}
+              </text>
+              {sides[side] && (
+                <text
+                  x={mark.label[0]}
+                  y={mark.label[1]}
+                  textAnchor={mark.anchor}
+                  dominantBaseline="middle"
+                  className="text-[12px] font-medium text-foreground/75"
+                  fill="currentColor"
+                >
+                  {sides[side]!.label}
+                </text>
+              )}
+            </g>
+          );
+        })}
       </svg>
       <figcaption className="sr-only">
         Plot {plotNumber} at its own proportions, with what each side abuts.
@@ -761,7 +779,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               // The drawing on the left, what each side abuts beside it. The
               // labels used to ring the shape, which cost the shape the width
               // they took and still left them too small to read.
-              <div className="flex flex-1 items-center gap-4 py-2">
+              <div className="flex flex-1 items-center justify-center py-2">
                 <PlotShape
                   plotNumber={plot.plotNumber}
                   widthFt={plot.widthFt.toString()}
@@ -781,35 +799,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                     })
                   )}
                 />
-                <div className="min-w-0 flex-1">
-                  <SubHeading>Boundaries</SubHeading>
-                  <dl className="mt-1 text-xs">
-                  {SIDES.map((side) => {
-                    const b = bySide.get(side);
-                    return (
-                      <div key={side} className="flex gap-2 py-1">
-                        <dt className="w-4 shrink-0 font-bold text-foreground">
-                          {side.charAt(0)}
-                        </dt>
-                        <dd className="min-w-0">
-                          {b ? (
-                            <span className="font-medium text-foreground">
-                              {BOUNDARY_KIND_LABEL[b.kind] ?? b.kind}
-                              {b.kind === "ROAD" && b.roadWidthFt
-                                ? ` · ${num(b.roadWidthFt)} ft`
-                                : b.reference
-                                  ? ` · ${b.reference}`
-                                  : ""}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">Not recorded</span>
-                          )}
-                        </dd>
-                      </div>
-                    );
-                  })}
-                  </dl>
-                </div>
               </div>
             ) : (
               <p className="flex flex-1 items-center justify-center py-2 text-xs text-muted-foreground">
@@ -829,12 +818,27 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                   : "Irregular Plot"
               }
             />
+            {/* All three are quoted, so all three are read at the same size.
+                Only the unit steps back — the same treatment the inventory list
+                gives the pair it shows. */}
             <Row
               label={plot.exactAreaSqFt ? "Area (exact)" : "Area"}
-              value={<span className="tabular-nums">{num(plot.areaSqFt)} sq ft</span>}
-              hint={
-                <span className="tabular-nums">
-                  {conv(plot.areaSqYd)} sq yd · {conv(plot.areaSqM)} sq m
+              value={
+                <span className="block space-y-0.5">
+                  {(
+                    [
+                      [num(plot.areaSqFt), "sq ft"],
+                      [conv(plot.areaSqYd), "sq yd"],
+                      [conv(plot.areaSqM), "sq m"],
+                    ] as const
+                  ).map(([amount, unit]) => (
+                    <span key={unit} className="block whitespace-nowrap tabular-nums">
+                      {amount}
+                      <span className="ml-1 text-[11px] font-medium text-muted-foreground">
+                        {unit}
+                      </span>
+                    </span>
+                  ))}
                 </span>
               }
             />
