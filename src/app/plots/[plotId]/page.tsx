@@ -40,6 +40,7 @@ import {
   buildPlcSnapshot,
   isOpenSide,
   locationChargeLabel,
+  shortSides,
 } from "@/lib/domain/inventory";
 import { DEAL_CANCELLED_MESSAGE } from "@/lib/domain/acquisition";
 import { getPlot } from "@/lib/services/inventory-service";
@@ -418,11 +419,26 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   }));
   const position = locationChargeLabel(boundaries).join(" · ");
 
-  let plcPercent: string | null = null;
+  /* Every charge the sides earn, each named with the sides that earned it, and
+     the total under them. A Road side with no width cannot be banded and
+     buildPlcSnapshot throws rather than guess (PLC spec §5.3), so the reason
+     shows where the numbers would be. */
+  let plc: {
+    total: string;
+    components: { label: string; percent: string; evidence: string }[];
+  } | null = null;
   let plcIssue: string | null = version ? null : "No published PLC version";
   if (version) {
     try {
-      plcPercent = buildPlcSnapshot(boundaries, plcRules(version.components)).totalPercent.toFixed(2);
+      const snapshot = buildPlcSnapshot(boundaries, plcRules(version.components));
+      plc = {
+        total: snapshot.totalPercent.toFixed(2),
+        components: snapshot.components.map((c) => ({
+          label: c.label,
+          percent: Number(c.percent).toFixed(2),
+          evidence: shortSides(c.evidence),
+        })),
+      };
     } catch (error) {
       plcIssue = error instanceof Error ? error.message : "PLC could not be worked out";
     }
@@ -855,13 +871,25 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               />
             )}
             {plot.exactAreaReason && <Row label="Override reason" value={plot.exactAreaReason} />}
-            <Row
-              label="PLC"
-              value={
-                plcPercent ? <span className="tabular-nums">{plcPercent}%</span> : "—"
-              }
-              hint={plcPercent ? undefined : (plcIssue ?? undefined)}
-            />
+          </div>
+
+          <div className="mt-3 min-w-0 border-t border-border/60 pt-3">
+            <SubHeading>PLC</SubHeading>
+            {plc ? (
+              <>
+                {plc.components.map((c) => (
+                  <Row
+                    key={c.label}
+                    label={c.label}
+                    value={<span className="tabular-nums">{c.percent}%</span>}
+                    hint={c.evidence || undefined}
+                  />
+                ))}
+                <Row label="Total" value={<span className="tabular-nums">{plc.total}%</span>} />
+              </>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">{plcIssue}</p>
+            )}
           </div>
 
           {/* The sentence the drawing adds up to, under the drawing. */}

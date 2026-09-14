@@ -31,30 +31,24 @@ Do not show:
 - Active Hold / Booking lock explanation
 - Change Plot lock explanation
 
-## 3. Location Charge — the rate only
-The **Location Charge (PLC %) section** is removed. The rate itself is kept, as
-one line beside the Dimensions.
+## 3. Location Charge
+Shown in full, under the Dimensions, inside the Layout block.
 
-Show:
-- Total PLC, as a single percentage
-- The PLC version it was worked out against
-
-Do not show:
-- PLC components
-- Corner charge
-- Park Facing charge
-- Road Facing charge
-- Sides earning PLC
+Show, one line each:
+- Every charge the Plot's sides earn — road width band, open sides, park
+  facing, playground facing
+- The sides that earned it, as the line's own hint
+- Total PLC under them
 
 Where a side cannot be banded — a Road with no width recorded — show the reason
-in place of the percentage. Never a guessed band.
-
-The full breakdown stays in the Calculator and the configuration flow.
+in place of the numbers. Never a guessed band.
 
 ## 4. PLC Version Used
-Show the version number beside the rate, as its hint.
+Not shown. The charge is read as what the sides earn, not as which published
+version worked it out.
 
 Do not show:
+- PLC version number
 - Frozen vs current version comparison
 - Version date
 
@@ -259,9 +253,10 @@ The Plot Profile should show:
 Recommended top-to-bottom order:
 
 1. Header
-2. Dimensions, PLC rate and the Layout drawing — one block. The drawing carries
-   the four sides (§6), so there is no separate Boundaries list to repeat them.
-3. Position — what the sides add up to, under the drawing
+2. Layout — one block, read down: the drawing with each side labelled, then the
+   Dimensions, then the PLC the sides earn. The drawing carries the four sides
+   (§6), so there is no separate Boundaries list to repeat them.
+3. Position — what the sides add up to, closing the block
 4. Current Allocation · Booking
 5. Completion
 6. Past Deals
@@ -275,8 +270,7 @@ Operational actions remain available through the Features / Actions area.
 
 ## 16. Explicitly Removed
 - [x] Details Locked
-- [x] Location Charge (PLC %) **as a section** — the rate survives as one line (§3)
-- [x] PLC components, corner / park / road charges, sides earning PLC
+- [x] PLC Version Used (§4)
 - [x] Frozen vs Current
 - [x] Current Allocation · Hold
 - [x] Hold details as a dedicated profile section
