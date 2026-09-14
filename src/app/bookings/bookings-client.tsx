@@ -16,7 +16,14 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
-import { capShare, shareRoom, shareSum } from "@/lib/domain/shares";
+import { capShare, round2, shareRoom, shareSum } from "@/lib/domain/shares";
+import {
+  addDays,
+  fillDatesForward,
+  fillForward,
+  removeRow,
+  scheduleTotal,
+} from "@/lib/domain/schedule-edit";
 import { eligibilityLabel, type CommissionType } from "@/lib/domain/commission";
 import {
   formatIst,
@@ -285,7 +292,7 @@ export function PaymentPercentInput({
 }
 
 type Dialog =
-  | { kind: "NEW"; plotId?: string }
+  | { kind: "NEW"; plotId?: string; personId?: string }
   | { kind: "REVISE"; row: BookingRowView }
   | { kind: "DECIDE"; row: BookingRowView; approve: boolean }
   | { kind: "CANCEL"; row: BookingRowView }
@@ -316,6 +323,8 @@ export default function BookingsClient({
   rows,
   bookable,
   focusId,
+  startFor,
+  initialOpen,
   people,
   members,
   permissions,
@@ -329,6 +338,10 @@ export default function BookingsClient({
   /** A Plot id from ?plot=, so Plot Inventory's Book button lands on the form. */
   /** Set on /bookings/[id]: one Booking, full page, instead of the list. */
   focusId: string | null;
+  /** A Person id from ?for= on a Customer profile: Start Booking opens for them. */
+  startFor?: string | null;
+  /** From a Plot's own page: ?open=CANCEL | CHANGE_PLOT starts that on the focused Booking. */
+  initialOpen?: string | null;
   people: PersonView[];
   members: MemberView[];
   permissions: Permissions;
@@ -343,7 +356,29 @@ export default function BookingsClient({
     () => Array.from(new Set(rows.map((r) => r.project))).sort(),
     [rows]
   );
-  const [dialog, setDialog] = React.useState<Dialog>(null);
+  const [dialog, setDialog] = React.useState<Dialog>(() => {
+    if (startFor && permissions.submit) return { kind: "NEW", personId: startFor };
+    // Opened from the Plot's page on one Booking. Only what that Booking's own
+    // buttons would offer is opened, under the same rules.
+    const row = focusId ? rows.find((r) => r.id === focusId) : undefined;
+    if (!row) return null;
+    if (
+      initialOpen === "CANCEL" &&
+      ["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
+      permissions.cancel
+    ) {
+      return { kind: "CANCEL", row };
+    }
+    if (
+      initialOpen === "CHANGE_PLOT" &&
+      ["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
+      row.activeProcess === "NONE" &&
+      permissions.raiseChangePlot
+    ) {
+      return { kind: "CHANGE_PLOT", row };
+    }
+    return null;
+  });
   const [openId, setOpenId] = React.useState<string | null>(focusId);
   const [detail, setDetail] = React.useState<BookingDetail | null>(null);
 
@@ -732,6 +767,7 @@ export default function BookingsClient({
         <BookingFormDialog
           title="Start Booking Request"
           initialPlotId={dialog.plotId}
+          initialPersonId={dialog.personId}
           bookable={bookable}
           people={people}
           members={members}
@@ -743,7 +779,7 @@ export default function BookingsClient({
 
       {dialog?.kind === "REVISE" && (
         <BookingFormDialog
-          title={`Replace review version — ${dialog.row.requestNo}`}
+          title={`Send a corrected request — ${dialog.row.requestNo}`}
           bookable={bookable}
           people={people}
           members={members}
@@ -2081,7 +2117,7 @@ export function ReviewDialog({
       ) : (
         <p className="text-xs text-muted-foreground">
           {ready
-            ? "This request has no version waiting for a decision."
+            ? "This request has nothing waiting for a decision."
             : "Loading the submitted snapshot…"}
         </p>
       )}
@@ -2175,6 +2211,7 @@ export type FormOut = {
 export function BookingFormDialog({
   title,
   initialPlotId,
+  initialPersonId,
   bookable,
   people,
   members,
@@ -2195,6 +2232,8 @@ export function BookingFormDialog({
   onClose: () => void;
   onSubmit: (form: FormOut) => void;
   initialPlotId?: string;
+  /** The Primary Customer, when the form is opened for someone already chosen. */
+  initialPersonId?: string;
 }) {
   const today = istDay(new Date());
   const initial = bookable.find((p) => p.id === initialPlotId);
@@ -2205,10 +2244,13 @@ export function BookingFormDialog({
   // The first row is the Primary Customer, always. There is no role to choose:
   // an Additional Customer is what the button underneath adds.
   const [parties, setParties] = React.useState<PartyInput[]>([
-    { personId: "", role: "PRIMARY", sharePercent: "" },
+    { personId: initialPersonId ?? "", role: "PRIMARY", sharePercent: "" },
   ]);
+  // Opens blank rather than at 100: a schedule is nearly always staged, and a
+  // pre-filled 100 has to be cleared before the second instalment can take
+  // anything — the cap in fillForward leaves it nothing otherwise.
   const [schedule, setSchedule] = React.useState<ScheduleRowInput[]>([
-    { seq: 1, percent: "100", dueDate: today },
+    { seq: 1, percent: "", dueDate: today },
   ]);
 
   const projects = Array.from(
@@ -2322,7 +2364,7 @@ export function BookingFormDialog({
             </dd>
             {plot.locationCharge.length > 0 && (
               <>
-                <dt className="text-muted-foreground">Location Charge</dt>
+                <dt className="text-muted-foreground">Location</dt>
                 <dd className="text-right font-semibold text-foreground">
                   {plot.locationCharge.join(" · ")}
                 </dd>
@@ -2509,49 +2551,6 @@ export function BookingFormDialog({
   );
 }
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
-
-/**
- * The percentages fill forward. Every row keeps exactly what was typed and the
- * last row carries whatever is left of the 100 — type 30 into the first and the
- * second reads 70 on its own. Type into the last row as well and the shortfall
- * shows as Remaining, which the next instalment added picks up.
- */
-function fillForward(rows: ScheduleRowInput[], typedIndex = -1): ScheduleRowInput[] {
-  const out = rows.map((r, i) => ({ ...r, seq: i + 1 }));
-  const last = out.length - 1;
-  if (last < 1 || typedIndex === last) return out;
-  const others = out.reduce((sum, r, i) => (i === last ? sum : sum + (Number(r.percent) || 0)), 0);
-  out[last] = { ...out[last], percent: String(Math.max(0, round2(100 - others))) };
-  return out;
-}
-
-const scheduleTotal = (rows: ScheduleRowInput[]) =>
-  round2(rows.reduce((sum, r) => sum + (Number(r.percent) || 0), 0));
-
-/** YYYY-MM-DD plus N calendar days — done in UTC so it never drifts across a DST edge. */
-function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
-
-/**
- * Due dates fill forward too (PRD §11.4 — chronological, never before the one
- * before it): editing an earlier row so it lands after a later one carries
- * that later row's date up to match, rather than leaving the schedule invalid
- * for a validation message to catch later.
- */
-function fillDatesForward(rows: ScheduleRowInput[], changedIndex: number): ScheduleRowInput[] {
-  const out = rows.map((r) => ({ ...r }));
-  for (let i = changedIndex + 1; i < out.length; i++) {
-    if (out[i].dueDate <= out[i - 1].dueDate) {
-      out[i] = { ...out[i], dueDate: addDays(out[i - 1].dueDate, 1) };
-    }
-  }
-  return out;
-}
-
 function ScheduleEditor({
   schedule,
   setSchedule,
@@ -2579,7 +2578,11 @@ function ScheduleEditor({
             min="0"
             max="100"
             required
+            placeholder="%"
             value={line.percent}
+            // A row that already holds a number is retyped, not edited: select
+            // it on focus so the first keystroke replaces it.
+            onFocus={(e) => e.target.select()}
             onChange={(e) =>
               setSchedule(
                 fillForward(
@@ -2609,7 +2612,7 @@ function ScheduleEditor({
               type="button"
               size="xs"
               variant="ghost"
-              onClick={() => setSchedule(fillForward(schedule.filter((_, i) => i !== index)))}
+              onClick={() => setSchedule(removeRow(schedule, index))}
             >
               Remove
             </Button>
@@ -3934,7 +3937,7 @@ function ChangePlotDecisionDialog({
   }) => void;
 }) {
   const [schedule, setSchedule] = React.useState<ScheduleRowInput[]>([
-    { seq: 1, percent: "100", dueDate: istDay(new Date()) },
+    { seq: 1, percent: "", dueDate: istDay(new Date()) },
   ]);
 
   return (

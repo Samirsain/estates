@@ -4,7 +4,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Layers, MoreVertical, Pencil, Plus } from "lucide-react";
+import { Box, Info, Layers, Map, MoreVertical, Pencil, Plus, Share, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { downloadProjectSheet } from "@/lib/pdf/project-sheet";
 import {
   PLC_CATEGORIES,
   PLC_CATEGORY_ORDER,
@@ -50,13 +51,13 @@ export type ProjectRowView = {
   location: string | null;
   locationUrl: string | null;
   driveUrl: string | null;
+  renderUrl: string | null;
   city: string | null;
   amenities: string | null;
   reraNumber: string | null;
   isExternalResaleGroup: boolean;
   plotCount: number;
   plotTypeCounts: Array<{ plotType: string; count: number }>;
-  plcVersion: number | null;
   components: ComponentRow[];
   /** PLC spec §15.1 — published, draft and superseded, newest first. */
   plcVersions: Array<{
@@ -96,10 +97,30 @@ const PLOT_TYPE_LABEL: Record<string, string> = {
 const BULLET = "•";
 
 /**
+ * The card's link pills. Four of them with their names on share one row of a
+ * card three to a screen, which they only do at this size — the default xs
+ * button wrapped the fourth onto a second line and made the card taller than
+ * the ones beside it.
+ */
+const CARD_PILL = "h-6 shrink-0 px-2 text-[10px]";
+
+/**
  * Amenities are stored one per line, without the bullet. The bullet belongs to
  * the field you type in and to the card you read; storing it would put a
  * decoration inside the data.
  */
+/**
+ * "clubhouse" was typed once and is read for years, so it is printed the way a
+ * brochure would print it. Only the case is touched: whatever was typed is
+ * what is stored, searched and edited.
+ */
+function titleCase(value: string): string {
+  return value
+    .split(" ")
+    .map((word) => (word ? word.charAt(0).toUpperCase() + word.slice(1) : word))
+    .join(" ");
+}
+
 function amenityList(amenities: string | null): string[] {
   return (amenities ?? "")
     .split("\n")
@@ -185,27 +206,34 @@ export default function ProjectsClient({
           {rows.map((project) => (
             <Card
               key={project.id}
-              className="flex flex-col gap-2 rounded-xl border border-border/60 bg-card/70 p-3 transition-colors hover:border-border dark:bg-card/40"
+              // One height for every card, whatever it holds: a Project with
+              // both links and a long developer name reads as the same tile as
+              // one with neither, so the grid is a grid rather than a staircase.
+              className="flex h-44 flex-col gap-2 overflow-hidden rounded-xl border border-border/60 bg-card/70 p-3 transition-colors hover:border-border dark:bg-card/40"
             >
               <div className="flex items-start justify-between gap-2">
                 <button
                   type="button"
-                  className="min-w-0 text-left"
+                  className="min-w-0 flex-1 text-left"
                   onClick={() => router.push(`/projects/${project.id}`)}
                   title="Click to view full details"
                 >
+                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    {project.projectCode}
+                  </p>
                   <h2 className="truncate text-sm font-semibold leading-tight tracking-tight text-foreground transition-colors hover:text-primary">
                     {project.name}
                   </h2>
-                  {/* Type, place and developer read as one quiet line. At this
-                      size an icon per fact costs more height than the fact. */}
+                  {/* Three facts of different weights used to run into one
+                      truncated line, so the developer's name was the half that
+                      got cut. What the Project is and where it is sit together;
+                      whose it is takes the line under them. */}
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
                     {[
                       project.isExternalResaleGroup
                         ? "External Resale Property Group"
                         : (TYPE_LABEL[project.type] ?? project.type),
                       [project.location, project.city].filter(Boolean).join(", "),
-                      project.developer,
                     ]
                       .filter(Boolean)
                       .join(" · ")}
@@ -219,39 +247,99 @@ export default function ProjectsClient({
                 </Badge>
               </div>
 
-              {/* An External Resale Property Group holds acquired properties, not
-                  developed inventory, so it has neither plots nor PLC (PRD §11.6). */}
-              <div className="mt-auto flex items-center justify-between gap-2 border-t border-border/50 pt-2 text-xs text-muted-foreground">
-                <span className="truncate tabular-nums">
-                  {project.isExternalResaleGroup
-                    ? "Acquired properties"
-                    : `${project.plotCount} plots${project.plcVersion ? ` · PLC v${project.plcVersion}` : ""}`}
+              {/* Whose the Project is, and what it holds, on one line: the
+                  developer's name never fills a card's width and the counts
+                  never fill the other half, so they share it rather than each
+                  leaving a hole. A type with no Plot here is not printed as a
+                  zero, and an External Resale Property Group holds acquired
+                  properties rather than developed inventory (PRD §11.6). */}
+              <div className="mt-auto flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-[11px] text-muted-foreground/80">
+                  {project.developer ?? ""}
                 </span>
-                {canSetup && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label={`Actions for ${project.name}`}
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {project.isExternalResaleGroup ? (
+                    <span className="text-[11px] text-muted-foreground">Acquired properties</span>
+                  ) : project.plotTypeCounts.length === 0 ? (
+                    <span className="text-[11px] text-muted-foreground">No plots yet</span>
+                  ) : (
+                    project.plotTypeCounts.map(({ plotType, count }) => (
+                      <span
+                        key={plotType}
+                        className="rounded-md bg-secondary px-1.5 py-0.5 text-[11px] text-muted-foreground"
                       >
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => setEditing(project)}>
-                        <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
-                      </DropdownMenuItem>
-                      {!project.isExternalResaleGroup && (
-                        <DropdownMenuItem onSelect={() => setPlc(project)}>
-                          <Layers className="mr-2 h-3.5 w-3.5" /> PLC versions
+                        {PLOT_TYPE_LABEL[plotType] ?? plotType}{" "}
+                        <span className="font-semibold tabular-nums text-foreground">{count}</span>
+                      </span>
+                    ))
+                  )}
+                </span>
+              </div>
+
+              {/* Every link the office opens, each with its name on it — an
+                  icon alone is a guess. They share the footer with the actions
+                  menu; the code that used to sit here now leads the card, above
+                  the name, where the sheet and the PDF also put it. */}
+              <div className="mt-auto flex items-center justify-between gap-2 border-t border-border/50 pt-2">
+                <div className="flex min-w-0 flex-nowrap items-center gap-1">
+                  {project.driveUrl && (
+                    <Button size="xs" variant="outline" className={CARD_PILL} asChild>
+                      <a href={project.driveUrl} target="_blank" rel="noreferrer noopener">
+                        <Layers className="mr-1 h-2.5 w-2.5" /> Layout
+                      </a>
+                    </Button>
+                  )}
+                  {project.locationUrl && (
+                    <Button size="xs" variant="outline" className={CARD_PILL} asChild>
+                      <a href={project.locationUrl} target="_blank" rel="noreferrer noopener">
+                        <Map className="mr-1 h-2.5 w-2.5" /> Location
+                      </a>
+                    </Button>
+                  )}
+                  {project.renderUrl && (
+                    <Button size="xs" variant="outline" className={CARD_PILL} asChild>
+                      <a href={project.renderUrl} target="_blank" rel="noreferrer noopener">
+                        <Box className="mr-1 h-2.5 w-2.5" /> 3D Visuals
+                      </a>
+                    </Button>
+                  )}
+                  {/* Everything the card has no room for — amenities, RERA,
+                      the whole plot split — without leaving the list. */}
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    className={CARD_PILL}
+                    onClick={() => setDetail(project)}
+                  >
+                    <Info className="mr-1 h-2.5 w-2.5" /> More info
+                  </Button>
+                </div>
+
+                {canSetup && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label={`Actions for ${project.name}`}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => setEditing(project)}>
+                          <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
                         </DropdownMenuItem>
-                      )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => setStatus(project)}>
-                        Change status
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
+                        {!project.isExternalResaleGroup && (
+                          <DropdownMenuItem onSelect={() => setPlc(project)}>
+                            <Layers className="mr-2 h-3.5 w-3.5" /> PLC versions
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => setStatus(project)}>
+                          Change status
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
                   </DropdownMenu>
                 )}
               </div>
@@ -259,68 +347,7 @@ export default function ProjectsClient({
           ))}
         </div>
 
-        {detail && (
-          <div className="rounded-2xl border border-border/80 bg-card/70 p-4 space-y-4 text-sm">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-foreground">{detail.name} — Full Details</h3>
-              <button
-                type="button"
-                onClick={() => setDetail(null)}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >Close ✕</button>
-            </div>
-            <dl className="grid gap-2 sm:grid-cols-2 text-xs">
-              <Row label="Project Code" value={detail.projectCode} />
-              <Row label="Type" value={TYPE_LABEL[detail.type] ?? detail.type} />
-              <Row label="Status" value={STATUS_LABEL[detail.status] ?? detail.status} />
-              <Row label="City" value={detail.city ?? "—"} />
-              <Row label="Location" value={detail.location ?? "—"} />
-              <Row label="Developer" value={detail.developer ?? "—"} />
-              <Row label="RERA Number" value={detail.reraNumber ?? "Not recorded"} />
-              <Row label="Total Plots" value={String(detail.plotCount)} />
-            </dl>
-            {detail.plotTypeCounts.length > 0 && (
-              <div className="text-xs">
-                <p className="font-medium text-muted-foreground mb-1">Plot Breakdown</p>
-                <ul className="space-y-0.5">
-                  {detail.plotTypeCounts.map(({ plotType, count }) => (
-                    <li key={plotType} className="tabular-nums">
-                      {count} {PLOT_TYPE_LABEL[plotType] ?? plotType}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {detail.plcVersions.length > 0 && (
-              <div className="text-xs">
-                <p className="font-medium text-muted-foreground mb-1">PLC Version History</p>
-                <ul className="space-y-1.5">
-                  {detail.plcVersions.map((v) => (
-                    <li key={v.id} className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
-                      <div className="flex justify-between gap-2">
-                        <span className="font-medium">v{v.version} · {PLC_STATUS_LABEL[v.status] ?? v.status}</span>
-                        {v.effectiveFrom && (
-                          <span className="text-muted-foreground">{formatIst(v.effectiveFrom)}</span>
-                        )}
-                      </div>
-                      {v.reason && <p className="mt-0.5 text-muted-foreground">{v.reason}</p>}
-                      {v.components.length > 0 && (
-                        <ul className="mt-1 space-y-0.5 text-muted-foreground">
-                          {plcDisplayComponents(v.components).map((c, i) => (
-                            <li key={i} className="flex justify-between gap-3">
-                              <span>{c.label}</span>
-                              <span className="tabular-nums">{formatPercent(c.percent)}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
+        {detail && <ProjectInfoDialog project={detail} onClose={() => setDetail(null)} />}
       </div>
 
       {creating && (
@@ -371,11 +398,233 @@ export default function ProjectsClient({
   );
 }
 
+/**
+ * Everything about one Project that the card has no room for.
+ *
+ * No boxes inside the box: the dialog is already a panel, and drawing more
+ * panels inside it puts three borders between a heading and its own facts.
+ * What separates one group from the next is the heading and the space around
+ * it, the way a printed sheet does it.
+ *
+ * Share writes an A4 PDF of the same facts and hands it straight to the
+ * browser's downloads — see lib/pdf/project-sheet.ts.
+ */
+function ProjectInfoDialog({
+  project,
+  onClose,
+}: {
+  project: ProjectRowView;
+  onClose: () => void;
+}) {
+  const amenities = amenityList(project.amenities);
+  const published = project.plcVersions.find((v) => v.status === "PUBLISHED") ?? null;
+  const [saving, setSaving] = React.useState(false);
+
+  return (
+    // Narrower than the Booking dialogs and tight enough to read without a
+    // scrollbar: everything about one Project fits on one sheet.
+    <Modal title="" onClose={onClose} width="w-[min(50rem,94vw)]">
+      <div className="space-y-4">
+        {/* The heading and the two actions share one row: the sheet's whole
+            budget is the screen it has to fit on, and a title that took three
+            rows spent it on nothing. */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+              {[
+                project.projectCode,
+                project.isExternalResaleGroup
+                  ? "External Resale Property Group"
+                  : (TYPE_LABEL[project.type] ?? project.type),
+                STATUS_LABEL[project.status] ?? project.status,
+              ].join(" · ")}
+            </p>
+            <h2 className="mt-0.5 truncate text-xl font-semibold leading-tight tracking-tight text-foreground">
+              {project.name}
+            </h2>
+          </div>
+          {/* Apple's share glyph, where Apple puts it: the corner of the sheet
+              it acts on — on the heading's own line, so it costs no row. */}
+          <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            className="group rounded-full pl-4 pr-1.5 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-[0.98]"
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await downloadProjectSheet({
+                  name: project.name,
+                  projectCode: project.projectCode,
+                  type: project.isExternalResaleGroup
+                    ? "External Resale Property Group"
+                    : (TYPE_LABEL[project.type] ?? project.type),
+                  status: STATUS_LABEL[project.status] ?? project.status,
+                  developer: project.developer,
+                  reraNumber: project.reraNumber,
+                  city: project.city,
+                  location: project.location,
+                  locationUrl: project.locationUrl,
+                  driveUrl: project.driveUrl,
+                  renderUrl: project.renderUrl,
+                  plotCount: project.plotCount,
+                  plotTypeCounts: project.plotTypeCounts.map(({ plotType, count }) => ({
+                    label: PLOT_TYPE_LABEL[plotType] ?? plotType,
+                    count,
+                  })),
+                  amenities,
+                });
+              } finally {
+                setSaving(false);
+              }
+            }}
+            title="Download as PDF"
+          >
+            {saving ? "Saving…" : "Share"}
+            {/* The glyph sits in its own circle rather than naked beside the
+                word, and leans out a little when the pill is hovered. */}
+            <span className="ml-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:-translate-y-px group-hover:scale-105">
+              <Share className="h-3.5 w-3.5" />
+            </span>
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="rounded-full transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-[0.9]"
+            onClick={onClose}
+            aria-label="Close"
+          >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* One order, and every block keeps its place whether it holds
+            anything or not: two Projects side by side read the same, and the
+            eye stops looking for what moved. What is acted on — where it is
+            and the three links — leads; the rule behind the rates sits last
+            before the amenities, which are the longest and the least scanned.
+            The PDF draws the same order and leaves out only this PLC block,
+            because it is shared outside the office. */}
+        <div className="grid gap-x-10 gap-y-3 md:grid-cols-2">
+          <div className="space-y-3">
+            <Group title="Where">
+              <Row label="City" value={project.city ?? "Not recorded"} />
+              <Row label="Location" value={project.location ?? "Not recorded"} />
+            </Group>
+
+            <Group title="Inventory">
+              <Row label="Total Plots" value={String(project.plotCount)} />
+              {project.plotTypeCounts.length === 0 ? (
+                <p className="py-1.5 text-xs text-muted-foreground">No plots yet.</p>
+              ) : (
+                project.plotTypeCounts.map(({ plotType, count }) => (
+                  <Row
+                    key={plotType}
+                    label={PLOT_TYPE_LABEL[plotType] ?? plotType}
+                    value={String(count)}
+                  />
+                ))
+              )}
+            </Group>
+
+            {/* The documents sit under the inventory they describe: a layout
+                and a walkthrough are what someone reaches for after reading
+                how many Plots there are, not before. */}
+            <div className="flex flex-wrap gap-1.5">
+              {project.driveUrl && (
+              <Button size="xs" variant="outline" asChild>
+                <a href={project.driveUrl} target="_blank" rel="noreferrer noopener">
+                  <Layers className="mr-1 h-3 w-3" /> Layout
+                </a>
+              </Button>
+              )}
+              {project.locationUrl && (
+              <Button size="xs" variant="outline" asChild>
+                <a href={project.locationUrl} target="_blank" rel="noreferrer noopener">
+                  <Map className="mr-1 h-3 w-3" /> Location
+                </a>
+              </Button>
+              )}
+              {project.renderUrl && (
+              <Button size="xs" variant="outline" asChild>
+                <a href={project.renderUrl} target="_blank" rel="noreferrer noopener">
+                  <Box className="mr-1 h-3 w-3" /> 3D Visuals
+                </a>
+              </Button>
+              )}
+              {!project.locationUrl && !project.driveUrl && !project.renderUrl && (
+              <span className="text-[11px] text-muted-foreground">No links added yet.</span>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <Group title="Responsibility">
+              <Row label="Developer" value={project.developer ?? "Not recorded"} />
+              <Row label="RERA Number" value={project.reraNumber ?? "Not recorded"} />
+            </Group>
+
+            <Group title="Plot Location Charge">
+              {!published ? (
+                <p className="py-1.5 text-xs text-muted-foreground">No published version.</p>
+              ) : (
+                // The rates, not the version they came from: which version is
+                // published is the PLC versions dialog's business.
+                plcDisplayComponents(published.components).map((component, i) => (
+                  <Row key={i} label={component.label} value={formatPercent(component.percent)} />
+                ))
+              )}
+            </Group>
+          </div>
+        </div>
+
+        <Group title="Amenities">
+          {amenities.length === 0 ? (
+            <p className="py-1.5 text-xs text-muted-foreground">None recorded.</p>
+          ) : (
+            // Four columns: a Project with twenty amenities is five lines
+            // here rather than seven, which is what keeps the sheet on one
+            // screen for the long lists as well as the short ones.
+            <ul className="grid gap-x-8 gap-y-1 pt-1.5 text-xs sm:grid-cols-2 md:grid-cols-4">
+              {amenities.map((amenity) => (
+                <li key={amenity} className="flex items-center gap-2">
+                  <span className="h-1 w-1 shrink-0 rounded-full bg-primary/50" />
+                  <span className="truncate" title={amenity}>
+                    {titleCase(amenity)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Group>
+      </div>
+
+    </Modal>
+  );
+}
+
+/**
+ * A heading and the facts under it. The heading and the space carry the
+ * grouping; there is no border, because the dialog is the border.
+ */
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h3 className="border-b border-border/50 pb-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+        {title}
+      </h3>
+      <dl className="text-xs">{children}</dl>
+    </section>
+  );
+}
+
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-3">
+    <div className="flex items-baseline justify-between gap-3 border-b border-border/25 py-1.5 last:border-0">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="text-right">{value}</dd>
+      <dd className="text-right font-medium tabular-nums text-foreground">{value}</dd>
     </div>
   );
 }
@@ -589,6 +838,15 @@ function ProjectFieldset({ row }: { row?: ProjectRowView }) {
           defaultValue={row?.driveUrl ?? ""}
         />
       </Field>
+      <Field label="3D Visuals (Drive link)">
+        <Input
+          name="renderUrl"
+          type="url"
+          inputMode="url"
+          placeholder="Google Drive folder or walkthrough link"
+          defaultValue={row?.renderUrl ?? ""}
+        />
+      </Field>
       <Field label="Developer / Company">
         <Input name="developer" defaultValue={row?.developer ?? ""} />
       </Field>
@@ -657,6 +915,7 @@ function readProjectFields(f: FormData): ProjectFields {
     location: String(f.get("location") ?? ""),
     locationUrl: String(f.get("locationUrl") ?? ""),
     driveUrl: String(f.get("driveUrl") ?? ""),
+    renderUrl: String(f.get("renderUrl") ?? ""),
     city: String(f.get("city") ?? ""),
     // The bullets are the field's, not the data's.
     amenities: amenityList(String(f.get("amenities") ?? "")).join("\n"),

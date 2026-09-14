@@ -133,7 +133,12 @@ const ROLE_ACTIONS: Record<Role, readonly Action[]> = {
 };
 
 /** Sensitive values are masked unless the role holds explicit field permission. */
-export type SensitiveField = "AADHAAR_FULL" | "PAN_FULL" | "BANK_FULL" | "BUYER_IDENTITY";
+export type SensitiveField =
+  | "AADHAAR_FULL"
+  | "PAN_FULL"
+  | "BANK_FULL"
+  | "MOBILE_FULL"
+  | "BUYER_IDENTITY";
 
 const FIELD_ACCESS: Record<SensitiveField, readonly Role[]> = {
   // Full Aadhaar only for specifically authorised MD/Admin; every access is
@@ -141,6 +146,10 @@ const FIELD_ACCESS: Record<SensitiveField, readonly Role[]> = {
   AADHAAR_FULL: ["MD", "ADMIN"],
   PAN_FULL: ["MD", "ADMIN", "ACCOUNTS"],
   BANK_FULL: ["MD", "ADMIN", "ACCOUNTS"],
+  // A contact number is not encrypted and is not a protected identity value —
+  // it is masked so a screen shared in a room does not leak it. MD and Admin
+  // run the business off these numbers, so they read them whole.
+  MOBILE_FULL: ["MD", "ADMIN"],
   // Members never see buyer identity (PRD §23.1).
   BUYER_IDENTITY: ["MD", "ADMIN", "ACCOUNTS", "CRM", "PC"],
 };
@@ -341,6 +350,7 @@ export const SENSITIVE_FIELDS: readonly { field: SensitiveField; label: string }
   { field: "AADHAAR_FULL", label: "Aadhaar in full" },
   { field: "PAN_FULL", label: "PAN in full" },
   { field: "BANK_FULL", label: "Bank account in full" },
+  { field: "MOBILE_FULL", label: "Mobile number in full" },
   { field: "BUYER_IDENTITY", label: "Buyer identity" },
 ];
 

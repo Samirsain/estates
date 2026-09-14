@@ -166,14 +166,19 @@ export async function taskSubjects(
 
   /** A Person carries at most one of each id; the task is about the Person. */
   const party = (person: {
+    id: string;
     fullName: string;
     memberProfile: { memberId: string } | null;
     customerProfile: { customerId: string } | null;
   }) => ({
     partyRef: person.memberProfile?.memberId ?? person.customerProfile?.customerId ?? null,
     partyName: person.fullName,
+    // An id on the row, so the Member or Customer ID printed in it opens the
+    // person it belongs to rather than being a reference nobody can follow.
+    partyPersonId: person.id,
   });
   const personSelect = {
+    id: true,
     fullName: true,
     memberProfile: { select: { memberId: true } },
     customerProfile: { select: { customerId: true } },
@@ -189,7 +194,7 @@ export async function taskSubjects(
               bookingNumber: true,
               requestNo: true,
               project: { select: { name: true } },
-              plot: { select: { plotNumber: true } },
+              plot: { select: { id: true, plotNumber: true } },
               primaryPerson: { select: personSelect },
             },
           })
@@ -201,7 +206,7 @@ export async function taskSubjects(
               id: true,
               enquiryNo: true,
               project: { select: { name: true } },
-              plot: { select: { plotNumber: true } },
+              plot: { select: { id: true, plotNumber: true } },
               person: { select: personSelect },
             },
           })
@@ -209,13 +214,13 @@ export async function taskSubjects(
       memberIds.length
         ? db.memberProfile.findMany({
             where: { id: { in: memberIds } },
-            select: { id: true, memberId: true, person: { select: { fullName: true } } },
+            select: { id: true, memberId: true, person: { select: { id: true, fullName: true } } },
           })
         : [],
       customerIds.length
         ? db.customerProfile.findMany({
             where: { id: { in: customerIds } },
-            select: { id: true, customerId: true, person: { select: { fullName: true } } },
+            select: { id: true, customerId: true, person: { select: { id: true, fullName: true } } },
           })
         : [],
       plotIds.length
@@ -232,7 +237,7 @@ export async function taskSubjects(
               acquisitionNo: true,
               propertyName: true,
               propertyNumber: true,
-              plot: { select: { plotNumber: true, project: { select: { name: true } } } },
+              plot: { select: { id: true, plotNumber: true, project: { select: { name: true } } } },
               sellerPerson: { select: personSelect },
             },
           })
@@ -248,7 +253,7 @@ export async function taskSubjects(
                   bookingNumber: true,
                   requestNo: true,
                   project: { select: { name: true } },
-                  plot: { select: { plotNumber: true } },
+                  plot: { select: { id: true, plotNumber: true } },
                 },
               },
               beneficiaryPerson: { select: personSelect },
@@ -264,6 +269,7 @@ export async function taskSubjects(
     add(b.id, {
       project: b.project.name,
       plot: b.plot.plotNumber,
+      plotId: b.plot.id,
       reference: b.bookingNumber ?? b.requestNo,
       ...party(b.primaryPerson),
     });
@@ -272,6 +278,7 @@ export async function taskSubjects(
     add(e.id, {
       project: e.project.name,
       plot: e.plot?.plotNumber ?? null,
+      plotId: e.plot?.id ?? null,
       reference: e.enquiryNo,
       ...party(e.person),
     });
@@ -280,27 +287,33 @@ export async function taskSubjects(
     add(m.id, {
       project: null,
       plot: null,
+      plotId: null,
       reference: m.memberId,
       partyRef: m.memberId,
       partyName: m.person.fullName,
+      partyPersonId: m.person.id,
     });
   }
   for (const c of customers) {
     add(c.id, {
       project: null,
       plot: null,
+      plotId: null,
       reference: c.customerId,
       partyRef: c.customerId,
       partyName: c.person.fullName,
+      partyPersonId: c.person.id,
     });
   }
   for (const p of plots) {
     add(p.id, {
       project: p.project.name,
       plot: p.plotNumber,
+      plotId: p.id,
       reference: null,
       partyRef: null,
       partyName: null,
+      partyPersonId: null,
     });
   }
   for (const a of acquisitions) {
@@ -309,6 +322,7 @@ export async function taskSubjects(
     add(a.id, {
       project: a.plot?.project.name ?? a.propertyName,
       plot: a.plot?.plotNumber ?? a.propertyNumber,
+      plotId: a.plot?.id ?? null,
       reference: a.acquisitionNo,
       ...party(a.sellerPerson),
     });
@@ -317,6 +331,7 @@ export async function taskSubjects(
     add(r.id, {
       project: r.booking?.project.name ?? null,
       plot: r.booking?.plot.plotNumber ?? null,
+      plotId: r.booking?.plot.id ?? null,
       reference: r.booking?.bookingNumber ?? r.booking?.requestNo ?? null,
       // A Commission review happens on the Booking, so the row needs the
       // Booking's id, not only its number.

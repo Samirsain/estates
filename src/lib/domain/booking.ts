@@ -312,7 +312,13 @@ const TRANSITIONS: Record<BookingStatus, readonly BookingStatus[]> = {
   REFUND_PENDING: ["CANCELLED", "BOOKED", "PAYMENT_COMPLETED"],
   CANCELLED: [],
   DELIVERED: ["BUYBACK_COMPLETED"],
-  BUYBACK_COMPLETED: [],
+  // CR-016 — an approved Buyback that is later unwound puts the old sale back
+  // exactly as it stood, which is why this is no longer terminal. The target is
+  // never chosen: it is read from the snapshot taken when the Buyback was
+  // approved, and only `cancelAcquisitionDeal` performs it. Nothing offers these
+  // as a forward move — `canTransition` is only ever called with an explicit
+  // target by a service, never to build a menu.
+  BUYBACK_COMPLETED: ["BOOKED", "PAYMENT_COMPLETED", "DELIVERED"],
 };
 
 export function canTransition(from: BookingStatus, to: BookingStatus): Check {

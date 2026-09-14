@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
+import { canViewField } from "@/lib/security/permissions";
 import { acquisitionInclude, toAcquisitionRow } from "../row-view";
 import AcquisitionDetailClient from "./detail-client";
 
@@ -21,6 +22,8 @@ export default async function AcquisitionDetailPage({
 }) {
   const { id } = await params;
   const actor = await requireStaff("REPORT_VIEW");
+  // MD and Admin read a contact number whole; everyone else gets the mask.
+  const fullMobile = canViewField(actor.role, "MOBILE_FULL");
 
   const [acquisition, people] = await Promise.all([
     db.acquisition.findUnique({ where: { id }, include: acquisitionInclude }),
@@ -59,7 +62,7 @@ export default async function AcquisitionDetailPage({
       people={people.map((p) => ({
         id: p.id,
         fullName: p.fullName,
-        mobileMasked: maskMobile(p.primaryMobile),
+        mobileMasked: fullMobile ? p.primaryMobile : maskMobile(p.primaryMobile),
         customerId: p.customerProfile?.customerId ?? null,
         memberId: p.memberProfile?.memberId ?? null,
       }))}

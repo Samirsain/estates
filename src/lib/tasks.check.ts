@@ -144,7 +144,16 @@ assert.equal(recordHref({ kind: "Acquisition", id: uuid }), "/acquisitions");
 // commission's own id, so the Booking comes from the resolved subject.
 const bookingId = "9c1f0a2e-1111-4222-8333-444455556666";
 assert.equal(
-  recordHref({ kind: "Commission", id: uuid }, { project: null, plot: null, partyRef: null, partyName: null, reference: null, bookingId }),
+  recordHref({ kind: "Commission", id: uuid }, {
+    project: null,
+    plot: null,
+    plotId: null,
+    partyRef: null,
+    partyName: null,
+    partyPersonId: null,
+    reference: null,
+    bookingId,
+  }),
   `/bookings?booking=${bookingId}`
 );
 // Unresolved, there is nowhere honest to send anyone.

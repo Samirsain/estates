@@ -28,6 +28,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PersonPicker } from "@/components/person-picker";
 import { Field, inputClass } from "@/components/ui/modal";
+import { cn } from "@/lib/utils";
 import { calculateAreas } from "@/lib/domain/inventory";
 import {
   generateCommission,
@@ -39,10 +40,14 @@ import {
   type PersonFacts,
 } from "@/lib/domain/commission";
 import {
+  DISCOUNT_MODE_LABEL,
   RATE_TYPE_LABEL,
+  buildQuote,
   calculateRate,
   formatRupees,
   parsePercent,
+  rupeesInWords,
+  type DiscountMode,
   type RateType,
 } from "@/lib/domain/rate-calculator";
 import { formatQuantity, type StaffRole } from "@/lib/tasks";
@@ -68,6 +73,7 @@ export type CalcCommissionTypeView = {
 export type CalcPersonView = {
   id: string;
   label: string;
+  name: string;
   aadhaarAvailable: boolean;
   bankVerified: boolean;
   /** PRD §14.5 — a first personal purchase earns no repeat-purchase Loyalty. */
@@ -127,9 +133,9 @@ export type CalcPlotView = {
   exactAreaSqFt: string;
   exactAreaReason: string;
   storedAreaSqFt: string;
+  /** Where the Plot sits — NORTH FACING, PARK FACING, and so on. */
+  locationCharge: string[];
   plcPercent: string | null;
-  plcVersion: number | null;
-  plcComponents: Array<{ label: string; evidence: string }>;
   plcIssue: string | null;
   /** The commission this Plot already carries, where it has been sold. */
   deal: CalcDealRecordView[] | null;
@@ -155,6 +161,68 @@ type Split = {
 };
 
 const humanise = (value: string) => value.replaceAll("_", " ").toLowerCase();
+
+/** NORTH-EAST CORNER is printed as North-East Corner: a place, not a shout. */
+const titleWords = (value: string) =>
+  value
+    .toLowerCase()
+    .split(" ")
+    .map((word) =>
+      word
+        .split("-")
+        .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+        .join("-")
+    )
+    .join(" ");
+
+/** A stored side is "25.0000" and is read as 25. */
+const sides = (value: string) => formatQuantity(value.replace(/\.?0+$/, ""));
+
+/**
+ * One fact about the chosen Plot: the label asks, the value answers, and what
+ * qualifies the answer sits under it in the same column — the evidence behind
+ * a PLC component, or the reason there is no PLC at all.
+ */
+function CalcRow({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-6 border-b border-border/40 py-1 last:border-0">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-right">
+        <span className="block font-semibold text-foreground">{value}</span>
+        {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
+      </dd>
+    </div>
+  );
+}
+
+/** One worksheet line: what it is, per unit, and in total. */
+function WorkRow({
+  label,
+  rate,
+  total,
+  strong,
+}: {
+  label: string;
+  rate: string;
+  total: string;
+  strong?: boolean;
+}) {
+  return (
+    <tr className={strong ? "font-semibold text-foreground" : ""}>
+      <td className={strong ? "py-0.5" : "py-0.5 text-muted-foreground"}>{label}</td>
+      <td className="py-0.5 text-right">{rate}</td>
+      <td className="py-0.5 text-right">{total}</td>
+    </tr>
+  );
+}
 
 /** Areas carry four decimals and usually need none of them. */
 const trim = (value: { toFixed(dp: number): string }) =>
@@ -191,6 +259,7 @@ export default function CalculatorClient({
   commissionTypes,
   capPercent,
   maxLoyaltySlots,
+  initialPlotId,
 }: {
   role: StaffRole;
   actorName: string;
@@ -201,14 +270,16 @@ export default function CalculatorClient({
   commissionTypes: CalcCommissionTypeView[];
   capPercent: string;
   maxLoyaltySlots: number;
+  /** From ?plot= on a Plot's own page: the calculator opens on that Plot. */
+  initialPlotId?: string | null;
 }) {
   const [projectId, setProjectId] = React.useState("");
   const [plotId, setPlotId] = React.useState("");
   // Typed over the Plot's own sides. A regular Plot opens on what is on file
   // and stays changeable — this is a quote, not an edit of the Plot.
-  const [widthFt, setWidthFt] = React.useState("");
-  const [lengthFt, setLengthFt] = React.useState("");
   const [rateType, setRateType] = React.useState<RateType>("SQ_FT");
+  const [discount, setDiscount] = React.useState("");
+  const [discountMode, setDiscountMode] = React.useState<DiscountMode>("PERCENT");
   const [rate, setRate] = React.useState("");
 
   // The two parties the engine needs. Nothing else decides a commission
@@ -256,6 +327,31 @@ export default function CalculatorClient({
     () => people.map((p) => ({ id: p.id, label: p.label })),
     [people]
   );
+
+  /**
+   * Sold By Member lists Members and Sold By Customer lists Customers. One list
+   * of everybody meant a Customer could be picked as the Member who sold, which
+   * is not a thing that can happen — the engine would refuse it, and only after
+   * the whole line had been filled in.
+   *
+   * The Buyer keeps the full list on purpose: someone buying their first Plot
+   * is not a Customer yet, and a Member buying for themselves is exactly the
+   * case this screen is opened to preview.
+   */
+  const soldByOptions = React.useMemo(() => {
+    if (soldByType === "MEMBER") {
+      return people.filter((p) => p.member).map((p) => ({ id: p.id, label: p.label }));
+    }
+    if (soldByType === "CUSTOMER") {
+      return people.filter((p) => p.customer).map((p) => ({ id: p.id, label: p.label }));
+    }
+    return [];
+  }, [people, soldByType]);
+  /** A Member buying for themselves — the case the engine refuses a stranger on. */
+  const buyerIsMember = Boolean(
+    people.find((p) => p.id === buyerPersonId)?.member?.status === "ACTIVE"
+  );
+
   const projectPlots = React.useMemo(
     () => (projectId ? plots.filter((p) => p.projectId === projectId) : []),
     [projectId, plots]
@@ -335,18 +431,17 @@ export default function CalculatorClient({
   function chooseProject(id: string) {
     setProjectId(id);
     setPlotId("");
-    setWidthFt("");
-    setLengthFt("");
     setSplits([]);
     setConflict(null);
   }
 
   /** Changing the Plot reloads its sides, and its deal, over the last one's. */
   function choosePlot(id: string) {
+    applyPlot(id, projectPlots.find((p) => p.id === id) ?? null);
+  }
+
+  function applyPlot(id: string, next: CalcPlotView | null) {
     setPlotId(id);
-    const next = projectPlots.find((p) => p.id === id) ?? null;
-    setWidthFt(next?.widthFt ?? "");
-    setLengthFt(next?.lengthFt ?? "");
     setConflict(null);
     // A sold Plot brings its own parties and its own frozen lines. An unsold
     // one brings nobody, and the panel is driven by the pickers instead.
@@ -356,6 +451,17 @@ export default function CalculatorClient({
     setBuyerPersonId(record?.buyerPersonId ?? "");
     setSplits(next?.deal ? dealSplits(next.deal) : []);
   }
+
+  // Opened from a Plot's own page: that Plot, in its Project, with its deal —
+  // exactly what picking it by hand would load.
+  React.useEffect(() => {
+    const initial = plots.find((p) => p.id === initialPlotId);
+    if (!initial) return;
+    setProjectId(initial.projectId);
+    applyPlot(initial.id, initial);
+    // Once, on arrival. A later choice in the pickers is the user's own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function editSplit(key: number, patch: Partial<Split>) {
     setSplits((rows) =>
@@ -389,12 +495,12 @@ export default function CalculatorClient({
             // that one exists, and this is not the screen that sets it.
             reason: plot.exactAreaReason || "Exact area recorded on the Plot.",
           })
-        : calculateAreas({ kind: "REGULAR", widthFt, lengthFt });
+        : calculateAreas({ kind: "REGULAR", widthFt: plot.widthFt, lengthFt: plot.lengthFt });
     } catch {
       // Blank or non-positive sides — the form says so below rather than here.
       return null;
     }
-  }, [plot, irregular, widthFt, lengthFt]);
+  }, [plot, irregular]);
 
   const result = React.useMemo(() => {
     if (!areas) return null;
@@ -406,7 +512,23 @@ export default function CalculatorClient({
     });
   }, [areas, rateType, rate]);
 
-  const total = result?.ok ? result.total : null;
+  /**
+   * CR-017 — (Base + Applicable PLC) − Authorised Discount, which is the figure
+   * every commission is a share of (approved-changes-pack §18). Nothing is
+   * stored: this is the worksheet Accounts keeps outside the CRM, run here so a
+   * quote can be given while the buyer is still in the room.
+   */
+  const quote = result?.ok
+    ? buildQuote({
+        base: result.total,
+        areaUsed: result.areaUsed,
+        plcPercent: plot?.plcPercent ?? null,
+        discountMode,
+        discount,
+      })
+    : null;
+
+  const total = quote?.commissionable ?? null;
   const zero = parsePercent("0")!;
 
   /** Each line's rate as typed, and its share of the figure on the left. */
@@ -517,11 +639,31 @@ export default function CalculatorClient({
 
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="mx-auto max-w-6xl space-y-4">
-        <h1 className="text-xl font-semibold">Plot Rate &amp; Area Calculator</h1>
+      <div className="mx-auto max-w-6xl space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-xl font-semibold">Plot Rate &amp; Area Calculator</h1>
+          {plot && (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              // Back to the Plot as it stands: its own parties, its own
+              // lines, no rate and no discount.
+              onClick={() => {
+                setRate("");
+                setRateType("SQ_FT");
+                setDiscount("");
+                setDiscountMode("PERCENT");
+                choosePlot(plot.id);
+              }}
+            >
+              Reset
+            </Button>
+          )}
+        </div>
 
         {/* Everything chosen sits on one row. Nothing below repeats it. */}
-        <Card className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-5">
           <Field label="Project">
             <select
               className={inputClass}
@@ -583,28 +725,52 @@ export default function CalculatorClient({
               onChange={(e) => setRate(e.target.value)}
             />
           </Field>
+
+          {/* A discount is given three ways on a plot, and which one it is
+              changes the arithmetic, not just the wording: a share of the
+              figure, a sum off it, or a cut in the rate itself. The number and
+              the way it is meant sit in one field, because either alone says
+              nothing. */}
+          <Field label="Discount">
+            <div className="flex gap-1.5">
+              <Input
+                className="min-w-0 flex-1"
+                type="number"
+                step="0.01"
+                min="0"
+                inputMode="decimal"
+                placeholder="0"
+                value={discount}
+                onChange={(e) => setDiscount(e.target.value)}
+                aria-label="Discount"
+              />
+              {/* Two states, both on screen: a discount is either a share or
+                  a sum, and which one it is has to be readable without opening
+                  anything. */}
+              <div className="flex shrink-0 rounded-lg border border-input bg-card p-0.5">
+                {(["PERCENT", "AMOUNT"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setDiscountMode(mode)}
+                    aria-pressed={discountMode === mode}
+                    className={`w-9 rounded-md py-1 text-xs transition-colors ${
+                      discountMode === mode
+                        ? "bg-primary/10 font-semibold text-primary"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {DISCOUNT_MODE_LABEL[mode]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </Field>
         </Card>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-3 lg:grid-cols-2">
           {/* ------------------------------------------------ left: the figure */}
-          <Card className="space-y-4 p-4">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Calculation
-              </h2>
-              {plot && (
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">{humanise(plot.status)}</Badge>
-                  <span className="text-[11px] text-muted-foreground">
-                    {plot.plcPercent
-                      ? `PLC ${Number(plot.plcPercent).toFixed(2)}%${
-                          plot.plcVersion !== null ? ` · v${plot.plcVersion}` : ""
-                        }`
-                      : (plot.plcIssue ?? "")}
-                  </span>
-                </div>
-              )}
-            </div>
+          <Card className="space-y-2 p-3">
 
             {!plot ? (
               <p className="rounded-xl border border-border/60 bg-secondary p-3 text-xs text-muted-foreground">
@@ -612,112 +778,120 @@ export default function CalculatorClient({
               </p>
             ) : (
               <>
-                {irregular ? (
-                  <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
-                    <p className="font-semibold text-foreground">
-                      Calculated on the Exact Area Override
-                    </p>
-                    <p className="mt-1 text-muted-foreground">
-                      This Plot is irregular: it carries an exact area of{" "}
-                      {formatQuantity(plot.exactAreaSqFt)} Sq. Ft. instead of sides, and the rate is
-                      applied to that. The stored Width and Length are not changed.
-                      {plot.exactAreaReason ? ` Reason on file: ${plot.exactAreaReason}` : ""}
-                    </p>
+                {/* The Plot as it stands, two facts to a row so the whole
+                    screen fits a 1366×768 laptop without scrolling. Location
+                    is a sentence, so it gets the full width. */}
+                <dl className="grid grid-cols-2 gap-x-6 text-xs">
+                  <CalcRow
+                    label="Status"
+                    value={<Badge variant="outline">{humanise(plot.status)}</Badge>}
+                  />
+                  <CalcRow
+                    label="PLC"
+                    value={plot.plcPercent ? `${Number(plot.plcPercent).toFixed(2)}%` : "—"}
+                    // Only the reason there is no percentage.
+                    hint={plot.plcPercent ? undefined : (plot.plcIssue ?? undefined)}
+                  />
+                  <CalcRow
+                    label="Size (W × L)"
+                    value={
+                      irregular ? "Irregular" : `${sides(plot.widthFt)} × ${sides(plot.lengthFt)} ft`
+                    }
+                    // An irregular Plot is priced on the exact area its own
+                    // page set under a reason; the Area row shows that figure.
+                    hint={
+                      irregular
+                        ? `Exact area used${plot.exactAreaReason ? ` — ${plot.exactAreaReason}` : ""}`
+                        : undefined
+                    }
+                  />
+                  <CalcRow
+                    label="Area"
+                    value={
+                      areas
+                        ? `${trim(areas.areaSqFt)} sq ft · ${trim(areas.areaSqYd)} sq yd`
+                        : "—"
+                    }
+                  />
+                  <div className="col-span-2">
+                    <CalcRow
+                      label="Location"
+                      value={
+                        plot.locationCharge.length
+                          ? plot.locationCharge.map(titleWords).join(" · ")
+                          : "None"
+                      }
+                    />
                   </div>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Width / Front (ft)">
-                      <Input
-                        type="number"
-                        step="0.0001"
-                        min="0.0001"
-                        inputMode="decimal"
-                        value={widthFt}
-                        onChange={(e) => setWidthFt(e.target.value)}
-                      />
-                    </Field>
-                    <Field label="Length / Depth (ft)">
-                      <Input
-                        type="number"
-                        step="0.0001"
-                        min="0.0001"
-                        inputMode="decimal"
-                        value={lengthFt}
-                        onChange={(e) => setLengthFt(e.target.value)}
-                      />
-                    </Field>
-                  </div>
-                )}
-
-                {/* Read-only by construction: these are outputs of the area
-                    rule, not fields, so there is nothing here to type into. */}
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {(
-                    [
-                      ["Area in Sq. Ft.", areas?.areaSqFt],
-                      ["Area in Sq. Yd.", areas?.areaSqYd],
-                      ["Area in Sq. M.", areas?.areaSqM],
-                    ] as const
-                  ).map(([label, value]) => (
-                    <Field key={label} label={label}>
-                      <p className={`${inputClass} flex items-center font-semibold tabular-nums`}>
-                        {value ? trim(value) : "—"}
-                      </p>
-                    </Field>
-                  ))}
-                </div>
-
-                {/* A percentage and nothing else. The CRM holds no rupee value
-                    to apply it against, so it is shown for context and is not
-                    folded into the total below (PRD §16.3). */}
-                {plot.plcComponents.length > 0 && (
-                  <p className="text-[11px] text-muted-foreground">
-                    {plot.plcComponents.map((c) => `${c.label} (${c.evidence})`).join(" · ")} — a
-                    percentage only; it is not applied to the figure below.
-                  </p>
-                )}
+                </dl>
 
                 {blocker ? (
                   <p className="rounded-xl border border-border/60 bg-secondary p-3 text-xs text-muted-foreground">
                     {blocker}
                   </p>
                 ) : (
-                  result?.ok && (
-                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        Calculated Total
-                      </p>
-                      <p className="text-2xl font-semibold tabular-nums text-primary">
-                        {formatRupees(result.total)}
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        {trim(result.areaUsed)} {result.unit} × {formatRupees(rate)}{" "}
-                        {RATE_TYPE_LABEL[rateType].toLowerCase()}
-                      </p>
-                      <p className="mt-2 text-[11px] text-muted-foreground">
-                        A working figure only. It is not stored, not a Booking value, and no Payment
-                        Received or Payment Given percentage is derived from it.
+                  result?.ok &&
+                  quote?.rates && (
+                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+                      {/* The worksheet, rate and total side by side, so every
+                          line reads straight across: Base + PLC − Discount. A
+                          figure nobody can check is a figure nobody quotes from. */}
+                      <table className="w-full text-[11px] tabular-nums">
+                        <thead className="border-b border-border/60 text-[10px] uppercase tracking-wide text-muted-foreground">
+                          <tr>
+                            <th className="pb-1 text-left font-medium">
+                              {trim(result.areaUsed)} {result.unit}
+                            </th>
+                            <th className="pb-1 text-right font-medium">Per {result.unit}</th>
+                            <th className="pb-1 text-right font-medium">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/40">
+                          <WorkRow
+                            label="Base"
+                            rate={formatRupees(quote.rates.base)}
+                            total={formatRupees(quote.base)}
+                          />
+                          {plot.plcPercent && (
+                            <WorkRow
+                              label={`PLC ${Number(plot.plcPercent).toFixed(2)}%`}
+                              rate={`+ ${formatRupees(quote.rates.plc)}`}
+                              total={`+ ${formatRupees(quote.plc)}`}
+                            />
+                          )}
+                          {quote.discount.gt(0) && (
+                            <WorkRow
+                              label={`Discount${
+                                discountMode === "PERCENT" ? ` ${discount.trim()}%` : ""
+                              }`}
+                              rate={`− ${formatRupees(quote.rates.discount)}`}
+                              total={`− ${formatRupees(quote.discount)}`}
+                            />
+                          )}
+                          <WorkRow
+                            label="Final"
+                            rate={formatRupees(quote.rates.final)}
+                            total={formatRupees(quote.commissionable)}
+                            strong
+                          />
+                        </tbody>
+                      </table>
+
+                      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 border-t border-primary/20 pt-1.5">
+                        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                          Amount
+                        </span>
+                        <span className="text-xl font-semibold tabular-nums text-primary">
+                          {formatRupees(quote.commissionable)}
+                        </span>
+                      </div>
+                      {/* The figure in words, the way a receipt writes it. */}
+                      <p className="text-right text-[12.6px] font-medium text-foreground">
+                        {rupeesInWords(quote.commissionable)}
                       </p>
                     </div>
                   )
                 )}
-
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    // Back to the Plot as it stands: its own sides, its own
-                    // parties, its own lines, and no rate.
-                    onClick={() => {
-                      setRate("");
-                      setRateType("SQ_FT");
-                      choosePlot(plot.id);
-                    }}
-                  >
-                    Reset
-                  </Button>
-                </div>
               </>
             )}
           </Card>
@@ -730,32 +904,7 @@ export default function CalculatorClient({
               point of asking before a Booking. Anything else is typed by hand.
               Nothing here writes a CommissionRecord, consumes a slot or moves a
               counter position (PRD §6.8, §6.9). */}
-          <Card className="space-y-3 p-4">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Commission
-              </h2>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  setSplits((rows) => [
-                    ...rows,
-                    {
-                      key: nextKey.current++,
-                      personId: "",
-                      type: commissionTypes[0].type,
-                      percent: commissionTypes[0].percent,
-                      record: null,
-                      derived: null,
-                    },
-                  ])
-                }
-              >
-                + Add beneficiary
-              </Button>
-            </div>
+          <Card className="space-y-2 p-3">
 
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Sold By">
@@ -765,8 +914,17 @@ export default function CalculatorClient({
                   onChange={(e) => {
                     const next = e.target.value as SoldByType;
                     setSoldByType(next);
-                    // A 3% Club close names nobody, so the picker goes with it.
-                    const seller = next === "THREE_PERCENT_CLUB" ? "" : soldByPersonId;
+                    // A 3% Club close names nobody, and a Member already picked
+                    // is not a Customer — so anyone chosen under the old type
+                    // goes with the type, rather than staying behind as a name
+                    // the new list does not even contain.
+                    const kept =
+                      next === "MEMBER"
+                        ? people.find((p) => p.id === soldByPersonId)?.member
+                        : next === "CUSTOMER"
+                          ? people.find((p) => p.id === soldByPersonId)?.customer
+                          : null;
+                    const seller = kept ? soldByPersonId : "";
                     setSoldByPersonId(seller);
                     derive(next, seller, buyerPersonId);
                   }}
@@ -779,22 +937,24 @@ export default function CalculatorClient({
                 </select>
               </Field>
 
-              <Field
-                label={soldByType === "CUSTOMER" ? "Sold By Customer" : "Sold By Member"}
-              >
-                <PersonPicker
-                  options={pickerOptions}
-                  value={soldByPersonId}
-                  disabled={soldByType === "THREE_PERCENT_CLUB"}
-                  placeholder={
-                    soldByType === "THREE_PERCENT_CLUB" ? "Nobody — a direct close" : "Search…"
-                  }
-                  onChange={(id) => {
-                    setSoldByPersonId(id);
-                    derive(soldByType, id, buyerPersonId);
-                  }}
-                />
-              </Field>
+              {/* A 3% Club close names nobody, so the field that would ask who
+                  is not here at all — a disabled box saying "nobody" is still a
+                  box to read past. */}
+              {soldByType !== "THREE_PERCENT_CLUB" && (
+                <Field label={soldByType === "CUSTOMER" ? "Sold By Customer" : "Sold By Member"}>
+                  <PersonPicker
+                    options={soldByOptions}
+                    value={soldByPersonId}
+                    placeholder={
+                      soldByType === "MEMBER" ? "Search Members…" : "Search Customers…"
+                    }
+                    onChange={(id) => {
+                      setSoldByPersonId(id);
+                      derive(soldByType, id, buyerPersonId);
+                    }}
+                  />
+                </Field>
+              )}
 
               <Field label="Buyer — Primary Customer">
                 <PersonPicker
@@ -810,21 +970,28 @@ export default function CalculatorClient({
             </div>
 
             {conflict && (
-              <p className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
-                {conflict}
-              </p>
-            )}
-
-            {deal && splits.some((s) => s.record) && (
-              <p className="rounded-xl border border-border/60 bg-secondary p-3 text-[11px] text-muted-foreground">
-                Filled in from this Plot&apos;s Booking{" "}
-                <span className="font-semibold text-foreground">{deal[0].bookingRef}</span> —{" "}
-                {humanise(deal[0].bookingStatus)},{" "}
-                {Number(deal[0].paymentReceivedPercent).toFixed(2)}% Payment Received. The
-                percentages and states below are the Booking&apos;s own records; only the rupee
-                figures are this screen&apos;s arithmetic. Change a party above to ask the engine a
-                different question instead.
-              </p>
+              <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+                <p>{conflict}</p>
+                {/* A Member buying for themselves is the one conflict this
+                    screen can settle on its own: the rule names who Sold By
+                    has to be, so the button sets it rather than leaving the
+                    reader to work back to the two fields above. */}
+                {buyerIsMember && soldByPersonId !== buyerPersonId && (
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    className="mt-2"
+                    onClick={() => {
+                      setSoldByType("MEMBER");
+                      setSoldByPersonId(buyerPersonId);
+                      derive("MEMBER", buyerPersonId, buyerPersonId);
+                    }}
+                  >
+                    Set Sold By to this Member
+                  </Button>
+                )}
+              </div>
             )}
 
             {/* An empty panel with the fields above it explains itself. The
@@ -837,164 +1004,115 @@ export default function CalculatorClient({
               </p>
             )}
 
-            {shares.map(({ split, beneficiary, percent, amount }) => {
-              const kind = commissionTypes.find((c) => c.type === split.type);
-              const { record, derived } = split;
-              const milestone = derived?.milestonePercent ?? kind?.milestonePercent ?? "100";
-              const verdict =
-                beneficiary && !record
-                  ? preview(beneficiary, split.type, milestone, percent?.toString() ?? null)
-                  : null;
-              const notes = beneficiary && !record && !derived ? ruleNotes(beneficiary, split.type) : [];
+            {/* All four commissions, always, in the order the pack lists
+                them — Direct, Invite, Royalty, Loyalty. A combination that
+                earns none of one still shows its row, reading N/A, because
+                "this deal pays no Royalty" is an answer somebody came here for
+                and a missing row is not one. */}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[26rem] text-xs">
+                <thead className="border-b border-border/60 text-left text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  <tr>
+                    <th className="pb-1.5 font-medium">Commission</th>
+                    <th className="w-[5rem] pb-1.5 text-right font-medium">%</th>
+                    <th className="w-[7.5rem] pb-1.5 text-right font-medium">Amount</th>
+                    <th className="w-[8rem] pb-1.5 pl-4 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {commissionTypes.map((kind) => {
+                    const line = shares.find(({ split }) => split.type === kind.type) ?? null;
+                    const beneficiary = line?.beneficiary ?? null;
+                    const record = line?.split.record ?? null;
+                    const derived = line?.split.derived ?? null;
+                    const percent = line?.percent ?? null;
+                    const amount = line?.amount ?? null;
+                    const milestone =
+                      derived?.milestonePercent ?? kind.milestonePercent ?? "100";
+                    const verdict =
+                      beneficiary && !record
+                        ? preview(beneficiary, kind.type, milestone, percent?.toString() ?? null)
+                        : null;
 
-              return (
-                <div key={split.key} className="space-y-2 rounded-xl border border-border/60 p-3">
-                  <div className="flex items-start gap-2">
-                    <PersonPicker
-                      className="flex-1"
-                      options={pickerOptions}
-                      value={split.personId}
-                      onChange={(id) => editSplit(split.key, { personId: id })}
-                      placeholder="Search name, mobile, Customer ID or Member ID"
-                    />
-                    <button
-                      type="button"
-                      aria-label="Remove this beneficiary"
-                      className="h-9 rounded-lg border border-border px-2 text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => setSplits((rows) => rows.filter((r) => r.key !== split.key))}
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  <div className="grid gap-2 sm:grid-cols-[1fr_6.5rem]">
-                    <select
-                      className={inputClass}
-                      value={split.type}
-                      onChange={(e) => {
-                        // The rate follows the type it belongs to and stays
-                        // editable — an Invite or Royalty band depends on a
-                        // network position a hand-added line cannot read.
-                        const next = commissionTypes.find((c) => c.type === e.target.value);
-                        editSplit(split.key, {
-                          type: e.target.value as CommissionType,
-                          percent: next?.percent ?? split.percent,
-                        });
-                      }}
-                    >
-                      {commissionTypes.map((c) => (
-                        <option key={c.type} value={c.type}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="relative">
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        inputMode="decimal"
-                        aria-label="Percentage"
-                        value={split.percent}
-                        onChange={(e) => editSplit(split.key, { percent: e.target.value })}
-                      />
-                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                        %
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-end justify-between gap-3">
-                    <p className="text-[11px] text-muted-foreground">
-                      {derived
-                        ? `${humanise(derived.beneficiaryRole)} · ${derived.ruleVersion}`
-                        : kind?.note}
-                      {` · payable at ${milestone}% Payment Received`}
-                    </p>
-                    <p className="whitespace-nowrap text-sm font-semibold tabular-nums">
-                      {amount ? formatRupees(amount) : percent ? "—" : "Percentage?"}
-                    </p>
-                  </div>
-
-                  {/* The Booking's own answer, where this line came from one. */}
-                  {record && (
-                    <p className="border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
-                      <span className="font-semibold capitalize text-foreground">
-                        {record.eligibility === "NO_BENEFIT"
+                    // Not applicable is a real answer and is printed as one.
+                    const status = !line
+                      ? "N/A"
+                      : record
+                        ? record.eligibility === "NO_BENEFIT"
                           ? noBenefitLabel(record.type as "INVITE" | "ROYALTY")
-                          : humanise(record.eligibility)}
-                      </span>
-                      {record.holdReason
-                        ? ` — ${HOLD_SENTENCE[record.holdReason] ?? humanise(record.holdReason)}`
-                        : ""}{" "}
-                      · payment {humanise(record.payment)} · as the{" "}
-                      {humanise(record.beneficiaryRole)}
-                    </p>
-                  )}
+                          : humanise(record.eligibility)
+                        : !beneficiary
+                          ? "N/A"
+                          : verdict?.state === "READY"
+                            ? "Ready"
+                            : verdict?.state === "NO_BENEFIT"
+                              ? noBenefitLabel(kind.type as "INVITE" | "ROYALTY")
+                              : "On hold";
 
-                  {/* Otherwise the engine's verdict on the beneficiary, and the
-                      entitlement facts behind it. */}
-                  {beneficiary && !record && (
-                    <div className="space-y-1 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
-                      <p>
-                        <span
-                          className={`font-semibold ${
-                            verdict?.state === "READY" ? "text-foreground" : "text-destructive"
-                          }`}
-                        >
-                          {verdict?.state === "READY"
-                            ? "Payable at the milestone"
-                            : `On hold — ${
-                                verdict?.holdReason
-                                  ? (HOLD_SENTENCE[verdict.holdReason] ??
-                                    humanise(verdict.holdReason))
-                                  : ""
-                              }`}
-                        </span>{" "}
-                        · Aadhaar {beneficiary.aadhaarAvailable ? "available" : "pending"} · bank{" "}
-                        {beneficiary.bankVerified ? "verified" : "not verified"}
-                      </p>
+                    const why = record
+                      ? [
+                          record.holdReason
+                            ? (HOLD_SENTENCE[record.holdReason] ?? humanise(record.holdReason))
+                            : null,
+                          `payment ${humanise(record.payment)}`,
+                          `as the ${humanise(record.beneficiaryRole)}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")
+                      : beneficiary
+                        ? [
+                            verdict?.holdReason
+                              ? (HOLD_SENTENCE[verdict.holdReason] ??
+                                humanise(verdict.holdReason))
+                              : null,
+                            `Aadhaar ${beneficiary.aadhaarAvailable ? "available" : "pending"}`,
+                            `bank ${beneficiary.bankVerified ? "verified" : "not verified"}`,
+                            `payable at ${milestone}% Payment Received`,
+                            ...ruleNotes(beneficiary, kind.type),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : kind.note;
 
-                      {beneficiary.member && (
-                        <p>
-                          {beneficiary.member.memberId} · {humanise(beneficiary.member.status)} ·
-                          RERA {humanise(beneficiary.member.reraStatus)}
-                          {beneficiary.member.commissionHold ? " · commission hold" : ""}
-                          {beneficiary.member.invitedBy
-                            ? ` · invited by ${beneficiary.member.invitedBy}, position ${
-                                beneficiary.member.invitePosition ?? "—"
-                              } → ${beneficiary.member.inviteRatePercent ?? "—"}%`
-                            : " · no inviting Member"}
-                          {` · Invite opportunity ${
-                            beneficiary.member.inviteUsed ? "consumed" : "open"
-                          }`}
-                        </p>
-                      )}
+                    const held = status !== "Ready" && status !== "N/A" && !record;
 
-                      {beneficiary.customer && (
-                        <p>
-                          {beneficiary.customer.customerId} · Loyalty{" "}
-                          {beneficiary.customer.loyaltyUsed} of {maxLoyaltySlots} used · Royalty{" "}
-                          {beneficiary.customer.royaltyUsed ? "consumed" : "open"}
-                          {beneficiary.customer.royaltyMember
-                            ? ` · Royalty linked to ${beneficiary.customer.royaltyMember}, position ${
-                                beneficiary.customer.royaltyPosition ?? "—"
-                              } → ${beneficiary.customer.royaltyRatePercent ?? "—"}%`
-                            : " · no Royalty Linked Member"}
-                        </p>
-                      )}
-
-                      {notes.map((note) => (
-                        <p key={note} className="text-destructive">
-                          {note}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    return (
+                      <tr key={kind.type} className="align-top">
+                        <td className="py-1.5 pr-2">
+                          <span className="block font-semibold text-foreground">{kind.label}</span>
+                          {beneficiary && (
+                            <span className="block text-[11px] text-muted-foreground">
+                              {[
+                                kind.type === "LOYALTY"
+                                  ? (beneficiary.customer?.customerId ?? beneficiary.member?.memberId)
+                                  : (beneficiary.member?.memberId ?? beneficiary.customer?.customerId),
+                                beneficiary.name,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-1.5 text-right font-medium tabular-nums">
+                          {percent ? `${percent.toFixed(2)}%` : "N/A"}
+                        </td>
+                        <td className="whitespace-nowrap py-1.5 text-right font-semibold tabular-nums">
+                          {amount ? formatRupees(amount) : "N/A"}
+                        </td>
+                        <td className="py-1.5 pl-4">
+                          <span
+                            className={held ? "text-destructive" : "text-muted-foreground"}
+                            title={why}
+                          >
+                            {status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
             {splits.length > 0 && (
               <>
@@ -1010,11 +1128,6 @@ export default function CalculatorClient({
                     no component is ever trimmed to fit.
                   </p>
                 )}
-
-                <p className="text-[11px] text-muted-foreground">
-                  An estimate that binds nobody. Commission is earned by verified payment on a real
-                  Booking, and no figure here is stored, owed or paid.
-                </p>
               </>
             )}
           </Card>

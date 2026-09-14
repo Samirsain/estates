@@ -27,13 +27,13 @@ export default async function ProjectsPage() {
         location: project.location,
         locationUrl: project.locationUrl,
         driveUrl: project.driveUrl,
+        renderUrl: project.renderUrl,
         city: project.city,
         amenities: project.amenities,
         reraNumber: project.reraNumber,
         isExternalResaleGroup: project.isExternalResaleGroup,
         plotCount: project._count.plots,
         plotTypeCounts: project.plotTypeCounts,
-        plcVersion: project.plcRuleVersions.find((v) => v.status === "PUBLISHED")?.version ?? null,
         components: (
           project.plcRuleVersions.find((v) => v.status === "PUBLISHED")?.components ?? []
         ).map((component) => ({

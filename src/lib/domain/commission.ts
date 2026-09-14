@@ -698,6 +698,21 @@ export type HoldReason =
   | "PAYMENT_PENDING"
   | "COMMISSION_CONFLICT_ABOVE_4";
 
+/**
+ * CR-015 — an Approved Buyback is an alternative milestone for Invite, Royalty
+ * and Loyalty, and never for Direct (pack acceptance 10–13). Buying Commission
+ * hangs off the acquisition rather than the sale, so it is not on this axis
+ * either.
+ *
+ * These are exactly the types that consume a one-shot entitlement, which is not
+ * a coincidence: the Buyback stands in for the qualifying event the entitlement
+ * was waiting on. Direct is paid for selling, and the selling is what the
+ * Buyback undoes.
+ */
+export function buybackAccelerates(type: CommissionType | "BUYING"): boolean {
+  return type === "INVITE" || type === "ROYALTY" || type === "LOYALTY";
+}
+
 export type EligibilityInput = {
   type: CommissionType;
   /**
@@ -709,6 +724,12 @@ export type EligibilityInput = {
   /** Verified Payment Received on the Booking. */
   progressPercent: Numeric;
   milestonePercent: Numeric;
+  /**
+   * CR-015 — an Approved Buyback on this Booking stands in for the milestone.
+   * Set only for the types `buybackAccelerates` names; Direct never sets it, so
+   * a Direct still reads its own Payment Received exactly as before.
+   */
+  buybackMilestoneMet?: boolean;
   beneficiaryAadhaarAvailable: boolean;
   beneficiaryBankVerified: boolean;
   /** Member components only; null for a Customer's Loyalty. */
@@ -764,7 +785,13 @@ export function resolveEligibility(input: EligibilityInput): Eligibility {
     if (input.memberCommissionHold) return hold("MEMBER_COMMISSION_HOLD");
   }
 
-  if (new D(input.progressPercent).lt(new D(input.milestonePercent))) {
+  // CR-015 — the Buyback is an *alternative* milestone, so it is checked
+  // alongside Payment Received rather than instead of it: whichever arrives
+  // first earns the benefit.
+  if (
+    !input.buybackMilestoneMet &&
+    new D(input.progressPercent).lt(new D(input.milestonePercent))
+  ) {
     return { state: "MILESTONE_PENDING", holdReason: null };
   }
 

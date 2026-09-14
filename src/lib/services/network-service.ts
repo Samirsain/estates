@@ -10,7 +10,7 @@
 
 import { db } from "@/lib/db";
 import { bandRate, counterYearStart, nextNetworkPosition } from "@/lib/domain/commission";
-import { hashPassword } from "@/lib/security/auth";
+import { INITIAL_PORTAL_PASSWORD, hashPassword } from "@/lib/security/auth";
 import { istDay } from "@/lib/tasks";
 import { blocked, nextReference, runCommand, type Tx } from "./command";
 import { currentCycle, refreshCycle } from "./cycle-service";
@@ -132,7 +132,7 @@ export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string
           actorRef,
           action: "ROYALTY_LINK_REMOVED",
           reason:
-            "The Booking that held the provisional Royalty link is no longer a qualifying first " +
+            "The Booking that held the unconfirmed Royalty link is no longer a qualifying first " +
             "purchase. No Royalty position was consumed (CR-002).",
         },
       });
@@ -163,8 +163,9 @@ export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string
         actorRef,
         action: "ROYALTY_LINK_PROVISIONAL",
         reason: linkedMember
-          ? `Provisional Royalty Linked Member — ${linkedMember.memberId}, Sold By Member on this ` +
-            `first qualifying purchase (CR-002).`
+          ? `Royalty Linked Member named, not confirmed yet — ${linkedMember.memberId}, Sold By ` +
+            `Member on this first qualifying purchase. It is confirmed when this purchase is paid ` +
+            `in full (CR-002).`
           : `No Royalty Linked Member — this first qualifying purchase was ${
               first.soldByType === "CUSTOMER" ? "Sold By Customer" : "Sold By 3% CLUB"
             } (CR-003).`,
@@ -320,7 +321,7 @@ export async function activateMember(args: {
         where: { memberProfileId: member.id },
       });
       if (!existingPortal) {
-        const defaultPasswordHash = hashPassword("ChangeMe#2026");
+        const defaultPasswordHash = hashPassword(INITIAL_PORTAL_PASSWORD);
         await tx.portalAccount.create({
           data: {
             memberProfileId: member.id,

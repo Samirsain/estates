@@ -39,21 +39,45 @@ export type CustomerRowView = {
   plotType: string | null;
   plotId: string | null;
   otherBookings: number;
-  royaltyMember: string | null;
-  royaltyMemberName: string | null;
-  royaltyMemberProfileId: string | null;
-  royaltyLinkProvisional: boolean;
   loyaltySlotsConsumed: number;
 };
 
 /** The fact, and under it what qualifies it. Every cell reads the same way. */
-function Cell({ value, under }: { value: React.ReactNode; under?: React.ReactNode }) {
+/**
+ * A fact and what qualifies it — two lines, and never a third. A long Project
+ * name used to wrap onto a second line and push its own qualifier onto a
+ * third, so one long name made the whole row taller than the ones around it.
+ * Both lines truncate and the full text is on hover.
+ */
+function Cell({
+  value,
+  under,
+  title,
+}: {
+  value: React.ReactNode;
+  under?: React.ReactNode;
+  title?: string;
+}) {
   return (
     <>
-      <span className="block text-foreground">{value}</span>
-      {under && <span className="block text-[11px] text-muted-foreground">{under}</span>}
+      <span className="block truncate text-foreground" title={title}>
+        {value}
+      </span>
+      {under && (
+        <span className="block truncate text-[11px] text-muted-foreground">{under}</span>
+      )}
     </>
   );
+}
+
+/** RESIDENTIAL → Residential, END_USER → End User. A type is a word, not a shout. */
+function typeWord(value: string): string {
+  return value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 export default function CustomersClient({
@@ -98,10 +122,6 @@ export default function CustomersClient({
       <div className="mx-auto max-w-6xl space-y-3">
         <header>
           <h1 className="text-2xl font-bold tracking-tight">Customers</h1>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {visible.length} of {rows.length} · a Customer ID is created at the first Hold or
-            Booking Request and is retained even if that request is rejected
-          </p>
         </header>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -151,20 +171,19 @@ export default function CustomersClient({
             <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr className="border-b border-border">
                 <th className="w-[7rem] px-3 py-1.5">Customer ID</th>
-                <th className="px-3 py-1.5">Name</th>
+                <th className="w-[9.5rem] px-3 py-1.5">Name</th>
                 <th className="w-[7.5rem] px-3 py-1.5">Mobile</th>
-                <th className="w-[9rem] px-3 py-1.5">City</th>
+                <th className="w-[7.5rem] px-3 py-1.5">City</th>
                 <th className="w-[7rem] px-3 py-1.5">Type</th>
-                <th className="px-3 py-1.5">Project</th>
-                <th className="w-[7rem] px-3 py-1.5">Plot</th>
-                <th className="w-[8.5rem] px-3 py-1.5">Royalty linked to</th>
+                <th className="w-[11rem] px-3 py-1.5">Project</th>
+                <th className="w-[8rem] px-3 py-1.5">Plot</th>
                 <th className="w-[5rem] px-3 py-1.5 text-right">Loyalty</th>
               </tr>
             </thead>
             <tbody>
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={8} className="px-3 py-10 text-center text-sm text-muted-foreground">
                     No Customers yet. A Customer ID is created when the first Hold is placed, or
                     at the first Booking Request when no Hold came before it.
                   </td>
@@ -184,21 +203,26 @@ export default function CustomersClient({
                       {row.customerId}
                     </button>
                   </td>
-                  <td>
-                    <Link href={`/customers/${row.id}`} className="block text-foreground hover:underline">
+                  <td className="max-w-[9.5rem]">
+                    <Link
+                      href={`/customers/${row.id}`}
+                      className="block truncate text-foreground hover:underline"
+                      title={row.name}
+                    >
                       {row.name}
                     </Link>
                   </td>
                   <td className="whitespace-nowrap">{row.mobileMasked}</td>
-                  <td>{row.city}</td>
-                  <td>{row.customerType ? row.customerType.replaceAll("_", " ") : "—"}</td>
-                  <td>
+                  <td className="truncate" title={row.city}>{row.city}</td>
+                  <td className="truncate">{row.customerType ? typeWord(row.customerType) : "—"}</td>
+                  <td className="max-w-[11rem]">
                     <Cell
                       value={row.project ?? "—"}
+                      title={row.project ?? undefined}
                       under={row.otherBookings > 0 ? `+${row.otherBookings} more booked` : null}
                     />
                   </td>
-                  <td>
+                  <td className="max-w-[8rem]">
                     <Cell
                       value={
                         row.plotNumber && row.plotId ? (
@@ -212,29 +236,9 @@ export default function CustomersClient({
                           (row.plotNumber ?? "—")
                         )
                       }
-                      under={row.plotType}
+                      title={row.plotNumber ?? undefined}
+                      under={row.plotType ? typeWord(row.plotType) : null}
                     />
-                  </td>
-                  <td className="whitespace-nowrap">
-                    {/* The Member ID leads and opens the Member; the name under
-                        it confirms who that is without competing for the eye —
-                        the same shape the Members list uses for Invited by. */}
-                    {row.royaltyMember && row.royaltyMemberProfileId ? (
-                      <Link href={`/members/${row.royaltyMemberProfileId}`} className="group">
-                        <span className="block text-primary group-hover:underline">
-                          {row.royaltyMember}
-                        </span>
-                        {row.royaltyMemberName && (
-                          <span className="block text-[11px] text-muted-foreground">
-                            {row.royaltyLinkProvisional
-                              ? `${row.royaltyMemberName} · provisional`
-                              : row.royaltyMemberName}
-                          </span>
-                        )}
-                      </Link>
-                    ) : (
-                      (row.royaltyMember ?? "—")
-                    )}
                   </td>
                   <td className="whitespace-nowrap text-right tabular-nums">
                     {row.loyaltySlotsConsumed}/3

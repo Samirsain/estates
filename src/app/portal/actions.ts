@@ -15,7 +15,7 @@ import {
   linkOrCreatePerson,
 } from "@/lib/services/enquiry-service";
 import { ensureTask } from "@/lib/services/task-service";
-import { formatIst } from "@/lib/tasks";
+import { formatIstDateTime } from "@/lib/tasks";
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
 
@@ -150,8 +150,8 @@ export async function submitHoldRequestAction(
     return {
       ok: true,
       message: result.duplicate
-        ? `A Pending request for this buyer and Plot already exists. It expires ${formatIst(result.expiresAt)}.`
-        : `Hold Request submitted. It expires ${formatIst(result.expiresAt)} unless CRM decides sooner.`,
+        ? `A Pending request for this buyer and Plot already exists. It expires ${formatIstDateTime(result.expiresAt)}.`
+        : `Hold Request submitted. It expires ${formatIstDateTime(result.expiresAt)} unless CRM decides sooner.`,
     };
   } catch (error) {
     return toResult(error);

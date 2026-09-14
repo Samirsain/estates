@@ -38,6 +38,7 @@ export function toAcquisitionRow(a: AcquisitionWithRelations): AcquisitionRowVie
     // stand in the same two columns.
     project: a.plot ? a.plot.project.name : (a.propertyName ?? "—"),
     plotNumber: a.plot ? a.plot.plotNumber : (a.propertyNumber ?? "—"),
+    plotId: a.plot?.id ?? null,
     plotType: a.plot ? a.plot.plotType : null,
     location: a.location,
     seller: a.sellerPerson.fullName,

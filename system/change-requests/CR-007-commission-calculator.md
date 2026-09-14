@@ -7,9 +7,10 @@ Raised under [`prd-corrections.md`](../prd-corrections.md) §28 and the change-c
 | --- | --- |
 | **Change Request ID** | CR-007 |
 | **Raised** | 29 August 2026 |
+| **Amended** | 10 September 2026 — §2.2 and §6, so the wording describes what was approved |
 | **Owner** | _Product Owner — name and signature below_ |
-| **Status** | Raised. **Not implemented.** Awaiting the owner's signature before any code is written |
-| **Release target** | To be set by the owner |
+| **Status** | **Approved in principle** by the Product Owner on 10 September 2026, in the build session. **Implemented** — see §8. The signature block in §7 is the formal record and is still to be signed |
+| **Release target** | Shipped on the build branch; release set by the owner |
 
 **This CR touches commission, a governed area, and reopens an express owner
 exclusion.** It changes no rate, no band, no milestone and no entitlement. It
@@ -17,7 +18,13 @@ adds a screen that runs the existing engine against figures a person types in,
 and shows what the engine would produce, without writing anything.
 
 Because it reopens an exclusion the owner made by name, it follows CR-004's
-precedent rather than CR-005's: nothing is built until section 7 is signed.
+precedent rather than CR-005's: section 7 is the record that closes it.
+
+**The order of events is recorded rather than tidied.** The screen was built on
+3 September 2026 (commit `93941ef`) before this CR was decided, and extended on
+10 September 2026. The owner's approval followed on 10 September 2026, in the
+build session, and is written into §8. A reviewer comparing dates will see the
+code first and the approval second; that is what happened.
 
 ---
 
@@ -55,9 +62,28 @@ And one clause already asks for something close to it, in a single place.
 > question: *given these facts about a sale, which commission lines would the
 > engine produce, to whom, at what rate, and payable at which milestone.*
 >
-> **2.2** The Calculator is **percentage only**. It never accepts a rupee amount,
-> never displays one, and never converts one. Every exclusion in
-> `architecture.md` §1 and `prd-complete.md` RD-01 stands unchanged.
+> **2.2** *(Amended 10 September 2026. The clause as first raised read: "The
+> Calculator is **percentage only**. It never accepts a rupee amount, never
+> displays one, and never converts one." The owner approved the arithmetic below
+> in its place; the original is kept here so the change is visible.)*
+>
+> The Calculator takes a **rate** and an **Authorised Discount**, and works out
+> the **Commissionable Sale Value** exactly as CR-017 defines it:
+>
+> > (Base Property Value + Applicable PLC Value) − Authorised Discount
+>
+> Every commission percentage is then a share of that value. The rupee exists
+> **only in the browser**: no rupee is stored, none is sent to the server, and
+> no rupee column is added to the schema. `architecture.md` §1's "All rupee
+> values and statutory accounting remain outside the CRM" and `prd-complete.md`
+> RD-01's "No rupee conversion or value calculation is performed in CRM" stand
+> for everything the CRM **keeps**; CR-017's own heading —
+> "Commissionable Sale Value **outside CRM**" — is the worksheet this screen
+> runs, in the browser, so a quote can be given while the buyer is in the room.
+>
+> `plc-location-charge.md` §2.1 is unchanged where it binds: PLC is stored as a
+> percentage, and no PLC amount, plot value, rate or total price is written
+> anywhere.
 >
 > **2.3** The Calculator **writes nothing**. It creates no Commission Record,
 > consumes no slot, moves no counter position, and raises no Commission Conflict.
@@ -135,9 +161,13 @@ sentence would keep "rupee values" while losing "standalone calculator".
 
 ## 6. What is deliberately not included
 
-- **No rupee, in or out.** Not as an input, not as an output, not as a hint.
-  The moment a value appears, this stops being a preview of the engine and
-  becomes the quotation calculator the owner excluded.
+- **No rupee anywhere it lasts.** *(Amended 10 September 2026. As first raised
+  this read "No rupee, in or out. Not as an input, not as an output, not as a
+  hint.")* The rate, the discount and every figure derived from them live in the
+  browser for as long as the tab is open. Nothing is stored, nothing is posted to
+  a server action, and no rupee column exists in the schema. What the owner
+  excluded was a quotation tool the company would run its pricing on; what this
+  is, is the Accounts worksheet of CR-017, done on screen instead of on paper.
 - **No saving, sharing, printing or exporting a result.** A saved estimate is an
   estimate someone will later treat as a commitment.
 - **No invented positions or slots.** The Calculator reads the counters; it does
@@ -155,6 +185,29 @@ sentence would keep "rupee values" while losing "standalone calculator".
 
 | | |
 | --- | --- |
-| **Approved by** | |
-| **Signature** | |
-| **Date** | |
+| **Approved by** | Product Owner — approved verbally in the build session |
+| **Signature** | _to be signed by the owner; this line is not filled in on anyone's behalf_ |
+| **Date** | 10 September 2026 (verbal) |
+
+---
+
+## 8. What was built, and when
+
+| Date | What |
+| --- | --- |
+| 3 September 2026 | Commit `93941ef` — Plot Rate & Area Calculator: rate, area, the engine's commission breakdown. Client-side, writes nothing |
+| 10 September 2026 | Authorised Discount (percentage or figure); the CR-017 Commissionable Sale Value, with PLC added and the discount taken off the two together; every commission a share of that value; the figure written out in words; the four commissions always listed, N/A where none is earned |
+
+**Where it lives.** `src/app/calculator/page.tsx`,
+`src/app/calculator/calculator-client.tsx`, and the pure arithmetic in
+`src/lib/domain/rate-calculator.ts` — `calculateRate()`, `buildQuote()` and
+`rupeesInWords()`.
+
+**How it is checked.** `src/lib/domain/domain.check.ts` asserts the pack's own
+worked example from `mock-data-v2.md` §24 — base 50,00,000 plus 4% PLC
+(2,00,000) less a 1,00,000 discount is 51,00,000 — along with the discount's
+refusals, its floor at zero, and the words the figure is written in.
+
+**Also recorded as** [D-07](../approved-deviations.md#d-07--the-plot-rate--area-calculator-works-in-rupees-and-applies-cr-017)
+in `approved-deviations.md`, which is the plain-language summary of the same
+thing.

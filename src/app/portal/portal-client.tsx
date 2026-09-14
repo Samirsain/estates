@@ -366,7 +366,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
               value={
                 data.invitePosition
                   ? `Position ${data.invitePosition} · ${data.inviteRatePercent ?? "—"}%`
-                  : "Not assigned"
+                  : "3% Club"
               }
             />
           </div>
@@ -472,7 +472,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
             value={
               data.invitePosition
                 ? `Position ${data.invitePosition} · ${data.inviteRatePercent ?? "—"}%`
-                : "Not assigned"
+                : "3% Club"
             }
           />
 

@@ -55,7 +55,7 @@ export async function createAcquisitionAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("ACQUISITION_CREATE");
   try {
-    const result = await createAcquisition({
+    await createAcquisition({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
@@ -88,8 +88,7 @@ export async function createAcquisitionAction(
     return {
       ok: true,
       message:
-        `${result.acquisitionNo} created. Accounts approves it once at least 20% Payment Given is ` +
-        `confirmed.`,
+        "Created. Accounts approves it once at least 20% Payment Given is confirmed.",
     };
   } catch (error) {
     return toResult(error);

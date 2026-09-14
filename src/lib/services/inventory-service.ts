@@ -255,6 +255,10 @@ export async function updatePlotDetails(args: {
         widthFt: plot.widthFt?.toString() ?? null,
         lengthFt: plot.lengthFt?.toString() ?? null,
         areaSqFt: plot.areaSqFt.toFixed(4),
+        // The override and its reason are corrected here too, so History can
+        // say what they were before.
+        exactAreaSqFt: plot.exactAreaSqFt?.toString() ?? null,
+        exactAreaReason: plot.exactAreaReason ?? null,
         boundaries: plot.boundaries.map((b) => ({
           side: b.side,
           kind: b.kind,
@@ -300,6 +304,8 @@ export async function updatePlotDetails(args: {
         widthFt: args.widthFt ?? null,
         lengthFt: args.lengthFt ?? null,
         areaSqFt: areas.areaSqFt.toFixed(4),
+        exactAreaSqFt: args.exactAreaSqFt ?? null,
+        exactAreaReason: args.exactAreaReason ?? null,
         boundaries: boundaryRows(args.boundaries),
       };
 

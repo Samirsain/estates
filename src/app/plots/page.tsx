@@ -16,15 +16,24 @@ export const dynamic = "force-dynamic";
 export default async function PlotsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string }>;
+  searchParams: Promise<{ project?: string; status?: string; for?: string; plot?: string; open?: string }>;
 }) {
   const actor = await requireStaff();
   // A Project detail page links here for its own Plots. Without this the link
   // would land on every Plot in the company and leave the filtering to whoever
-  // followed it.
-  const { project: initialProject } = await searchParams;
+  // followed it. A Customer profile links here with ?status=AVAILABLE, and with
+  // ?for=<personId> when it is holding or booking a Plot for that Customer.
+  // A Plot's own page links here with ?plot=<id>&open=<HOLD|BOOK|EXTEND|CANCEL_HOLD|AVAILABLE>
+  // to start that action on it, with the list narrowed to that Plot.
+  const {
+    project: initialProject,
+    status: initialStatus,
+    for: forPersonId,
+    plot: initialPlotId,
+    open: initialOpen,
+  } = await searchParams;
 
-  const [plots, projects, requests, bookingForm, liveBookings] = await Promise.all([
+  const [plots, projects, requests, bookingForm, liveBookings, forPerson] = await Promise.all([
     listPlots(),
     db.project.findMany({
       include: { plcRuleVersions: { where: { status: "PUBLISHED" }, include: { components: true }, take: 1 } },
@@ -39,6 +48,12 @@ export default async function PlotsPage({
     // waiting to be delivered. One query, because they are the same shape and
     // the same trip.
     listBookings({ status: { in: ["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED"] } }),
+    forPersonId
+      ? db.person.findUnique({
+          where: { id: forPersonId },
+          select: { id: true, fullName: true, customerProfile: { select: { customerId: true } } },
+        })
+      : null,
   ]);
 
   // A Plot waiting for approval has exactly one pending request, so the row can
@@ -180,6 +195,7 @@ export default async function PlotsPage({
 
   const holdRequests: HoldRequestView[] = requests.map((r) => ({
     id: r.id,
+    plotId: r.plotId,
     project: r.plot.project.name,
     plot: `${r.plot.plotType.replaceAll("_", " ")} ${r.plot.plotNumber}`,
     plotStatus: r.plot.status,
@@ -200,6 +216,19 @@ export default async function PlotsPage({
       rows={rows}
       holdRequests={holdRequests}
       initialProject={initialProject ?? "ALL"}
+      initialStatus={initialStatus ?? "ALL"}
+      initialPlotId={initialPlotId ?? null}
+      initialOpen={initialOpen ?? null}
+      forPerson={
+        forPerson
+          ? {
+              personId: forPerson.id,
+              label: [forPerson.customerProfile?.customerId, forPerson.fullName]
+                .filter(Boolean)
+                .join(" · "),
+            }
+          : null
+      }
       projects={projects.map((p) => ({
         id: p.id,
         name: p.name,

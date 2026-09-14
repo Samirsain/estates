@@ -25,7 +25,7 @@ import { Prisma } from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
-import { buildPlcSnapshot, shortSides } from "@/lib/domain/inventory";
+import { buildPlcSnapshot, locationChargeLabel } from "@/lib/domain/inventory";
 import { personLabel } from "@/lib/domain/person-search";
 import { maskMobile } from "@/lib/security/identity";
 import { plcRules } from "@/lib/services/plc-service";
@@ -53,7 +53,13 @@ const LIVE_BOOKING: Prisma.EnumBookingStatusFilter = {
   notIn: ["REQUEST_REJECTED", "REQUEST_CANCELLED", "CANCELLED"],
 };
 
-export default async function CalculatorPage() {
+export default async function CalculatorPage({
+  searchParams,
+}: {
+  /** ?plot=<id> from a Plot's own page opens the calculator on that Plot. */
+  searchParams: Promise<{ plot?: string }>;
+}) {
+  const { plot: initialPlotId } = await searchParams;
   // The gate is server-side and it is the whole gate: hiding the nav item is
   // never the control (DESIGN §1). REPORT_VIEW is the existing permission every
   // staff role holds and no Member does — the calculator shows Plot dimensions
@@ -198,6 +204,7 @@ export default async function CalculatorPage() {
         customerId: customer?.customerId ?? null,
         memberId: member?.memberId ?? null,
       }),
+      name: p.fullName,
       // PRD §14.7 — the commission condition is Aadhaar Available, and Verified
       // satisfies it too. PAN never creates an automatic hold.
       aadhaarAvailable: p.aadhaarStatus !== "PENDING",
@@ -230,7 +237,7 @@ export default async function CalculatorPage() {
               : null,
             royaltyMember: customer.royaltyLinkedMember
               ? `${customer.royaltyLinkedMember.memberId} · ${customer.royaltyLinkedMember.person.fullName}` +
-                (customer.royaltyLinkFinalAt ? "" : " (provisional)")
+                (customer.royaltyLinkFinalAt ? "" : " (not confirmed yet)")
               : null,
             royaltyPosition: customer.royaltyPosition,
             royaltyRatePercent: customer.royaltyRatePercent?.toString() ?? null,
@@ -277,8 +284,6 @@ export default async function CalculatorPage() {
   const plotRows: CalcPlotView[] = plots.map((plot) => {
     const version = published.get(plot.projectId) ?? null;
     let plcPercent: string | null = null;
-    let plcVersion: number | null = null;
-    let plcComponents: Array<{ label: string; evidence: string }> = [];
     let plcIssue: string | null = version ? null : "No published PLC version for this Project";
 
     if (version) {
@@ -292,11 +297,6 @@ export default async function CalculatorPage() {
           plcRules(version.components)
         );
         plcPercent = effective.totalPercent.toFixed(4);
-        plcVersion = version.version;
-        plcComponents = effective.components.map((c) => ({
-          label: c.label,
-          evidence: shortSides(c.evidence),
-        }));
       } catch (error) {
         plcIssue = error instanceof Error ? error.message : "PLC could not be derived.";
       }
@@ -316,9 +316,13 @@ export default async function CalculatorPage() {
       exactAreaSqFt: plot.exactAreaSqFt?.toString() ?? "",
       exactAreaReason: plot.exactAreaReason ?? "",
       storedAreaSqFt: plot.areaSqFt.toString(),
+      // What the Plot faces, in the words the Booking screens and the Plot's
+      // own page use — "NORTH-EAST CORNER · PARK FACING" — rather than the PLC
+      // component names, which say what is charged and not where it sits.
+      locationCharge: locationChargeLabel(
+        plot.boundaries.map((b) => ({ side: b.side, kind: b.kind }) as never)
+      ),
       plcPercent,
-      plcVersion,
-      plcComponents,
       plcIssue,
       deal: dealByPlot.get(plot.id) ?? null,
     };
@@ -387,6 +391,7 @@ export default async function CalculatorPage() {
       commissionTypes={commissionTypes}
       capPercent={SALE_CAP_PERCENT.toString()}
       maxLoyaltySlots={MAX_LOYALTY_SLOTS}
+      initialPlotId={plotRows.some((p) => p.id === initialPlotId) ? (initialPlotId ?? null) : null}
     />
   );
 }

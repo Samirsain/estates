@@ -49,6 +49,7 @@ too.
 | [`commission-rules-and-test-plan.md`](./commission-rules-and-test-plan.md) | The commission rulebook: every rule, formula and event, with worked examples, plus how it is tested. |
 | [`mock-data-v1.md`](./mock-data-v1.md) | First fictional UAT dataset. Built by `npm run uat:seed`. |
 | [`mock-data-v2.md`](./mock-data-v2.md) | Current fictional UAT dataset, covering the newly approved commission changes. Built by `npm run uat:seed:v2`. |
+| [`mock-data-showcase.md`](./mock-data-showcase.md) | One Project (SHW) with a Customer, Member and Plot in every state the screens show, and a list of things to try. Built by `npm run seed:showcase`. |
 | [`commission-test-brief.md`](./commission-test-brief.md) | The original plain-language brief that asked for the commission test — the question `commission-rules-and-test-plan.md` answers. |
 
 ## Go-live

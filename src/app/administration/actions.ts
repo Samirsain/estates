@@ -4,7 +4,6 @@
 // Every action re-checks permission on the server; the hidden button is never
 // the control (DESIGN §1).
 
-import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -16,7 +15,7 @@ import {
   type Action,
   type StaffRole,
 } from "@/lib/security/permissions";
-import { hashPassword, validatePassword } from "@/lib/security/auth";
+import { hashPassword, oneTimePassword, validatePassword } from "@/lib/security/auth";
 import { decryptSensitive, maskAadhaar, maskMobile } from "@/lib/security/identity";
 import { recordAudit } from "@/lib/security/audit";
 import { CommandError, blocked, runCommand } from "@/lib/services/command";
@@ -198,16 +197,73 @@ export async function searchPersonsAction(query: string): Promise<PersonOption[]
   }));
 }
 
-/* ------------------------------------------- staff accounts (PRD §17.1) */
+export type MergePreview = {
+  id: string;
+  fullName: string;
+  mobile: string;
+  city: string | null;
+  customerId: string | null;
+  memberId: string | null;
+  oldIds: string[];
+  records: Array<{ label: string; count: number }>;
+};
 
-/** A one-time password is shown once and never stored in clear anywhere. */
-function oneTimePassword(): string {
-  // 18 base32 characters — comfortably above the 10-character minimum and easy
-  // to read out over a phone without ambiguous characters.
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = randomBytes(18);
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+/**
+ * PRD §22 — both identities side by side, with what hangs off each, so a merge
+ * is raised by someone who has looked rather than by a guess at two names.
+ * Returned in the order asked for: the one that remains first.
+ */
+export async function mergePreviewAction(personIds: string[]): Promise<MergePreview[]> {
+  const actor = await requireStaff("PERSON_MERGE");
+  const persons = await db.person.findMany({
+    where: { id: { in: personIds } },
+    include: {
+      customerProfile: true,
+      memberProfile: true,
+      _count: { select: { soldBookings: true, commissions: true, holds: true, enquiries: true } },
+    },
+  });
+
+  const previews = await Promise.all(
+    persons.map(async (person) => {
+      const profileIds = [person.id, person.customerProfile?.id, person.memberProfile?.id].filter(
+        (id): id is string => Boolean(id)
+      );
+      const [bookings, tasks] = await Promise.all([
+        db.booking.count({
+          where: { OR: [{ primaryPersonId: person.id }, { parties: { some: { personId: person.id } } }] },
+        }),
+        db.task.count({ where: { recordId: { in: profileIds } } }),
+      ]);
+      return {
+        id: person.id,
+        fullName: person.fullName,
+        mobile: canViewField(actor.role, "MOBILE_FULL")
+          ? person.primaryMobile
+          : maskMobile(person.primaryMobile),
+        city: person.city,
+        customerId: person.customerProfile?.customerId ?? null,
+        memberId: person.memberProfile?.memberId ?? null,
+        oldIds: [
+          ...(person.customerProfile?.legacyCustomerIds ?? []),
+          ...(person.memberProfile?.legacyMemberIds ?? []),
+        ],
+        records: [
+          { label: "Bookings as buyer", count: bookings },
+          { label: "Bookings sold", count: person._count.soldBookings },
+          { label: "Commission records", count: person._count.commissions },
+          { label: "Holds", count: person._count.holds },
+          { label: "Enquiries", count: person._count.enquiries },
+          { label: "Tasks", count: tasks },
+        ],
+      };
+    })
+  );
+
+  return personIds.flatMap((id) => previews.filter((p) => p.id === id));
 }
+
+/* ------------------------------------------- staff accounts (PRD §17.1) */
 
 /**
  * PRD §3, §17.1 — Admin or MD creates a staff account. The password is issued
@@ -817,7 +873,7 @@ export async function revealIdentityAction(
 
 /** Everyone with a protected identity on file, for the Administration list. */
 export async function identityDirectoryAction(query: string) {
-  await requireStaff("STAFF_MANAGE");
+  const actor = await requireStaff("STAFF_MANAGE");
   const term = query.trim();
 
   const persons = await db.person.findMany({
@@ -839,12 +895,14 @@ export async function identityDirectoryAction(query: string) {
     take: 50,
   });
 
-  // The list itself stays masked. Revealing is a separate, logged action.
+  // Aadhaar and PAN stay masked here — revealing those is a separate, logged
+  // action. The contact number is not one of those and follows the role.
+  const fullMobile = canViewField(actor.role, "MOBILE_FULL");
   return persons.map((person) => ({
     id: person.id,
     fullName: person.fullName,
     reference: person.customerProfile?.customerId ?? person.memberProfile?.memberId ?? "—",
-    mobileMasked: maskMobile(person.primaryMobile),
+    mobileMasked: fullMobile ? person.primaryMobile : maskMobile(person.primaryMobile),
     aadhaarMasked: maskAadhaar(person.aadhaarLastFour),
     aadhaarStatus: person.aadhaarStatus,
     panMasked: person.panMasked ?? "—",

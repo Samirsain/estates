@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
+import { canViewField } from "@/lib/security/permissions";
 import AcquisitionsClient from "./acquisitions-client";
 import { acquisitionInclude, toAcquisitionRow } from "./row-view";
 
@@ -11,6 +12,8 @@ export const dynamic = "force-dynamic";
 
 export default async function AcquisitionsPage() {
   const actor = await requireStaff("REPORT_VIEW");
+  // MD and Admin read a contact number whole; everyone else gets the mask.
+  const fullMobile = canViewField(actor.role, "MOBILE_FULL");
 
   const [acquisitions, buybackable, people, resaleGroups] = await Promise.all([
     db.acquisition.findMany({
@@ -70,7 +73,7 @@ export default async function AcquisitionsPage() {
       people={people.map((p) => ({
         id: p.id,
         fullName: p.fullName,
-        mobileMasked: maskMobile(p.primaryMobile),
+        mobileMasked: fullMobile ? p.primaryMobile : maskMobile(p.primaryMobile),
         customerId: p.customerProfile?.customerId ?? null,
         memberId: p.memberProfile?.memberId ?? null,
       }))}

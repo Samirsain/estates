@@ -24,6 +24,7 @@ import {
   notFutureDated,
   progressAfter,
   validateSchedule,
+  type BookingStatus,
 } from "@/lib/domain/booking";
 import { blocked, lockKey, lockPlot, nextReference, runCommand, type Tx } from "./command";
 import {
@@ -33,7 +34,11 @@ import {
   toLines,
   type ScheduleInput,
 } from "./payment-service";
-import { cancelCommissionForBooking, reassessCommission } from "./commission-service";
+import {
+  BUYBACK_COMMISSION_PURPOSE,
+  cancelCommissionForBooking,
+  reassessCommission,
+} from "./commission-service";
 import { syncRoyaltyLink } from "./network-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
@@ -72,9 +77,9 @@ async function acquisitionLabel(tx: Tx, acquisitionId: string): Promise<string> 
     include: { plot: { include: { project: true } } },
   });
   if (acquisition.plot) {
-    return `${acquisition.acquisitionNo} · ${acquisition.plot.project.name} ${acquisition.plot.plotNumber}`;
+    return `${acquisition.plot.project.name} ${acquisition.plot.plotNumber}`;
   }
-  return `${acquisition.acquisitionNo} · ${acquisition.propertyName} ${acquisition.propertyNumber}`;
+  return `${acquisition.propertyName} ${acquisition.propertyNumber}`;
 }
 
 /* ------------------------------------------------------------ create */
@@ -187,7 +192,7 @@ export async function createAcquisition(args: {
           where: { plotId, status: { in: ["PENDING_APPROVAL", "APPROVED"] } },
         });
         if (existing) {
-          blocked(`This Plot already has an active acquisition (${existing.acquisitionNo}).`);
+          blocked("This Plot already has an active Buyback or Resale.");
         }
 
         // prd-complete §17.9 on submission — the Plot is blocked, Buyback Under
@@ -232,9 +237,7 @@ export async function createAcquisition(args: {
         };
         for (const existing of candidates) {
           if (existing.duplicateKey === duplicateKey) {
-            blocked(
-              `An active acquisition already exists for this property (${existing.acquisitionNo}).`
-            );
+            blocked("An active Buyback or Resale already exists for this property.");
           }
           const reasons = likelyDuplicateReasons(candidate, {
             propertyName: existing.propertyName ?? "",
@@ -244,7 +247,7 @@ export async function createAcquisition(args: {
             areaSqFt: existing.areaSqFt?.toString() ?? null,
           });
           if (reasons.length >= 2) {
-            duplicateWarnings.push(`${existing.acquisitionNo}: ${reasons.join(", ")}`);
+            duplicateWarnings.push(`${existing.propertyName ?? "an existing deal"}: ${reasons.join(", ")}`);
           }
         }
         if (duplicateWarnings.length > 0 && !args.acknowledgeDuplicate) {
@@ -803,13 +806,34 @@ export async function decideAcquisition(args: {
         if (!move.ok) blocked(move.reason);
 
         const legallyCompleted = acquisition.sourceBooking.status === "DELIVERED";
+
+        // CR-016 — the old sale's exact state, captured before anything changes
+        // it, so an unwind restores rather than guesses. The reason main-PRD
+        // §15.4 gives for CancellationRequest.restoreSnapshot applies here word
+        // for word: after the fact nothing can tell Booked from Payment
+        // Completed, because the Buyback overwrote the status that said which.
+        const priorCompletion = await tx.bookingCompletion.findFirst({
+          where: { bookingId: acquisition.sourceBooking.id, reopenedAt: null },
+        });
+        await tx.acquisition.update({
+          where: { id: acquisition.id },
+          data: {
+            sourceBookingRestore: {
+              status: acquisition.sourceBooking.status,
+              closedAt: acquisition.sourceBooking.closedAt?.toISOString() ?? null,
+              closeReason: acquisition.sourceBooking.closeReason,
+              completionId: priorCompletion?.id ?? null,
+            },
+          },
+        });
+
         await tx.booking.update({
           where: { id: acquisition.sourceBooking.id },
           data: {
             status: "BUYBACK_COMPLETED",
             activeProcess: "NONE",
             closedAt: new Date(),
-            closeReason: `Buyback ${acquisition.acquisitionNo} approved — ${args.note}`,
+            closeReason: `Buyback approved — ${args.note}`,
           },
         });
         // AC-05 — prd-complete §14.12 treats a Buyback differently from a plain
@@ -817,7 +841,7 @@ export async function decideAcquisition(args: {
         await cancelCommissionForBooking(tx, acquisition.sourceBooking.id, args.actorRef, {
           legallyCompleted,
           unwind: "BUYBACK",
-          reason: `Buyback ${acquisition.acquisitionNo} approved`,
+          reason: "Buyback approved",
         });
         // CR-002 — an Approved Buyback is the alternative milestone that makes
         // the Royalty Linked Member of that first purchase final, without
@@ -828,7 +852,7 @@ export async function decideAcquisition(args: {
           "Booking",
           acquisition.sourceBooking.id,
           args.actorRef,
-          `Buyback ${acquisition.acquisitionNo} approved.`
+          "Buyback approved."
         );
         await tx.bookingEvent.create({
           data: {
@@ -842,9 +866,7 @@ export async function decideAcquisition(args: {
         });
 
         // prd-complete §17.9 — the paper task depends on how far the old sale got.
-        const completion = await tx.bookingCompletion.findFirst({
-          where: { bookingId: acquisition.sourceBooking.id, reopenedAt: null },
-        });
+        const completion = priorCompletion;
         if (completion) {
           await ensureTask(tx, {
             recordKind: "Acquisition",
@@ -871,7 +893,7 @@ export async function decideAcquisition(args: {
             data: {
               reopenedAt: new Date(),
               reopenedByRef: args.actorRef,
-              reopenReason: `Buyback ${acquisition.acquisitionNo} approved`,
+              reopenReason: "Buyback approved",
             },
           });
         }
@@ -916,6 +938,104 @@ export async function decideAcquisition(args: {
   );
 }
 
+/** CR-016 — the shape `sourceBookingRestore` holds. */
+type BuybackRestore = {
+  status: BookingStatus;
+  closedAt: string | null;
+  closeReason: string | null;
+  completionId: string | null;
+};
+
+/**
+ * CR-016 — the reversal of an approved Buyback.
+ *
+ * The old sale goes back exactly as it stood and the commission is then simply
+ * reassessed. That really is the whole rule: with the Buyback no longer
+ * Approved the alternative milestone is gone, so `reassessCommission` re-reads
+ * every record against actual Payment Received and all four of CR-016's clauses
+ * fall out of it — a benefit that independently reached 100% keeps standing; an
+ * unpaid one that did not returns to Milestone Pending; a paid one becomes
+ * Accounts Adjustment Required; and reopening the one-time opportunity is what
+ * takes the position back out of its performance cycle. The opportunity ledger
+ * is also what stops a duplicate payout later, since the slot must be consumed
+ * again before anything can be earned a second time.
+ *
+ * A Buyback still awaiting approval accelerated nothing, so it has nothing to
+ * reverse and never reaches here.
+ */
+async function unwindApprovedBuyback(
+  tx: Tx,
+  acquisition: {
+    id: string;
+    sourceBookingId: string | null;
+    sourceBookingRestore: Prisma.JsonValue;
+  },
+  actorRef: string,
+  reason: string
+) {
+  const snapshot = acquisition.sourceBookingRestore as BuybackRestore | null;
+  if (!acquisition.sourceBookingId || !snapshot) return;
+
+  const move = canTransition("BUYBACK_COMPLETED", snapshot.status);
+  if (!move.ok) blocked(move.reason);
+
+  await tx.booking.update({
+    where: { id: acquisition.sourceBookingId },
+    data: {
+      status: snapshot.status,
+      activeProcess: "NONE",
+      closedAt: snapshot.closedAt ? new Date(snapshot.closedAt) : null,
+      closeReason: snapshot.closeReason,
+    },
+  });
+
+  // The completion the approval reopened is live again: the papers were never
+  // actually collected back, so the sale is delivered exactly as it was.
+  if (snapshot.completionId) {
+    await tx.bookingCompletion.update({
+      where: { id: snapshot.completionId },
+      data: { reopenedAt: null, reopenedByRef: null, reopenReason: null },
+    });
+  }
+
+  await tx.bookingEvent.create({
+    data: {
+      bookingId: acquisition.sourceBookingId,
+      actorRef,
+      action: "BUYBACK_UNWOUND",
+      fromStatus: "BUYBACK_COMPLETED",
+      toStatus: snapshot.status,
+      reason:
+        `Buyback unwound — ${reason}. The sale is restored and every benefit the Buyback ` +
+        `alone supported is rechecked against actual Payment Received (CR-016).`,
+    },
+  });
+
+  // Consumed, so a second unwind cannot restore a sale that is already back.
+  await tx.acquisition.update({
+    where: { id: acquisition.id },
+    data: { sourceBookingRestore: Prisma.DbNull },
+  });
+
+  const booking = await tx.booking.findUniqueOrThrow({
+    where: { id: acquisition.sourceBookingId },
+  });
+  // CR-002 — the Buyback was the alternative milestone that made the Royalty
+  // link final. Recompute it from the Bookings now that the Buyback is gone.
+  await syncRoyaltyLink(tx, booking.primaryPersonId, actorRef);
+  await reassessCommission(tx, acquisition.sourceBookingId, actorRef);
+
+  // The review the approval raised was about a Buyback that no longer exists.
+  await closeTasksFor(
+    tx,
+    "Booking",
+    acquisition.sourceBookingId,
+    actorRef,
+    `Buyback unwound — ${reason}`,
+    BUYBACK_COMMISSION_PURPOSE
+  );
+}
+
 /** PRD §11.4 — Deal Cancelled, only while no new buyer process is active. */
 export async function cancelAcquisitionDeal(args: {
   idempotencyKey: string;
@@ -947,6 +1067,8 @@ export async function cancelAcquisitionDeal(args: {
       const allowed = cancelAcquisition(buyerProcess);
       if (!allowed.ok) blocked(allowed.reason);
 
+      const wasApproved = acquisition.status === "APPROVED";
+
       await tx.acquisition.update({
         where: { id: acquisition.id },
         data: { status: "CANCELLED", closedReason: args.reason },
@@ -974,6 +1096,12 @@ export async function cancelAcquisitionDeal(args: {
           where: { id: acquisition.sourceBookingId },
           data: { activeProcess: "NONE" },
         });
+        // CR-016 — only an *approved* Buyback has anything to reverse. The
+        // status read here is the one fetched before the update above, so it is
+        // still the status the acquisition had on the way in.
+        if (wasApproved && acquisition.type === "BUYBACK") {
+          await unwindApprovedBuyback(tx, acquisition, args.actorRef, args.reason);
+        }
       }
 
       await stepBackBuyingCommission(tx, acquisition.id, args.actorRef, `Deal cancelled — ${args.reason}`);

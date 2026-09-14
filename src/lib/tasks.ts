@@ -37,10 +37,15 @@ export type TaskSubject = {
   project: string | null;
   /** The Plot Number, or an external property number on an Acquisition. */
   plot: string | null;
+  /** The Plot behind that number, where there is one — a Plot Number on a
+   *  screen opens the Plot. Null on an external property, which has no Plot. */
+  plotId: string | null;
   /** MEM-000218 or CUS-3390 — the Person the task is about. */
   partyRef: string | null;
   /** That Person's name. */
   partyName: string | null;
+  /** The Person that reference belongs to, so the row can open them. */
+  partyPersonId: string | null;
   /** BKG-000002, ENQ-000045, ACQ-000004 — the record's own permanent reference. */
   reference: string | null;
   /**
@@ -136,8 +141,18 @@ export function formatDue(at: Date | string, now: Date): string {
   return year === istDay(now).slice(0, 4) ? dayMonth : `${dayMonth} ${year}`;
 }
 
-/** DD/MM/YYYY hh:mm AM/PM — DESIGN §18, read on a 12-hour clock. */
+/** DD/MM/YYYY — DESIGN §18. The clock time is not printed: a date is what the
+ *  office works from, and the instant an event happened is in History. */
 export function formatIst(at: Date | string): string {
+  return dateFmt.format(new Date(at));
+}
+
+/**
+ * The date with the clock time, for the few facts where the hour is the fact:
+ * a Hold expires at a cut-off inside a day, so "expires 19/08/2026" would be
+ * read as end of day when it is not.
+ */
+export function formatIstDateTime(at: Date | string): string {
   const d = new Date(at);
   // Some ICU builds put a narrow no-break space before AM/PM and some a plain
   // one. One space, so what is stored, compared and read is the same string

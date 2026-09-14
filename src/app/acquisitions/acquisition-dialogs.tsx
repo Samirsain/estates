@@ -87,7 +87,7 @@ export function AcquisitionDialogs({
     return (
       <FormDialog
         title="Confirm Payment Given"
-        subtitle={`${dialog.row.acquisitionNo} · ${dialog.row.property}`}
+        subtitle={dialog.row.property}
         consequence="Percentage only, allocated to the oldest unpaid instalment first. The reference must be unique across Payment Received and Payment Given."
         busy={busy}
         onClose={onClose}
@@ -132,7 +132,7 @@ export function AcquisitionDialogs({
     return (
       <FormDialog
         title="Correct Payment Given"
-        subtitle={`${dialog.row.acquisitionNo} · entry ${dialog.entry.percent}% · ${dialog.entry.reference}`}
+        subtitle={`entry ${dialog.entry.percent}% · ${dialog.entry.reference}`}
         consequence="The original entry is superseded, never deleted. Falling below 100% shows Payment Pending again and steps the Buying Commission back; below 20% the property stops being sellable."
         busy={busy}
         onClose={onClose}
@@ -183,7 +183,7 @@ export function AcquisitionDialogs({
     return (
       <FormDialog
         title={dialog.approve ? "Approve deal" : "Reject deal"}
-        subtitle={`${dialog.row.acquisitionNo} · ${dialog.row.property}`}
+        subtitle={dialog.row.property}
         consequence={
           dialog.approve
             ? "The property enters normal inventory as Available + RESALE. A Buyback closes the old Booking as Buyback Completed and removes the previous Customer from the allocation."
@@ -208,7 +208,7 @@ export function AcquisitionDialogs({
     return (
       <FormDialog
         title="Cancel deal"
-        subtitle={`${dialog.row.acquisitionNo} · ${dialog.row.property}`}
+        subtitle={dialog.row.property}
         consequence="The property becomes Not Available — Deal Cancelled and must not remain sellable. Payment Given history stays, and Accounts adjustment work is created where payment already happened."
         busy={busy}
         onClose={onClose}
@@ -226,7 +226,7 @@ export function AcquisitionDialogs({
   return (
     <FormDialog
       title="Record Buying Commission"
-      subtitle={`${dialog.row.acquisitionNo} · arranged by ${dialog.row.arrangedBy}`}
+      subtitle={`Arranged by ${dialog.row.arrangedBy}`}
       consequence="One beneficiary per deal, outside the 4% sale cap, payable only at 100% Payment Given. The seller cannot be the beneficiary."
       busy={busy}
       onClose={onClose}

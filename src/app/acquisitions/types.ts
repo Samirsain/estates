@@ -22,6 +22,8 @@ export type AcquisitionRowView = {
   property: string;
   project: string;
   plotNumber: string;
+  /** The Plot behind that number, so it opens; null for an outside property. */
+  plotId: string | null;
   /** CONSTANT_CASE from the schema, or null for a property outside inventory. */
   plotType: string | null;
   location: string | null;

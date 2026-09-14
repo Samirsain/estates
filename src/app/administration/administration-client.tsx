@@ -36,8 +36,10 @@ import {
   decidePersonMergeAction,
   disableStaffAction,
   reassignWorkAction,
+  mergePreviewAction,
   requestPersonMergeAction,
   searchPersonsAction,
+  type MergePreview,
   createStaffAccountAction,
   resetStaffPasswordAction,
   changeStaffRoleAction,
@@ -642,25 +644,48 @@ function MergeTab({
   );
 }
 
-function RaiseMergeModal({
+export function RaiseMergeModal({
   onClose,
   onResult,
+  initial,
 }: {
   onClose: () => void;
   onResult: (result: ActionResult) => void;
+  /** The profile the merge was raised from: offered, and chosen as the survivor. */
+  initial?: PersonOption;
 }) {
   const [query, setQuery] = React.useState("");
-  const [options, setOptions] = React.useState<PersonOption[]>([]);
-  const [survivor, setSurvivor] = React.useState("");
+  const [options, setOptions] = React.useState<PersonOption[]>(initial ? [initial] : []);
+  const [survivor, setSurvivor] = React.useState(initial?.id ?? "");
   const [merged, setMerged] = React.useState("");
   const [reason, setReason] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  // PRD §22 — no silent merge: both profiles are shown side by side, and the
+  // person raising it says in so many words that they compared them.
+  const [preview, setPreview] = React.useState<MergePreview[] | null>(null);
+  const [confirmed, setConfirmed] = React.useState(false);
+
+  React.useEffect(() => {
+    setPreview(null);
+    setConfirmed(false);
+    if (!survivor || !merged || survivor === merged) return;
+    let cancelled = false;
+    mergePreviewAction([survivor, merged]).then((rows) => {
+      if (!cancelled) setPreview(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [survivor, merged]);
 
   React.useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(async () => {
       const found = await searchPersonsAction(query);
-      if (!cancelled) setOptions(found);
+      // The profile it was raised from stays choosable whatever the search finds.
+      if (!cancelled) {
+        setOptions(initial && !found.some((f) => f.id === initial.id) ? [initial, ...found] : found);
+      }
     }, 250);
     return () => {
       cancelled = true;
@@ -709,6 +734,53 @@ function RaiseMergeModal({
           </select>
         </Field>
 
+        {preview && preview.length === 2 && (
+          <div className="space-y-2">
+            <div className="grid gap-3 text-xs sm:grid-cols-2">
+              {preview.map((p, index) => (
+                <div key={p.id} className="rounded-lg border border-border/60 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    {index === 0 ? "Remains" : "Merged away"}
+                  </p>
+                  <p className="mt-1 font-semibold text-foreground">{p.fullName}</p>
+                  <p className="text-muted-foreground">
+                    {[p.customerId, p.memberId].filter(Boolean).join(" · ") || "No Customer or Member ID"}
+                  </p>
+                  <p className="text-muted-foreground">
+                    {p.mobile}
+                    {p.city ? ` · ${p.city}` : ""}
+                  </p>
+                  {p.oldIds.length > 0 && (
+                    <p className="text-muted-foreground">Old IDs: {p.oldIds.join(", ")}</p>
+                  )}
+                  <dl className="mt-2 space-y-0.5 border-t border-border/50 pt-2">
+                    {p.records.map((r) => (
+                      <div key={r.label} className="flex justify-between gap-2">
+                        <dt className="text-muted-foreground">{r.label}</dt>
+                        <dd className="tabular-nums text-foreground">{r.count}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Nothing changes until the MD approves. Then the merged-away identity keeps its records
+              and history and points to the one that remains, its IDs stay searchable as Old IDs,
+              and the Loyalty count is rebuilt.
+            </p>
+            <label className="flex items-center gap-2 text-xs font-medium text-foreground">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={confirmed}
+                onChange={(e) => setConfirmed(e.target.checked)}
+              />
+              I have compared both profiles and they are the same person.
+            </label>
+          </div>
+        )}
+
         <Field label="Compulsory reason">
           <Input value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
@@ -719,7 +791,9 @@ function RaiseMergeModal({
           </Button>
           <Button
             onClick={submit}
-            disabled={busy || !survivor || !merged || survivor === merged || !reason.trim()}
+            disabled={
+              busy || !survivor || !merged || survivor === merged || !reason.trim() || !confirmed
+            }
           >
             {busy ? "Raising…" : "Raise merge"}
           </Button>
