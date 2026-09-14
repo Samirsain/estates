@@ -16,6 +16,8 @@ import {
   ArrowLeft,
   Calculator,
   CheckCircle2,
+  Clock,
+  Lock as LockIcon,
   FileText,
   History,
   Layers,
@@ -30,14 +32,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Row } from "@/components/fact-row";
+import { Section } from "@/components/record-section";
 import { PersonLink } from "@/components/person-link";
 import {
   canEditPlotDetails,
   canSetRestriction,
   displayStatus,
   humaniseRestriction,
+  buildPlcSnapshot,
   isOpenSide,
   locationChargeLabel,
+  shortSides,
 } from "@/lib/domain/inventory";
 import { DEAL_CANCELLED_MESSAGE } from "@/lib/domain/acquisition";
 import { getPlot } from "@/lib/services/inventory-service";
@@ -143,29 +148,6 @@ const BENEFICIARY = {
 const DEAL_ROW =
   "flex flex-col gap-1 py-2.5 sm:grid sm:grid-cols-[9rem_minmax(0,1fr)_auto] sm:items-center sm:gap-4";
 
-/** Every block on the page is the same card: a quiet title, then its content. */
-function Section({
-  title,
-  icon,
-  children,
-}: {
-  title: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    // Sized by its own content: two cards side by side no longer stretch the
-    // shorter one into an empty box.
-    <Card className="p-4">
-      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {icon}
-        {title}
-      </h2>
-      <div className="mt-3 min-w-0">{children}</div>
-    </Card>
-  );
-}
-
 /** A sub-list heading inside Past Deals. */
 function SubHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -192,11 +174,11 @@ function PlotShape({
   const l = Number(lengthFt);
   if (!(w > 0) || !(l > 0)) return null;
 
-  const scale = 200 / Math.max(w, l);
-  const bw = Math.max(76, w * scale);
-  const bh = Math.max(76, l * scale);
-  const padX = 92;
-  const padY = 46;
+  const scale = 210 / Math.max(w, l);
+  const bw = Math.max(88, w * scale);
+  const bh = Math.max(88, l * scale);
+  const padX = 150;
+  const padY = 52;
   const x = padX;
   const y = padY;
   const x2 = x + bw;
@@ -212,10 +194,10 @@ function PlotShape({
   } as const;
 
   const marks = {
-    NORTH: { letter: [cx, y - 12], label: [cx, y - 30], anchor: "middle" },
-    SOUTH: { letter: [cx, y2 + 22], label: [cx, y2 + 40], anchor: "middle" },
-    WEST: { letter: [x - 12, cy], label: [x - 28, cy], anchor: "end" },
-    EAST: { letter: [x2 + 12, cy], label: [x2 + 28, cy], anchor: "start" },
+    NORTH: { letter: [cx, y - 14], label: [cx, y - 34], anchor: "middle" },
+    SOUTH: { letter: [cx, y2 + 16], label: [cx, y2 + 36], anchor: "middle" },
+    WEST: { letter: [x - 14, cy], label: [x - 30, cy], anchor: "end" },
+    EAST: { letter: [x2 + 14, cy], label: [x2 + 30, cy], anchor: "start" },
   } as const;
 
   const spoken = SIDES.filter((side) => sides[side])
@@ -223,7 +205,7 @@ function PlotShape({
     .join(", ");
 
   return (
-    <figure className="m-0 w-full max-w-[18rem]">
+    <figure className="m-0 w-full">
       <svg
         viewBox={`0 0 ${bw + padX * 2} ${bh + padY * 2}`}
         className="block h-auto w-full overflow-visible text-foreground"
@@ -256,6 +238,10 @@ function PlotShape({
         >
           {formatPlotSize(widthFt, lengthFt)}
         </text>
+        {/* The compass letter on each side, and what that side abuts just
+            beyond it. The drawing now has the card's full width, so the
+            viewBox is scaled up rather than down and this text renders larger
+            than its nominal size instead of smaller. */}
         {SIDES.map((side) => {
           const mark = marks[side];
           return (
@@ -263,9 +249,9 @@ function PlotShape({
               <text
                 x={mark.letter[0]}
                 y={mark.letter[1]}
-                textAnchor={mark.anchor}
+                textAnchor="middle"
                 dominantBaseline="middle"
-                className="fill-current text-[12px] font-bold"
+                className="fill-current text-[13px] font-bold"
               >
                 {side.charAt(0)}
               </text>
@@ -275,7 +261,7 @@ function PlotShape({
                   y={mark.label[1]}
                   textAnchor={mark.anchor}
                   dominantBaseline="middle"
-                  className="text-[11px] text-muted-foreground"
+                  className="text-[12px] font-medium text-foreground/75"
                   fill="currentColor"
                 >
                   {sides[side]!.label}
@@ -337,7 +323,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   const plot = await getPlot(plotId);
   if (!plot) notFound();
 
-  const [bookings, movedAway, acquisitions, enquiries, corrections, pendingRequests] = await Promise.all([
+  const [bookings, movedAway, acquisitions, enquiries, corrections, pendingRequests, plcCorrections] =
+    await Promise.all([
     db.booking.findMany({
       where: { plotId: plot.id },
       include: {
@@ -356,6 +343,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
           orderBy: { role: "asc" },
         },
         completions: { where: { reopenedAt: null } },
+        // The charge as it stood when this Booking froze it (PLC spec §7.1).
+        plcSnapshot: { include: { ruleVersion: { select: { version: true } } } },
         scheduleVersions: { where: { status: "ACTIVE" }, include: { instalments: true } },
         cancellations: { orderBy: { requestedAt: "desc" }, take: 1 },
         commissions: {
@@ -410,6 +399,18 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
       take: 50,
     }),
     listPendingHoldRequests(),
+    // A corrected PLC is a new snapshot superseding the old one, with the
+    // compulsory reason on it (PLC spec §11.1) — not a PLOT_DETAILS_CORRECTED
+    // audit row, so the history has to read it from the snapshots themselves.
+    db.plcSnapshot.findMany({
+      where: { plotId: plot.id, supersededById: { not: null } },
+      include: {
+        supersededBy: { include: { ruleVersion: { select: { version: true } } } },
+        ruleVersion: { select: { version: true } },
+      },
+      orderBy: { frozenAt: "desc" },
+      take: 50,
+    }),
   ]);
 
   // The same queue Plot Inventory reads, so the #1, #2 here match the row there.
@@ -434,6 +435,32 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
     roadWidthFt: b.roadWidthFt?.toString(),
   }));
   const position = locationChargeLabel(boundaries).join(" · ");
+
+  /* Every charge the sides earn, each named with the sides that earned it, and
+     the total under them. A Road side with no width cannot be banded and
+     buildPlcSnapshot throws rather than guess (PLC spec §5.3), so the reason
+     shows where the numbers would be. */
+  let plc: {
+    total: string;
+    components: { label: string; percent: string; evidence: string }[];
+  } | null = null;
+  let plcIssue: string | null = version ? null : "No published PLC version";
+  if (version) {
+    try {
+      const snapshot = buildPlcSnapshot(boundaries, plcRules(version.components));
+      plc = {
+        total: snapshot.totalPercent.toFixed(2),
+        components: snapshot.components.map((c) => ({
+          label: c.label,
+          percent: Number(c.percent).toFixed(2),
+          evidence: shortSides(c.evidence),
+        })),
+      };
+    } catch (error) {
+      plcIssue = error instanceof Error ? error.message : "PLC could not be worked out";
+    }
+  }
+
   // Stored precision — area is stored to four decimals and a Plot is sold on it.
   const num = (value: { toString(): string }) => formatQuantity(value.toString());
   const conv = (value: { toDecimalPlaces(n: number): { toString(): string } }) =>
@@ -569,6 +596,21 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
         by: c.actorRef,
       })
     ),
+    // "PLC: 7.00% → 9.00% — Park side recorded" (PLC spec §11.1).
+    ...plcCorrections.map(
+      (snapshot): HistoryItem => ({
+        at: snapshot.supersededBy!.frozenAt,
+        title: "PLC corrected",
+        detail:
+          [
+            `PLC: ${snapshot.totalPercent.toFixed(2)}% → ${snapshot.supersededBy!.totalPercent.toFixed(2)}%`,
+            snapshot.supersededBy!.correctionReason,
+          ]
+            .filter(Boolean)
+            .join(" — "),
+        by: "SYSTEM",
+      })
+    ),
   ]);
 
   /** A person as every screen prints one: the id leads, the name under it. */
@@ -622,6 +664,42 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   ].sort((a, b) => b.at.getTime() - a.at.getTime());
 
   const hasPast = pastDeals.length + acquisitions.length + enquiries.length > 0;
+  /* Whether anything is allocated, pending or past on this Plot. An Available
+     Plot with none of it used to get three bordered cards saying "No Booking",
+     "Not completed yet" and "No earlier deals" — three boxes to say nothing
+     three times, next to a column tall enough to hold the drawing. The header
+     badge already says Available; the cards only repeated it. */
+  const hasDeal = Boolean(current || liveAcquisition);
+
+  /* PRD §10.2 — the Hold, read in full. */
+  const hold = plot.holds[0] ?? null;
+  const nowMs = Date.now();
+  /* A frozen Hold's clock is stopped: what is left is the figure banked when
+     the Booking Request was raised, not the wall clock (PRD §10.5). */
+  const holdRemainingMs = hold
+    ? (hold.frozenRemainingMs ?? hold.expiresAt.getTime() - nowMs)
+    : 0;
+  const spanWords = (ms: number) => {
+    if (ms <= 0) return "expired";
+    const hours = Math.floor(ms / 3_600_000);
+    if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+    return `${hours}h ${Math.floor((ms % 3_600_000) / 60_000)}m`;
+  };
+
+  /* The PLC frozen on whatever holds the Plot now, against what the sides
+     would earn today. Only worth a line when the two differ — a Plot whose
+     rules have not moved says nothing. */
+  const frozen = current?.plcSnapshot ?? hold?.plcSnapshot ?? null;
+  const frozenPercent = frozen ? frozen.totalPercent.toFixed(2) : null;
+  const frozenDiffers = Boolean(plc && frozenPercent && frozenPercent !== plc.total);
+
+  /* Plot details are the Plot's own facts until something commits them
+     (inventory.ts: canEditPlotDetails). The page says which thing. */
+  const lockReason = canEditPlotDetails(plot.status)
+    ? null
+    : current
+      ? `${STATUS_LABEL[plot.status] ?? plot.status} — the Booking holds these details.`
+      : "A committed Plot's details are frozen.";
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
@@ -720,7 +798,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
         </div>
 
         {/* 1 Header */}
-        <Card className="p-4">
+        <Card className="p-4 md:p-5">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <MapPin className="h-6 w-6" />
@@ -735,8 +813,9 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 )}
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
+                {/* The position reads under the Layout drawing, which is what
+                    it describes. */}
                 {plot.project.name} · {PLOT_TYPE_LABEL[plot.plotType] ?? plot.plotType}
-                {position ? ` · ${position}` : ""}
               </p>
               {plot.restriction !== "NONE" && plot.restrictionReason && (
                 <p className="mt-1 max-w-prose text-xs text-red-700">{plot.restrictionReason}</p>
@@ -754,64 +833,32 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
           </div>
         </Card>
 
-        {/* 2 Dimensions · 3 Boundaries · 4 Layout — one card in three columns:
-            the measurements, the four sides, and the drawing of both. Three
-            cards stretched to the drawing's height left two of them half empty. */}
-        <Section title="Dimensions · Boundaries · Layout" icon={<Ruler className="h-3.5 w-3.5" />}>
-          <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_14rem]">
-          <div className="min-w-0">
-            <SubHeading>Dimensions</SubHeading>
-            <Row
-              label="Width × Length"
-              value={
-                plot.widthFt && plot.lengthFt
-                  ? formatPlotSize(plot.widthFt.toString(), plot.lengthFt.toString())
-                  : "Irregular Plot"
-              }
-            />
-            <Row
-              label={plot.exactAreaSqFt ? "Area (exact)" : "Area"}
-              value={<span className="tabular-nums">{num(plot.areaSqFt)} sq ft</span>}
-              hint={
-                <span className="tabular-nums">
-                  {conv(plot.areaSqYd)} sq yd · {conv(plot.areaSqM)} sq m
-                </span>
-              }
-            />
-            {/* With both sides and an override, what the sides multiply to is
-                the other half of the reason the override exists. */}
-            {plot.exactAreaSqFt && plot.widthFt && plot.lengthFt && (
-              <Row
-                label="Width × Length area"
-                value={<span className="tabular-nums">{num(plot.widthFt.mul(plot.lengthFt))} sq ft</span>}
-              />
-            )}
-            {plot.exactAreaReason && <Row label="Override reason" value={plot.exactAreaReason} />}
-          </div>
+        {/* The Plot on the left, the deal on the right.
 
-          <div className="min-w-0">
-            <SubHeading>Boundaries</SubHeading>
-            {SIDES.map((side) => {
-              const b = bySide.get(side);
-              return (
-                <Row
-                  key={side}
-                  label={humanise(side)}
-                  value={b ? BOUNDARY_KIND_LABEL[b.kind] ?? b.kind : "Not recorded"}
-                  hint={
-                    b?.kind === "ROAD" && b.roadWidthFt
-                      ? `${num(b.roadWidthFt)} ft wide`
-                      : (b?.reference ?? undefined)
-                  }
-                />
-              );
-            })}
-          </div>
+            The PLC and layout block is tall because the drawing is in it, and
+            everything about whoever holds the Plot used to start below all of
+            that. Side by side, the two questions a Plot page is opened with —
+            what is this Plot, and who has it — are both answered without
+            scrolling, and the deal column fills the height the drawing makes. */}
+        <div className="grid items-start gap-4 md:grid-cols-2">
+        <div className="space-y-4">
+        {/* 2 Dimensions · 3 Layout — one card, because the four sides are one
+            fact told twice otherwise. The drawing already names what every side
+            abuts, its width and its reference ("Road · 60 ft", "Plot · a12"),
+            which is what Plot_Profile_Revised_Requirements.md §6 asks the Four
+            Sides to show; the list under it was the same four answers again.
 
+            The Location Charge is out per §3, §4 and §16 of that document: not
+            the total, not the components, not the version, not the sides
+            earning it. It still lives in the Calculator and on the inventory
+            list, which §3 allows. */}
+        <Section title="Layout" icon={<Ruler className="h-3.5 w-3.5" />}>
           <div className="min-w-0">
-            <SubHeading>Layout</SubHeading>
             {plot.widthFt && plot.lengthFt ? (
-              <div className="mt-2 flex justify-center">
+              // The drawing on the left, what each side abuts beside it. The
+              // labels used to ring the shape, which cost the shape the width
+              // they took and still left them too small to read.
+              <div className="flex flex-1 items-center justify-center py-2">
                 <PlotShape
                   plotNumber={plot.plotNumber}
                   widthFt={plot.widthFt.toString()}
@@ -833,14 +880,180 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 />
               </div>
             ) : (
-              <p className="mt-2 text-xs text-muted-foreground">An irregular Plot has no sides to draw.</p>
+              <p className="flex flex-1 items-center justify-center py-2 text-xs text-muted-foreground">
+                An irregular Plot has no sides to draw.
+              </p>
             )}
-          </div>
+
           </div>
         </Section>
 
-        {/* 5 Current Allocation · Booking · 6 Completion */}
-        <div className="grid items-start gap-4 md:grid-cols-2">
+        {/* 3 Dimensions · PLC · Position — what the Plot measures, what its
+            sides earn, and the sentence they add up to. Its own card, beneath
+            the drawing it describes. */}
+        <Section title="Dimensions · PLC" icon={<Ruler className="h-3.5 w-3.5" />}>
+          <div className="min-w-0">
+            <SubHeading>Dimensions</SubHeading>
+            <Row
+              label="Width × Length"
+              value={
+                plot.widthFt && plot.lengthFt
+                  ? formatPlotSize(plot.widthFt.toString(), plot.lengthFt.toString())
+                  : "Irregular Plot"
+              }
+            />
+            {/* All three are quoted, so all three are read at the same size.
+                Only the unit steps back — the same treatment the inventory list
+                gives the pair it shows. */}
+            <Row
+              label={plot.exactAreaSqFt ? "Area (exact)" : "Area"}
+              value={
+                <span className="block space-y-0.5">
+                  {(
+                    [
+                      [num(plot.areaSqFt), "sq ft"],
+                      [conv(plot.areaSqYd), "sq yd"],
+                      [conv(plot.areaSqM), "sq m"],
+                    ] as const
+                  ).map(([amount, unit]) => (
+                    <span key={unit} className="block whitespace-nowrap tabular-nums">
+                      {amount}
+                      <span className="ml-1 text-[11px] font-medium text-muted-foreground">
+                        {unit}
+                      </span>
+                    </span>
+                  ))}
+                </span>
+              }
+            />
+            {/* With both sides and an override, what the sides multiply to is
+                the other half of the reason the override exists. */}
+            {plot.exactAreaSqFt && plot.widthFt && plot.lengthFt && (
+              <Row
+                label="Width × Length area"
+                value={
+                  <span className="tabular-nums">
+                    {num(plot.widthFt.mul(plot.lengthFt))} sq ft
+                  </span>
+                }
+              />
+            )}
+            {plot.exactAreaReason && <Row label="Override reason" value={plot.exactAreaReason} />}
+          </div>
+
+          <div className="mt-3 min-w-0 border-t border-border/60 pt-3">
+            <SubHeading>PLC</SubHeading>
+            {plc ? (
+              <>
+                {plc.components.map((c) => (
+                  <Row
+                    key={c.label}
+                    label={c.label}
+                    value={<span className="tabular-nums">{c.percent}%</span>}
+                    hint={c.evidence || undefined}
+                  />
+                ))}
+                <Row label="Total" value={<span className="tabular-nums">{plc.total}%</span>} />
+              </>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">{plcIssue}</p>
+            )}
+          </div>
+
+          {/* The sentence the sides add up to. */}
+          {position && (
+            <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2 border-t border-border/60 pt-3">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Position
+              </span>
+              <span className="text-sm font-semibold text-foreground">{position}</span>
+            </div>
+          )}
+        </Section>
+
+        {/* 5 Current Allocation · Booking · 6 Completion — the deal, stacked
+            in the column beside the Plot. */}
+        </div>
+
+        <div className="space-y-4">
+          {/* Why editing is closed. Only when it is — an editable Plot has
+              nothing to explain. */}
+          {lockReason && (
+            <Section title="Details locked" icon={<LockIcon className="h-3.5 w-3.5" />}>
+              <p className="text-xs text-muted-foreground">{lockReason}</p>
+            </Section>
+          )}
+
+          {/* PRD §10.2 — the Hold, in full: who it is for, who got it done, how
+              long is left on it and who is answerable for it. */}
+          {hold && (
+            <Section title="Current Allocation · Hold" icon={<Clock className="h-3.5 w-3.5" />}>
+              <Row label="Held for" value={person(hold.person, { mobile: true })} />
+              <Row
+                label="Sourced by"
+                value={
+                  hold.sourcedByPerson
+                    ? (hold.sourcedByPerson.memberProfile?.memberId ??
+                      hold.sourcedByPerson.fullName)
+                    : "3% Club"
+                }
+                hint={hold.sourcedByPerson?.fullName}
+              />
+              <Row label="Created" value={formatIstDateTime(hold.startsAt)} />
+              <Row
+                label="Expires"
+                value={formatIstDateTime(hold.expiresAt)}
+                hint={hold.frozenAt ? undefined : spanWords(holdRemainingMs)}
+              />
+              {/* PRD §10.5 — a Booking Request stops the clock, and the figure
+                  banked here is restored exactly if Accounts reject it. */}
+              {hold.frozenAt && (
+                <Row
+                  label="Frozen"
+                  value={spanWords(holdRemainingMs)}
+                  hint={`Stopped ${formatIstDateTime(hold.frozenAt)} for the Booking Request`}
+                />
+              )}
+              <Row label="Hold age" value={spanWords(nowMs - hold.startsAt.getTime())} />
+              <Row
+                label="Extensions"
+                value={hold.extensionCount === 0 ? "None" : String(hold.extensionCount)}
+              />
+              <Row label="Responsible CRM" value={hold.responsibleStaffId ?? "—"} />
+              {hold.plcSnapshot && (
+                <Row
+                  label="PLC snapshot"
+                  value={
+                    <span className="tabular-nums">
+                      {hold.plcSnapshot.totalPercent.toFixed(2)}%
+                    </span>
+                  }
+                  hint={`Version ${hold.plcSnapshot.ruleVersion.version} · frozen ${formatIst(
+                    hold.plcSnapshot.frozenAt
+                  )}`}
+                />
+              )}
+            </Section>
+          )}
+
+          {/* The charge this Plot is committed at, when the rules have moved
+              since. The frozen figure is the one that counts (PLC spec §10.3);
+              this only says the two no longer agree. */}
+          {frozenDiffers && (
+            <Section title="Frozen vs current PLC" icon={<Percent className="h-3.5 w-3.5" />}>
+              <Row
+                label="Frozen on this deal"
+                value={<span className="tabular-nums">{frozenPercent}%</span>}
+                hint={`Version ${frozen!.ruleVersion.version} · ${formatIst(frozen!.frozenAt)}`}
+              />
+              <Row
+                label="Current rules"
+                value={<span className="tabular-nums">{plc!.total}%</span>}
+                hint="What the sides would earn today"
+              />
+            </Section>
+          )}
+
           <Section title="Current Allocation · Booking" icon={<FileText className="h-3.5 w-3.5" />}>
             {current ? (
               <>
@@ -952,66 +1165,163 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               <p className="text-xs text-muted-foreground">Not completed yet.</p>
             )}
           </Section>
-        </div>
 
-        {/* Commission on the deal holding this Plot — percentages only, never a
-            rupee amount. Superseded lines stay on the Booking page. */}
-        {(current || liveAcquisition) && (
-          <Section title="Commission" icon={<Percent className="h-3.5 w-3.5" />}>
-            {commissions.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No commission on this deal.</p>
+          {/* 7 Past Deals */}
+          <Section title="Past Deals" icon={<Layers className="h-3.5 w-3.5" />}>
+            {!hasPast ? (
+              <p className="text-xs text-muted-foreground">
+                No earlier deals, acquisitions or open enquiries.
+              </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[42rem] text-xs">
-                  <thead className="border-b border-border/50">
-                    <tr>
-                      <th className={TH}>Type</th>
-                      <th className={TH}>Beneficiary</th>
-                      <th className={`${TH} text-right`}>%</th>
-                      <th className={`${TH} text-right`}>Milestone</th>
-                      <th className={TH}>Eligibility</th>
-                      <th className={`${TH} pr-0`}>Payment</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/40">
-                    {commissions.map((c) => {
-                      const who = c.beneficiaryPerson;
-                      const code = who.memberProfile?.memberId ?? who.customerProfile?.customerId;
-                      return (
-                        <tr key={c.id}>
-                          <td className={`${TD} font-medium`}>
+            <div className="space-y-4">
+                {pastDeals.length > 0 && (
+                  <div>
+                    <SubHeading>Earlier Bookings</SubHeading>
+                    <ul className="divide-y divide-border/40 text-xs">
+                      {pastDeals.map((d) => (
+                        <li key={d.id} className={DEAL_ROW}>
+                          <Link href={d.href} className="font-semibold text-primary hover:underline">
+                            {d.what}
+                          </Link>
+                          <span className="min-w-0 truncate">
+                            <PersonLink personId={d.who.id} name={d.who.customerProfile?.customerId ?? d.who.fullName} />
+                            <span className="text-muted-foreground"> · {d.who.fullName}</span>
+                          </span>
+                          <span className="text-[11px] text-muted-foreground sm:text-right">
+                            <span className="text-foreground">{d.outcome}</span> · {formatIst(d.at)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {acquisitions.length > 0 && (
+                  <div>
+                    <SubHeading>Acquisitions</SubHeading>
+                    <ul className="divide-y divide-border/40 text-xs">
+                      {acquisitions.map((a) => (
+                        <li key={a.id} className={DEAL_ROW}>
+                          <Link href={`/acquisitions/${a.id}`} className="font-semibold text-primary hover:underline">
+                            {TYPE_LABEL[a.type] ?? "Buyback / Resale"}
+                          </Link>
+                          <span className="min-w-0 truncate">
+                            <span className="text-muted-foreground">Seller </span>
+                            <PersonLink
+                              personId={a.sellerPerson.id}
+                              name={a.sellerPerson.customerProfile?.customerId ?? a.sellerPerson.fullName}
+                            />
+                            <span className="text-muted-foreground">
+                              {" "}
+                              · Payment Given {a.paymentGivenPercent.toFixed(2)}%
+                            </span>
+                          </span>
+                          <span className="text-[11px] text-muted-foreground sm:text-right">
+                            <span className="text-foreground">
+                              {a.status === "CANCELLED" ? "Deal Cancelled" : humanise(a.status)}
+                            </span>{" "}
+                            · {formatIst(a.submittedAt)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {enquiries.length > 0 && (
+                  <div>
+                    <SubHeading>Open Enquiries</SubHeading>
+                    <ul className="divide-y divide-border/40 text-xs">
+                      {enquiries.map((e) => (
+                        <li key={e.id} className={DEAL_ROW}>
+                          <span className="font-medium">{e.enquiryNo}</span>
+                          <span className="min-w-0 truncate">
+                            <PersonLink
+                              personId={e.person.id}
+                              name={
+                                e.person.customerProfile?.customerId ??
+                                e.person.memberProfile?.memberId ??
+                                e.person.fullName
+                              }
+                            />
+                            <span className="text-muted-foreground"> · {e.person.fullName}</span>
+                          </span>
+                          <span className="text-[11px] text-muted-foreground sm:text-right">
+                            <span className="text-foreground">{humanise(e.status)}</span> · {formatIst(e.createdAt)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </Section>
+
+          {/* Commission on the deal holding this Plot — percentages only, never
+              a rupee amount. Superseded lines stay on the Booking page.
+
+              A list, not the six-column table it was: this column is half the
+              page, and Type / Beneficiary / % / Milestone / Eligibility /
+              Payment across it would only have scrolled sideways. Nothing is
+              dropped — the milestone reads beside the rate and the payment
+              under the eligibility. */}
+          {(current || liveAcquisition) && (
+            <Section title="Commission" icon={<Percent className="h-3.5 w-3.5" />}>
+              {commissions.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No commission on this deal.</p>
+              ) : (
+                <ul className="divide-y divide-border/40 text-xs">
+                  {commissions.map((c) => {
+                    const who = c.beneficiaryPerson;
+                    const code = who.memberProfile?.memberId ?? who.customerProfile?.customerId;
+                    return (
+                      <li
+                        key={c.id}
+                        className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 py-2.5"
+                      >
+                        <span className="min-w-0">
+                          <span className="font-medium text-foreground">
                             {c.type === "LOYALTY" ? "Loyalty Bonus" : humanise(c.type)}
-                          </td>
-                          <td className={TD}>
+                          </span>
+                          <span className="block">
                             <PersonLink
                               personId={who.id}
                               name={code ?? who.fullName}
                               as={who.memberProfile ? "member" : undefined}
                               className="font-semibold"
                             />
-                            {code && <span className={SUB}>{who.fullName}</span>}
-                          </td>
-                          <td className={`${TD} text-right font-medium tabular-nums`}>{c.percent.toFixed(2)}%</td>
-                          <td className={`${TD} text-right tabular-nums`}>{c.milestonePercent.toFixed(0)}%</td>
-                          <td className={TD}>
+                            {code && <span className="text-muted-foreground"> · {who.fullName}</span>}
+                          </span>
+                        </span>
+                        <span className="text-right">
+                          <span className="block whitespace-nowrap font-medium tabular-nums text-foreground">
+                            {c.percent.toFixed(2)}%
+                            <span className="ml-1.5 font-normal text-muted-foreground">
+                              at {c.milestonePercent.toFixed(0)}%
+                            </span>
+                          </span>
+                          <span className="block text-[11px] text-muted-foreground">
                             {eligibilityLabel(c.eligibility, c.type as CommissionType)}
-                            {c.holdReason && (
-                              <span className="block text-[11px] text-amber-700">{humanise(c.holdReason)}</span>
-                            )}
-                          </td>
-                          <td className={`${TD} pr-0`}>
+                            {" · "}
                             {PAYMENT_LABEL[c.payment] ?? c.payment}
-                            {c.paidOn && <span className={SUB}>Paid {formatIst(c.paidOn)}</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Section>
-        )}
+                            {c.paidOn ? ` ${formatIst(c.paidOn)}` : ""}
+                          </span>
+                          {c.holdReason && (
+                            <span className="block text-[11px] text-amber-700">
+                              {humanise(c.holdReason)}
+                            </span>
+                          )}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Section>
+          )}
+        </div>
+        </div>
 
         {/* DESIGN §9.3 — each request names the actual buyer, and expires at the
             working-day cut-off; after that it cannot be approved. */}
@@ -1036,97 +1346,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
           </Section>
         )}
 
-        {/* 7 Past Deals */}
-        <Section title="Past Deals" icon={<Layers className="h-3.5 w-3.5" />}>
-          {!hasPast ? (
-            <p className="text-xs text-muted-foreground">No earlier deals, acquisitions or open enquiries.</p>
-          ) : (
-            <div className="space-y-4">
-              {pastDeals.length > 0 && (
-                <div>
-                  <SubHeading>Earlier Bookings</SubHeading>
-                  <ul className="divide-y divide-border/40 text-xs">
-                    {pastDeals.map((d) => (
-                      <li key={d.id} className={DEAL_ROW}>
-                        <Link href={d.href} className="font-semibold text-primary hover:underline">
-                          {d.what}
-                        </Link>
-                        <span className="min-w-0 truncate">
-                          <PersonLink personId={d.who.id} name={d.who.customerProfile?.customerId ?? d.who.fullName} />
-                          <span className="text-muted-foreground"> · {d.who.fullName}</span>
-                        </span>
-                        <span className="text-[11px] text-muted-foreground sm:text-right">
-                          <span className="text-foreground">{d.outcome}</span> · {formatIst(d.at)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {acquisitions.length > 0 && (
-                <div>
-                  <SubHeading>Acquisitions</SubHeading>
-                  <ul className="divide-y divide-border/40 text-xs">
-                    {acquisitions.map((a) => (
-                      <li key={a.id} className={DEAL_ROW}>
-                        <Link href={`/acquisitions/${a.id}`} className="font-semibold text-primary hover:underline">
-                          {TYPE_LABEL[a.type] ?? "Buyback / Resale"}
-                        </Link>
-                        <span className="min-w-0 truncate">
-                          <span className="text-muted-foreground">Seller </span>
-                          <PersonLink
-                            personId={a.sellerPerson.id}
-                            name={a.sellerPerson.customerProfile?.customerId ?? a.sellerPerson.fullName}
-                          />
-                          <span className="text-muted-foreground">
-                            {" "}
-                            · Payment Given {a.paymentGivenPercent.toFixed(2)}%
-                          </span>
-                        </span>
-                        <span className="text-[11px] text-muted-foreground sm:text-right">
-                          <span className="text-foreground">
-                            {a.status === "CANCELLED" ? "Deal Cancelled" : humanise(a.status)}
-                          </span>{" "}
-                          · {formatIst(a.submittedAt)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {enquiries.length > 0 && (
-                <div>
-                  <SubHeading>Open Enquiries</SubHeading>
-                  <ul className="divide-y divide-border/40 text-xs">
-                    {enquiries.map((e) => (
-                      <li key={e.id} className={DEAL_ROW}>
-                        <span className="font-medium">{e.enquiryNo}</span>
-                        <span className="min-w-0 truncate">
-                          <PersonLink
-                            personId={e.person.id}
-                            name={
-                              e.person.customerProfile?.customerId ??
-                              e.person.memberProfile?.memberId ??
-                              e.person.fullName
-                            }
-                          />
-                          <span className="text-muted-foreground"> · {e.person.fullName}</span>
-                        </span>
-                        <span className="text-[11px] text-muted-foreground sm:text-right">
-                          <span className="text-foreground">{humanise(e.status)}</span> · {formatIst(e.createdAt)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-        </Section>
-
-        {/* 8 History */}
+        {/* 8 History — the one block that is about neither side, so it runs the
+            full width under both. */}
         <Section title="History" icon={<History className="h-3.5 w-3.5" />}>
           {history.length === 0 ? (
             <p className="text-xs text-muted-foreground">Nothing recorded yet.</p>

@@ -847,6 +847,12 @@ export async function decideAcquisition(args: {
         // the Royalty Linked Member of that first purchase final, without
         // waiting for 100% Payment Received.
         await syncRoyaltyLink(tx, acquisition.sourceBooking.primaryPersonId, args.actorRef);
+        // CR-015 — and the same Approved Buyback is the alternative milestone
+        // for Invite, Royalty and Loyalty. `cancelCommissionForBooking` above
+        // deliberately leaves those records standing; this is what earns them.
+        // It also lifts the Buyback Pending hold the raised Buyback put on the
+        // whole Booking, which nothing else on this path would have cleared.
+        await reassessCommission(tx, acquisition.sourceBooking.id, args.actorRef);
         await closeTasksFor(
           tx,
           "Booking",

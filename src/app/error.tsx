@@ -33,9 +33,16 @@ export default function Error({
           or is rolled back, so your records are as they were before you tried.
         </p>
 
+        {/* The reference is only promised when there is one to show. Next
+            sets a digest for a server error in production and leaves it
+            undefined otherwise, so this sentence used to point at a box that
+            was not rendered — the one thing the reader was told to look for.
+            Without a digest the log is still findable, by what they were
+            doing and when. */}
         <p className="text-xs text-muted-foreground">
-          Try again. If it keeps happening, give your administrator the reference below so they can
-          find it in the server log.
+          {error.digest
+            ? "Try again. If it keeps happening, give your administrator the reference below so they can find it in the server log."
+            : "Try again. If it keeps happening, tell your administrator what you were doing and roughly when, so they can find it in the server log."}
         </p>
 
         {error.digest && (

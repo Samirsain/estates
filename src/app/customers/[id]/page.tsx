@@ -15,7 +15,6 @@ import { eligibilityLabel, experienceSince, type CommissionType } from "@/lib/do
 import { validateFinalBuyers } from "@/lib/domain/completion";
 import { formatIst, formatIstDateTime } from "@/lib/tasks";
 import { auditHistory, mergeHistory, newestFirst, type HistoryItem } from "@/lib/profile-history";
-import { TYPE_LABEL } from "@/app/acquisitions/types";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +22,7 @@ import { Card } from "@/components/ui/card";
 import { PersonDetailsEditor } from "@/components/person-details-editor";
 import { PersonLink } from "@/components/person-link";
 import { Row } from "@/components/fact-row";
+import { Section, Stat } from "@/components/record-section";
 import { AccountNumber, IdentityFacts } from "@/components/protected-identity";
 import { MergeButton } from "./merge-button";
 import { PaymentButton } from "./payment-button";
@@ -32,8 +32,6 @@ import {
   ShieldCheck,
   Banknote,
   User,
-  FileText,
-  Clock,
   MapPin,
   Layers,
   History,
@@ -68,15 +66,6 @@ const words = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replaceAll("
 const titleWords = (v: string) =>
   v.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
-/**
- * Anything waiting on somebody's decision says the same two words here as on
- * the Plot, the Booking and the Acquisition. Everything else is the enum read
- * as words.
- */
-const WAITING_STATUS = new Set(["WAITING_FOR_BOOKING_APPROVAL", "REQUEST_PENDING", "PENDING_APPROVAL"]);
-const statusWords = (status: string) =>
-  WAITING_STATUS.has(status) ? "waiting approval" : status.replaceAll("_", " ").toLowerCase();
-
 /** RGE-026 — the number is what a Plot is known by; its type is said where it is listed. */
 const plotName = (p: { plotNumber: string }) => p.plotNumber;
 
@@ -98,55 +87,11 @@ const PAYMENT_LABEL: Record<string, string> = {
   ACCOUNTS_ADJUSTMENT_REQUIRED: "Accounts Adjustment Required",
 };
 
-type BadgeVariant = React.ComponentProps<typeof Badge>["variant"];
-
 /** One table header style for every table on the page. */
 const TH = "pb-2 pr-4 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
 const TD = "py-2.5 pr-4 align-top";
 const SUB = "block text-[11px] text-muted-foreground";
 
-/**
- * Every block on the page is the same card: a quiet uppercase title, then the
- * content under it. One shape, so the page reads as one document.
- */
-function Section({
-  title,
-  icon,
-  children,
-}: {
-  title: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="flex h-full flex-col p-4">
-      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {icon}
-        {title}
-      </h2>
-      <div className="mt-3">{children}</div>
-    </Card>
-  );
-}
-
-/** A Summary answer: the label is quiet, the answer is not. */
-function Stat({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: React.ReactNode;
-  hint?: React.ReactNode;
-}) {
-  return (
-    <div className="min-w-0 md:px-4 md:first:pl-0">
-      <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 text-sm font-semibold text-foreground">{value}</dd>
-      {hint && <dd className="text-[11px] text-muted-foreground">{hint}</dd>}
-    </div>
-  );
-}
 
 export default async function CustomerDetailPage({
   params,
@@ -177,12 +122,9 @@ export default async function CustomerDetailPage({
   const bookingRef = { id: true, bookingNumber: true, requestNo: true } as const;
 
   const [
-    enquiries,
     holds,
-    holdRequests,
     bookings,
     banks,
-    acquisitions,
     commissions,
     loyaltySlots,
     audit,
@@ -190,19 +132,7 @@ export default async function CustomerDetailPage({
     customerChanges,
     endedShares,
   ] = await Promise.all([
-    db.enquiry.findMany({
-      where: { personId },
-      include: { project: true, plot: true },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    }),
     db.hold.findMany({
-      where: { personId },
-      include: { plot: { include: { project: true } } },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    }),
-    db.holdRequest.findMany({
       where: { personId },
       include: { plot: { include: { project: true } } },
       orderBy: { createdAt: "desc" },
@@ -241,13 +171,6 @@ export default async function CustomerDetailPage({
     db.bankDetail.findMany({
       where: { personId },
       orderBy: { createdAt: "desc" },
-    }),
-    // Buyback / Resale where this Customer is the one selling back.
-    db.acquisition.findMany({
-      where: { sellerPersonId: personId },
-      include: { plot: { include: { project: true } } },
-      orderBy: { submittedAt: "desc" },
-      take: 50,
     }),
     db.commissionRecord.findMany({
       where: { beneficiaryPersonId: personId, isCurrent: true },
@@ -341,132 +264,6 @@ export default async function CustomerDetailPage({
   const payable = deals.filter(
     (b) => b.status === "BOOKED" && b.paymentReceivedPercent.lessThan(100)
   );
-
-  /* ------------------------------------------------------ property activity */
-
-  const activity: Array<{
-    kind: string;
-    variant: BadgeVariant;
-    project: string;
-    plot: string;
-    plotId: string | null;
-    href: string | null;
-    status: string;
-    note?: string;
-    at: Date;
-  }> = [
-    ...enquiries.map((e) => ({
-      kind: "Enquiry",
-      variant: "info" as const,
-      project: e.project.name,
-      plot: e.plot ? plotName(e.plot) : "General",
-      plotId: e.plot?.id ?? null,
-      href: null,
-      status: statusWords(e.status),
-      at: e.createdAt,
-    })),
-    ...holds.map((h) => ({
-      kind: "Hold",
-      variant: "warning" as const,
-      project: h.plot.project.name,
-      plot: plotName(h.plot),
-      plotId: h.plot.id,
-      href: null,
-      // PRD §10.5 — a frozen Hold's timer is not running, so it has no time left.
-      status:
-        h.status === "ACTIVE"
-          ? timeLeft(h.expiresAt.getTime() - now)
-          : h.status === "FROZEN"
-            ? "paused for Booking approval"
-            : statusWords(h.status),
-      note:
-        [
-          h.status === "ACTIVE" ? `expires ${formatIstDateTime(h.expiresAt)}` : null,
-          h.extensionCount
-            ? `${h.extensionCount} extension${h.extensionCount === 1 ? "" : "s"}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" · ") || undefined,
-      at: h.createdAt,
-    })),
-    ...holdRequests.map((r) => ({
-      kind: "Hold Request",
-      variant: "outline" as const,
-      project: r.plot.project.name,
-      plot: plotName(r.plot),
-      plotId: r.plot.id,
-      href: null,
-      status: statusWords(r.status),
-      at: r.createdAt,
-    })),
-    ...bookings.flatMap((b) => [
-      {
-        kind: "Booking",
-        variant: "success" as const,
-        project: b.project.name,
-        plot: plotName(b.plot),
-        plotId: b.plot.id,
-        href: `/bookings/${b.id}`,
-        status: statusWords(b.status),
-        note: b.bookingNumber ?? b.requestNo,
-        at: b.submittedAt,
-      },
-      ...b.changePlotRequests.map((c) => ({
-        kind: "Change Plot",
-        variant: "purple" as const,
-        project: b.project.name,
-        plot: `${plotName(c.fromPlot)} → ${plotName(c.toPlot)}`,
-        plotId: c.toPlot.id,
-        href: `/bookings/${b.id}`,
-        status: statusWords(c.status),
-        at: c.requestedAt,
-      })),
-      ...b.cancellations.map((c) => ({
-        kind: "Cancellation",
-        variant: "destructive" as const,
-        project: b.project.name,
-        plot: plotName(b.plot),
-        plotId: b.plot.id,
-        href: `/bookings/${b.id}`,
-        status: statusWords(c.status),
-        at: c.requestedAt,
-      })),
-      ...b.completions.flatMap((c) => [
-        {
-          kind: c.route === "ALLOTMENT" ? "Allotment" : "Registry",
-          variant: "success" as const,
-          project: b.project.name,
-          plot: plotName(b.plot),
-          plotId: b.plot.id,
-          href: `/bookings/${b.id}`,
-          status: "recorded",
-          at: c.allotmentDate ?? c.registryDate ?? c.createdAt,
-        },
-        {
-          kind: "Delivery",
-          variant: "success" as const,
-          project: b.project.name,
-          plot: plotName(b.plot),
-          plotId: b.plot.id,
-          href: `/bookings/${b.id}`,
-          status: "delivered",
-          at: c.deliveredAt,
-        },
-      ]),
-    ]),
-    ...acquisitions.map((a) => ({
-      kind: TYPE_LABEL[a.type] ?? "Buyback / Resale",
-      variant: "purple" as const,
-      project: a.plot?.project.name ?? a.propertyName ?? "—",
-      plot: a.plot ? plotName(a.plot) : (a.propertyNumber ?? "—"),
-      plotId: a.plot?.id ?? null,
-      href: `/acquisitions/${a.id}`,
-      status: statusWords(a.status),
-      note: "as seller",
-      at: a.submittedAt,
-    })),
-  ].sort((a, b) => b.at.getTime() - a.at.getTime());
 
   /* --------------------------------------------------------------- history */
 
@@ -595,7 +392,7 @@ export default async function CustomerDetailPage({
         </div>
 
         {/* Header and Summary — who they are, then four answers on one line. */}
-        <Card className="p-4">
+        <Card className="p-4 md:p-5">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <User className="h-6 w-6" />
@@ -620,15 +417,18 @@ export default async function CustomerDetailPage({
           <dl className="mt-4 grid grid-cols-2 gap-y-4 border-t border-border/60 pt-4 md:grid-cols-4 md:divide-x md:divide-border/60">
             <Stat label="Customer for" value={experience?.label ?? "—"} />
             <Stat label="Properties" value={`${bookedCount} booked · ${deliveredCount} delivered`} />
-            <Stat
-              label="Loyalty slots"
-              value={`${customer.loyaltySlotsConsumed} of 3 used`}
-              hint="Lifetime, never resets"
-            />
+            <Stat label="Loyalty slots" value={`${customer.loyaltySlotsConsumed} of 3 used`} />
             {/* CR-002 — the Member who was Sold By on the first qualifying
-                purchase. Provisional until that purchase is paid in full or
-                bought back; CR-003's "No Royalty Member" when that purchase was
-                sold by the 3% Club or a Customer. */}
+                purchase; CR-003's nobody when that purchase was sold by the 3%
+                Club or a Customer.
+
+                Shaped like the Member profile's "Invited by", which answers the
+                same question on that side: a short value and the person's name
+                under it. It used to carry a sentence for a value and a hint
+                that wrapped onto a second line, which left this one column
+                taller than the three beside it. Where the link stands and which
+                position it took moved down to Loyalty & commission — that block
+                is already about exactly this and has the room. */}
             {customer.royaltyLinkedMember ? (
               <Stat
                 label="Royalty linked to"
@@ -640,29 +440,30 @@ export default async function CustomerDetailPage({
                     {customer.royaltyLinkedMember.memberId}
                   </Link>
                 }
+                // An unconfirmed link can still move to a different Member, so
+                // that is the fact worth the one line here — the name is on the
+                // Member's own page, the standing is not.
                 hint={
                   customer.royaltyLinkFinalAt
-                    ? `${customer.royaltyLinkedMember.person.fullName} · Position ${
-                        customer.royaltyPosition ?? "—"
-                      } at ${customer.royaltyRatePercent?.toFixed(2) ?? "—"}%`
-                    : `${customer.royaltyLinkedMember.person.fullName} · Provisional`
+                    ? customer.royaltyLinkedMember.person.fullName
+                    : "Provisional"
                 }
               />
             ) : customer.royaltyLinkFirstBookingId ? (
               <Stat
                 label="Royalty linked to"
-                value="No Royalty Member"
-                hint="First purchase sold by 3% Club or a Customer"
+                value="None"
+                hint="Not sold by a Member"
               />
             ) : (
-              <Stat label="Royalty linked to" value="—" hint="No qualifying purchase yet" />
+              <Stat label="Royalty linked to" value="—" hint="No qualifying purchase" />
             )}
           </dl>
         </Card>
 
         {/* Alerts — only when something is due. */}
         {hasAlerts && (
-          <Card className="border-amber-500/40 p-4">
+          <Card className="border-amber-500/40 p-4 md:p-5">
             <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-800">
               <AlertTriangle className="h-3.5 w-3.5" />
               Needs action
@@ -712,7 +513,7 @@ export default async function CustomerDetailPage({
 
         {/* Who they are, how they prove it, where the money goes. */}
         <div className="grid gap-4 md:grid-cols-3">
-          <Section title="Profile" icon={<User className="h-3.5 w-3.5" />}>
+          <Section fill title="Contact" icon={<User className="h-3.5 w-3.5" />}>
             <Row label="Mobile" value={contact(customer.person.primaryMobile)} />
             {customer.person.altMobile && (
               <Row label="Alternate Mobile" value={contact(customer.person.altMobile)} />
@@ -725,7 +526,7 @@ export default async function CustomerDetailPage({
             <Row label="Address" value={customer.person.addressLine ?? "—"} />
           </Section>
 
-          <Section title="Identity" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
+          <Section fill title="Identity" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
             {/* Either the number or the reason there is not one — never
                 "Not recorded" with "Pending" underneath saying it twice. */}
             <IdentityFacts
@@ -752,7 +553,7 @@ export default async function CustomerDetailPage({
             />
           </Section>
 
-          <Section title="Bank" icon={<Banknote className="h-3.5 w-3.5" />}>
+          <Section fill title="Bank" icon={<Banknote className="h-3.5 w-3.5" />}>
             {banks.length === 0 ? (
               <p className="text-xs text-muted-foreground">No bank details recorded.</p>
             ) : (
@@ -914,120 +715,103 @@ export default async function CustomerDetailPage({
           )}
         </Section>
 
-        {/* Property Activity — everything that happened, newest first, in three
-            columns: what, where, and how it stands. */}
-        <Section title="Property Activity" icon={<Clock className="h-3.5 w-3.5" />}>
-          {activity.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No Enquiries, Holds or Bookings yet.</p>
-          ) : (
-            <ul className="divide-y divide-border/40 text-xs">
-              {activity.map((a, index) => (
-                <li
-                  key={index}
-                  className="flex flex-col gap-1 py-2.5 sm:grid sm:grid-cols-[7.5rem_minmax(0,1fr)_auto] sm:items-center sm:gap-4"
-                >
-                  <span>
-                    <Badge variant={a.variant}>{a.kind}</Badge>
-                  </span>
-                  <span className="min-w-0 truncate">
-                    {a.href ? (
-                      <Link href={a.href} className="text-primary hover:underline">
-                        {a.project}
-                      </Link>
-                    ) : (
-                      a.project
-                    )}
-                    <span className="text-muted-foreground"> · </span>
-                    {a.plotId ? (
-                      <Link href={`/plots/${a.plotId}`} className="font-medium text-primary hover:underline">
-                        {a.plot}
-                      </Link>
-                    ) : (
-                      <span className="font-medium">{a.plot}</span>
-                    )}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground sm:text-right">
-                    <span className="text-foreground">{a.status}</span> · {formatIst(a.at)}
-                    {a.note && <span className="block">{a.note}</span>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-
-        {/* Loyalty & Commission */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Section
-            title={`Loyalty slots (${customer.loyaltySlotsConsumed} of 3 used)`}
-            icon={<Layers className="h-3.5 w-3.5" />}
-          >
-            <ul className="divide-y divide-border/40 text-xs">
-              {[1, 2, 3].map((slot) => {
-                const opportunity = loyaltySlots.find((o) => o.slotIndex === slot);
-                const booking = opportunity?.record?.booking;
-                return (
-                  <li key={slot} className="flex items-center justify-between gap-2 py-2.5">
-                    <span className="font-medium">Slot {slot}</span>
-                    <span className="text-right text-muted-foreground">
-                      {opportunity?.status === "CONSUMED" ? (
-                        <>
-                          {booking ? (
-                            <Link
-                              href={`/bookings/${booking.id}`}
-                              className="font-medium text-primary hover:underline"
-                            >
-                              {booking.bookingNumber ?? booking.requestNo}
-                            </Link>
-                          ) : (
-                            "Used"
-                          )}
-                          {opportunity.consumedAt ? ` · ${formatIst(opportunity.consumedAt)}` : ""}
-                        </>
-                      ) : opportunity?.reopenedReason ? (
-                        `Open again · ${opportunity.reopenedReason}`
+        {/* Loyalty & Commission — one block, because it is one subject. The
+            three slots, the purchase that named the Royalty link, and what has
+            actually been earned were three separate cards saying the same
+            thing in three places. The two short lists sit across the top and
+            the table runs under them, so the whole answer is read in one go. */}
+        <Section title="Loyalty & commission" icon={<Layers className="h-3.5 w-3.5" />}>
+          {/* Five answers on one line, in the same shape as the summary row at
+              the top of the page: three slots, the purchase that named the
+              Royalty link, and where that link stands. They were two stacked
+              lists in two columns, which is five lines of card for five short
+              facts. `Stat` already draws exactly this, dividers included. */}
+          <dl className="grid grid-cols-2 gap-y-4 md:grid-cols-5 md:divide-x md:divide-border/60">
+            {[1, 2, 3].map((slot) => {
+              const opportunity = loyaltySlots.find((o) => o.slotIndex === slot);
+              const booking = opportunity?.record?.booking;
+              const consumed = opportunity?.status === "CONSUMED";
+              return (
+                <Stat
+                  key={slot}
+                  label={`Slot ${slot}`}
+                  value={
+                    consumed ? (
+                      booking ? (
+                        <Link
+                          href={`/bookings/${booking.id}`}
+                          className="text-primary hover:underline"
+                        >
+                          {booking.bookingNumber ?? booking.requestNo}
+                        </Link>
                       ) : (
-                        "Open"
-                      )}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </Section>
-
-          <Section title="First qualifying purchase" icon={<FileText className="h-3.5 w-3.5" />}>
-            {customer.royaltyLinkFirstBooking ? (
-              <>
-                <Row
-                  label="Booking"
-                  value={
-                    <Link
-                      href={`/bookings/${customer.royaltyLinkFirstBooking.id}`}
-                      className="text-primary hover:underline"
-                    >
-                      {customer.royaltyLinkFirstBooking.bookingNumber ??
-                        customer.royaltyLinkFirstBooking.requestNo}
-                    </Link>
+                        "Used"
+                      )
+                    ) : (
+                      "Open"
+                    )
+                  }
+                  hint={
+                    consumed
+                      ? opportunity?.consumedAt
+                        ? formatIst(opportunity.consumedAt)
+                        : undefined
+                      : opportunity?.reopenedReason
+                        ? `Open again — ${opportunity.reopenedReason}`
+                        : undefined
                   }
                 />
-                <Row
-                  label="Royalty link"
-                  value={
-                    customer.royaltyLinkFinalAt
-                      ? `Final on ${formatIst(customer.royaltyLinkFinalAt)}`
-                      : "Provisional"
-                  }
-                />
-              </>
-            ) : (
-              <p className="text-xs text-muted-foreground">No qualifying purchase yet.</p>
-            )}
-          </Section>
-        </div>
+              );
+            })}
 
-        <Section title="Commission paid to this Customer" icon={<Layers className="h-3.5 w-3.5" />}>
-          {commissions.length === 0 ? (
+            <Stat
+              label="First purchase"
+              value={
+                customer.royaltyLinkFirstBooking ? (
+                  <Link
+                    href={`/bookings/${customer.royaltyLinkFirstBooking.id}`}
+                    className="text-primary hover:underline"
+                  >
+                    {customer.royaltyLinkFirstBooking.bookingNumber ??
+                      customer.royaltyLinkFirstBooking.requestNo}
+                  </Link>
+                ) : (
+                  "—"
+                )
+              }
+              hint={customer.royaltyLinkFirstBooking ? undefined : "No qualifying purchase yet"}
+            />
+            <Stat
+              label="Royalty link"
+              value={
+                !customer.royaltyLinkFirstBooking
+                  ? "—"
+                  : customer.royaltyLinkFinalAt
+                    ? "Final"
+                    : "Provisional"
+              }
+              hint={
+                customer.royaltyLinkFinalAt
+                  ? [
+                      formatIst(customer.royaltyLinkFinalAt),
+                      customer.royaltyPosition
+                        ? `Position ${customer.royaltyPosition} at ${
+                            customer.royaltyRatePercent?.toFixed(2) ?? "—"
+                          }%`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : undefined
+              }
+            />
+          </dl>
+
+          <div className="mt-4 border-t border-border/60 pt-3">
+            <p className="pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Commission
+            </p>
+            {commissions.length === 0 ? (
             <p className="text-xs text-muted-foreground">No commission records yet.</p>
           ) : (
             <div className="overflow-x-auto">
@@ -1074,8 +858,9 @@ export default async function CustomerDetailPage({
                   ))}
                 </tbody>
               </table>
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </Section>
 
         {/* History — one timeline, newest first. */}

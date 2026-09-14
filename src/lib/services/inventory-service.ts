@@ -479,7 +479,15 @@ export function getPlot(plotId: string) {
       boundaries: true,
       holds: {
         where: { status: { in: ["ACTIVE", "FROZEN"] } },
-        include: { person: { include: { customerProfile: { select: { customerId: true } } } } },
+        include: {
+          person: { include: { customerProfile: { select: { customerId: true } } } },
+          // PRD §10.2 — a Hold is read with who got it done, who is answerable
+          // for it, and the charge it froze.
+          sourcedByPerson: {
+            include: { memberProfile: { select: { memberId: true } } },
+          },
+          plcSnapshot: { include: { ruleVersion: { select: { version: true } } } },
+        },
         orderBy: { createdAt: "desc" },
         take: 1,
       },
@@ -489,6 +497,9 @@ export function getPlot(plotId: string) {
           // Who bought it, as they are filed — the Plot page names the Customer
           // by their id the way every other screen does.
           primaryPerson: { include: { customerProfile: { select: { customerId: true } } } },
+          // The charge as it stood when the Booking froze it, so the Plot can
+          // say when the current rules would work out differently.
+          plcSnapshot: { include: { ruleVersion: { select: { version: true } } } },
         },
         take: 1,
       },
