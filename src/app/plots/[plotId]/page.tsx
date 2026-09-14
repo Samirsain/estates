@@ -1157,6 +1157,98 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               <p className="text-xs text-muted-foreground">Not completed yet.</p>
             )}
           </Section>
+
+          {/* 7 Past Deals */}
+          <Section title="Past Deals" icon={<Layers className="h-3.5 w-3.5" />}>
+            {!hasPast ? (
+              <p className="text-xs text-muted-foreground">
+                No earlier deals, acquisitions or open enquiries.
+              </p>
+            ) : (
+            <div className="space-y-4">
+                {pastDeals.length > 0 && (
+                  <div>
+                    <SubHeading>Earlier Bookings</SubHeading>
+                    <ul className="divide-y divide-border/40 text-xs">
+                      {pastDeals.map((d) => (
+                        <li key={d.id} className={DEAL_ROW}>
+                          <Link href={d.href} className="font-semibold text-primary hover:underline">
+                            {d.what}
+                          </Link>
+                          <span className="min-w-0 truncate">
+                            <PersonLink personId={d.who.id} name={d.who.customerProfile?.customerId ?? d.who.fullName} />
+                            <span className="text-muted-foreground"> · {d.who.fullName}</span>
+                          </span>
+                          <span className="text-[11px] text-muted-foreground sm:text-right">
+                            <span className="text-foreground">{d.outcome}</span> · {formatIst(d.at)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {acquisitions.length > 0 && (
+                  <div>
+                    <SubHeading>Acquisitions</SubHeading>
+                    <ul className="divide-y divide-border/40 text-xs">
+                      {acquisitions.map((a) => (
+                        <li key={a.id} className={DEAL_ROW}>
+                          <Link href={`/acquisitions/${a.id}`} className="font-semibold text-primary hover:underline">
+                            {TYPE_LABEL[a.type] ?? "Buyback / Resale"}
+                          </Link>
+                          <span className="min-w-0 truncate">
+                            <span className="text-muted-foreground">Seller </span>
+                            <PersonLink
+                              personId={a.sellerPerson.id}
+                              name={a.sellerPerson.customerProfile?.customerId ?? a.sellerPerson.fullName}
+                            />
+                            <span className="text-muted-foreground">
+                              {" "}
+                              · Payment Given {a.paymentGivenPercent.toFixed(2)}%
+                            </span>
+                          </span>
+                          <span className="text-[11px] text-muted-foreground sm:text-right">
+                            <span className="text-foreground">
+                              {a.status === "CANCELLED" ? "Deal Cancelled" : humanise(a.status)}
+                            </span>{" "}
+                            · {formatIst(a.submittedAt)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {enquiries.length > 0 && (
+                  <div>
+                    <SubHeading>Open Enquiries</SubHeading>
+                    <ul className="divide-y divide-border/40 text-xs">
+                      {enquiries.map((e) => (
+                        <li key={e.id} className={DEAL_ROW}>
+                          <span className="font-medium">{e.enquiryNo}</span>
+                          <span className="min-w-0 truncate">
+                            <PersonLink
+                              personId={e.person.id}
+                              name={
+                                e.person.customerProfile?.customerId ??
+                                e.person.memberProfile?.memberId ??
+                                e.person.fullName
+                              }
+                            />
+                            <span className="text-muted-foreground"> · {e.person.fullName}</span>
+                          </span>
+                          <span className="text-[11px] text-muted-foreground sm:text-right">
+                            <span className="text-foreground">{humanise(e.status)}</span> · {formatIst(e.createdAt)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </Section>
         </div>
         </div>
 
@@ -1241,98 +1333,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             </ul>
           </Section>
         )}
-
-        {/* 7 Past Deals */}
-        <Section title="Past Deals" icon={<Layers className="h-3.5 w-3.5" />}>
-          {!hasPast ? (
-            <p className="text-xs text-muted-foreground">
-              No earlier deals, acquisitions or open enquiries.
-            </p>
-          ) : (
-          <div className="space-y-4">
-              {pastDeals.length > 0 && (
-                <div>
-                  <SubHeading>Earlier Bookings</SubHeading>
-                  <ul className="divide-y divide-border/40 text-xs">
-                    {pastDeals.map((d) => (
-                      <li key={d.id} className={DEAL_ROW}>
-                        <Link href={d.href} className="font-semibold text-primary hover:underline">
-                          {d.what}
-                        </Link>
-                        <span className="min-w-0 truncate">
-                          <PersonLink personId={d.who.id} name={d.who.customerProfile?.customerId ?? d.who.fullName} />
-                          <span className="text-muted-foreground"> · {d.who.fullName}</span>
-                        </span>
-                        <span className="text-[11px] text-muted-foreground sm:text-right">
-                          <span className="text-foreground">{d.outcome}</span> · {formatIst(d.at)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {acquisitions.length > 0 && (
-                <div>
-                  <SubHeading>Acquisitions</SubHeading>
-                  <ul className="divide-y divide-border/40 text-xs">
-                    {acquisitions.map((a) => (
-                      <li key={a.id} className={DEAL_ROW}>
-                        <Link href={`/acquisitions/${a.id}`} className="font-semibold text-primary hover:underline">
-                          {TYPE_LABEL[a.type] ?? "Buyback / Resale"}
-                        </Link>
-                        <span className="min-w-0 truncate">
-                          <span className="text-muted-foreground">Seller </span>
-                          <PersonLink
-                            personId={a.sellerPerson.id}
-                            name={a.sellerPerson.customerProfile?.customerId ?? a.sellerPerson.fullName}
-                          />
-                          <span className="text-muted-foreground">
-                            {" "}
-                            · Payment Given {a.paymentGivenPercent.toFixed(2)}%
-                          </span>
-                        </span>
-                        <span className="text-[11px] text-muted-foreground sm:text-right">
-                          <span className="text-foreground">
-                            {a.status === "CANCELLED" ? "Deal Cancelled" : humanise(a.status)}
-                          </span>{" "}
-                          · {formatIst(a.submittedAt)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {enquiries.length > 0 && (
-                <div>
-                  <SubHeading>Open Enquiries</SubHeading>
-                  <ul className="divide-y divide-border/40 text-xs">
-                    {enquiries.map((e) => (
-                      <li key={e.id} className={DEAL_ROW}>
-                        <span className="font-medium">{e.enquiryNo}</span>
-                        <span className="min-w-0 truncate">
-                          <PersonLink
-                            personId={e.person.id}
-                            name={
-                              e.person.customerProfile?.customerId ??
-                              e.person.memberProfile?.memberId ??
-                              e.person.fullName
-                            }
-                          />
-                          <span className="text-muted-foreground"> · {e.person.fullName}</span>
-                        </span>
-                        <span className="text-[11px] text-muted-foreground sm:text-right">
-                          <span className="text-foreground">{humanise(e.status)}</span> · {formatIst(e.createdAt)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-        </Section>
 
         {/* 8 History — the one block that is about neither side, so it runs the
             full width under both. */}
