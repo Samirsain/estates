@@ -15,7 +15,10 @@ export function Row({
   hint?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-border/50 py-2 last:border-0">
+    // One height for every row, whether or not it carries a hint. A card of
+    // three hinted rows and two plain ones used to step up and down the page,
+    // and two cards side by side lined up on nothing.
+    <div className="flex min-h-[3.25rem] items-center justify-between gap-4 border-b border-border/50 py-2 last:border-0">
       <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       <span className="text-right">
         <span className="block text-sm font-semibold text-foreground">{value}</span>

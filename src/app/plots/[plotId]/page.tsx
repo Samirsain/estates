@@ -840,7 +840,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             that. Side by side, the two questions a Plot page is opened with —
             what is this Plot, and who has it — are both answered without
             scrolling, and the deal column fills the height the drawing makes. */}
-        <div className="grid items-start gap-4 md:grid-cols-2">
+        <div className="md:columns-2 md:gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
         {/* 2 Dimensions · 3 Layout — one card, because the four sides are one
             fact told twice otherwise. The drawing already names what every side
             abuts, its width and its reference ("Road · 60 ft", "Plot · a12"),
@@ -967,7 +967,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
 
         {/* 5 Current Allocation · Booking · 6 Completion — the deal, stacked
             in the column beside the Plot. */}
-        <div className="space-y-4">
           {/* Why editing is closed. Only when it is — an editable Plot has
               nothing to explain. */}
           {lockReason && (
@@ -1249,67 +1248,70 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               </div>
             )}
           </Section>
-        </div>
-        </div>
 
-        {/* Commission on the deal holding this Plot — percentages only, never a
-            rupee amount. Superseded lines stay on the Booking page. */}
-        {(current || liveAcquisition) && (
-          <Section title="Commission" icon={<Percent className="h-3.5 w-3.5" />}>
-            {commissions.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No commission on this deal.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[42rem] text-xs">
-                  <thead className="border-b border-border/50">
-                    <tr>
-                      <th className={TH}>Type</th>
-                      <th className={TH}>Beneficiary</th>
-                      <th className={`${TH} text-right`}>%</th>
-                      <th className={`${TH} text-right`}>Milestone</th>
-                      <th className={TH}>Eligibility</th>
-                      <th className={`${TH} pr-0`}>Payment</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/40">
-                    {commissions.map((c) => {
-                      const who = c.beneficiaryPerson;
-                      const code = who.memberProfile?.memberId ?? who.customerProfile?.customerId;
-                      return (
-                        <tr key={c.id}>
-                          <td className={`${TD} font-medium`}>
+          {/* Commission on the deal holding this Plot — percentages only, never
+              a rupee amount. Superseded lines stay on the Booking page.
+
+              A list, not the six-column table it was: this column is half the
+              page, and Type / Beneficiary / % / Milestone / Eligibility /
+              Payment across it would only have scrolled sideways. Nothing is
+              dropped — the milestone reads beside the rate and the payment
+              under the eligibility. */}
+          {(current || liveAcquisition) && (
+            <Section title="Commission" icon={<Percent className="h-3.5 w-3.5" />}>
+              {commissions.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No commission on this deal.</p>
+              ) : (
+                <ul className="divide-y divide-border/40 text-xs">
+                  {commissions.map((c) => {
+                    const who = c.beneficiaryPerson;
+                    const code = who.memberProfile?.memberId ?? who.customerProfile?.customerId;
+                    return (
+                      <li
+                        key={c.id}
+                        className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 py-2.5"
+                      >
+                        <span className="min-w-0">
+                          <span className="font-medium text-foreground">
                             {c.type === "LOYALTY" ? "Loyalty Bonus" : humanise(c.type)}
-                          </td>
-                          <td className={TD}>
+                          </span>
+                          <span className="block">
                             <PersonLink
                               personId={who.id}
                               name={code ?? who.fullName}
                               as={who.memberProfile ? "member" : undefined}
                               className="font-semibold"
                             />
-                            {code && <span className={SUB}>{who.fullName}</span>}
-                          </td>
-                          <td className={`${TD} text-right font-medium tabular-nums`}>{c.percent.toFixed(2)}%</td>
-                          <td className={`${TD} text-right tabular-nums`}>{c.milestonePercent.toFixed(0)}%</td>
-                          <td className={TD}>
+                            {code && <span className="text-muted-foreground"> · {who.fullName}</span>}
+                          </span>
+                        </span>
+                        <span className="text-right">
+                          <span className="block whitespace-nowrap font-medium tabular-nums text-foreground">
+                            {c.percent.toFixed(2)}%
+                            <span className="ml-1.5 font-normal text-muted-foreground">
+                              at {c.milestonePercent.toFixed(0)}%
+                            </span>
+                          </span>
+                          <span className="block text-[11px] text-muted-foreground">
                             {eligibilityLabel(c.eligibility, c.type as CommissionType)}
-                            {c.holdReason && (
-                              <span className="block text-[11px] text-amber-700">{humanise(c.holdReason)}</span>
-                            )}
-                          </td>
-                          <td className={`${TD} pr-0`}>
+                            {" · "}
                             {PAYMENT_LABEL[c.payment] ?? c.payment}
-                            {c.paidOn && <span className={SUB}>Paid {formatIst(c.paidOn)}</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Section>
-        )}
+                            {c.paidOn ? ` ${formatIst(c.paidOn)}` : ""}
+                          </span>
+                          {c.holdReason && (
+                            <span className="block text-[11px] text-amber-700">
+                              {humanise(c.holdReason)}
+                            </span>
+                          )}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Section>
+          )}
+        </div>
 
         {/* DESIGN §9.3 — each request names the actual buyer, and expires at the
             working-day cut-off; after that it cannot be approved. */}
