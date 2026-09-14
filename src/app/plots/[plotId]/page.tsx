@@ -174,8 +174,8 @@ function PlotShape({
   const scale = 200 / Math.max(w, l);
   const bw = Math.max(76, w * scale);
   const bh = Math.max(76, l * scale);
-  const padX = 92;
-  const padY = 46;
+  const padX = 26;
+  const padY = 30;
   const x = padX;
   const y = padY;
   const x2 = x + bw;
@@ -191,10 +191,10 @@ function PlotShape({
   } as const;
 
   const marks = {
-    NORTH: { letter: [cx, y - 12], label: [cx, y - 30], anchor: "middle" },
-    SOUTH: { letter: [cx, y2 + 22], label: [cx, y2 + 40], anchor: "middle" },
-    WEST: { letter: [x - 12, cy], label: [x - 28, cy], anchor: "end" },
-    EAST: { letter: [x2 + 12, cy], label: [x2 + 28, cy], anchor: "start" },
+    NORTH: { letter: [cx, y - 14] },
+    SOUTH: { letter: [cx, y2 + 14] },
+    WEST: { letter: [x - 14, cy] },
+    EAST: { letter: [x2 + 14, cy] },
   } as const;
 
   const spoken = SIDES.filter((side) => sides[side])
@@ -202,7 +202,7 @@ function PlotShape({
     .join(", ");
 
   return (
-    <figure className="m-0 w-full max-w-[26rem]">
+    <figure className="m-0 w-full max-w-[15rem]">
       <svg
         viewBox={`0 0 ${bw + padX * 2} ${bh + padY * 2}`}
         className="block h-auto w-full overflow-visible text-foreground"
@@ -235,34 +235,20 @@ function PlotShape({
         >
           {formatPlotSize(widthFt, lengthFt)}
         </text>
-        {SIDES.map((side) => {
-          const mark = marks[side];
-          return (
-            <g key={side}>
-              <text
-                x={mark.letter[0]}
-                y={mark.letter[1]}
-                textAnchor={mark.anchor}
-                dominantBaseline="middle"
-                className="fill-current text-[13px] font-bold"
-              >
-                {side.charAt(0)}
-              </text>
-              {sides[side] && (
-                <text
-                  x={mark.label[0]}
-                  y={mark.label[1]}
-                  textAnchor={mark.anchor}
-                  dominantBaseline="middle"
-                  className="text-[12px] font-medium text-foreground/70"
-                  fill="currentColor"
-                >
-                  {sides[side]!.label}
-                </text>
-              )}
-            </g>
-          );
-        })}
+        {/* The compass only. What each side abuts is named in the list beside
+            the drawing, where it has room to be read. */}
+        {SIDES.map((side) => (
+          <text
+            key={side}
+            x={marks[side].letter[0]}
+            y={marks[side].letter[1]}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            className="fill-current text-[13px] font-bold"
+          >
+            {side.charAt(0)}
+          </text>
+        ))}
       </svg>
       <figcaption className="sr-only">
         Plot {plotNumber} at its own proportions, with what each side abuts.
@@ -772,7 +758,10 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
         <Section title="Layout · Dimensions" icon={<Ruler className="h-3.5 w-3.5" />}>
           <div className="min-w-0">
             {plot.widthFt && plot.lengthFt ? (
-              <div className="flex flex-1 items-center justify-center py-2">
+              // The drawing on the left, what each side abuts beside it. The
+              // labels used to ring the shape, which cost the shape the width
+              // they took and still left them too small to read.
+              <div className="flex flex-1 items-center gap-4 py-2">
                 <PlotShape
                   plotNumber={plot.plotNumber}
                   widthFt={plot.widthFt.toString()}
@@ -792,6 +781,32 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                     })
                   )}
                 />
+                <dl className="min-w-0 flex-1 text-xs">
+                  {SIDES.map((side) => {
+                    const b = bySide.get(side);
+                    return (
+                      <div key={side} className="flex gap-2 py-1">
+                        <dt className="w-4 shrink-0 font-bold text-foreground">
+                          {side.charAt(0)}
+                        </dt>
+                        <dd className="min-w-0">
+                          {b ? (
+                            <span className="font-medium text-foreground">
+                              {BOUNDARY_KIND_LABEL[b.kind] ?? b.kind}
+                              {b.kind === "ROAD" && b.roadWidthFt
+                                ? ` · ${num(b.roadWidthFt)} ft`
+                                : b.reference
+                                  ? ` · ${b.reference}`
+                                  : ""}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">Not recorded</span>
+                          )}
+                        </dd>
+                      </div>
+                    );
+                  })}
+                </dl>
               </div>
             ) : (
               <p className="flex flex-1 items-center justify-center py-2 text-xs text-muted-foreground">
@@ -838,7 +853,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               value={
                 plcPercent ? <span className="tabular-nums">{plcPercent}%</span> : "—"
               }
-              hint={plcPercent ? `Version ${version!.version}` : (plcIssue ?? undefined)}
+              hint={plcPercent ? undefined : (plcIssue ?? undefined)}
             />
           </div>
 
