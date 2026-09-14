@@ -37,8 +37,10 @@ import {
   canSetRestriction,
   displayStatus,
   humaniseRestriction,
+  buildPlcSnapshot,
   isOpenSide,
   locationChargeLabel,
+  shortSides,
 } from "@/lib/domain/inventory";
 import { DEAL_CANCELLED_MESSAGE } from "@/lib/domain/acquisition";
 import { getPlot } from "@/lib/services/inventory-service";
@@ -412,6 +414,34 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
     roadWidthFt: b.roadWidthFt?.toString(),
   }));
   const position = locationChargeLabel(boundaries).join(" · ");
+
+  /* The PLC this Plot's sides earn, against the Project's published version.
+     plots/page.tsx computes the same thing for the list and says there that the
+     total belongs on the Plot's own page — it was not on it. A Road side with
+     no width cannot be banded and buildPlcSnapshot throws rather than guess
+     (PLC spec §5.3), so the reason is caught and shown instead of a number. */
+  let plc: {
+    version: number;
+    totalPercent: string;
+    components: { label: string; percent: string; evidence: string }[];
+  } | null = null;
+  let plcIssue: string | null = version ? null : "No published PLC version for this Project.";
+  if (version) {
+    try {
+      const effective = buildPlcSnapshot(boundaries, plcRules(version.components));
+      plc = {
+        version: version.version,
+        totalPercent: effective.totalPercent.toFixed(2),
+        components: effective.components.map((c) => ({
+          label: c.label,
+          percent: Number(c.percent).toFixed(2),
+          evidence: shortSides(c.evidence),
+        })),
+      };
+    } catch (error) {
+      plcIssue = error instanceof Error ? error.message : "The PLC could not be worked out.";
+    }
+  }
   // Stored precision — area is stored to four decimals and a Plot is sold on it.
   const num = (value: { toString(): string }) => formatQuantity(value.toString());
   const conv = (value: { toDecimalPlaces(n: number): { toString(): string } }) =>
@@ -713,8 +743,10 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 )}
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
+                {/* The position moved into the PLC & layout card, where it is
+                    the line that block adds up to. Repeating it here made the
+                    same answer appear twice on one screen. */}
                 {plot.project.name} · {PLOT_TYPE_LABEL[plot.plotType] ?? plot.plotType}
-                {position ? ` · ${position}` : ""}
               </p>
               {plot.restriction !== "NONE" && plot.restrictionReason && (
                 <p className="mt-1 max-w-prose text-xs text-red-700">{plot.restrictionReason}</p>
@@ -732,61 +764,40 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
           </div>
         </Card>
 
-        {/* 2 Dimensions · 3 Boundaries · 4 Layout — one card in three columns:
-            the measurements, the four sides, and the drawing of both. Three
-            cards stretched to the drawing's height left two of them half empty. */}
-        <Section title="Dimensions · Boundaries · Layout" icon={<Ruler className="h-3.5 w-3.5" />}>
-          <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_14rem]">
-          <div className="min-w-0">
-            <SubHeading>Dimensions</SubHeading>
-            <Row
-              label="Width × Length"
-              value={
-                plot.widthFt && plot.lengthFt
-                  ? formatPlotSize(plot.widthFt.toString(), plot.lengthFt.toString())
-                  : "Irregular Plot"
-              }
-            />
-            <Row
-              label={plot.exactAreaSqFt ? "Area (exact)" : "Area"}
-              value={<span className="tabular-nums">{num(plot.areaSqFt)} sq ft</span>}
-              hint={
-                <span className="tabular-nums">
-                  {conv(plot.areaSqYd)} sq yd · {conv(plot.areaSqM)} sq m
-                </span>
-              }
-            />
-            {/* With both sides and an override, what the sides multiply to is
-                the other half of the reason the override exists. */}
-            {plot.exactAreaSqFt && plot.widthFt && plot.lengthFt && (
-              <Row
-                label="Width × Length area"
-                value={<span className="tabular-nums">{num(plot.widthFt.mul(plot.lengthFt))} sq ft</span>}
-              />
-            )}
-            {plot.exactAreaReason && <Row label="Override reason" value={plot.exactAreaReason} />}
-          </div>
+        {/* 2 PLC · 3 Layout · 4 Dimensions · 5 Boundaries — one column, read
+            top to bottom: what the Plot is worth extra for, what it looks like,
+            what it measures, and what it abuts. It was three columns side by
+            side, which put the drawing next to two lists and left the charge
+            off the page entirely.
 
+            The position closes the block instead of trailing the title in the
+            header. It is the sentence the whole card adds up to, and it was
+            small grey text at the end of a line nobody reads twice. */}
+        <Section title="PLC & layout" icon={<Ruler className="h-3.5 w-3.5" />}>
           <div className="min-w-0">
-            <SubHeading>Boundaries</SubHeading>
-            {SIDES.map((side) => {
-              const b = bySide.get(side);
-              return (
+            <SubHeading>PLC</SubHeading>
+            {plc ? (
+              <>
+                {plc.components.map((c) => (
+                  <Row
+                    key={c.label}
+                    label={c.label}
+                    value={<span className="tabular-nums">{c.percent}%</span>}
+                    hint={c.evidence || undefined}
+                  />
+                ))}
                 <Row
-                  key={side}
-                  label={humanise(side)}
-                  value={b ? BOUNDARY_KIND_LABEL[b.kind] ?? b.kind : "Not recorded"}
-                  hint={
-                    b?.kind === "ROAD" && b.roadWidthFt
-                      ? `${num(b.roadWidthFt)} ft wide`
-                      : (b?.reference ?? undefined)
-                  }
+                  label="Total"
+                  value={<span className="tabular-nums">{plc.totalPercent}%</span>}
+                  hint={`Version ${plc.version}`}
                 />
-              );
-            })}
+              </>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">{plcIssue}</p>
+            )}
           </div>
 
-          <div className="min-w-0">
+          <div className="mt-5 min-w-0 border-t border-border/60 pt-4">
             <SubHeading>Layout</SubHeading>
             {plot.widthFt && plot.lengthFt ? (
               <div className="mt-2 flex justify-center">
@@ -811,10 +822,73 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 />
               </div>
             ) : (
-              <p className="mt-2 text-xs text-muted-foreground">An irregular Plot has no sides to draw.</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                An irregular Plot has no sides to draw.
+              </p>
             )}
           </div>
+
+          <div className="mt-5 min-w-0 border-t border-border/60 pt-4">
+            <SubHeading>Dimensions</SubHeading>
+            <Row
+              label="Width × Length"
+              value={
+                plot.widthFt && plot.lengthFt
+                  ? formatPlotSize(plot.widthFt.toString(), plot.lengthFt.toString())
+                  : "Irregular Plot"
+              }
+            />
+            <Row
+              label={plot.exactAreaSqFt ? "Area (exact)" : "Area"}
+              value={<span className="tabular-nums">{num(plot.areaSqFt)} sq ft</span>}
+              hint={
+                <span className="tabular-nums">
+                  {conv(plot.areaSqYd)} sq yd · {conv(plot.areaSqM)} sq m
+                </span>
+              }
+            />
+            {/* With both sides and an override, what the sides multiply to is
+                the other half of the reason the override exists. */}
+            {plot.exactAreaSqFt && plot.widthFt && plot.lengthFt && (
+              <Row
+                label="Width × Length area"
+                value={
+                  <span className="tabular-nums">
+                    {num(plot.widthFt.mul(plot.lengthFt))} sq ft
+                  </span>
+                }
+              />
+            )}
+            {plot.exactAreaReason && <Row label="Override reason" value={plot.exactAreaReason} />}
           </div>
+
+          <div className="mt-5 min-w-0 border-t border-border/60 pt-4">
+            <SubHeading>Boundaries</SubHeading>
+            {SIDES.map((side) => {
+              const b = bySide.get(side);
+              return (
+                <Row
+                  key={side}
+                  label={humanise(side)}
+                  value={b ? BOUNDARY_KIND_LABEL[b.kind] ?? b.kind : "Not recorded"}
+                  hint={
+                    b?.kind === "ROAD" && b.roadWidthFt
+                      ? `${num(b.roadWidthFt)} ft wide`
+                      : (b?.reference ?? undefined)
+                  }
+                />
+              );
+            })}
+          </div>
+
+          {position && (
+            <div className="mt-5 flex flex-wrap items-baseline justify-between gap-2 border-t border-border/60 pt-4">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Position
+              </span>
+              <span className="text-base font-semibold text-foreground">{position}</span>
+            </div>
+          )}
         </Section>
 
         {/* 5 Current Allocation · Booking · 6 Completion */}
