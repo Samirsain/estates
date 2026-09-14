@@ -840,7 +840,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             that. Side by side, the two questions a Plot page is opened with —
             what is this Plot, and who has it — are both answered without
             scrolling, and the deal column fills the height the drawing makes. */}
-        <div className="md:columns-2 md:gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
+        <div className="grid items-start gap-4 md:grid-cols-2">
+        <div className="space-y-4">
         {/* 2 Dimensions · 3 Layout — one card, because the four sides are one
             fact told twice otherwise. The drawing already names what every side
             abuts, its width and its reference ("Road · 60 ft", "Plot · a12"),
@@ -885,8 +886,13 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             )}
 
           </div>
+        </Section>
 
-          <div className="mt-3 min-w-0 border-t border-border/60 pt-3">
+        {/* 3 Dimensions · PLC · Position — what the Plot measures, what its
+            sides earn, and the sentence they add up to. Its own card, beneath
+            the drawing it describes. */}
+        <Section title="Dimensions · PLC" icon={<Ruler className="h-3.5 w-3.5" />}>
+          <div className="min-w-0">
             <SubHeading>Dimensions</SubHeading>
             <Row
               label="Width × Length"
@@ -954,7 +960,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             )}
           </div>
 
-          {/* The sentence the drawing adds up to, under the drawing. */}
+          {/* The sentence the sides add up to. */}
           {position && (
             <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2 border-t border-border/60 pt-3">
               <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -967,6 +973,9 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
 
         {/* 5 Current Allocation · Booking · 6 Completion — the deal, stacked
             in the column beside the Plot. */}
+        </div>
+
+        <div className="space-y-4">
           {/* Why editing is closed. Only when it is — an editable Plot has
               nothing to explain. */}
           {lockReason && (
@@ -1311,6 +1320,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               )}
             </Section>
           )}
+        </div>
         </div>
 
         {/* DESIGN §9.3 — each request names the actual buyer, and expires at the
