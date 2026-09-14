@@ -636,7 +636,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
      three times, next to a column tall enough to hold the drawing. The header
      badge already says Available; the cards only repeated it. */
   const hasDeal = Boolean(current || liveAcquisition);
-  const hasDealColumn = hasDeal || hasPast || requests.length > 0;
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
@@ -778,13 +777,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             that. Side by side, the two questions a Plot page is opened with —
             what is this Plot, and who has it — are both answered without
             scrolling, and the deal column fills the height the drawing makes. */}
-        <div
-          className={
-            hasDealColumn
-              ? "grid items-start gap-4 md:grid-cols-2"
-              : "space-y-4"
-          }
-        >
+        <div className="grid items-start gap-4 md:grid-cols-2">
         {/* 2 PLC · 3 Layout · 4 Dimensions · 5 Boundaries — one column, read
             top to bottom: what the Plot is worth extra for, what it looks like,
             what it measures, and what it abuts. It was three columns side by
@@ -914,7 +907,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
 
         {/* 5 Current Allocation · Booking · 6 Completion · Commission ·
             Hold Requests · 7 Past Deals — everything about the deal, stacked. */}
-        {hasDealColumn && (
         <div className="space-y-4">
           {hasDeal && (
           <Section title="Current Allocation · Booking" icon={<FileText className="h-3.5 w-3.5" />}>
@@ -1202,7 +1194,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
           </Section>
         )}
         </div>
-        )}
         </div>
 
         {/* 8 History — the one block that is about neither side, so it runs the
