@@ -31,24 +31,32 @@ Do not show:
 - Active Hold / Booking lock explanation
 - Change Plot lock explanation
 
-## 3. REMOVE — Location Charge
-Remove the complete **Location Charge (PLC %)** section.
+## 3. Location Charge — the rate only
+The **Location Charge (PLC %) section** is removed. The rate itself is kept, as
+one line beside the Dimensions.
+
+Show:
+- Total PLC, as a single percentage
+- The PLC version it was worked out against
 
 Do not show:
-- Total PLC
 - PLC components
 - Corner charge
 - Park Facing charge
 - Road Facing charge
 - Sides earning PLC
 
-PLC calculation/configuration may remain in the appropriate calculator or configuration flow.
+Where a side cannot be banded — a Road with no width recorded — show the reason
+in place of the percentage. Never a guessed band.
 
-## 4. REMOVE — PLC Version Used
-Remove:
-- PLC Version Used
-- Published PLC version reference
-- PLC version number/date from the Plot Profile
+The full breakdown stays in the Calculator and the configuration flow.
+
+## 4. PLC Version Used
+Show the version number beside the rate, as its hint.
+
+Do not show:
+- Frozen vs current version comparison
+- Version date
 
 ## 5. REMOVE — Frozen vs Current
 Remove:
@@ -73,13 +81,14 @@ Show:
 - Compulsory reason
 
 ### Four Sides
-Show:
-- Road
-- Road width
-- Plot
-- Park
-- Facilities
-- Other applicable reference information
+Shown **by the Layout Drawing**, not as a second list. Each side is labelled on
+the drawing with what it abuts and its qualifier:
+- Road, with its width — "Road · 60 ft"
+- Plot, with its reference — "Plot · a12"
+- Park / Playground
+- Facilities and other applicable reference information
+
+A side with nothing recorded carries no label.
 
 ### Layout Drawing
 Show:
@@ -250,20 +259,24 @@ The Plot Profile should show:
 Recommended top-to-bottom order:
 
 1. Header
-2. Dimensions
-3. Boundaries
-4. Layout
-5. Current Allocation · Booking
-6. Completion
-7. Past Deals
-8. History
+2. Dimensions, PLC rate and the Layout drawing — one block. The drawing carries
+   the four sides (§6), so there is no separate Boundaries list to repeat them.
+3. Position — what the sides add up to, under the drawing
+4. Current Allocation · Booking
+5. Completion
+6. Past Deals
+7. History
+
+A block with nothing in it is not drawn at all. An Available Plot shows no
+Current Allocation, Completion or Past Deals card; the header already says it is
+available.
 
 Operational actions remain available through the Features / Actions area.
 
 ## 16. Explicitly Removed
 - [x] Details Locked
-- [x] Location Charge (PLC %)
-- [x] PLC Version Used
+- [x] Location Charge (PLC %) **as a section** — the rate survives as one line (§3)
+- [x] PLC components, corner / park / road charges, sides earning PLC
 - [x] Frozen vs Current
 - [x] Current Allocation · Hold
 - [x] Hold details as a dedicated profile section

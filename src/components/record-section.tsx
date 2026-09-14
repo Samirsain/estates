@@ -27,8 +27,9 @@ export function Section({
   icon?: React.ReactNode;
   /** Right of the title: a count, a link, one small action. */
   aside?: React.ReactNode;
-  /** Stretch to the tallest cell of its grid row. Off by default, so a short
-   *  card next to a long one stays short instead of ending in empty space. */
+  /** Stretch to the tallest cell of its grid row, body included, so the content
+   *  can centre itself in the height. Off by default: a short card next to a
+   *  long one stays short rather than ending in empty space. */
   fill?: boolean;
   children: React.ReactNode;
 }) {
@@ -41,7 +42,7 @@ export function Section({
         </h2>
         {aside}
       </div>
-      <div className="mt-3 min-w-0">{children}</div>
+      <div className={cn("mt-3 min-w-0", fill && "flex-1")}>{children}</div>
     </Card>
   );
 }

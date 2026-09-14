@@ -37,6 +37,7 @@ import {
   canSetRestriction,
   displayStatus,
   humaniseRestriction,
+  buildPlcSnapshot,
   isOpenSide,
   locationChargeLabel,
 } from "@/lib/domain/inventory";
@@ -413,6 +414,16 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   }));
   const position = locationChargeLabel(boundaries).join(" · ");
 
+  let plcPercent: string | null = null;
+  let plcIssue: string | null = version ? null : "No published PLC version";
+  if (version) {
+    try {
+      plcPercent = buildPlcSnapshot(boundaries, plcRules(version.components)).totalPercent.toFixed(2);
+    } catch (error) {
+      plcIssue = error instanceof Error ? error.message : "PLC could not be worked out";
+    }
+  }
+
   // Stored precision — area is stored to four decimals and a Plot is sold on it.
   const num = (value: { toString(): string }) => formatQuantity(value.toString());
   const conv = (value: { toDecimalPlaces(n: number): { toString(): string } }) =>
@@ -720,8 +731,9 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 )}
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
+                {/* The position reads under the Layout drawing, which is what
+                    it describes. */}
                 {plot.project.name} · {PLOT_TYPE_LABEL[plot.plotType] ?? plot.plotType}
-                {position ? ` · ${position}` : ""}
               </p>
               {plot.restriction !== "NONE" && plot.restrictionReason && (
                 <p className="mt-1 max-w-prose text-xs text-red-700">{plot.restrictionReason}</p>
@@ -747,16 +759,50 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             what is this Plot, and who has it — are both answered without
             scrolling, and the deal column fills the height the drawing makes. */}
         <div className="grid items-start gap-4 md:grid-cols-2">
-        {/* 2 Dimensions · 3 Boundaries — the numbers first, which is the order
-            Plot_Profile_Revised_Requirements.md §15 asks for.
+        {/* 2 Dimensions · 3 Layout — one card, because the four sides are one
+            fact told twice otherwise. The drawing already names what every side
+            abuts, its width and its reference ("Road · 60 ft", "Plot · a12"),
+            which is what Plot_Profile_Revised_Requirements.md §6 asks the Four
+            Sides to show; the list under it was the same four answers again.
 
-            The Location Charge that briefly sat above them is out again: §3, §4
-            and §16 of that document remove PLC, its components, its version and
-            the sides earning it from this page. The charge still lives in the
-            Calculator and on the inventory list, which §3 allows. */}
-        <Section title="Dimensions · Boundaries" icon={<Ruler className="h-3.5 w-3.5" />}>
-          <div className="mt-4 min-w-0 border-t border-border/60 pt-3">
-            <SubHeading>Dimensions</SubHeading>
+            The Location Charge is out per §3, §4 and §16 of that document: not
+            the total, not the components, not the version, not the sides
+            earning it. It still lives in the Calculator and on the inventory
+            list, which §3 allows. */}
+        <Section title="Layout · Dimensions" icon={<Ruler className="h-3.5 w-3.5" />}>
+          <div className="min-w-0">
+            {plot.widthFt && plot.lengthFt ? (
+              <div className="flex flex-1 items-center justify-center py-2">
+                <PlotShape
+                  plotNumber={plot.plotNumber}
+                  widthFt={plot.widthFt.toString()}
+                  lengthFt={plot.lengthFt.toString()}
+                  sides={Object.fromEntries(
+                    SIDES.map((side) => {
+                      const b = bySide.get(side);
+                      if (!b) return [side, undefined];
+                      const kind = BOUNDARY_KIND_LABEL[b.kind] ?? b.kind;
+                      const label =
+                        b.kind === "ROAD" && b.roadWidthFt
+                          ? `${kind} · ${num(b.roadWidthFt)} ft`
+                          : b.reference
+                            ? `${kind} · ${b.reference}`
+                            : kind;
+                      return [side, { label, open: isOpenSide(b.kind) }];
+                    })
+                  )}
+                />
+              </div>
+            ) : (
+              <p className="flex flex-1 items-center justify-center py-2 text-xs text-muted-foreground">
+                An irregular Plot has no sides to draw.
+              </p>
+            )}
+
+          </div>
+
+          <div className="mt-3 min-w-0 border-t border-border/60 pt-3">
+
             <Row
               label="Width × Length"
               value={
@@ -787,71 +833,29 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               />
             )}
             {plot.exactAreaReason && <Row label="Override reason" value={plot.exactAreaReason} />}
+            <Row
+              label="PLC"
+              value={
+                plcPercent ? <span className="tabular-nums">{plcPercent}%</span> : "—"
+              }
+              hint={plcPercent ? `Version ${version!.version}` : (plcIssue ?? undefined)}
+            />
           </div>
 
-          <div className="mt-4 min-w-0 border-t border-border/60 pt-3">
-            <SubHeading>Boundaries</SubHeading>
-            {SIDES.map((side) => {
-              const b = bySide.get(side);
-              return (
-                <Row
-                  key={side}
-                  label={humanise(side)}
-                  value={b ? BOUNDARY_KIND_LABEL[b.kind] ?? b.kind : "Not recorded"}
-                  hint={
-                    b?.kind === "ROAD" && b.roadWidthFt
-                      ? `${num(b.roadWidthFt)} ft wide`
-                      : (b?.reference ?? undefined)
-                  }
-                />
-              );
-            })}
-          </div>
-
+          {/* The sentence the drawing adds up to, under the drawing. */}
+          {position && (
+            <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2 border-t border-border/60 pt-3">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Position
+              </span>
+              <span className="text-sm font-semibold text-foreground">{position}</span>
+            </div>
+          )}
         </Section>
 
-        {/* 4 Layout — the drawing takes the column beside the numbers rather
-            than a band underneath them. Reading the four sides as a shape is
-            what it is for, and next to the list is where that comparison is
-            actually made. */}
-        <Section title="Layout" icon={<Ruler className="h-3.5 w-3.5" />}>
-          <div className="min-w-0">
-            {plot.widthFt && plot.lengthFt ? (
-              <div className="mt-2 flex justify-center">
-                <PlotShape
-                  plotNumber={plot.plotNumber}
-                  widthFt={plot.widthFt.toString()}
-                  lengthFt={plot.lengthFt.toString()}
-                  sides={Object.fromEntries(
-                    SIDES.map((side) => {
-                      const b = bySide.get(side);
-                      if (!b) return [side, undefined];
-                      const kind = BOUNDARY_KIND_LABEL[b.kind] ?? b.kind;
-                      const label =
-                        b.kind === "ROAD" && b.roadWidthFt
-                          ? `${kind} · ${num(b.roadWidthFt)} ft`
-                          : b.reference
-                            ? `${kind} · ${b.reference}`
-                            : kind;
-                      return [side, { label, open: isOpenSide(b.kind) }];
-                    })
-                  )}
-                />
-              </div>
-            ) : (
-              <p className="mt-2 text-xs text-muted-foreground">
-                An irregular Plot has no sides to draw.
-              </p>
-            )}
-          </div>
-
-        </Section>
-        </div>
-
-        {/* 5 Current Allocation · Booking · 6 Completion — two cards of label
-            and value, so they pair off rather than run the page width with an
-            inch of nothing between each label and its answer. */}
-        <div className="grid items-start gap-4 md:grid-cols-2">
+        {/* 5 Current Allocation · Booking · 6 Completion — the deal, stacked
+            in the column beside the Plot. */}
+        <div className="space-y-4">
           {hasDeal && (
           <Section title="Current Allocation · Booking" icon={<FileText className="h-3.5 w-3.5" />}>
             {current ? (
@@ -967,6 +971,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             )}
           </Section>
           )}
+        </div>
         </div>
 
         {/* Commission on the deal holding this Plot — percentages only, never a
