@@ -129,6 +129,7 @@ import {
   opportunityReopens,
   previewInput,
   mayOpenNextCycle,
+  buybackAccelerates,
   resolveEligibility,
   totalOf,
   type PersonFacts,
@@ -894,6 +895,17 @@ assert.deepEqual(canTransition("REQUEST_PENDING", "BOOKED"), { ok: true });
 assert.equal(canTransition("REQUEST_PENDING", "REFUND_PENDING").ok, false);
 assert.equal(canTransition("REQUEST_REJECTED", "BOOKED").ok, false, "a rejected request is final");
 assert.equal(canTransition("DELIVERED", "BOOKED").ok, false, "Delivered does not reopen through the state machine");
+// CR-016 — an unwound Buyback puts the old sale back exactly as it stood, so
+// Buyback Completed is no longer terminal. The target is never chosen: it is
+// read from the snapshot taken when the Buyback was approved.
+assert.deepEqual(canTransition("BUYBACK_COMPLETED", "BOOKED"), { ok: true });
+assert.deepEqual(canTransition("BUYBACK_COMPLETED", "PAYMENT_COMPLETED"), { ok: true });
+assert.deepEqual(canTransition("BUYBACK_COMPLETED", "DELIVERED"), { ok: true });
+assert.equal(
+  canTransition("BUYBACK_COMPLETED", "CANCELLED").ok,
+  false,
+  "an unwind restores what was there, and a Buyback was never a cancellation"
+);
 // A reversal below 100% returns Payment Completed to Booked (PRD §12.7).
 assert.deepEqual(canTransition("PAYMENT_COMPLETED", "BOOKED"), { ok: true });
 // Accounts rejection of a refund restores the exact previous state (PRD §15.4).
@@ -1254,6 +1266,57 @@ const eligibilityBase = {
 };
 
 assert.deepEqual(resolveEligibility(eligibilityBase), { state: "READY", holdReason: null });
+
+/* CR-015 — an Approved Buyback is an *alternative* milestone: it earns Invite,
+   Royalty and Loyalty before 100%, and it never touches Direct. */
+
+const inviteAt40 = {
+  ...eligibilityBase,
+  type: "INVITE" as const,
+  percent: "1",
+  milestonePercent: "100",
+  progressPercent: "40",
+};
+assert.equal(
+  resolveEligibility(inviteAt40).state,
+  "MILESTONE_PENDING",
+  "on its own an Invite at 40% is still waiting for 100%"
+);
+assert.equal(
+  resolveEligibility({ ...inviteAt40, buybackMilestoneMet: true }).state,
+  "READY",
+  "CR-015 — an Approved Buyback earns the Invite before 100% (pack acceptance 10)"
+);
+// Accelerating the milestone accelerates nothing else: every deal-level and
+// beneficiary condition is still decided in the same order.
+assert.equal(
+  resolveEligibility({ ...inviteAt40, buybackMilestoneMet: true, beneficiaryBankVerified: false })
+    .holdReason,
+  "BANK_VERIFICATION_PENDING",
+  "an accelerated record still meets every beneficiary condition"
+);
+assert.equal(
+  resolveEligibility({ ...inviteAt40, buybackMilestoneMet: true, memberCommissionHold: true })
+    .holdReason,
+  "MEMBER_COMMISSION_HOLD",
+  "a Member-level hold still outranks the milestone, however it was reached"
+);
+
+/* The type rule itself — pack acceptance 10 to 13. */
+assert.ok(
+  buybackAccelerates("INVITE") && buybackAccelerates("ROYALTY") && buybackAccelerates("LOYALTY"),
+  "Invite, Royalty and Loyalty all take the alternative milestone"
+);
+assert.equal(
+  buybackAccelerates("DIRECT"),
+  false,
+  "a Buyback never accelerates Direct (pack acceptance 13)"
+);
+assert.equal(
+  buybackAccelerates("BUYING"),
+  false,
+  "Buying Commission hangs off the acquisition, not the sale the Buyback undoes"
+);
 
 /* CR-013 — a 0% band is settled at zero, not pending and not held. It is
    decided before every other condition, because none of them can change it. */

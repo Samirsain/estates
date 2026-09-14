@@ -30,6 +30,12 @@ import {
   recordFinalBuyers,
   reopenDelivered,
 } from "@/lib/services/completion-service";
+import {
+  cancelAcquisitionDeal,
+  confirmPaymentGiven,
+  createAcquisition,
+  decideAcquisition,
+} from "@/lib/services/acquisition-service";
 import { businessState } from "@/lib/services/report-service";
 import { enterBankDetails } from "@/lib/services/bank-service";
 import { activateMember } from "@/lib/services/network-service";
@@ -1023,13 +1029,24 @@ async function main() {
     unwind: "BUYBACK",
     reason: `${TAG} Buyback before legal completion`,
   });
-  const steppedBack = await db.commissionRecord.findFirstOrThrow({
+  const earlyDirect = await db.commissionRecord.findFirstOrThrow({
     where: { bookingId: earlyBuyback, type: "DIRECT", isCurrent: true },
   });
+  // CR-015 supersedes §14.12 for this record. The Booking was paid to 30%, so
+  // the Direct had already reached its own 25% milestone — which is the pack's
+  // own second example, "third-party Direct at 30% + Approved Buyback → Direct
+  // already earned at 25%". A Buyback never accelerates Direct and never
+  // un-earns it either; only a Direct that never reached its milestone closes,
+  // which AC-09 exercises on a Booking with nothing received.
   assert.equal(
-    steppedBack.payment,
-    "CANCELLED",
-    "an unpaid old-sale commission steps back when the sale had not completed"
+    earlyDirect.payment,
+    "NOT_PAID",
+    "a Direct already earned before the Buyback is not cancelled by it (CR-015)"
+  );
+  assert.equal(
+    earlyDirect.eligibility,
+    "READY",
+    "it stays payable on the sale that really did happen"
   );
   assert.ok(
     await db.task.findFirst({
@@ -1868,6 +1885,289 @@ async function main() {
     state.volumes.paymentsReceived,
     await db.paymentReceivedEntry.count({ where: { status: "CONFIRMED" } }),
     "confirmed payment entries"
+  );
+
+  /* ===== AC-09 — CR-015, CR-016: the Buyback as an alternative milestone ====
+
+     Pack acceptance 10 to 14. An Approved Buyback earns Invite, Royalty and
+     Loyalty before 100%; it never accelerates Direct, and it never un-earns a
+     Direct that had already reached its own milestone; and unwinding it
+     reverses exactly the benefit the Buyback alone was supporting. */
+
+  const GIVEN = [
+    { seq: 1, percent: "25", dueDate: today },
+    { seq: 2, percent: "75", dueDate: day(30) },
+  ];
+
+  /** Raises a Buyback on a Booking, funds it past 20% and approves it. */
+  async function approveBuybackOn(bookingId: string, sellerPersonId: string, arrangerPersonId: string, tagSuffix: string) {
+    const raised = await createAcquisition({
+      idempotencyKey: key(),
+      actorRef: CRM,
+      actorRole: "CRM",
+      type: "BUYBACK",
+      sourceBookingId: bookingId,
+      sellerPersonId,
+      arrangedByType: "MEMBER",
+      arrangedByPersonId: arrangerPersonId,
+      purchaseDate: today,
+      remark: "Buyback before legal completion.",
+      schedule: GIVEN,
+    });
+    await confirmPaymentGiven({
+      idempotencyKey: key(),
+      actorRef: ACC,
+      actorRole: "ACCOUNTS",
+      acquisitionId: raised.acquisitionId,
+      percent: "25",
+      paidOn: today,
+      reference: `${TAG} GIVEN ${tagSuffix}`,
+    });
+    await decideAcquisition({
+      idempotencyKey: key(),
+      actorRef: ACC,
+      actorRole: "ACCOUNTS",
+      acquisitionId: raised.acquisitionId,
+      approve: true,
+      note: "Buyback approved.",
+    });
+    return raised.acquisitionId;
+  }
+
+  const recordOf = (bookingId: string, type: "DIRECT" | "INVITE" | "ROYALTY" | "LOYALTY") =>
+    db.commissionRecord.findFirstOrThrow({ where: { bookingId, type, isCurrent: true } });
+
+  /* --- Acceptance 10 and 13: Invite accelerates, an earned Direct survives -- */
+
+  const bbInviterPerson = await makeEligiblePerson("BBInviter", "9600000081");
+  const bbInviter = await makeMember("BB-I", bbInviterPerson.id, 800);
+  const bbInviteCycle = await db.performanceCycle.create({
+    data: {
+      memberProfileId: bbInviter.id,
+      kind: "INVITE",
+      cycleNumber: 1,
+      openedOn: new Date(bbInviter.activationDate!.toISOString().slice(0, 10)),
+    },
+  });
+  const bbSellerPerson = await makeEligiblePerson("BBSeller", "9600000082");
+  await db.memberProfile.create({
+    data: {
+      memberId: `${TAG}-M-BBS`,
+      personId: bbSellerPerson.id,
+      activationDate: day(-300),
+      invitedByMemberId: bbInviter.id,
+      invitePosition: 1,
+      inviteRatePercent: "1",
+      inviteCycleId: bbInviteCycle.id,
+      reraStatus: "REGISTERED",
+      reraNumber: "RERA-TEST-BB",
+    },
+  });
+  const bbBuyer = await makeEligiblePerson("BBBuyer", "9600000083");
+  const plotBB1 = await makePlot(project.id, "BB1");
+  const bookingBB1 = await bookAndApprove({
+    plotId: plotBB1.id,
+    buyerPersonId: bbBuyer.id,
+    soldByType: "MEMBER",
+    soldByPersonId: bbSellerPerson.id,
+  });
+
+  // 40% earns the Direct on its own and leaves the Invite waiting for 100%.
+  await pay(bookingBB1, "40", `${TAG} UTR BB1`);
+  assert.equal((await recordOf(bookingBB1, "DIRECT")).eligibility, "READY");
+  assert.equal(
+    (await recordOf(bookingBB1, "INVITE")).eligibility,
+    "MILESTONE_PENDING",
+    "before the Buyback the Invite is still waiting for 100%"
+  );
+  assert.equal((await recordOf(bookingBB1, "INVITE")).opportunityId, null);
+  assert.equal(
+    (await db.performanceCycle.findUniqueOrThrow({ where: { id: bbInviteCycle.id } })).positionsComplete,
+    0,
+    "and its cycle position has completed nothing"
+  );
+
+  const bb1 = await approveBuybackOn(bookingBB1, bbBuyer.id, bbInviterPerson.id, "BB1");
+
+  const bb1Invite = await recordOf(bookingBB1, "INVITE");
+  assert.equal(
+    bb1Invite.eligibility,
+    "READY",
+    "CR-015 acceptance 10 — an Approved Buyback earns the Invite before 100%"
+  );
+  assert.ok(bb1Invite.opportunityId, "and it consumes the one-time Invite opportunity");
+  const bb1Direct = await recordOf(bookingBB1, "DIRECT");
+  assert.equal(
+    bb1Direct.payment,
+    "NOT_PAID",
+    "acceptance 13 — a Direct already earned at 25% is not cancelled by a Buyback"
+  );
+  assert.equal(bb1Direct.eligibility, "READY", "it simply stays earned and payable");
+  assert.equal(
+    (await db.booking.findUniqueOrThrow({ where: { id: bookingBB1 } })).status,
+    "BUYBACK_COMPLETED"
+  );
+  assert.equal(
+    (await db.performanceCycle.findUniqueOrThrow({ where: { id: bbInviteCycle.id } })).positionsComplete,
+    1,
+    "CR-014 — the accelerated position now counts towards its cycle"
+  );
+
+  /* --- Acceptance 14: the unwind reverses only what the Buyback supported --- */
+
+  await cancelAcquisitionDeal({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    acquisitionId: bb1,
+    reason: "Seller withdrew.",
+  });
+
+  const unwound = await db.booking.findUniqueOrThrow({ where: { id: bookingBB1 } });
+  assert.equal(unwound.status, "BOOKED", "CR-016 — the old sale is restored exactly as it stood");
+  assert.equal(unwound.activeProcess, "NONE");
+  assert.equal(unwound.closedAt, null, "and it is no longer closed history");
+
+  const afterUnwindInvite = await recordOf(bookingBB1, "INVITE");
+  assert.equal(
+    afterUnwindInvite.eligibility,
+    "MILESTONE_PENDING",
+    "acceptance 14 — a benefit the Buyback alone supported goes back to pending"
+  );
+  assert.equal(afterUnwindInvite.opportunityId, null, "and releases the one-time opportunity");
+  assert.equal(
+    (await db.commissionOpportunity.findFirstOrThrow({
+      where: { kind: "INVITE", subjectPersonId: bbSellerPerson.id },
+    })).status,
+    "OPEN",
+    "the slot is reopened rather than deleted, so no duplicate payout is possible"
+  );
+  assert.equal(
+    (await db.performanceCycle.findUniqueOrThrow({ where: { id: bbInviteCycle.id } })).positionsComplete,
+    0,
+    "CR-016 — the successful-cycle position reverses with it"
+  );
+  assert.equal(
+    (await recordOf(bookingBB1, "DIRECT")).eligibility,
+    "READY",
+    "but the Direct reached 25% independently, so it keeps standing"
+  );
+  assert.ok(
+    await db.bookingEvent.findFirst({
+      where: { bookingId: bookingBB1, action: "BUYBACK_UNWOUND" },
+    }),
+    "and the reversal is on the Booking's own history"
+  );
+
+  /* --- Acceptance 11 and 12: Royalty and Loyalty accelerate too ------------ */
+
+  const bbRoyCycle = await db.performanceCycle.create({
+    data: {
+      memberProfileId: bbInviter.id,
+      kind: "ROYALTY",
+      cycleNumber: 1,
+      openedOn: new Date(bbInviter.activationDate!.toISOString().slice(0, 10)),
+    },
+  });
+  const bbRoyBuyer = await makeEligiblePerson("BBRoyBuyer", "9600000084");
+
+  // The first qualifying purchase, closed by the Member who therefore owns the
+  // Royalty link. Seeding the link to match what this Booking implies keeps
+  // `syncRoyaltyLink` a no-op here — how a link is *established* is AC-06's
+  // subject; this block is only about what an Approved Buyback does to it.
+  const plotBB2a = await makePlot(project.id, "BB2A");
+  const bbFirstPurchase = await bookAndApprove({
+    plotId: plotBB2a.id,
+    buyerPersonId: bbRoyBuyer.id,
+    soldByType: "MEMBER",
+    soldByPersonId: bbInviterPerson.id,
+  });
+  await db.customerProfile.update({
+    where: { personId: bbRoyBuyer.id },
+    data: {
+      royaltyLinkedMemberId: bbInviter.id,
+      royaltyLinkFirstBookingId: bbFirstPurchase,
+      royaltyLinkFinalAt: day(-1),
+      royaltyPosition: 1,
+      royaltyRatePercent: "1",
+      royaltyCycleId: bbRoyCycle.id,
+    },
+  });
+
+  // The repeat purchase earns Royalty for the linked Member and Loyalty for the
+  // buyer. Sold By 3% Club, so there is no Direct and the pair sit at 2%.
+  const plotBB2b = await makePlot(project.id, "BB2B");
+  const bookingBB2 = await bookAndApprove({
+    plotId: plotBB2b.id,
+    buyerPersonId: bbRoyBuyer.id,
+    soldByType: "THREE_PERCENT_CLUB",
+  });
+  assert.equal(
+    (await recordOf(bookingBB2, "ROYALTY")).eligibility,
+    "MILESTONE_PENDING",
+    "Royalty waits for 100% on its own"
+  );
+  assert.equal(
+    (await recordOf(bookingBB2, "LOYALTY")).eligibility,
+    "MILESTONE_PENDING",
+    "and so does Loyalty"
+  );
+
+  await approveBuybackOn(bookingBB2, bbRoyBuyer.id, bbInviterPerson.id, "BB2");
+
+  const bb2Royalty = await recordOf(bookingBB2, "ROYALTY");
+  const bb2Loyalty = await recordOf(bookingBB2, "LOYALTY");
+  assert.equal(
+    bb2Royalty.eligibility,
+    "READY",
+    "CR-015 acceptance 11 — an Approved Buyback earns the Royalty before 100%"
+  );
+  assert.ok(bb2Royalty.opportunityId, "consuming the Customer's one Royalty opportunity");
+  assert.equal(
+    bb2Loyalty.eligibility,
+    "READY",
+    "CR-015 acceptance 12 — and the Loyalty with it"
+  );
+  assert.ok(bb2Loyalty.opportunityId, "consuming one of the three lifetime Loyalty slots");
+
+  /* --- Acceptance 13 again: an unearned Direct is not accelerated ---------- */
+
+  const bbInviter3Person = await makeEligiblePerson("BBInviter3", "9600000085");
+  const bbInviter3 = await makeMember("BB-I3", bbInviter3Person.id, 600);
+  const bbSeller3Person = await makeEligiblePerson("BBSeller3", "9600000086");
+  await db.memberProfile.create({
+    data: {
+      memberId: `${TAG}-M-BBS3`,
+      personId: bbSeller3Person.id,
+      activationDate: day(-250),
+      invitedByMemberId: bbInviter3.id,
+      invitePosition: 1,
+      inviteRatePercent: "1",
+      reraStatus: "REGISTERED",
+      reraNumber: "RERA-TEST-BB3",
+    },
+  });
+  const bbBuyer3 = await makeEligiblePerson("BBBuyer3", "9600000087");
+  const plotBB3 = await makePlot(project.id, "BB3");
+  const bookingBB3 = await bookAndApprove({
+    plotId: plotBB3.id,
+    buyerPersonId: bbBuyer3.id,
+    soldByType: "MEMBER",
+    soldByPersonId: bbSeller3Person.id,
+  });
+
+  // Nothing has been received, so the Direct never reached its own 25%.
+  await approveBuybackOn(bookingBB3, bbBuyer3.id, bbInviter3Person.id, "BB3");
+
+  assert.equal(
+    (await recordOf(bookingBB3, "DIRECT")).payment,
+    "CANCELLED",
+    "acceptance 13 — a Buyback never carries an unearned Direct over its milestone"
+  );
+  assert.equal(
+    (await recordOf(bookingBB3, "INVITE")).eligibility,
+    "READY",
+    "while the Invite on the same Booking is earned by the Buyback"
   );
 
   await cleanup();

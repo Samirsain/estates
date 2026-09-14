@@ -176,10 +176,6 @@ export default function MembersClient({
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Members</h1>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {visible.length} of {rows.length} · Network positions are fixed at activation and never
-              renumbered · times in Asia/Kolkata
-            </p>
           </div>
           {permissions.activate && (
             <Button size="sm" variant="gradient" onClick={() => setDialog({ kind: "ACTIVATE" })}>

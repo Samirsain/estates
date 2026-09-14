@@ -9,6 +9,7 @@ import type { CommissionType, OpportunityKind } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
   afterAffectingChange,
+  buybackAccelerates,
   canMarkPaid,
   classifyApprovedBooking,
   generateCommission,
@@ -21,6 +22,7 @@ import {
   type CommissionOutcome,
   type Component,
   type NetworkLink,
+  type PaymentState,
 } from "@/lib/domain/commission";
 import { istInstant } from "@/lib/tasks";
 import { normaliseReference, notFutureDated } from "@/lib/domain/booking";
@@ -560,9 +562,26 @@ async function supersedeRecord(tx: Tx, recordId: string, actorRef: string, reaso
 /* ------------------------------------------------------------- reassessment */
 
 /**
+ * CR-015 — whether an Approved Buyback stands against this Booking. Read once
+ * per reassessment rather than once per record, because every record on a
+ * Booking shares the answer.
+ */
+async function hasApprovedBuyback(tx: Tx, bookingId: string): Promise<boolean> {
+  const count = await tx.acquisition.count({
+    where: { sourceBookingId: bookingId, type: "BUYBACK", status: "APPROVED" },
+  });
+  return count > 0;
+}
+
+/**
  * Recomputes eligibility for every current record on a Booking, and consumes
  * the one-shot entitlement the moment a record first reaches its milestone.
  * Safe to call after any payment, cancellation or hold change.
+ *
+ * CR-015, CR-016 — a Buyback moves through here too. Because the milestone is
+ * read fresh every time, an Approved Buyback earns the accelerated three on the
+ * way in and an unwound one takes them back on the way out, with no separate
+ * reversal path to keep in step.
  */
 export async function reassessCommission(tx: Tx, bookingId: string, actorRef: string) {
   const booking = await tx.booking.findUniqueOrThrow({
@@ -580,14 +599,28 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
   );
   const conflictAbove4 = saleTotal.gt(4);
 
+  // CR-015 — the alternative milestone for Invite, Royalty and Loyalty.
+  const buybackApproved = await hasApprovedBuyback(tx, bookingId);
+
   for (const record of records) {
+    // A cancelled record is closed for good — `afterAffectingChange` never
+    // moves anything back out of CANCELLED — so recomputing its eligibility
+    // could only write a misleading state onto history. It matters now that the
+    // Buyback path cancels some records and then reassesses the rest.
+    if (record.payment === "CANCELLED") continue;
+
     const member = record.beneficiaryPerson.memberProfile;
 
     // The milestone is reached: take the one-shot entitlement, atomically.
     const kind = OPPORTUNITY_FOR[record.type];
-    const milestoneReached = new D(booking.paymentReceivedPercent).gte(record.milestonePercent);
+    const buybackMilestoneMet = buybackApproved && buybackAccelerates(record.type);
+    const milestoneReached =
+      buybackMilestoneMet ||
+      new D(booking.paymentReceivedPercent).gte(record.milestonePercent);
 
-    if (kind && milestoneReached && !record.opportunityId && record.payment !== "CANCELLED") {
+    // A cancelled record never reaches here — the guard at the top of the loop
+    // already skipped it — so the old `payment !== "CANCELLED"` clause is gone.
+    if (kind && milestoneReached && !record.opportunityId) {
       const claim = await consumeOpportunity(tx, {
         kind,
         subjectPersonId: subjectFor(record.type, booking, record.beneficiaryPersonId),
@@ -616,7 +649,9 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
     }
 
     // A milestone lost after payment correction steps the record back (PRD §6.12).
-    let payment = record.payment;
+    // Widened back to the full set: the loop guard narrowed `record.payment` to
+    // exclude CANCELLED, but `afterAffectingChange` may still return it.
+    let payment: PaymentState = record.payment;
     if (!milestoneReached && record.opportunityId) {
       payment = afterAffectingChange(record.payment, "MILESTONE_LOST");
       await reopenOpportunity(tx, record.opportunityId, "Payment fell below the milestone.");
@@ -645,6 +680,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
       percent: record.percent.toString(),
       progressPercent: booking.paymentReceivedPercent.toString(),
       milestonePercent: record.milestonePercent.toString(),
+      buybackMilestoneMet,
       beneficiaryAadhaarAvailable: record.beneficiaryPerson.aadhaarStatus !== "PENDING",
       beneficiaryBankVerified: await hasVerifiedBank(tx, record.beneficiaryPersonId),
       memberStatus: member?.status ?? null,
@@ -947,6 +983,11 @@ export async function cancelCommissionForBooking(
   // prd-complete §14.12 — the only case where the commission is left standing.
   const remainsEarned = isBuyback && args.legallyCompleted;
 
+  // CR-015 — the Direct rule below needs what was actually received.
+  const sourceBooking = isBuyback
+    ? await tx.booking.findUniqueOrThrow({ where: { id: bookingId } })
+    : null;
+
   for (const record of records) {
     if (remainsEarned) {
       // Nothing about the record changes: not its payment state, not its
@@ -962,6 +1003,39 @@ export async function cancelCommissionForBooking(
           reason:
             `${args.reason}. The sale was legally completed before the Buyback, so this ` +
             `commission remains earned (prd-complete §14.12).`,
+        },
+      });
+      continue;
+    }
+
+    // CR-015 — before legal completion an Approved Buyback is the alternative
+    // milestone for Invite, Royalty and Loyalty, not the end of them. They are
+    // left exactly as they stand and the reassessment below earns them; §14.12's
+    // step-back now applies only to what the Buyback does not accelerate.
+    if (isBuyback && buybackAccelerates(record.type)) continue;
+
+    // CR-015 — Direct is never accelerated, and a Direct that had already
+    // reached its own milestone was genuinely earned on a sale that did happen,
+    // so it stands. Only one that never reached it closes under §14.12. (After
+    // the guard above this is Direct: Buying Commission hangs off the
+    // acquisition, so it is not among a Booking's records at all.)
+    if (
+      isBuyback &&
+      sourceBooking &&
+      new D(sourceBooking.paymentReceivedPercent).gte(record.milestonePercent)
+    ) {
+      await tx.commissionEvent.create({
+        data: {
+          recordId: record.id,
+          actorRef,
+          action: "BUYBACK_BEFORE_COMPLETION",
+          fromState: record.payment,
+          toState: record.payment,
+          reason:
+            `${args.reason}. This record had already reached its ` +
+            `${record.milestonePercent.toFixed(0)}% Payment Received milestone before the ` +
+            `Buyback, so it stays earned. A Buyback never accelerates Direct and never ` +
+            `un-earns it either (CR-015).`,
         },
       });
       continue;

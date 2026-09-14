@@ -1697,6 +1697,11 @@ model Acquisition {
   /// The Buyback's original Booking. Its history is never overwritten.
   sourceBookingId String?
   sourceBooking   Booking? @relation("BuybackSource", fields: [sourceBookingId], references: [id])
+  /// CR-016 — the source Booking's state at the moment an approved Buyback
+  /// closed it, so an unwind restores it rather than guessing. Same shape and
+  /// the same reason as CancellationRequest.restoreSnapshot (main-PRD §15.4):
+  /// a derived guess cannot tell Booked from Payment Completed after the fact.
+  sourceBookingRestore Json?
 
   sellerPersonId String
   sellerPerson   Person @relation("AcquisitionSeller", fields: [sellerPersonId], references: [id])
