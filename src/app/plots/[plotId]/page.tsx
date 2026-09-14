@@ -171,9 +171,9 @@ function PlotShape({
   const l = Number(lengthFt);
   if (!(w > 0) || !(l > 0)) return null;
 
-  const scale = 200 / Math.max(w, l);
-  const bw = Math.max(76, w * scale);
-  const bh = Math.max(76, l * scale);
+  const scale = 240 / Math.max(w, l);
+  const bw = Math.max(92, w * scale);
+  const bh = Math.max(92, l * scale);
   const padX = 26;
   const padY = 30;
   const x = padX;
@@ -202,7 +202,7 @@ function PlotShape({
     .join(", ");
 
   return (
-    <figure className="m-0 w-full max-w-[15rem]">
+    <figure className="m-0 w-full max-w-[19rem]">
       <svg
         viewBox={`0 0 ${bw + padX * 2} ${bh + padY * 2}`}
         className="block h-auto w-full overflow-visible text-foreground"
@@ -755,7 +755,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             the total, not the components, not the version, not the sides
             earning it. It still lives in the Calculator and on the inventory
             list, which §3 allows. */}
-        <Section title="Layout · Dimensions" icon={<Ruler className="h-3.5 w-3.5" />}>
+        <Section title="Layout" icon={<Ruler className="h-3.5 w-3.5" />}>
           <div className="min-w-0">
             {plot.widthFt && plot.lengthFt ? (
               // The drawing on the left, what each side abuts beside it. The
@@ -781,7 +781,9 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                     })
                   )}
                 />
-                <dl className="min-w-0 flex-1 text-xs">
+                <div className="min-w-0 flex-1">
+                  <SubHeading>Boundaries</SubHeading>
+                  <dl className="mt-1 text-xs">
                   {SIDES.map((side) => {
                     const b = bySide.get(side);
                     return (
@@ -806,7 +808,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                       </div>
                     );
                   })}
-                </dl>
+                  </dl>
+                </div>
               </div>
             ) : (
               <p className="flex flex-1 items-center justify-center py-2 text-xs text-muted-foreground">
@@ -817,7 +820,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
           </div>
 
           <div className="mt-3 min-w-0 border-t border-border/60 pt-3">
-
+            <SubHeading>Dimensions</SubHeading>
             <Row
               label="Width × Length"
               value={
