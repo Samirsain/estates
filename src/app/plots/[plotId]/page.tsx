@@ -1046,7 +1046,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             </Section>
           )}
 
-          {hasDeal && (
           <Section title="Current Allocation · Booking" icon={<FileText className="h-3.5 w-3.5" />}>
             {current ? (
               <>
@@ -1120,13 +1119,11 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 <Row label="Seller" value={person(liveAcquisition.sellerPerson, { mobile: true })} />
                 <Row label="Payment Given" value={paymentGiven} />
               </>
-            ) : null}
+            ) : (
+              <p className="text-xs text-muted-foreground">No Booking on this Plot.</p>
+            )}
           </Section>
-          )}
 
-          {/* Only once there is a sale to complete: "Not completed yet" is a
-              pending step on a Booking, and nothing at all without one. */}
-          {current && (
           <Section title="Completion" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
             {completion ? (
               completion.route === "ALLOTMENT" ? (
@@ -1160,7 +1157,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               <p className="text-xs text-muted-foreground">Not completed yet.</p>
             )}
           </Section>
-          )}
         </div>
         </div>
 
@@ -1246,9 +1242,13 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
           </Section>
         )}
 
-        {/* 7 Past Deals — a card only when there are some. */}
-        {hasPast && (
+        {/* 7 Past Deals */}
         <Section title="Past Deals" icon={<Layers className="h-3.5 w-3.5" />}>
+          {!hasPast ? (
+            <p className="text-xs text-muted-foreground">
+              No earlier deals, acquisitions or open enquiries.
+            </p>
+          ) : (
           <div className="space-y-4">
               {pastDeals.length > 0 && (
                 <div>
@@ -1331,8 +1331,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 </div>
               )}
             </div>
-          </Section>
-        )}
+          )}
+        </Section>
 
         {/* 8 History — the one block that is about neither side, so it runs the
             full width under both. */}
