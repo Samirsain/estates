@@ -11,10 +11,20 @@ import { Button } from "@/components/ui/button";
 import { RaiseMergeModal } from "@/app/administration/administration-client";
 import type { ActionResult, PersonOption } from "@/app/administration/actions";
 
+/**
+ * Temporarily off on the profiles, by request. Administration keeps its own
+ * Merge, so nothing about merging is actually removed — only the shortcut from
+ * a Customer's and a Member's own page. Flip this back to true to restore it;
+ * nothing else has to change.
+ */
+const MERGE_ON_PROFILE = false;
+
 export function MergeButton({ person }: { person: PersonOption }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [result, setResult] = React.useState<ActionResult | null>(null);
+
+  if (!MERGE_ON_PROFILE) return null;
 
   return (
     <>

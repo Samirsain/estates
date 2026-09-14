@@ -53,8 +53,9 @@ export default function GlobalError({
           </p>
 
           <p style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "#7a7a7a" }}>
-            Reload the page. If it keeps happening, give your administrator the reference below so
-            they can find it in the server log.
+            {error.digest
+              ? "Reload the page. If it keeps happening, give your administrator the reference below so they can find it in the server log."
+              : "Reload the page. If it keeps happening, tell your administrator what you were doing and roughly when, so they can find it in the server log."}
           </p>
 
           {error.digest && (
