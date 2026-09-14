@@ -130,6 +130,42 @@ async function oneAllocationPerPlot(): Promise<RuleResult> {
   };
 }
 
+/**
+ * ARCHITECTURE §13.3, the other way round — a Plot claiming an allocation that
+ * does not exist.
+ *
+ * oneAllocationPerPlot catches two claims on one Plot and says nothing about
+ * none: a Plot reading HOLD with every Hold on it already closed passes it,
+ * because 0 is not greater than 1. That Plot is out of inventory with nothing
+ * on the screen to explain why — it cannot be Booked, cannot be Held, and its
+ * profile shows no Hold to release. Closing a Hold is what returns the Plot
+ * (hold-service.ts: releaseHold), so this is what a write that skipped it
+ * leaves behind.
+ */
+async function heldPlotsHaveAHold(): Promise<RuleResult> {
+  const plots = await db.plot.findMany({
+    where: { status: "HOLD" },
+    select: {
+      plotNumber: true,
+      holds: { where: { status: { in: ["ACTIVE", "FROZEN"] } }, select: { id: true } },
+    },
+  });
+
+  const exceptions: Exception[] = plots
+    .filter((plot) => plot.holds.length === 0)
+    .map((plot) => ({
+      record: plot.plotNumber,
+      detail: "Plot status is Hold, but no Hold on it is Active or Frozen",
+    }));
+
+  return {
+    rule: "held_plots_have_a_hold",
+    source: "ARCHITECTURE §13.3 — a Plot on Hold reconciles to a live Hold",
+    checked: plots.length,
+    exceptions,
+  };
+}
+
 /** ARCHITECTURE §13.4 — Booking and Plot state pairs reconcile. */
 async function bookingPlotPairs(): Promise<RuleResult> {
   const PAIR: Record<string, string> = {
@@ -504,6 +540,7 @@ async function deliveredCompletions(): Promise<RuleResult> {
 
 const RULES = [
   oneAllocationPerPlot,
+  heldPlotsHaveAHold,
   bookingPlotPairs,
   paymentDatasets,
   commissionIntegrity,

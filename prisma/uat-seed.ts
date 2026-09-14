@@ -35,7 +35,7 @@ import {
 } from "@/lib/security/identity";
 import { prepareInventory, makeAvailable, setRestriction } from "@/lib/services/inventory-service";
 import { createEnquiry, recordFollowUp, closeEnquiry } from "@/lib/services/enquiry-service";
-import { createHold, cancelHold } from "@/lib/services/hold-service";
+import { createHold, cancelHold, releaseHold } from "@/lib/services/hold-service";
 import {
   cancelBooking,
   decideBookingRequest,
@@ -691,10 +691,15 @@ async function main() {
   }
 
   // Expired: the job would do this on the clock; the dataset needs one on hand.
-  await db.hold.update({
-    where: { id: holds[2] },
-    data: { status: "EXPIRED", closedAt: new Date(), closeReason: "Expired without a Booking." },
-  });
+  //
+  // Through releaseHold, which is what runHoldExpiry itself calls. Writing the
+  // Hold row directly left the Plot on HOLD for a Hold that no longer existed:
+  // closing a Hold also returns the Plot, kills any pending extension request
+  // and writes the PlotEvent, and a seed that does only the first of those
+  // strands the Plot out of inventory with nothing on screen to explain it.
+  await db.$transaction((tx) =>
+    releaseHold(tx, holds[2], "SYSTEM:HOLD_EXPIRY", "EXPIRED", "Expired without a Booking.")
+  );
   count("expiredHolds");
 
   // Converted: a Hold that becomes a Booking, which §6 asks for explicitly.

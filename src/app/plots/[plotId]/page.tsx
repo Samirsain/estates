@@ -919,11 +919,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                     hint={c.evidence || undefined}
                   />
                 ))}
-                <Row
-                  label="Total"
-                  value={<span className="tabular-nums">{plc.total}%</span>}
-                  hint={version ? `Version ${version.version}` : undefined}
-                />
+                <Row label="Total" value={<span className="tabular-nums">{plc.total}%</span>} />
               </>
             ) : (
               <p className="mt-2 text-xs text-muted-foreground">{plcIssue}</p>
