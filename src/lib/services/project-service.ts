@@ -135,31 +135,25 @@ export async function updateProject(args: {
  * while it is inactive; nothing may be sold until it is Active.
  */
 /**
- * The Project Code is no longer typed. It stays in the database, unique, and
- * remains the key that ties a report or an export back to a Project — but
- * nobody should have to invent one, and Project.name carries no uniqueness to
- * replace it with.
+ * The Project Code is typed by the person creating the Project: letters and
+ * digits only, at most 9 characters, stored in capitals. It stays unique and
+ * remains the key that ties a report or an export back to a Project.
  */
-async function generateProjectCode(tx: Tx, name: string): Promise<string> {
-  const stem = name.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "PRJ";
-
-  const taken = await tx.project.findMany({
-    where: { projectCode: { startsWith: `${stem}-` } },
-    select: { projectCode: true },
-  });
-  const used = new Set(taken.map((p) => p.projectCode));
-
-  for (let n = 1; n < 100; n += 1) {
-    const candidate = `${stem}-${String(n).padStart(2, "0")}`;
-    if (!used.has(candidate)) return candidate;
+async function checkProjectCode(tx: Tx, raw: string): Promise<string> {
+  const code = raw.trim().toUpperCase();
+  if (!/^[A-Z0-9]{1,9}$/.test(code)) {
+    blocked("The Project Code must be 1 to 9 letters or digits, with no spaces or symbols.");
   }
-  blocked(`Too many Projects already share the code ${stem}. Give this one a different name.`);
+  const taken = await tx.project.findUnique({ where: { projectCode: code }, select: { id: true } });
+  if (taken) blocked(`The Project Code ${code} is already in use.`);
+  return code;
 }
 
 export async function createProject(args: {
   idempotencyKey: string;
   actorRef: string;
   actorRole: string;
+  projectCode: string;
   name: string;
   /** MIXED is absent on purpose: it cannot be created, only carried forward. */
   type: "RESIDENTIAL" | "COMMERCIAL" | "AGRICULTURAL";
@@ -186,10 +180,10 @@ export async function createProject(args: {
       operation: "PROJECT_CREATE",
       actorRef: args.actorRef,
       actorRole: args.actorRole,
-      payload: { name: args.name, type: args.type },
+      payload: { projectCode: args.projectCode, name: args.name, type: args.type },
     },
     async (tx) => {
-      const code = await generateProjectCode(tx, args.name);
+      const code = await checkProjectCode(tx, args.projectCode);
 
       const project = await tx.project.create({
         data: {

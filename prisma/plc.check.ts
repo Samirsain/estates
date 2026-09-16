@@ -44,6 +44,7 @@ async function main() {
     idempotencyKey: key(),
     actorRef: PC,
     actorRole: "PC",
+    projectCode: "zzplc1",
     name: `${TAG} PLC Status`,
     type: "RESIDENTIAL",
     city: "Jaipur",
@@ -55,30 +56,26 @@ async function main() {
     ],
   });
 
-  /* ================================ Project Code is generated, not typed */
+  /* ============================= Project Code is typed, 1–9 letters/digits */
 
   const created = await db.project.findUniqueOrThrow({ where: { id: projectId } });
-  assert.match(
-    created.projectCode,
-    /^[A-Z]{1,3}-\d{2}$/,
-    "the code is derived from the name, not typed by a person"
-  );
+  assert.equal(created.projectCode, "ZZPLC1", "the typed code is stored in capitals");
   assert.equal(created.city, "Jaipur");
   assert.equal(created.amenities, "Clubhouse\n24x7 water", "amenities are one per line");
 
-  const twin = await createProject({
-    idempotencyKey: key(),
-    actorRef: PC,
-    actorRole: "PC",
-    name: `${TAG} PLC Status`,
-    type: "RESIDENTIAL",
-    components: [{ category: "OPEN_SIDES", threshold: "2", percent: "1.0000" }],
-  });
-  assert.notEqual(
-    twin.projectCode,
-    created.projectCode,
-    "a repeated name takes the next number rather than colliding"
-  );
+  for (const bad of ["ZZPLC1", "ZZPLC12345", "ZZ-PLC", ""]) {
+    await expectBlocked(/Project Code/, () =>
+      createProject({
+        idempotencyKey: key(),
+        actorRef: PC,
+        actorRole: "PC",
+        projectCode: bad,
+        name: `${TAG} PLC Bad Code`,
+        type: "RESIDENTIAL",
+        components: [],
+      })
+    );
+  }
 
   /* ============================================= Project edit (spec §6.3) */
 
@@ -101,6 +98,11 @@ async function main() {
     edited.projectCode,
     created.projectCode,
     "the Project Code never changes — it is what an export points back to"
+  );
+  await assert.rejects(
+    db.project.update({ where: { id: projectId }, data: { projectCode: "ZZPLC9" } }),
+    /Project Code cannot be changed/,
+    "the database refuses a changed code from any writer"
   );
   assert.equal(
     edited.isExternalResaleGroup,

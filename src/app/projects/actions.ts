@@ -43,6 +43,7 @@ export type ProjectFields = {
 
 export async function createProjectAction(
   input: ProjectFields & {
+    projectCode: string;
     isExternalResaleGroup: boolean;
     components: PlcComponentInput[];
   },
@@ -59,6 +60,7 @@ export async function createProjectAction(
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
+      projectCode: input.projectCode,
       name: input.name,
       type: input.type,
       developer: input.developer || null,
