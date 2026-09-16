@@ -935,20 +935,32 @@ function ProjectDialog({
   return (
     <Modal
       title="New Project"
-      description="Created as Unreleased. Make it Active only when it is ready to sell. The Project Code is generated from the name."
+      description="Created as Unreleased. Make it Active only when it is ready to sell. The Project Code cannot be changed later."
       onClose={onClose}
     >
       <form
         className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
+          const form = new FormData(e.currentTarget);
           onSubmit({
-            ...readProjectFields(new FormData(e.currentTarget)),
+            ...readProjectFields(form),
+            projectCode: String(form.get("projectCode")),
             isExternalResaleGroup: false,
             components: [],
           });
         }}
       >
+        <Field label="Project Code">
+          <Input
+            name="projectCode"
+            required
+            maxLength={9}
+            pattern="[A-Za-z0-9]{1,9}"
+            title="1 to 9 letters or digits"
+            className="uppercase"
+          />
+        </Field>
         <ProjectFieldset />
 
         <div className="flex justify-end gap-2 pt-2">
