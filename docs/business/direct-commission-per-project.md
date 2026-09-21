@@ -1,8 +1,17 @@
 # Direct Commission — Moving from One Fixed Rate to a Rate Set Per Project
 
 **Date:** 21 September 2026
-**Status:** Proposal. Awaiting management decisions before any work begins.
+**Status:** Build deferred for twelve months by management decision. The
+proposal below stands and is not withdrawn — see Section 14 for the decision,
+what it costs, and the three things that still need doing this year.
 **Audience:** MD, Admin, Accounts
+
+---
+
+> **Read Section 14 first.** Management has decided to hold this change for
+> twelve months, while membership is free, and revisit it at the membership
+> upgrade. Sections 1 to 13 explain what the change is and remain the basis for
+> that later decision.
 
 ---
 
@@ -359,3 +368,95 @@ less rework there is.
 - Reporting on commission by project. Once rates vary by project, the business
   will want to compare payout across projects — worth raising, but it is a
   separate request and is not part of this proposal.
+
+---
+
+## 14. Decision — held for twelve months
+
+### The decision
+
+Nothing changes for the next twelve months. Direct commission stays at 3% on
+every project, exactly as it is today. Membership is free during this period,
+and the question of per-project rates is revisited when membership moves to
+paid.
+
+### Why this holds
+
+The strongest reason is one that deserves stating plainly: commission and
+membership fee are two halves of the same offer to a member. What a member
+earns and what a member pays only make sense together. Fixing the earning side
+now, while the paying side is still zero and undecided, means setting one half
+of an equation before the other half exists.
+
+The second reason is that no project currently needs a different rate. Nobody
+has named a project where 3% is wrong. Building a capability for a situation
+that has not arrived is work spent on a guess.
+
+The third is that a year of trading gives real evidence. By the upgrade, the
+business will know which projects sold quickly and which needed pushing. That
+is a far better basis for setting rates than an opinion formed today.
+
+### What the delay costs
+
+The delay is close to free, but not entirely, and there are three things worth
+being honest about.
+
+**The clean starting point has to be protected.** Right now every sale in the
+system was commissioned at 3%, with no exceptions anywhere. That uniformity is
+what makes it simple to introduce project rates later — every past sale can be
+marked 3% with complete confidence. If during this year anyone settles a
+commission at a different figure outside the system, as a one-off arrangement
+for a particular project or member, that confidence is gone and a year of
+records becomes ambiguous. **The deferral is safe only if the 3% rule is kept
+absolutely, with no informal exceptions.**
+
+**The work is postponed, not avoided.** The same effort is required whenever it
+is done. Deferring moves it to the twelve-month mark, which is also when the
+membership upgrade lands — the busiest and most sensitive moment in the
+calendar.
+
+**Decisions left unwritten get made by accident.** In twelve months someone
+will set a project to 4% and immediately be asked what happens to last year's
+sales on that project. If there is no written answer, that becomes an argument
+at the worst possible time.
+
+### Three amendments to the plan
+
+**First — do not bundle this with the membership upgrade.** Shipping paid
+membership and variable commission in the same release is the one sequencing
+that should be avoided. A member who begins paying a fee and at the same moment
+sees their commission rate become a variable will read those as a single event:
+"I started paying and my earnings were cut." Even if both changes are correct
+individually, together they are one bad message.
+
+The better sequence is to build the capability a little before the upgrade and
+switch it on with every project set to 3%, so nothing changes for anyone. The
+membership upgrade then happens on its own. Actual rate changes come later
+still, as a separate and visible decision. Three quiet steps instead of one
+loud one, for the same total work.
+
+**Second — settle the 4% ceiling question now, even though nothing is being
+built.** This is not a technical decision and it does not wait for the build.
+During this free year the company will be telling members what they earn: 3%
+on a sale, and 1% to whoever invited them. That is a promise, and it goes into
+the membership terms being written now. If management intends to raise rates
+on some projects later, the terms need to leave room for it. Write the
+commitment carefully this year and the change is straightforward in twelve
+months; write it loosely and the business will have promised away the
+flexibility it is planning to use.
+
+**Third — record the answers to the seven questions in Section 12 now, even
+though nothing is built.** They cost one sitting to decide and one paragraph
+each to write down. Deciding them in twelve months, under the pressure of a
+membership launch, will produce worse answers and take longer.
+
+### What actually needs doing this year
+
+- Keep the 3% rule absolutely, with no off-system exceptions for any project
+  or any member
+- Write the membership terms so they do not promise a permanent 3% on every
+  project, unless that is genuinely the intention
+- Record management's answers to the seven questions in Section 12, so the
+  later work starts from decisions rather than from a discussion
+- Revisit this document at the membership upgrade, with a year of project
+  performance to reason from
