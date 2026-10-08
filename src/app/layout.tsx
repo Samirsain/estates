@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 
@@ -9,7 +9,11 @@ export const metadata: Metadata = {
   // referrer must not carry a record URL to any site a user navigates to.
   robots: { index: false, follow: false, nocache: true },
   referrer: "strict-origin-when-cross-origin",
+  // iOS: "Add to Home Screen" opens full screen, named like the app.
+  appleWebApp: { capable: true, title: "3% Club CRM", statusBarStyle: "default" },
 };
+
+export const viewport: Viewport = { themeColor: "#ffffff" };
 
 export default function RootLayout({
   children,
