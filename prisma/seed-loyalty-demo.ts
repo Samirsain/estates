@@ -1,18 +1,12 @@
-// A demo Customer whose three lifetime Loyalty slots are all used.
+// A demo Customer with three repeat-purchase Loyalty records, all earned.
 //
-// One-off, and written the long way on purpose: the slots are not set, they are
-// earned. PRD §6.5 gives a Customer three Loyalty slots for life, and a slot is
-// consumed only when a qualifying event reaches 100% Payment Received — which
-// means this has to go through submitBookingRequest, decideBookingRequest and
-// confirmPaymentReceived exactly as the office would.
+// Written the long way on purpose: Loyalty is earned, not set. It goes through
+// submitBookingRequest, decideBookingRequest and confirmPaymentReceived exactly
+// as the office would.
 //
-// Four purchases, all Sold By 3% Club: the first earns nothing (prd-complete
-// §14.5 — a first personal purchase receives no repeat-purchase Loyalty), and
-// the three after it each take a slot. Writing loyaltySlotsConsumed directly
-// would have been one line and wrong: the counter is rebuilt from the
-// opportunity ledger, so reconcile.ts's loyalty_slots_rebuilt rule would raise
-// an exception on it the moment it ran, and the profile's Loyalty section names
-// the Booking behind each slot, which a bare counter cannot.
+// Four purchases, all Sold By 3% Club: the first earns nothing (v2.1 §23 — a
+// first personal purchase is not a repeat), and the three after it each earn
+// repeat-purchase Loyalty, which has no lifetime limit (v2.1 §21).
 //
 // Run: node --env-file=.env --import ./prisma/alias-loader.mjs prisma/seed-loyalty-demo.ts
 
@@ -118,7 +112,7 @@ async function main() {
       note: "Verified.",
     });
 
-    // 100% is what takes the slot; paid the way the office pays it.
+    // 100% is what earns it; paid the way the office pays it.
     for (const part of ["40", "60"]) {
       await confirmPaymentReceived({
         idempotencyKey: key(),
@@ -138,18 +132,19 @@ async function main() {
   }
 
   const customer = await db.customerProfile.findFirstOrThrow({ where: { personId: person.id } });
-  const slots = await db.commissionOpportunity.findMany({
-    where: { kind: "LOYALTY", subjectPersonId: person.id },
-    orderBy: { createdAt: "asc" },
+  const earned = await db.commissionRecord.findMany({
+    where: { beneficiaryPersonId: person.id, type: "LOYALTY", isCurrent: true, qualifiedAt: { not: null } },
+    include: { booking: { select: { bookingNumber: true } } },
+    orderBy: { qualifiedAt: "asc" },
   });
 
   console.log(`\n${customer.customerId} · ${BUYER_NAME}`);
-  console.log(`Loyalty slots: ${customer.loyaltySlotsConsumed} of 3 used`);
-  for (const s of slots) console.log(`  slot ${s.status} — booking ${s.consumedByBookingId ?? "—"}`);
+  console.log(`Repeat-purchase Loyalty earned: ${earned.length}`);
+  for (const r of earned) console.log(`  ${r.eligibility} — booking ${r.booking?.bookingNumber ?? "—"}`);
   console.log(`\nProfile: /customers/${customer.id}`);
 
-  if (customer.loyaltySlotsConsumed !== 3) {
-    throw new Error(`Expected 3 slots consumed, got ${customer.loyaltySlotsConsumed}.`);
+  if (earned.length !== 3) {
+    throw new Error(`Expected 3 earned Loyalty records, got ${earned.length}.`);
   }
 }
 

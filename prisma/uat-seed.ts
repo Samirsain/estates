@@ -22,6 +22,7 @@
 // Project created.
 import { PrismaClient } from "@prisma/client";
 import { assertCheckDatabase } from "./check-guard.ts";
+import { ensureActiveCommissionVersion } from "./seed-commission.ts";
 
 assertCheckDatabase();
 
@@ -273,6 +274,7 @@ async function wipe() {
     await db.plot.deleteMany({ where: { projectId: { in: projectIds } } });
     await db.plcComponent.deleteMany({ where: { ruleVersion: { projectId: { in: projectIds } } } });
     await db.plcRuleVersion.deleteMany({ where: { projectId: { in: projectIds } } });
+    await db.projectCommissionVersion.deleteMany({ where: { projectId: { in: projectIds } } });
     await db.project.deleteMany({ where: { id: { in: projectIds } } });
   }
 
@@ -291,21 +293,8 @@ async function wipe() {
         select: { id: true },
       })
     ).map((m) => m.id);
-  // CR-014 — a position points at its cycle, and the cycle points at the Member,
-  // so neither can go first. The position links are cleared, then the cycles,
-  // then the profiles.
-    await db.memberProfile.updateMany({
-      where: { id: { in: memberIds } },
-      data: { inviteCycleId: null },
-    });
-    await db.customerProfile.updateMany({
-      where: { personId: { in: personIds } },
-      data: { royaltyCycleId: null },
-    });
-    await db.performanceCycle.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.portalAccount.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.memberTermsAcceptance.deleteMany({ where: { memberProfileId: { in: memberIds } } });
-    await db.commissionOpportunity.deleteMany({ where: { subjectPersonId: { in: personIds } } });
     await db.bankDetail.deleteMany({ where: { personId: { in: personIds } } });
     await db.memberProfile.deleteMany({ where: { personId: { in: personIds } } });
     await db.customerProfile.deleteMany({ where: { personId: { in: personIds } } });
@@ -428,6 +417,8 @@ async function main() {
     });
     count("projects");
 
+    // v2.1 §14 — no Booking Request is accepted without approved settings.
+    await ensureActiveCommissionVersion(db, project.id, "SEED");
     await db.plcRuleVersion.create({
       data: {
         projectId: project.id,
@@ -1027,7 +1018,6 @@ async function main() {
     commissions: await db.commissionRecord.count({
       where: { booking: { project: { projectCode: { in: PROJECTS.map((p) => p.code) } } } },
     }),
-    performanceCycles: await db.performanceCycle.count(),
     delivered: counters.delivered ?? 0,
     buybacks: counters.buybacks ?? 0,
     recoveries: counters.recoveries ?? 0,

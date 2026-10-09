@@ -167,7 +167,6 @@ async function main() {
   console.log(`\n${CUSTOMER_ID} · ${fresh.person.fullName}`);
   console.log(`  Email / DOB / Address  ${fresh.person.email} · ${fresh.person.dateOfBirth?.toISOString().slice(0, 10)} · ${fresh.person.addressLine}`);
   console.log(`  PAN                    ${fresh.person.panMasked} (${fresh.person.panStatus})`);
-  console.log(`  Loyalty slots          ${fresh.loyaltySlotsConsumed} of 3 used`);
   console.log(`  Bookings               ${deals.map((d) => `${d.status} ×${d._count._all}`).join(", ")}`);
   console.log(`  Commission             ${paid.map((p) => `${p.type} ${p.payment} ×${p._count._all}`).join(", ")}`);
   console.log(`  Pending Booking tasks  ${openTasks}`);

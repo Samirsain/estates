@@ -13,6 +13,7 @@
 // Re-runnable: it clears its own Project first and rebuilds. It touches nothing
 // outside the SRG Project, so the seeded staff, Members and Green Acres stay.
 import { PrismaClient } from "@prisma/client";
+import { ensureActiveCommissionVersion } from "./seed-commission.ts";
 import {
   aadhaarLastFour,
   blindIndex,
@@ -268,6 +269,7 @@ async function wipe() {
   await db.plot.deleteMany({ where: { projectId: project.id } });
   await db.plcComponent.deleteMany({ where: { ruleVersion: { projectId: project.id } } });
   await db.plcRuleVersion.deleteMany({ where: { projectId: project.id } });
+  await db.projectCommissionVersion.deleteMany({ where: { projectId: project.id } });
   await db.project.delete({ where: { id: project.id } });
 
   // Payment references are unique across the whole system and outlive the
@@ -292,6 +294,8 @@ async function main() {
     },
   });
 
+  // v2.1 §14 — no Booking Request is accepted without approved settings.
+  await ensureActiveCommissionVersion(db, project.id, "SEED");
   await db.plcRuleVersion.create({
     data: {
       projectId: project.id,

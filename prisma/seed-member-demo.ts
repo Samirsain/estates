@@ -238,10 +238,11 @@ async function main() {
          introduced is what pays him Royalty (prd-complete §14.5, §25). */
   await sell({ label: "ROY1", buyerPersonId: meera.id, soldByType: "THREE_PERCENT_CLUB" });
 
-  /* 9 — a sale closed by one of the Members he invited. The Invite band belongs
-         to the seller's inviting Member, so this is what pays him Invite. */
+  /* 9 — a sale closed by one of the Members he invited. Under v2.1 that earns
+         the seller Direct and the inviter nothing monetary (Invite bands are gone). */
   const rupal = await db.memberProfile.findFirstOrThrow({
-    where: { invitedByMemberId: vikram.memberProfileId, invitePosition: 1 },
+    where: { invitedByMemberId: vikram.memberProfileId },
+    orderBy: { activationDate: "asc" },
     include: { person: true },
   });
   const nikita = await makePerson("Nikita Saraf", { city: "Jodhpur" });
@@ -288,11 +289,10 @@ async function report(personId: string) {
   });
   const vikramPerson = { id: personId };
   const customer = await db.customerProfile.findUniqueOrThrow({ where: { personId } });
-  const [invited, royaltyLinked, cycles, sold, commissions, requests, enquiries, portal] =
+  const [invited, royaltyLinked, sold, commissions, requests, enquiries, portal] =
     await Promise.all([
       db.memberProfile.count({ where: { invitedByMemberId: profile.id } }),
       db.customerProfile.count({ where: { royaltyLinkedMemberId: profile.id } }),
-      db.performanceCycle.findMany({ where: { memberProfileId: profile.id } }),
       db.booking.count({ where: { soldByPersonId: vikramPerson.id } }),
       db.commissionRecord.groupBy({
         by: ["type"],
@@ -306,17 +306,15 @@ async function report(personId: string) {
 
   console.log(`\n${profile.memberId} · Vikram Deshpande`);
   console.log(`  Invited by             ${profile.invitedByMember?.memberId ?? "3% Club"}`);
-  console.log(`  Invite position        ${profile.invitePosition} at ${profile.inviteRatePercent}%`);
   console.log(`  RERA                   ${profile.reraStatus} ${profile.reraNumber}`);
   console.log(`  Members invited        ${invited}`);
   console.log(`  Royalty linked         ${royaltyLinked}`);
-  console.log(`  Cycles                 ${cycles.map((c) => `${c.kind} ${c.positionsComplete}/${c.positionsFilled}`).join(", ")}`);
   console.log(`  Bookings sold          ${sold}`);
   console.log(`  Commission             ${commissions.map((c) => `${c.type} ×${c._count._all}`).join(", ")}`);
   console.log(`  Hold requests          ${requests}`);
   console.log(`  Enquiries sourced      ${enquiries}`);
   console.log(`  Portal account         ${portal?.status ?? "none"}`);
-  console.log(`  Also a Customer        ${customer.customerId} · Loyalty ${customer.loyaltySlotsConsumed} of 3 used`);
+  console.log(`  Also a Customer        ${customer.customerId}`);
   console.log(`\nProfile: /members/${profile.id}`);
 }
 

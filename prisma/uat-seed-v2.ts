@@ -23,6 +23,7 @@
 // spec rather than to a dataset.
 import { PrismaClient } from "@prisma/client";
 import { assertCheckDatabase } from "./check-guard.ts";
+import { ensureActiveCommissionVersion } from "./seed-commission.ts";
 
 assertCheckDatabase();
 
@@ -373,6 +374,7 @@ async function wipe() {
     await db.plot.deleteMany({ where: { projectId: { in: projectIds } } });
     await db.plcComponent.deleteMany({ where: { ruleVersion: { projectId: { in: projectIds } } } });
     await db.plcRuleVersion.deleteMany({ where: { projectId: { in: projectIds } } });
+    await db.projectCommissionVersion.deleteMany({ where: { projectId: { in: projectIds } } });
     await db.project.deleteMany({ where: { id: { in: projectIds } } });
   }
 
@@ -387,21 +389,8 @@ async function wipe() {
     const memberIds = (
       await db.memberProfile.findMany({ where: { personId: { in: personIds } }, select: { id: true } })
     ).map((m) => m.id);
-  // CR-014 — a position points at its cycle, and the cycle points at the Member,
-  // so neither can go first. The position links are cleared, then the cycles,
-  // then the profiles.
-    await db.memberProfile.updateMany({
-      where: { id: { in: memberIds } },
-      data: { inviteCycleId: null },
-    });
-    await db.customerProfile.updateMany({
-      where: { personId: { in: personIds } },
-      data: { royaltyCycleId: null },
-    });
-    await db.performanceCycle.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.portalAccount.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.memberTermsAcceptance.deleteMany({ where: { memberProfileId: { in: memberIds } } });
-    await db.commissionOpportunity.deleteMany({ where: { subjectPersonId: { in: personIds } } });
     await db.bankDetail.deleteMany({ where: { personId: { in: personIds } } });
     await db.memberProfile.deleteMany({ where: { personId: { in: personIds } } });
     await db.customerProfile.deleteMany({ where: { personId: { in: personIds } } });
@@ -496,6 +485,8 @@ async function main() {
     count("projects");
 
     const commercial = spec.type === "COMMERCIAL";
+    // v2.1 §14 — no Booking Request is accepted without approved settings.
+    await ensureActiveCommissionVersion(db, project.id, "SEED");
     await db.plcRuleVersion.create({
       data: {
         projectId: project.id,
@@ -852,18 +843,6 @@ async function main() {
 
   /* ------------------------------------------------------------- the report */
 
-  const zeroBand = await db.commissionRecord.findFirst({
-    where: { bookingId: tenthSale, type: "INVITE", isCurrent: true },
-    include: { beneficiaryPerson: true },
-  });
-
-  // CR-014 — §8's Invite cycle seed, as the engine actually built it.
-  const cycles = await db.performanceCycle.findMany({
-    where: { memberProfile: { person: { primaryMobile: { startsWith: MOBILE } } } },
-    include: { memberProfile: { include: { person: true } } },
-    orderBy: [{ memberProfileId: "asc" }, { kind: "asc" }],
-  });
-
   const links = await db.customerProfile.findMany({
     where: { person: { primaryMobile: { startsWith: MOBILE } }, royaltyLinkedMemberId: { not: null } },
     include: { royaltyLinkedMember: { include: { person: true } }, person: true },
@@ -879,23 +858,10 @@ async function main() {
     console.log(
       `${link.customerId} ${link.person.fullName.padEnd(18)} → ${link.royaltyLinkedMember!.memberId} ` +
         `${link.royaltyLinkedMember!.person.fullName.padEnd(16)} ` +
-        `${link.royaltyLinkFinalAt ? `final, position ${link.royaltyPosition} at ${link.royaltyRatePercent}%` : "provisional"}`
-    );
-  }
-  for (const cycle of cycles.filter((c) => c.positionsFilled > 0)) {
-    console.log(
-      `${cycle.memberProfile.memberId} ${cycle.kind} cycle ${cycle.cycleNumber}: ` +
-        `${cycle.positionsFilled} of 9 positions filled, ${cycle.positionsComplete} complete — ${cycle.status}`
+        `${link.royaltyLinkFinalAt ? "final" : "provisional"}`
     );
   }
   console.log(line);
-  if (zeroBand) {
-    console.log(
-      `Position 10 — ${zeroBand.ruleVersion} to ${zeroBand.beneficiaryPerson.fullName}: ` +
-        `${zeroBand.eligibility}, opportunity ${zeroBand.opportunityId ? "consumed" : "open"}`
-    );
-    console.log(line);
-  }
   console.log(
     "Not seeded: §14 onward — bookings and commission scenarios, performance\n" +
       "cycles, Buyback acceleration, Loyalty exhaustion, conversion routes and\n" +

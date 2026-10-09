@@ -13,6 +13,7 @@
 // (mobiles beginning 94) and rebuilds. The v1 (97), v2 (96) and demo data stay.
 import { PrismaClient } from "@prisma/client";
 import { assertCheckDatabase } from "./check-guard.ts";
+import { ensureActiveCommissionVersion } from "./seed-commission.ts";
 
 assertCheckDatabase();
 
@@ -220,6 +221,7 @@ async function wipe() {
     await db.plot.deleteMany({ where: { projectId } });
     await db.plcComponent.deleteMany({ where: { ruleVersion: { projectId } } });
     await db.plcRuleVersion.deleteMany({ where: { projectId } });
+    await db.projectCommissionVersion.deleteMany({ where: { projectId } });
     await db.project.delete({ where: { id: projectId } });
   }
 
@@ -234,18 +236,11 @@ async function wipe() {
     const memberIds = (
       await db.memberProfile.findMany({ where: { personId: { in: personIds } }, select: { id: true } })
     ).map((m) => m.id);
-    await db.memberProfile.updateMany({ where: { id: { in: memberIds } }, data: { inviteCycleId: null } });
-    await db.customerProfile.updateMany({
-      where: { personId: { in: personIds } },
-      data: { royaltyCycleId: null },
-    });
-    await db.performanceCycle.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.portalAccount.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.memberTermsAcceptance.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.personMergeRequest.deleteMany({
       where: { OR: [{ survivingPersonId: { in: personIds } }, { mergedPersonId: { in: personIds } }] },
     });
-    await db.commissionOpportunity.deleteMany({ where: { subjectPersonId: { in: personIds } } });
     await db.bankDetail.deleteMany({ where: { personId: { in: personIds } } });
     await db.memberProfile.deleteMany({ where: { personId: { in: personIds } } });
     await db.customerProfile.deleteMany({ where: { personId: { in: personIds } } });
@@ -388,6 +383,8 @@ async function main() {
     },
   });
 
+  // v2.1 §14 — no Booking Request is accepted without approved settings.
+  await ensureActiveCommissionVersion(db, project.id, "SEED");
   await db.plcRuleVersion.create({
     data: {
       projectId: project.id,
@@ -678,6 +675,9 @@ async function main() {
   step("Rohit (no Aadhaar) closes a sale for Gita — Loyalty on hold; Gita Delivered");
   await enquiry(rohit, { plotRequirement: "Any 30 × 50 in a corner", source: "ONLINE" });
   await briefHold(rohit, plot(16), "Looked at it for a friend, not for himself.");
+  // v2.1 §22 — a Sold By Customer is a real existing Customer, so Rohit's own
+  // purchase comes first.
+  await bookApproved({ plotId: plot(18), buyer: rohit });
   const g1 = await bookApproved({
     plotId: plot(5),
     buyer: gita,

@@ -178,7 +178,7 @@ export default function CustomersClient({
                 <th className="w-[7rem] px-3 py-1.5">Type</th>
                 <th className="w-[11rem] px-3 py-1.5">Project</th>
                 <th className="w-[8rem] px-3 py-1.5">Plot</th>
-                <th className="w-[5rem] px-3 py-1.5 text-right">Loyalty</th>
+                <th className="w-[5rem] px-3 py-1.5 text-right" title="Customer-closing Loyalty used, of 3 for life">Closing</th>
               </tr>
             </thead>
             <tbody>
