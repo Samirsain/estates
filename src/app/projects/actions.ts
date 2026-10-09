@@ -14,6 +14,12 @@ import {
   setProjectStatus,
   type PlcComponentInput,
 } from "@/lib/services/project-service";
+import {
+  decideCommissionVersion,
+  prepareCommissionDraft,
+  sendCommissionVersion,
+  type CommissionVersionInput,
+} from "@/lib/services/commission-settings-service";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
@@ -236,6 +242,85 @@ export async function updateProjectAction(
     });
     refresh();
     return { ok: true, message: `${input.name} updated.` };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/* ------------------------------------------- commission settings (v2.1 §14) */
+
+// No Action argument on requireStaff: the service itself decides who may act —
+// Admin prepares and sends, MD decides — so PC's PROJECT_SETUP grant does not
+// reach these.
+
+function refreshProject(projectId: string) {
+  refresh();
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function prepareCommissionDraftAction(
+  projectId: string,
+  input: CommissionVersionInput,
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff();
+  try {
+    const result = await prepareCommissionDraft({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      projectId,
+      ...input,
+    });
+    refreshProject(projectId);
+    return { ok: true, message: `Draft version ${result.version} saved. Send it to MD when it is ready.` };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+export async function sendCommissionVersionAction(versionId: string, key: string): Promise<ActionResult> {
+  const actor = await requireStaff();
+  try {
+    const result = await sendCommissionVersion({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      versionId,
+    });
+    refreshProject(result.projectId);
+    return { ok: true, message: `Version ${result.version} sent to MD.` };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+export async function decideCommissionVersionAction(
+  versionId: string,
+  approve: boolean,
+  note: string,
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff();
+  try {
+    const result = await decideCommissionVersion({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      versionId,
+      approve,
+      note,
+    });
+    refreshProject(result.projectId);
+    return {
+      ok: true,
+      message:
+        result.status === "ACTIVE"
+          ? `Version ${result.version} is now Active` +
+            (result.supersededVersion ? `, superseding version ${result.supersededVersion}` : "") +
+            ". New Booking Requests freeze it; existing ones keep theirs."
+          : `Version ${result.version} rejected.`,
+    };
   } catch (error) {
     return toResult(error);
   }

@@ -14,6 +14,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireStaff } from "@/lib/security/current-actor";
 import { listProjects } from "@/lib/services/project-service";
+import { listCommissionVersions } from "@/lib/services/commission-settings-service";
+import CommissionSettings from "./commission-settings";
 import { db } from "@/lib/db";
 import { formatPercent } from "@/lib/tasks";
 import { plcDisplayComponents } from "@/lib/domain/inventory";
@@ -128,9 +130,10 @@ export default async function ProjectDetailPage({
   const actor = await requireStaff("REPORT_VIEW");
   const { id } = await params;
 
-  const [projects, byStatus] = await Promise.all([
+  const [projects, byStatus, commissionVersions] = await Promise.all([
     listProjects(),
     db.plot.groupBy({ by: ["status"], where: { projectId: id }, _count: { _all: true } }),
+    listCommissionVersions(id),
   ]);
   const project = projects.find((p) => p.id === id);
   if (!project) notFound();
@@ -277,6 +280,29 @@ export default async function ProjectDetailPage({
               </Section>
             </Card>
           </div>
+        )}
+
+        {/* v2.1 §12–§15 — an External Resale Property Group sells nothing of
+            its own, so it has no commission settings. */}
+        {!project.isExternalResaleGroup && (
+          <CommissionSettings
+            projectId={project.id}
+            role={actor.role}
+            versions={commissionVersions.map((v) => ({
+              id: v.id,
+              version: v.version,
+              status: v.status,
+              directEnabled: v.directEnabled,
+              directPercent: v.directPercent?.toString() ?? null,
+              loyaltyEnabled: v.loyaltyEnabled,
+              loyaltyPercent: v.loyaltyPercent?.toString() ?? null,
+              loyaltyExceptionReason: v.loyaltyExceptionReason,
+              reason: v.reason,
+              decisionNote: v.decisionNote,
+              effectiveFrom: v.effectiveFrom?.toISOString() ?? null,
+              effectiveTo: v.effectiveTo?.toISOString() ?? null,
+            }))}
+          />
         )}
 
         {amenities.length > 0 && (
