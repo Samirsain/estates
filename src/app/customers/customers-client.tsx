@@ -23,7 +23,7 @@ const SORTS = {
   city: "City",
   customerType: "Type",
   project: "Project",
-  loyaltySlotsConsumed: "Loyalty",
+  closingLoyaltyUsed: "Closing Loyalty",
 } as const;
 
 export type CustomerRowView = {
@@ -39,7 +39,8 @@ export type CustomerRowView = {
   plotType: string | null;
   plotId: string | null;
   otherBookings: number;
-  loyaltySlotsConsumed: number;
+  /** v2.1 §21 — Customer-closing Loyalty events qualified, of three for life. */
+  closingLoyaltyUsed: number;
 };
 
 /** The fact, and under it what qualifies it. Every cell reads the same way. */
@@ -109,7 +110,7 @@ export default function CustomersClient({
     .sort((a, b) => {
       // Loyalty is the one number here, and the used-up end is the interesting
       // one — it reads high to low. Every other column reads A to Z.
-      if (sortBy === "loyaltySlotsConsumed") return b[sortBy] - a[sortBy];
+      if (sortBy === "closingLoyaltyUsed") return b[sortBy] - a[sortBy];
       const x = a[sortBy] ?? "";
       const y = b[sortBy] ?? "";
       // A Customer with nothing in that column sorts last, not first.
@@ -241,7 +242,7 @@ export default function CustomersClient({
                     />
                   </td>
                   <td className="whitespace-nowrap text-right tabular-nums">
-                    {row.loyaltySlotsConsumed}/3
+                    {row.closingLoyaltyUsed}/3
                   </td>
                 </tr>
               ))}

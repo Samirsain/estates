@@ -26,7 +26,12 @@ export async function loadBookingFormData() {
         project: { status: { not: "SETUP_NOT_ACTIVE" } },
       },
       include: {
-        project: true,
+        project: {
+          include: {
+            // v2.1 §9 — the terms are disclosed before the Booking is submitted.
+            commissionVersions: { where: { status: "ACTIVE" }, take: 1 },
+          },
+        },
         boundaries: true,
         holds: { where: { status: "ACTIVE" }, include: { person: true }, take: 1 },
       },
@@ -64,6 +69,17 @@ export async function loadBookingFormData() {
     areaSqFt: p.areaSqFt.toString(),
     areaSqYd: p.areaSqYd.toDecimalPlaces(2).toString(),
     locationCharge: locationChargeLabel(p.boundaries),
+    commissionTerms: p.project.commissionVersions[0]
+      ? {
+          version: p.project.commissionVersions[0].version,
+          direct: p.project.commissionVersions[0].directEnabled
+            ? (p.project.commissionVersions[0].directPercent?.toString() ?? null)
+            : null,
+          loyalty: p.project.commissionVersions[0].loyaltyEnabled
+            ? (p.project.commissionVersions[0].loyaltyPercent?.toString() ?? null)
+            : null,
+        }
+      : null,
     holdId: p.holds[0]?.id ?? null,
     holdPersonId: p.holds[0]?.personId ?? null,
     holdPersonName: p.holds[0]?.person.fullName ?? null,
@@ -100,9 +116,22 @@ export const bookingRow = (b: Awaited<ReturnType<typeof listBookings>>[number]):
     primaryCustomer: b.primaryPerson.fullName,
     primaryCustomerId: b.primaryPerson.customerProfile?.customerId ?? null,
     primaryCustomerPersonId: b.primaryPersonId,
-    // Approved Changes §19 / acceptance 20 — frozen when commission was first
-    // generated, at Accounts approval. Null on a Booking never approved.
+    // AC-01, v2.1 §20 — frozen with the Booking Request, permanent after approval.
     originalClassification: b.originalClassification,
+    // v2.1 §15, §16 — the commission terms frozen on the request.
+    commissionTerms: b.commissionVersion
+      ? {
+          version: b.commissionVersion.version,
+          direct:
+            b.commissionVersion.directEnabled && b.commissionVersion.directPercent
+              ? b.commissionVersion.directPercent.toString()
+              : null,
+          loyalty:
+            b.commissionVersion.loyaltyEnabled && b.commissionVersion.loyaltyPercent
+              ? b.commissionVersion.loyaltyPercent.toString()
+              : null,
+        }
+      : null,
     // The buyer's Member ID only where they hold an Active Member profile now.
     // Null keeps an ordinary Booking silent about a distinction it does not have.
     buyerMemberIdNow:

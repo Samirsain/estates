@@ -11,7 +11,11 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can, canViewField } from "@/lib/security/permissions";
 import { maskAadhaar, maskMobile, maskPan } from "@/lib/security/identity";
-import { eligibilityLabel, experienceSince, type CommissionType } from "@/lib/domain/commission";
+import {
+  CUSTOMER_CLOSING_LOYALTY_LIMIT,
+  eligibilityLabel,
+  experienceSince,
+} from "@/lib/domain/commission";
 import { validateFinalBuyers } from "@/lib/domain/completion";
 import { formatIst, formatIstDateTime } from "@/lib/tasks";
 import { auditHistory, mergeHistory, newestFirst, type HistoryItem } from "@/lib/profile-history";
@@ -25,6 +29,7 @@ import { Row } from "@/components/fact-row";
 import { Section, Stat } from "@/components/record-section";
 import { AccountNumber, IdentityFacts } from "@/components/protected-identity";
 import { MergeButton } from "./merge-button";
+import { RecordTermsButton, VerifyAadhaarButton } from "./closer-conditions";
 import { PaymentButton } from "./payment-button";
 import {
   AlertTriangle,
@@ -113,6 +118,7 @@ export default async function CustomerDetailPage({
       person: { include: { memberProfile: { select: { id: true, memberId: true } } } },
       royaltyLinkedMember: { include: { person: true } },
       royaltyLinkFirstBooking: { select: { id: true, bookingNumber: true, requestNo: true } },
+      termsAcceptances: { orderBy: { acceptedOn: "desc" } },
     },
   });
 
@@ -126,7 +132,6 @@ export default async function CustomerDetailPage({
     bookings,
     banks,
     commissions,
-    loyaltySlots,
     audit,
     merges,
     customerChanges,
@@ -177,13 +182,6 @@ export default async function CustomerDetailPage({
       include: { booking: { select: bookingRef } },
       orderBy: { createdAt: "desc" },
     }),
-    // PRD §6.5 — the lifetime Loyalty slots, read from the ledger so each slot
-    // names the Booking that took it.
-    db.commissionOpportunity.findMany({
-      where: { kind: "LOYALTY", subjectPersonId: personId },
-      include: { record: { select: { booking: { select: bookingRef } } } },
-      orderBy: { slotIndex: "asc" },
-    }),
     db.auditEvent.findMany({
       where: { entity: "Person", entityId: personId },
       orderBy: { at: "desc" },
@@ -206,6 +204,18 @@ export default async function CustomerDetailPage({
       include: { booking: { select: bookingRef } },
     }),
   ]);
+
+  // v2.1 §21, §25 — the Customer-closing Loyalty events that have qualified,
+  // oldest first: the three of a lifetime.
+  const closingUsed = commissions
+    .filter(
+      (c) =>
+        c.type === "LOYALTY" &&
+        c.beneficiaryRole === "CLOSING_CUSTOMER" &&
+        c.qualifiedAt !== null &&
+        c.payment !== "CANCELLED"
+    )
+    .sort((a, b) => a.qualifiedAt!.getTime() - b.qualifiedAt!.getTime());
 
   const now = Date.now();
 
@@ -417,7 +427,11 @@ export default async function CustomerDetailPage({
           <dl className="mt-4 grid grid-cols-2 gap-y-4 border-t border-border/60 pt-4 md:grid-cols-4 md:divide-x md:divide-border/60">
             <Stat label="Customer for" value={experience?.label ?? "—"} />
             <Stat label="Properties" value={`${bookedCount} booked · ${deliveredCount} delivered`} />
-            <Stat label="Loyalty slots" value={`${customer.loyaltySlotsConsumed} of 3 used`} />
+            <Stat
+              label="Closing Loyalty"
+              value={`${closingUsed.length} of ${CUSTOMER_CLOSING_LOYALTY_LIMIT} used`}
+              hint={closingUsed.length >= CUSTOMER_CLOSING_LOYALTY_LIMIT ? "Membership needed for more" : undefined}
+            />
             {/* CR-002 — the Member who was Sold By on the first qualifying
                 purchase; CR-003's nobody when that purchase was sold by the 3%
                 Club or a Customer.
@@ -491,7 +505,7 @@ export default async function CustomerDetailPage({
                     {c.holdReason === "AADHAAR_PENDING" ? "Aadhaar Pending" : "Bank not verified"}
                   </span>
                   <span className={SUB}>
-                    Holds the {c.type === "LOYALTY" ? "Loyalty Bonus" : `${words(c.type)} commission`}
+                    Holds the {c.type === "LOYALTY" ? "Customer Loyalty" : `${words(c.type)} commission`}
                     {c.booking ? ` on ${c.booking.bookingNumber ?? c.booking.requestNo}` : ""}.
                   </span>
                 </li>
@@ -727,39 +741,25 @@ export default async function CustomerDetailPage({
               lists in two columns, which is five lines of card for five short
               facts. `Stat` already draws exactly this, dividers included. */}
           <dl className="grid grid-cols-2 gap-y-4 md:grid-cols-5 md:divide-x md:divide-border/60">
-            {[1, 2, 3].map((slot) => {
-              const opportunity = loyaltySlots.find((o) => o.slotIndex === slot);
-              const booking = opportunity?.record?.booking;
-              const consumed = opportunity?.status === "CONSUMED";
+            {/* v2.1 §21, §25 — the three Customer-closing events of a lifetime,
+                in the order they qualified. Repeat-purchase Loyalty is unlimited
+                and is not counted here. */}
+            {Array.from({ length: CUSTOMER_CLOSING_LOYALTY_LIMIT }, (_, i) => {
+              const event = closingUsed[i];
               return (
                 <Stat
-                  key={slot}
-                  label={`Slot ${slot}`}
+                  key={i}
+                  label={`Closing ${i + 1}`}
                   value={
-                    consumed ? (
-                      booking ? (
-                        <Link
-                          href={`/bookings/${booking.id}`}
-                          className="text-primary hover:underline"
-                        >
-                          {booking.bookingNumber ?? booking.requestNo}
-                        </Link>
-                      ) : (
-                        "Used"
-                      )
+                    event?.booking ? (
+                      <Link href={`/bookings/${event.booking.id}`} className="text-primary hover:underline">
+                        {event.booking.bookingNumber ?? event.booking.requestNo}
+                      </Link>
                     ) : (
                       "Open"
                     )
                   }
-                  hint={
-                    consumed
-                      ? opportunity?.consumedAt
-                        ? formatIst(opportunity.consumedAt)
-                        : undefined
-                      : opportunity?.reopenedReason
-                        ? `Open again — ${opportunity.reopenedReason}`
-                        : undefined
-                  }
+                  hint={event?.qualifiedAt ? formatIst(event.qualifiedAt) : undefined}
                 />
               );
             })}
@@ -792,20 +792,45 @@ export default async function CustomerDetailPage({
               }
               hint={
                 customer.royaltyLinkFinalAt
-                  ? [
-                      formatIst(customer.royaltyLinkFinalAt),
-                      customer.royaltyPosition
-                        ? `Position ${customer.royaltyPosition} at ${
-                            customer.royaltyRatePercent?.toFixed(2) ?? "—"
-                          }%`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")
+                  ? formatIst(customer.royaltyLinkFinalAt)
                   : undefined
               }
             />
           </dl>
+
+          {/* v2.1 §22, §77 — what a Customer closer needs before Customer-closing
+              Loyalty is paid. Shown for every Customer: anyone may close a sale
+              once they have bought. */}
+          <div className="mt-4 grid gap-3 border-t border-border/60 pt-3 md:grid-cols-2">
+            <div className="flex items-start justify-between gap-3 text-xs">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Closer KYC</p>
+                <p className="mt-0.5">
+                  {customer.person.aadhaarStatus === "VERIFIED"
+                    ? "Aadhaar Verified"
+                    : customer.person.aadhaarStatus === "AVAILABLE"
+                      ? "Aadhaar recorded, not verified yet"
+                      : "No Aadhaar recorded"}
+                </p>
+              </div>
+              {customer.person.aadhaarStatus === "AVAILABLE" && ["ACCOUNTS", "ADMIN", "MD"].includes(actor.role) && (
+                <VerifyAadhaarButton personId={customer.personId} />
+              )}
+            </div>
+            <div className="flex items-start justify-between gap-3 text-xs">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Customer Terms</p>
+                <p className="mt-0.5">
+                  {customer.termsAcceptances[0]
+                    ? `${customer.termsAcceptances[0].termsVersion} · accepted ${formatIst(customer.termsAcceptances[0].acceptedOn)}`
+                    : "Not accepted yet"}
+                </p>
+              </div>
+              {["CRM", "ADMIN", "MD"].includes(actor.role) && (
+                <RecordTermsButton customerProfileId={customer.id} />
+              )}
+            </div>
+          </div>
 
           <div className="mt-4 border-t border-border/60 pt-3">
             <p className="pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -840,12 +865,18 @@ export default async function CustomerDetailPage({
                           "—"
                         )}
                       </td>
-                      <td className={TD}>{c.type === "LOYALTY" ? "Loyalty Bonus" : words(c.type)}</td>
+                      <td className={TD}>
+                        {c.type === "LOYALTY"
+                          ? c.beneficiaryRole === "CLOSING_CUSTOMER"
+                            ? "Customer-closing Loyalty"
+                            : "Repeat-purchase Loyalty"
+                          : words(c.type)}
+                      </td>
                       <td className={`${TD} text-right font-medium tabular-nums`}>
                         {c.percent.toFixed(2)}%
                       </td>
                       <td className={TD}>
-                        {eligibilityLabel(c.eligibility, c.type as CommissionType)}
+                        {eligibilityLabel(c.eligibility)}
                         {c.holdReason && (
                           <span className="block text-[11px] text-amber-700">{words(c.holdReason)}</span>
                         )}

@@ -53,7 +53,7 @@ import { maskMobile } from "@/lib/security/identity";
 import { can } from "@/lib/security/permissions";
 import { formatIst, formatIstDateTime, formatPlotSize, formatQuantity } from "@/lib/tasks";
 import { newestFirst, type HistoryItem } from "@/lib/profile-history";
-import { eligibilityLabel, type CommissionType } from "@/lib/domain/commission";
+import { eligibilityLabel } from "@/lib/domain/commission";
 import { TYPE_LABEL } from "@/app/acquisitions/types";
 import { PaymentButton } from "@/app/customers/[id]/payment-button";
 import { AddTaskButton } from "@/app/members/[id]/add-task-button";
@@ -1282,7 +1282,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                       >
                         <span className="min-w-0">
                           <span className="font-medium text-foreground">
-                            {c.type === "LOYALTY" ? "Loyalty Bonus" : humanise(c.type)}
+                            {c.type === "LOYALTY" ? "Customer Loyalty" : humanise(c.type)}
                           </span>
                           <span className="block">
                             <PersonLink
@@ -1302,7 +1302,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                             </span>
                           </span>
                           <span className="block text-[11px] text-muted-foreground">
-                            {eligibilityLabel(c.eligibility, c.type as CommissionType)}
+                            {eligibilityLabel(c.eligibility)}
                             {" · "}
                             {PAYMENT_LABEL[c.payment] ?? c.payment}
                             {c.paidOn ? ` ${formatIst(c.paidOn)}` : ""}

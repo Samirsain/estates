@@ -64,9 +64,7 @@ export async function activateMemberAction(
     refresh();
     return {
       ok: true,
-      message: result.invitePosition
-        ? `Activated as ${result.memberId} at Network position ${result.invitePosition} (${result.inviteRatePercent}% band).`
-        : `Activated as ${result.memberId}. No inviting Member was recorded, so no Invite position was taken.`,
+      message: `Activated as ${result.memberId}.`,
     };
   } catch (error) {
     return toResult(error);
@@ -122,9 +120,7 @@ export async function createAndActivateMemberAction(
     return {
       ok: true,
       memberId: result.memberId,
-      message: result.invitePosition
-        ? `Created & Activated as ${result.memberId} at Network position ${result.invitePosition} (${result.inviteRatePercent}% band).`
-        : `Created & Activated as ${result.memberId}. No inviting Member was recorded.`,
+      message: `Created & Activated as ${result.memberId}.`,
     };
   } catch (error) {
     return toResult(error);
@@ -347,8 +343,8 @@ export async function loadMemberDetail(memberProfileId: string) {
     include: {
       person: true,
       invitedByMember: { include: { person: true } },
-      invitedMembers: { include: { person: true }, orderBy: { invitePosition: "asc" } },
-      royaltyLinkedCustomers: { include: { person: true }, orderBy: { royaltyPosition: "asc" } },
+      invitedMembers: { include: { person: true }, orderBy: { activationDate: "asc" } },
+      royaltyLinkedCustomers: { include: { person: true }, orderBy: { royaltyLinkFinalAt: "asc" } },
     },
   });
   if (!member) return null;
@@ -371,20 +367,14 @@ export async function loadMemberDetail(memberProfileId: string) {
       id: m.id,
       memberId: m.memberId,
       name: m.person.fullName,
-      position: m.invitePosition,
-      ratePercent: m.inviteRatePercent?.toFixed(2) ?? null,
-      yearStart: m.inviteYearStart?.toISOString() ?? null,
+      activationDate: m.activationDate?.toISOString() ?? null,
       status: m.status,
     })),
     royaltyLinkedCustomers: member.royaltyLinkedCustomers.map((c) => ({
       id: c.id,
       customerId: c.customerId,
       name: c.person.fullName,
-      position: c.royaltyPosition,
-      ratePercent: c.royaltyRatePercent?.toFixed(2) ?? null,
-      yearStart: c.royaltyYearStart?.toISOString() ?? null,
       provisional: c.royaltyLinkFinalAt === null,
-      loyaltySlotsConsumed: c.loyaltySlotsConsumed,
     })),
     commissions: commissions.map((c) => ({
       id: c.id,

@@ -20,8 +20,8 @@ export default async function PortalPage() {
       include: {
         person: true,
         invitedByMember: { include: { person: true } },
-        invitedMembers: { include: { person: true }, orderBy: { invitePosition: "asc" } },
-        royaltyLinkedCustomers: { orderBy: { royaltyPosition: "asc" } },
+        invitedMembers: { include: { person: true }, orderBy: { activationDate: "asc" } },
+        royaltyLinkedCustomers: { select: { royaltyLinkFinalAt: true }, orderBy: { royaltyLinkFinalAt: "asc" } },
       },
     }),
     db.plot.findMany({
@@ -61,22 +61,16 @@ export default async function PortalPage() {
     invitedBy: profile.invitedByMember
       ? `${profile.invitedByMember.memberId} · ${profile.invitedByMember.person.fullName}`
       : null,
-    invitePosition: profile.invitePosition,
-    inviteRatePercent: profile.inviteRatePercent?.toFixed(3) ?? null,
     invitedMembers: profile.invitedMembers.map((m) => ({
       memberId: m.memberId,
       name: m.person.fullName,
-      position: m.invitePosition,
-      ratePercent: m.inviteRatePercent?.toFixed(2) ?? null,
       status: m.status,
       activationDate: m.activationDate?.toISOString() ?? null,
     })),
-    // PRD §23.1 / DESIGN §13.2 — the Member sees their own Royalty positions
-    // and bands, never the Customer's name or Customer ID.
+    // PRD §23.1, v2.1 §69 — the Member sees only how many Royalty
+    // relationships they hold and whether each is final, never the Customer.
     royaltyLinkedCustomers: profile.royaltyLinkedCustomers.map((c) => ({
-      position: c.royaltyPosition,
-      ratePercent: c.royaltyRatePercent?.toFixed(2) ?? null,
-      loyaltySlotsConsumed: c.loyaltySlotsConsumed,
+      final: c.royaltyLinkFinalAt !== null,
     })),
     projects: [...new Map(availablePlots.map((p) => [p.projectId, p.project.name])).entries()].map(
       ([id, name]) => ({ id, name })

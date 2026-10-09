@@ -3,7 +3,7 @@
 // Member portal UI — design.md §3.2, §13.
 // Apple Parchment Light Theme — High-End Clean Minimalist Aesthetics.
 
-import { eligibilityLabel, type CommissionType } from "@/lib/domain/commission";
+import { eligibilityLabel } from "@/lib/domain/commission";
 import React from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -33,9 +33,7 @@ import { PersonPicker } from "@/components/person-picker";
 /** PRD §23.1 — the only commission wording a Member ever sees. */
 const COMMISSION_LABEL: Record<string, string> = {
   DIRECT: "Direct Commission",
-  INVITE: "Invite Commission",
-  ROYALTY: "Royalty",
-  LOYALTY: "Loyalty Bonus",
+  LOYALTY: "Customer Loyalty",
   BUYING: "Buying Commission",
 };
 
@@ -60,7 +58,8 @@ const HOLD_LABEL: Record<string, string> = {
   CHANGE_PLOT_PENDING: "Deal Under Review",
   BUYBACK_PENDING: "Deal Under Review",
   PAYMENT_PENDING: "Payment Pending",
-  COMMISSION_CONFLICT_ABOVE_4: "Under Review",
+  CLOSER_KYC_PENDING: "KYC Pending",
+  CUSTOMER_TERMS_PENDING: "Terms Pending",
 };
 
 export type PortalData = {
@@ -69,26 +68,18 @@ export type PortalData = {
   activationDate: string | null;
   experience: string | null;
   invitedBy: string | null;
-  invitePosition: number | null;
-  inviteRatePercent: string | null;
   /** DESIGN §3.2, §13.2 — the Member's own Network. */
   invitedMembers: Array<{
     memberId: string;
     name: string;
-    position: number | null;
-    ratePercent: string | null;
     status: string;
     activationDate: string | null;
   }>;
   /**
-   * PRD §23.1 — positions and bands only. A Customer's name and Customer ID are
-   * buyer-private and never reach the portal.
+   * PRD §23.1 — whether each relationship is final, and nothing else. A
+   * Customer's name and Customer ID are buyer-private and never reach the portal.
    */
-  royaltyLinkedCustomers: Array<{
-    position: number | null;
-    ratePercent: string | null;
-    loyaltySlotsConsumed: number;
-  }>;
+  royaltyLinkedCustomers: Array<{ final: boolean }>;
   projects: Array<{ id: string; name: string }>;
   plots: Array<{ id: string; projectId: string; project: string; label: string; areaSqYd: string }>;
   buyers: Array<{ id: string; label: string }>;
@@ -361,14 +352,6 @@ export default function PortalClient({ data }: { data: PortalData }) {
         <div className="rounded-2xl border border-border bg-card p-4 space-y-4 text-xs">
           <div className="space-y-2">
             <Row label="Invited By" value={data.invitedBy ?? "—"} />
-            <Row
-              label="Your position and band"
-              value={
-                data.invitePosition
-                  ? `Position ${data.invitePosition} · ${data.inviteRatePercent ?? "—"}%`
-                  : "3% Club"
-              }
-            />
           </div>
 
           <div className="border-t border-border/50 pt-4 space-y-3">
@@ -383,8 +366,6 @@ export default function PortalClient({ data }: { data: PortalData }) {
                   <thead className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border/50">
                     <tr>
                       <th className="pb-2">Member</th>
-                      <th className="pb-2 text-right">Position</th>
-                      <th className="pb-2 text-right">Band</th>
                       <th className="pb-2">Status</th>
                     </tr>
                   </thead>
@@ -394,10 +375,6 @@ export default function PortalClient({ data }: { data: PortalData }) {
                         <td className="py-2.5">
                           <span className="font-semibold text-foreground">{m.name}</span>
                           <span className="block text-[11px] text-muted-foreground">{m.memberId}</span>
-                        </td>
-                        <td className="py-2.5 text-right tabular-nums text-foreground">{m.position ?? "—"}</td>
-                        <td className="py-2.5 text-right tabular-nums font-semibold text-primary">
-                          {m.ratePercent ? `${m.ratePercent}%` : "—"}
                         </td>
                         <td className="py-2.5">
                           <span className="text-foreground">{humanise(m.status)}</span>
@@ -422,36 +399,17 @@ export default function PortalClient({ data }: { data: PortalData }) {
             {data.royaltyLinkedCustomers.length === 0 ? (
               <p className="text-muted-foreground">No Customer has bought their first property through you yet.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[24rem] text-xs">
-                  <thead className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border/50">
-                    <tr>
-                      <th className="pb-2 text-right">Position</th>
-                      <th className="pb-2 text-right">Band</th>
-                      <th className="pb-2 text-right">Loyalty slots used</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/50">
-                    {data.royaltyLinkedCustomers.map((c, index) => (
-                      <tr key={index}>
-                        <td className="py-2.5 text-right tabular-nums text-foreground">{c.position ?? "—"}</td>
-                        <td className="py-2.5 text-right tabular-nums font-semibold text-primary">
-                          {c.ratePercent ? `${c.ratePercent}%` : "—"}
-                        </td>
-                        <td className="py-2.5 text-right tabular-nums text-foreground">
-                          {c.loyaltySlotsConsumed} of 3
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <p className="text-foreground">
+                {data.royaltyLinkedCustomers.filter((c) => c.final).length} final ·{" "}
+                {data.royaltyLinkedCustomers.filter((c) => !c.final).length} waiting for the first
+                purchase to be paid in full
+              </p>
             )}
           </div>
 
           <p className="pt-2 text-[11px] leading-relaxed text-muted-foreground">
-            Royalty Linked Customers are shown as positions and bands only. The portal never shows
-            a Customer&apos;s name, Customer ID or contact details.
+            Royalty Linked Customers are shown as a count only. The portal never shows a
+            Customer&apos;s name, Customer ID or contact details.
           </p>
         </div>
       )}
@@ -467,14 +425,6 @@ export default function PortalClient({ data }: { data: PortalData }) {
           />
           <Row label="Experience" value={data.experience ?? "Not activated"} />
           <Row label="Invited By" value={data.invitedBy ?? "—"} />
-          <Row
-            label="Position and band"
-            value={
-              data.invitePosition
-                ? `Position ${data.invitePosition} · ${data.inviteRatePercent ?? "—"}%`
-                : "3% Club"
-            }
-          />
 
           <p className="pt-1 text-[11px] leading-relaxed text-muted-foreground">
             The portal never shows buyer identity, Aadhaar, PAN, bank details or internal Accounts
@@ -512,7 +462,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                         <td className="py-2.5 text-right tabular-nums text-foreground">{c.milestonePercent}%</td>
                         <td className="py-2.5">
                           <span className="block font-medium text-foreground">
-                            {eligibilityLabel(c.eligibility, c.type as CommissionType)}
+                            {eligibilityLabel(c.eligibility)}
                           </span>
                           <span className="block text-[11px] text-muted-foreground">
                             {PAYMENT_LABEL[c.payment] ?? c.payment}

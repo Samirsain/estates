@@ -1582,6 +1582,10 @@ export function listBookings(where?: Prisma.BookingWhereInput) {
         },
       },
       reviewVersions: { where: { status: "PENDING" }, take: 1 },
+      // v2.1 §15 — the exact version frozen on the request, shown with it.
+      commissionVersion: {
+        select: { version: true, directEnabled: true, directPercent: true, loyaltyEnabled: true, loyaltyPercent: true },
+      },
     },
     orderBy: { submittedAt: "desc" },
     take: 200,

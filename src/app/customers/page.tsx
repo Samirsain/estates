@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { maskMobile } from "@/lib/security/identity";
 import { canViewField } from "@/lib/security/permissions";
+import { closingLoyaltyUsed } from "@/lib/services/commission-service";
 import CustomersClient, { type CustomerRowView } from "./customers-client";
 
 export const dynamic = "force-dynamic";
@@ -75,6 +76,9 @@ export default async function CustomersPage() {
     bookingCount.set(party.personId, (bookingCount.get(party.personId) ?? 0) + 1);
   }
 
+  // v2.1 §21 — Customer-closing Loyalty used, of the lifetime three.
+  const closing = await closingLoyaltyUsed(customers.map((c) => c.personId));
+
   const rows: CustomerRowView[] = customers.map((c) => ({
     id: c.id,
     personId: c.personId,
@@ -92,7 +96,7 @@ export default async function CustomersPage() {
     plotType: latest.get(c.personId)?.plot.plotType.replaceAll("_", " ") ?? null,
     plotId: latest.get(c.personId)?.plot.id ?? null,
     otherBookings: Math.max((bookingCount.get(c.personId) ?? 0) - 1, 0),
-    loyaltySlotsConsumed: c.loyaltySlotsConsumed,
+    closingLoyaltyUsed: closing.get(c.personId) ?? 0,
   }));
 
   return (

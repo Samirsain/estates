@@ -75,8 +75,6 @@ export default async function MembersPage() {
           name: m.invitedByMember.person.fullName,
         }
       : null,
-    invitePosition: m.invitePosition,
-    inviteRatePercent: m.inviteRatePercent?.toFixed(2) ?? null,
     reraStatus: m.reraStatus,
     reraNumber: m.reraNumber,
     reraExpiryDate: m.reraExpiryDate?.toISOString() ?? null,

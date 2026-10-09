@@ -3,7 +3,7 @@
 // Members — design.md §13.1, §13.2; prd-corrections.md §13, §14.3.
 // Actions are hidden by permission for clarity; the server re-checks every one.
 
-import { eligibilityLabel, type CommissionType } from "@/lib/domain/commission";
+import { eligibilityLabel } from "@/lib/domain/commission";
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -45,8 +45,6 @@ export type MemberRowView = {
   activationDate: string | null;
   experience: string | null;
   invitedBy: { id: string; memberId: string; name: string } | null;
-  invitePosition: number | null;
-  inviteRatePercent: string | null;
   reraStatus: string;
   reraNumber: string | null;
   reraExpiryDate: string | null;
@@ -508,8 +506,7 @@ function MemberDetailPanel({
                       )}
                     </span>
                     <span className="tabular-nums text-muted-foreground">
-                      Position {m.position} · {m.ratePercent}%
-                      {m.yearStart ? ` · year from ${formatIst(m.yearStart)}` : ""}
+                      {m.activationDate ? `Activated ${formatIst(m.activationDate)}` : "Not activated"}
                     </span>
                   </li>
                 ))}
@@ -531,14 +528,9 @@ function MemberDetailPanel({
                       <Link href={`/customers/${c.id}`} className="text-primary hover:underline">
                         {c.customerId} · {c.name}
                       </Link>
-                      <span className="ml-2 text-[11px] text-muted-foreground">
-                        {c.loyaltySlotsConsumed}/3 Loyalty slots used
-                      </span>
                     </span>
                     <span className="tabular-nums text-muted-foreground">
-                      {c.position === null
-                        ? "Not confirmed yet — no position until the first purchase is fully paid"
-                        : `Position ${c.position} · ${c.ratePercent}%`}
+                      {c.provisional ? "Provisional — final when the first purchase is paid in full" : "Final"}
                     </span>
                   </li>
                 ))}
@@ -582,7 +574,7 @@ function MemberDetailPanel({
                       <td className="py-1">{c.type}</td>
                       <td className="py-1 text-right tabular-nums">{c.percent}</td>
                       <td className="py-1">
-                        {eligibilityLabel(c.eligibility, c.type as CommissionType)}
+                        {eligibilityLabel(c.eligibility)}
                         {c.holdReason && (
                           <span className="block text-[11px] text-amber-800">
                             {c.holdReason.replaceAll("_", " ").toLowerCase()}
@@ -870,7 +862,7 @@ function ActivateMemberDialogForm({
   return (
     <Modal
       title="Activate Member"
-      description="Activation is recorded now and cannot be backdated. The Member ID and Network position become active immediately."
+      description="Activation is recorded now and cannot be backdated. The Member ID becomes active immediately."
       onClose={onClose}
     >
       <div className="flex gap-2 pb-2">
@@ -951,7 +943,7 @@ function ActivateMemberDialogForm({
           </div>
         )}
 
-        <Field label="Invited By — position and rate band are taken under this Member">
+        <Field label="Invited By — the Member who introduced them (optional)">
           <PersonPicker
             name="invitedByMemberId"
             placeholder="Root Member — or search by name or Member ID"

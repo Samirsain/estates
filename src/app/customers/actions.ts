@@ -8,6 +8,57 @@ import { canViewField } from "@/lib/security/permissions";
 import { recordAudit } from "@/lib/security/audit";
 import { decryptSensitive, maskAadhaar, maskPan } from "@/lib/security/identity";
 import { db } from "@/lib/db";
+import { revalidatePath } from "next/cache";
+import { CommandError } from "@/lib/services/command";
+import { recordCustomerTermsAcceptance, verifyAadhaar } from "@/lib/services/customer-closer-service";
+
+export type CloserActionResult = { ok: true } | { ok: false; error: string };
+
+const asResult = (error: unknown): CloserActionResult => ({
+  ok: false,
+  error: error instanceof CommandError || error instanceof Error ? error.message : "Action failed.",
+});
+
+/** v2.1 §22 — CRM records the Customer Terms version a Customer accepted. */
+export async function recordCustomerTermsAction(
+  customerProfileId: string,
+  termsVersion: string,
+  acceptedOn: string,
+  key: string
+): Promise<CloserActionResult> {
+  const actor = await requireStaff();
+  try {
+    await recordCustomerTermsAcceptance({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      customerProfileId,
+      termsVersion,
+      acceptedOn: new Date(`${acceptedOn}T00:00:00+05:30`),
+    });
+    revalidatePath(`/customers/${customerProfileId}`);
+    return { ok: true };
+  } catch (error) {
+    return asResult(error);
+  }
+}
+
+/** v2.1 §22, §77 — Accounts marks a recorded Aadhaar as Verified. */
+export async function verifyAadhaarAction(personId: string, key: string): Promise<CloserActionResult> {
+  const actor = await requireStaff();
+  try {
+    await verifyAadhaar({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      personId,
+    });
+    revalidatePath("/customers");
+    return { ok: true };
+  } catch (error) {
+    return asResult(error);
+  }
+}
 
 /**
  * PRD RD-05, ARCHITECTURE §9.3 — the full Aadhaar is available only to
@@ -46,7 +97,7 @@ export async function revealAadhaarAction(
 
 /**
  * DESIGN §12.2 — Overview, Invited By, Property Activity, Aadhaar & PAN, Bank
- * Details, Loyalty Bonus and History, all for one Customer.
+ * Details, Loyalty and History, all for one Customer.
  */
 export async function loadCustomerDetail(customerProfileId: string) {
   await requireStaff();
@@ -61,7 +112,7 @@ export async function loadCustomerDetail(customerProfileId: string) {
   if (!customer) return null;
 
   const personId = customer.personId;
-  const [enquiries, holds, bookings, loyalty, banks] = await Promise.all([
+  const [enquiries, holds, bookings, banks] = await Promise.all([
     db.enquiry.findMany({
       where: { personId },
       include: { project: true, plot: true },
@@ -79,12 +130,6 @@ export async function loadCustomerDetail(customerProfileId: string) {
       include: { project: true, plot: true },
       orderBy: { submittedAt: "desc" },
       take: 50,
-    }),
-    // PRD §6.5 — the lifetime Loyalty slots, read from the ledger rather than a
-    // counter that could drift.
-    db.commissionOpportunity.findMany({
-      where: { kind: "LOYALTY", subjectPersonId: personId },
-      orderBy: { slotIndex: "asc" },
     }),
     db.bankDetail.findMany({
       where: { personId },
@@ -113,15 +158,6 @@ export async function loadCustomerDetail(customerProfileId: string) {
       ? `${customer.royaltyLinkedMember.memberId} · ${customer.royaltyLinkedMember.person.fullName}`
       : null,
     royaltyLinkProvisional: customer.royaltyLinkFinalAt === null,
-    royaltyPosition: customer.royaltyPosition,
-    royaltyRatePercent: customer.royaltyRatePercent?.toFixed(2) ?? null,
-    loyaltySlots: loyalty.map((o) => ({
-      slotIndex: o.slotIndex,
-      status: o.status,
-      consumedAt: o.consumedAt?.toISOString() ?? null,
-      reopenedReason: o.reopenedReason,
-    })),
-    loyaltyConsumed: loyalty.filter((o) => o.status === "CONSUMED").length,
     banks: banks.map((b) => ({
       id: b.id,
       bankName: b.bankName,

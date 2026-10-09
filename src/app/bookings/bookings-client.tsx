@@ -24,7 +24,7 @@ import {
   removeRow,
   scheduleTotal,
 } from "@/lib/domain/schedule-edit";
-import { eligibilityLabel, type CommissionType } from "@/lib/domain/commission";
+import { eligibilityLabel, rateLabel } from "@/lib/domain/commission";
 import {
   formatIst,
   formatIstDate,
@@ -82,8 +82,10 @@ export type BookingRowView = {
   /** CUS-3390 — absent only on a Person who has not reached one yet. */
   primaryCustomerId: string | null;
   primaryCustomerPersonId: string;
-  /** CUSTOMER or MEMBER, frozen at Accounts approval and never rewritten. */
+  /** CUSTOMER or MEMBER, frozen with the Booking Request (v2.1 §20). */
   originalClassification: string | null;
+  /** v2.1 §15, §16 — the Project commission version frozen on the request. Null = Disabled. */
+  commissionTerms: { version: number; direct: string | null; loyalty: string | null } | null;
   /** MEM-0012, where the buyer holds an Active Member profile today. */
   buyerMemberIdNow: string | null;
   soldByType: string;
@@ -113,6 +115,8 @@ export type BookableView = {
   areaSqYd: string;
   /** One of the named positions a Plot can hold — see locationChargeLabel. */
   locationCharge: string[];
+  /** v2.1 §9 — the Project's Active commission settings; null when none are approved. */
+  commissionTerms: { version: number; direct: string | null; loyalty: string | null } | null;
   holdId: string | null;
   holdPersonId: string | null;
   holdPersonName: string | null;
@@ -216,8 +220,15 @@ const HOLD_LABEL: Record<string, string> = {
   CHANGE_PLOT_PENDING: "Change Plot Pending",
   BUYBACK_PENDING: "Buyback Pending",
   PAYMENT_PENDING: "Payment Pending",
-  COMMISSION_CONFLICT_ABOVE_4: "Commission Conflict — Above 4%",
+  CLOSER_KYC_PENDING: "Closer KYC Pending",
+  CUSTOMER_TERMS_PENDING: "Customer Terms Pending",
 };
+
+/** v2.1 §9 — one line, the same everywhere a Booking states its terms. */
+export function termsLine(t: { version: number; direct: string | null; loyalty: string | null }) {
+  const rate = (r: string | null) => (r ? `${rateLabel(r)}%` : "Disabled");
+  return `Commission settings v${t.version} · Direct ${rate(t.direct)} · Loyalty ${rate(t.loyalty)}`;
+}
 
 const SOLD_BY_LABEL: Record<string, string> = {
   THREE_PERCENT_CLUB: "3% Club",
@@ -544,7 +555,7 @@ export default function BookingsClient({
                 {focusRow.originalClassification && (
                   <Badge
                     variant="outline"
-                    title="Frozen when commission was first generated, at Accounts approval, and never rewritten."
+                    title="Frozen with the Booking Request and permanent after Accounts approval."
                   >
                     {focusRow.originalClassification === "MEMBER"
                       ? "Member business"
@@ -561,6 +572,9 @@ export default function BookingsClient({
                   : focusRow.requestNo}{" "}
                 · booked {formatIstDate(focusRow.bookingDate)} · submitted by {focusRow.submittedByRef}
               </p>
+              {focusRow.commissionTerms && (
+                <p className="mt-1 text-[11px] text-muted-foreground">{termsLine(focusRow.commissionTerms)}</p>
+              )}
               {/* The one case the classification has to explain itself: the
                   buyer has become a Member since, and the Booking still counts
                   as Customer business. Saying so is what stops a reader taking
@@ -1760,7 +1774,7 @@ function BookingDetailPanel({
                         >
                           {/* DESIGN §4.2 — eligibility and payment are two
                               separate badges. */}
-                          {eligibilityLabel(c.eligibility, c.type as CommissionType)}
+                          {eligibilityLabel(c.eligibility)}
                         </Badge>
                         {c.holdReason && (
                           <span className="block text-[11px] text-amber-800">
@@ -1806,8 +1820,6 @@ function BookingDetailPanel({
                         {c.isCurrent &&
                           c.payment === "NOT_PAID" &&
                           c.eligibility !== "READY" &&
-                          // CR-013 — a 0% band has nothing to approve early.
-                          c.eligibility !== "NO_BENEFIT" &&
                           !c.earlyApprovedAt &&
                           permissions.approvePaidEarly && (
                             <Button
@@ -1829,7 +1841,6 @@ function BookingDetailPanel({
                         {c.isCurrent &&
                           permissions.processCommission &&
                           c.payment === "NOT_PAID" &&
-                          c.eligibility !== "NO_BENEFIT" &&
                           (c.eligibility === "READY" || c.earlyApprovedAt) && (
                             <Button
                               size="xs"
@@ -1851,18 +1862,12 @@ function BookingDetailPanel({
                         {c.isCurrent &&
                           c.payment === "NOT_PAID" &&
                           c.eligibility !== "READY" &&
-                          c.eligibility !== "NO_BENEFIT" &&
                           !c.earlyApprovedAt &&
                           !permissions.approvePaidEarly && (
                             <span className="text-[11px] text-muted-foreground">
                               Awaiting MD approval
                             </span>
                           )}
-                        {c.isCurrent && c.eligibility === "NO_BENEFIT" && (
-                          <span className="text-[11px] text-muted-foreground">
-                            Position above 9 — nothing to pay
-                          </span>
-                        )}
                       </td>
                     </tr>
                   ))}
@@ -1963,6 +1968,13 @@ type SubmittedSnapshot = {
   } | null;
   customerType?: string | null;
   remark?: string | null;
+  /** v2.1 §16 — the commission version this request version froze. */
+  commissionTerms?: {
+    versionId: string;
+    version: number;
+    directPercent: string | null;
+    loyaltyPercent: string | null;
+  } | null;
 };
 
 function SubmittedSnapshotView({
@@ -2024,6 +2036,24 @@ function SubmittedSnapshotView({
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {snapshot.commissionTerms && (
+        <section>
+          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Commission terms
+          </h4>
+          <p className="mt-1">
+            {termsLine({
+              version: snapshot.commissionTerms.version,
+              direct: snapshot.commissionTerms.directPercent,
+              loyalty: snapshot.commissionTerms.loyaltyPercent,
+            })}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            Frozen with this request. Approving it makes these terms permanent for the Booking.
+          </p>
         </section>
       )}
 
@@ -2370,6 +2400,12 @@ export function BookingFormDialog({
                 </dd>
               </>
             )}
+            <dt className="text-muted-foreground">Commission</dt>
+            <dd className={`text-right font-medium ${plot.commissionTerms ? "" : "text-red-700"}`}>
+              {plot.commissionTerms
+                ? termsLine(plot.commissionTerms).replace(/^Commission settings /, "")
+                : "No approved settings — cannot be submitted"}
+            </dd>
           </dl>
         )}
 

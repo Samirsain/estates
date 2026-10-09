@@ -227,7 +227,7 @@ export function AcquisitionDialogs({
     <FormDialog
       title="Record Buying Commission"
       subtitle={`Arranged by ${dialog.row.arrangedBy}`}
-      consequence="One beneficiary per deal, outside the 4% sale cap, payable only at 100% Payment Given. The seller cannot be the beneficiary."
+      consequence="One beneficiary per deal, at most 5%, payable only at 100% Payment Given. The seller cannot be the beneficiary."
       busy={busy}
       onClose={onClose}
       onSubmit={(f) =>

@@ -15,11 +15,12 @@
 //     by hand — which is the point: who would earn what is asked before a
 //     Booking exists.
 //
-// Either way the entitlement facts travel with the people: the Member's status,
-// RERA and network position, the Customer's Loyalty slots and Royalty
-// opportunity, Aadhaar and a verified bank. Those are what decide whether a
-// commission is payable at all (PRD §6, §14.7, §19.5), so the screen shows them
-// rather than leaving the reader to look each one up.
+// Either way the entitlement facts travel with the people: the Member's status
+// and RERA, the Customer closer's KYC, Terms and lifetime Customer-closing
+// Loyalty count, Aadhaar and a verified bank. Those are what decide whether a
+// commission is payable at all (v2.1 §19–§25; PRD §14.7, §19.5), so the screen
+// shows them rather than leaving the reader to look each one up. The rates are
+// the selected Project's approved commission settings (v2.1 §12).
 
 import { Prisma } from "@prisma/client";
 
@@ -29,15 +30,8 @@ import { buildPlcSnapshot, locationChargeLabel } from "@/lib/domain/inventory";
 import { personLabel } from "@/lib/domain/person-search";
 import { maskMobile } from "@/lib/security/identity";
 import { plcRules } from "@/lib/services/plc-service";
-import {
-  DIRECT_MILESTONE,
-  DIRECT_PERCENT,
-  FULL_MILESTONE,
-  LOYALTY_PERCENT,
-  MAX_LOYALTY_SLOTS,
-  NETWORK_BANDS,
-  SALE_CAP_PERCENT,
-} from "@/lib/domain/commission";
+import { CUSTOMER_CLOSING_LOYALTY_LIMIT, DIRECT_MILESTONE, FULL_MILESTONE } from "@/lib/domain/commission";
+import { closingLoyaltyUsed, termsOf } from "@/lib/services/commission-service";
 import CalculatorClient, {
   type CalcCommissionTypeView,
   type CalcDealRecordView,
@@ -66,7 +60,7 @@ export default async function CalculatorPage({
   // the Plot Inventory already shows, so it needs no Action of its own.
   const actor = await requireStaff("REPORT_VIEW");
 
-  const [projects, plots, people, records, verifiedBanks, opportunities, purchases] =
+  const [projects, plots, people, records, verifiedBanks, purchases] =
     await Promise.all([
       db.project.findMany({
         include: {
@@ -75,6 +69,8 @@ export default async function CalculatorPage({
             include: { components: true },
             take: 1,
           },
+          // v2.1 §12 — the rates a new sale on this Project would freeze.
+          commissionVersions: { where: { status: "ACTIVE" }, take: 1 },
         },
         orderBy: { name: "asc" },
       }),
@@ -95,12 +91,8 @@ export default async function CalculatorPage({
           customerProfile: {
             select: {
               customerId: true,
-              royaltyPosition: true,
-              royaltyRatePercent: true,
-              royaltyLinkFinalAt: true,
-              royaltyLinkedMember: {
-                select: { memberId: true, personId: true, person: { select: { fullName: true } } },
-              },
+              // v2.1 §22 — a Customer closer needs accepted Customer Terms.
+              termsAcceptances: { select: { id: true }, take: 1 },
             },
           },
           memberProfile: {
@@ -109,11 +101,6 @@ export default async function CalculatorPage({
               status: true,
               reraStatus: true,
               commissionHold: true,
-              invitePosition: true,
-              inviteRatePercent: true,
-              invitedByMember: {
-                select: { memberId: true, personId: true, person: { select: { fullName: true } } },
-              },
             },
           },
         },
@@ -163,14 +150,6 @@ export default async function CalculatorPage({
         select: { personId: true },
         distinct: ["personId"],
       }),
-      // PRD §6.8 — the consumed entitlements, which are the authority on what is
-      // left: one Invite per invited Member, one Royalty per introduced Customer,
-      // three Loyalty slots per Customer.
-      db.commissionOpportunity.groupBy({
-        by: ["kind", "subjectPersonId"],
-        where: { status: "CONSUMED" },
-        _count: { _all: true },
-      }),
       /*
        * PRD §14.5 — "first personal purchase receives no repeat-purchase
        * Loyalty", so the engine needs to know whether a buyer already owns one.
@@ -186,12 +165,8 @@ export default async function CalculatorPage({
     ]);
 
   const banked = new Set(verifiedBanks.map((b) => b.personId));
-  const consumed = new Map(
-    opportunities.map((o) => [`${o.kind}:${o.subjectPersonId}`, o._count._all])
-  );
-  const used = (kind: "INVITE" | "ROYALTY" | "LOYALTY", personId: string) =>
-    consumed.get(`${kind}:${personId}`) ?? 0;
   const bought = new Set(purchases.map((b) => b.primaryPersonId));
+  const closing = await closingLoyaltyUsed(people.map((p) => p.id));
 
   const peopleRows: CalcPersonView[] = people.map((p) => {
     const member = p.memberProfile;
@@ -208,6 +183,8 @@ export default async function CalculatorPage({
       // PRD §14.7 — the commission condition is Aadhaar Available, and Verified
       // satisfies it too. PAN never creates an automatic hold.
       aadhaarAvailable: p.aadhaarStatus !== "PENDING",
+      // v2.1 §22, §77 — the stricter KYC a Customer closer needs.
+      aadhaarVerified: p.aadhaarStatus === "VERIFIED",
       bankVerified: banked.has(p.id),
       hasPriorPurchase: bought.has(p.id),
       member: member
@@ -216,33 +193,13 @@ export default async function CalculatorPage({
             status: member.status,
             reraStatus: member.reraStatus,
             commissionHold: member.commissionHold,
-            invitedByPersonId: member.invitedByMember?.personId ?? null,
-            invitedBy: member.invitedByMember
-              ? `${member.invitedByMember.memberId} · ${member.invitedByMember.person.fullName}`
-              : null,
-            invitePosition: member.invitePosition,
-            inviteRatePercent: member.inviteRatePercent?.toString() ?? null,
-            // The subject of an Invite opportunity is the invited Member — this
-            // Member's own sale is what pays their inviter (PRD §6.1).
-            inviteUsed: used("INVITE", p.id) > 0,
           }
         : null,
       customer: customer
         ? {
             customerId: customer.customerId,
-            // CR-002 — a provisional link earns nothing, so the calculator must
-            // not preview a Royalty from it.
-            royaltyMemberPersonId: customer.royaltyLinkFinalAt
-              ? customer.royaltyLinkedMember?.personId ?? null
-              : null,
-            royaltyMember: customer.royaltyLinkedMember
-              ? `${customer.royaltyLinkedMember.memberId} · ${customer.royaltyLinkedMember.person.fullName}` +
-                (customer.royaltyLinkFinalAt ? "" : " (not confirmed yet)")
-              : null,
-            royaltyPosition: customer.royaltyPosition,
-            royaltyRatePercent: customer.royaltyRatePercent?.toString() ?? null,
-            royaltyUsed: used("ROYALTY", p.id) > 0,
-            loyaltyUsed: used("LOYALTY", p.id),
+            termsAccepted: customer.termsAcceptances.length > 0,
+            closingLoyaltyUsed: closing.get(p.id) ?? 0,
           }
         : null,
     };
@@ -329,46 +286,24 @@ export default async function CalculatorPage({
   });
 
   /*
-   * The four sale-commission components, each with the rate and the milestone
-   * the engine gives it. These are the engine's own constants, not a second
-   * copy of the rate table — a band changed in lib/domain/commission changes
-   * here in the same edit.
-   *
-   * Invite and Royalty are paid on a network position the calculator has no
-   * Booking to read, so a hand-added line opens at the top band and stays
-   * editable. That is the point of the panel: the position is a fact the user
-   * knows and the screen does not.
+   * v2.1 §11 — the two sale-commission components. A sale earns one or the
+   * other, never both. The rate is the selected Project's approved version; the
+   * milestone is the engine's own constant.
    */
   const commissionTypes: CalcCommissionTypeView[] = [
     {
       type: "DIRECT",
       label: "Direct Commission",
-      percent: DIRECT_PERCENT,
       milestonePercent: DIRECT_MILESTONE,
-      note: "to the selling Member",
-    },
-    {
-      type: "INVITE",
-      label: "Invite Commission",
-      percent: NETWORK_BANDS[0].percent,
-      milestonePercent: FULL_MILESTONE,
-      note: `to the selling Member's inviting Member, by annual position: ${NETWORK_BANDS.map(
-        (b) => `${b.from}–${b.to} at ${b.percent}%`
-      ).join(", ")}, none after 9`,
-    },
-    {
-      type: "ROYALTY",
-      label: "Royalty",
-      percent: NETWORK_BANDS[0].percent,
-      milestonePercent: FULL_MILESTONE,
-      note: "to the buyer's Original Introduced By Member on the same bands, once per introduced Customer",
+      note: "to the selling Member at 25% paid, or to a Member buying for themselves at 100%",
     },
     {
       type: "LOYALTY",
-      label: "Loyalty Bonus",
-      percent: LOYALTY_PERCENT,
+      label: "Customer Loyalty",
       milestonePercent: FULL_MILESTONE,
-      note: `to the Customer, ${MAX_LOYALTY_SLOTS} in a lifetime`,
+      note:
+        `to the closing Customer (${CUSTOMER_CLOSING_LOYALTY_LIMIT} for life), or to the buyer on a ` +
+        "3% Club repeat purchase",
     },
   ];
 
@@ -378,6 +313,7 @@ export default async function CalculatorPage({
     projectCode: p.projectCode,
     city: p.city,
     location: p.location,
+    terms: p.commissionVersions[0] ? termsOf(p.commissionVersions[0]) : null,
   }));
 
   return (
@@ -389,8 +325,6 @@ export default async function CalculatorPage({
       plots={plotRows}
       people={peopleRows}
       commissionTypes={commissionTypes}
-      capPercent={SALE_CAP_PERCENT.toString()}
-      maxLoyaltySlots={MAX_LOYALTY_SLOTS}
       initialPlotId={plotRows.some((p) => p.id === initialPlotId) ? (initialPlotId ?? null) : null}
     />
   );

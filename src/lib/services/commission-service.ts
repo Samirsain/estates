@@ -985,6 +985,28 @@ export async function applyMemberCommissionHold(args: {
 
 /* -------------------------------------------------------------- read model */
 
+/**
+ * v2.1 §21, §25 — how many Customer-closing Loyalty events have qualified for
+ * each Person, of the lifetime three. Screens read this rather than counting.
+ */
+export async function closingLoyaltyUsed(personIds: readonly string[]): Promise<Map<string, number>> {
+  if (personIds.length === 0) return new Map();
+  const rows = await db.commissionRecord.groupBy({
+    by: ["beneficiaryPersonId"],
+    where: {
+      beneficiaryPersonId: { in: [...personIds] },
+      type: "LOYALTY",
+      beneficiaryRole: "CLOSING_CUSTOMER",
+      isCurrent: true,
+      payment: { not: "CANCELLED" },
+      qualifiedAt: { not: null },
+      booking: { status: { not: "CANCELLED" } },
+    },
+    _count: { _all: true },
+  });
+  return new Map(rows.map((r) => [r.beneficiaryPersonId, r._count._all]));
+}
+
 export function listCommissionForBooking(bookingId: string) {
   return db.commissionRecord.findMany({
     where: { bookingId },

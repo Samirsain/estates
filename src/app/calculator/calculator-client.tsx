@@ -12,8 +12,8 @@
  * Area comes from calculateAreas(), the commission combination from
  * generateCommission() and the beneficiary conditions from resolveEligibility()
  * — the same three rules a real Booking runs, called here with facts read off
- * the people chosen. There is no second copy of the rate table, the bands, the
- * milestones or the 4% ceiling on this screen.
+ * the people chosen and the selected Project's approved commission settings
+ * (v2.1 §12). There is no second copy of the rates or the milestones here.
  *
  * Layout: what is chosen sits across the top, the arithmetic on the left, the
  * split on the right. Nothing is printed twice — the Project and the Plot are
@@ -31,12 +31,14 @@ import { Field, inputClass } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
 import { calculateAreas } from "@/lib/domain/inventory";
 import {
+  CUSTOMER_CLOSING_LOYALTY_LIMIT,
   generateCommission,
-  noBenefitLabel,
   previewInput,
+  rateLabel,
   resolveEligibility,
   type CommissionInput,
   type CommissionType,
+  type FrozenTerms,
   type PersonFacts,
 } from "@/lib/domain/commission";
 import {
@@ -58,13 +60,14 @@ export type CalcProjectView = {
   projectCode: string;
   city: string | null;
   location: string | null;
+  /** v2.1 §12 — the Project's Active commission settings; null when none are approved. */
+  terms: FrozenTerms | null;
 };
 
-/** One sale-commission component, with the rate and milestone the engine gives it. */
+/** One sale-commission component, with the milestone the engine gives it. */
 export type CalcCommissionTypeView = {
   type: CommissionType;
   label: string;
-  percent: string;
   milestonePercent: string;
   note: string;
 };
@@ -75,6 +78,8 @@ export type CalcPersonView = {
   label: string;
   name: string;
   aadhaarAvailable: boolean;
+  /** v2.1 §22, §77 — Aadhaar Verified, the Customer closer's KYC. */
+  aadhaarVerified: boolean;
   bankVerified: boolean;
   /** PRD §14.5 — a first personal purchase earns no repeat-purchase Loyalty. */
   hasPriorPurchase: boolean;
@@ -83,20 +88,13 @@ export type CalcPersonView = {
     status: "ACTIVE" | "DEACTIVATED";
     reraStatus: "REGISTERED" | "PENDING" | "EXPIRED" | "NOT_APPLICABLE";
     commissionHold: boolean;
-    invitedByPersonId: string | null;
-    invitedBy: string | null;
-    invitePosition: number | null;
-    inviteRatePercent: string | null;
-    inviteUsed: boolean;
   } | null;
   customer: {
     customerId: string;
-    royaltyMemberPersonId: string | null;
-    royaltyMember: string | null;
-    royaltyPosition: number | null;
-    royaltyRatePercent: string | null;
-    royaltyUsed: boolean;
-    loyaltyUsed: number;
+    /** v2.1 §22 — accepted Customer Terms. */
+    termsAccepted: boolean;
+    /** v2.1 §21 — Customer-closing Loyalty events qualified, of three for life. */
+    closingLoyaltyUsed: number;
   } | null;
 };
 
@@ -246,7 +244,8 @@ const HOLD_SENTENCE: Record<string, string> = {
   CHANGE_PLOT_PENDING: "Change Plot Pending on the Booking",
   BUYBACK_PENDING: "Buyback Pending on the Booking",
   PAYMENT_PENDING: "Payment Pending on the acquisition",
-  COMMISSION_CONFLICT_ABOVE_4: "Commission Conflict — Above 4%",
+  CLOSER_KYC_PENDING: "Closer KYC Pending — a Customer closer's Aadhaar must be Verified",
+  CUSTOMER_TERMS_PENDING: "Customer Terms Pending — the closer has not accepted Customer Terms",
 };
 
 export default function CalculatorClient({
@@ -257,8 +256,6 @@ export default function CalculatorClient({
   plots,
   people,
   commissionTypes,
-  capPercent,
-  maxLoyaltySlots,
   initialPlotId,
 }: {
   role: StaffRole;
@@ -268,8 +265,6 @@ export default function CalculatorClient({
   plots: CalcPlotView[];
   people: CalcPersonView[];
   commissionTypes: CalcCommissionTypeView[];
-  capPercent: string;
-  maxLoyaltySlots: number;
   /** From ?plot= on a Plot's own page: the calculator opens on that Plot. */
   initialPlotId?: string | null;
 }) {
@@ -300,28 +295,8 @@ export default function CalculatorClient({
     p && {
       id: p.id,
       memberActive: p.member?.status === "ACTIVE",
+      memberDeactivated: p.member?.status === "DEACTIVATED",
       hasPriorPurchase: p.hasPriorPurchase,
-      invite:
-        p.member?.invitedByPersonId && p.member.invitePosition && p.member.inviteRatePercent
-          ? {
-              beneficiaryPersonId: p.member.invitedByPersonId,
-              position: p.member.invitePosition,
-              ratePercent: p.member.inviteRatePercent,
-            }
-          : null,
-      inviteUsed: p.member?.inviteUsed ?? false,
-      royalty:
-        p.customer?.royaltyMemberPersonId &&
-        p.customer.royaltyPosition &&
-        p.customer.royaltyRatePercent
-          ? {
-              beneficiaryPersonId: p.customer.royaltyMemberPersonId,
-              position: p.customer.royaltyPosition,
-              ratePercent: p.customer.royaltyRatePercent,
-            }
-          : null,
-      royaltyUsed: p.customer?.royaltyUsed ?? false,
-      loyaltyUsed: p.customer?.loyaltyUsed ?? 0,
     };
   const pickerOptions = React.useMemo(
     () => people.map((p) => ({ id: p.id, label: p.label })),
@@ -358,6 +333,8 @@ export default function CalculatorClient({
   );
   const plot = projectPlots.find((p) => p.id === plotId) ?? null;
   const deal = plot?.deal ?? null;
+  /** v2.1 §12 — the rates a new sale on the selected Project would freeze. */
+  const terms = projects.find((p) => p.id === projectId)?.terms ?? null;
 
   /** The Booking's own lines, as the engine froze them. */
   function dealSplits(rows: CalcDealRecordView[]): Split[] {
@@ -375,11 +352,9 @@ export default function CalculatorClient({
    * The whole combination, from the engine, for a sale that does not exist.
    *
    * This is generateCommission() — the same function a Booking runs, called
-   * with the live facts of the two people chosen: their frozen network
-   * positions, their open or consumed entitlements, and whether the buyer
-   * already owns a Plot. Nothing is invented and no position is typed. The
-   * engine's refusals arrive here as they would on a Booking, including the 4%
-   * ceiling, and are shown rather than worked around (RD-03).
+   * with the live facts of the two people chosen and the selected Project's
+   * approved settings. The engine's refusals arrive here as they would on a
+   * Booking, and are shown rather than worked around.
    */
   function derive(type: SoldByType, sellerId: string, buyerId: string) {
     const keep = (rows: Split[]) => rows.filter((r) => !r.derived && !r.record);
@@ -392,16 +367,12 @@ export default function CalculatorClient({
       return;
     }
 
-    let outcome;
-    try {
-      outcome = generateCommission(previewInput(type, seller, buyer));
-    } catch (error) {
-      // A frozen band that disagrees with the band table stops the engine on a
-      // real Booking too; it is a network record to resolve, not a rounding.
-      setConflict(error instanceof Error ? error.message : "The engine refused this combination.");
+    if (!terms) {
+      setConflict("This Project has no approved commission settings.");
       setSplits(keep);
       return;
     }
+    const outcome = generateCommission(previewInput(type, seller, buyer, terms));
 
     if (!outcome.ok) {
       setConflict(outcome.conflict);
@@ -544,31 +515,20 @@ export default function CalculatorClient({
 
   const totalPercent = shares.reduce((sum, s) => (s.percent ? sum.add(s.percent) : sum), zero);
   const totalShare = shares.reduce((sum, s) => (s.amount ? sum.add(s.amount) : sum), zero);
-  // RD-03 — the ceiling is the engine's own constant, passed in, not restated.
-  // A derived combination never gets here; the engine refuses it first.
-  const overCap = totalPercent.gt(capPercent);
 
   /**
    * What the engine would say about the beneficiary of one line.
    *
    * The milestone is passed as reached, because there is no verified payment to
    * have reached it: the question is whether this Person could be paid at all —
-   * Aadhaar, a verified bank, Member status, the Member hold and RERA (PRD
-   * §14.7, §19.5). A line that came from a Booking is never sent through here;
-   * it already carries the engine's frozen answer.
+   * Aadhaar, a verified bank, Member status, the Member hold, RERA, and for a
+   * Customer closer their KYC and Customer Terms (PRD §14.7, §19.5; v2.1 §22).
+   * A line that came from a Booking is never sent through here; it already
+   * carries the engine's frozen answer.
    */
-  function preview(
-    beneficiary: CalcPersonView,
-    type: CommissionType,
-    milestone: string,
-    /** Null while the line has a beneficiary but no band yet. */
-    percent: string | null
-  ) {
+  function preview(beneficiary: CalcPersonView, type: CommissionType, milestone: string, closing: boolean) {
     return resolveEligibility({
       type,
-      // CR-013 — a 0% band answers No Benefit before any of the conditions
-      // below are consulted, and the preview must say the same thing.
-      percent,
       progressPercent: milestone,
       milestonePercent: milestone,
       beneficiaryAadhaarAvailable: beneficiary.aadhaarAvailable,
@@ -578,39 +538,39 @@ export default function CalculatorClient({
       reraStatus: beneficiary.member?.reraStatus ?? null,
       bookingProcess: "NONE",
       acquisitionPaymentPending: false,
-      commissionConflictAbove4: overCap,
-      // AC-02 — treated as complete for the same reason the milestone is treated
-      // as reached: a performance cycle is a fact about a real transaction, and
-      // the Calculator is asking about the Person before there is one.
+      closer: closing
+        ? {
+            kycVerified: beneficiary.aadhaarVerified,
+            termsAccepted: beneficiary.customer?.termsAccepted ?? false,
+          }
+        : null,
     });
   }
 
   /**
    * The entitlement rules that are about this Person rather than about the
-   * sale. A hand-added line has no Sold By and no buyer behind it, so Invite
-   * and Royalty are not judged here — those opportunities belong to the invited
-   * Member and the introduced Customer (PRD §6.1, §6.3). Choose the two parties
-   * above and the engine judges the whole combination properly.
+   * sale. Choose the two parties above and the engine judges the whole
+   * combination properly.
    */
-  function ruleNotes(beneficiary: CalcPersonView, type: CommissionType): string[] {
+  function ruleNotes(beneficiary: CalcPersonView, type: CommissionType, closing: boolean): string[] {
     const notes: string[] = [];
-    if (type !== "LOYALTY" && !beneficiary.member) {
-      notes.push("Not a Member on file — Direct, Invite and Royalty are Member components.");
+    if (type === "DIRECT" && !beneficiary.member) {
+      notes.push("Not a Member on file — Direct Commission is a Member component.");
     }
     if (type === "LOYALTY") {
       if (!beneficiary.customer) {
-        notes.push("Not a Customer on file — the Loyalty Bonus is a Customer benefit (PRD §6.5).");
+        notes.push("Not a Customer on file — Customer Loyalty is a Customer benefit (v2.1 §21).");
       }
       if (beneficiary.member?.status === "ACTIVE") {
         notes.push(
           "Holds an Active Member capability, so a closing action uses Sold By Member and earns " +
-            "no Customer Loyalty (PRD §6.7)."
+            "no Customer Loyalty (v2.1 §24)."
         );
       }
-      if ((beneficiary.customer?.loyaltyUsed ?? 0) >= maxLoyaltySlots) {
+      if (closing && (beneficiary.customer?.closingLoyaltyUsed ?? 0) >= CUSTOMER_CLOSING_LOYALTY_LIMIT) {
         notes.push(
-          `All ${maxLoyaltySlots} lifetime Loyalty slots are consumed, and the limit never resets ` +
-            "(PRD §6.5)."
+          `Already earned ${CUSTOMER_CLOSING_LOYALTY_LIMIT} Customer-closing Loyalty events — Membership ` +
+            "is required to earn from further sales (v2.1 §25)."
         );
       }
     }
@@ -1004,11 +964,10 @@ export default function CalculatorClient({
               </p>
             )}
 
-            {/* All four commissions, always, in the order the pack lists
-                them — Direct, Invite, Royalty, Loyalty. A combination that
-                earns none of one still shows its row, reading N/A, because
-                "this deal pays no Royalty" is an answer somebody came here for
-                and a missing row is not one. */}
+            {/* Both commissions, always — Direct, then Loyalty. A combination
+                that earns one still shows the other's row, reading N/A, because
+                "this deal pays no Loyalty" is an answer somebody came here for
+                and a missing row is not one (v2.1 §11). */}
             <div className="overflow-x-auto">
               <table className="w-full min-w-[26rem] text-xs">
                 <thead className="border-b border-border/60 text-left text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
@@ -1029,25 +988,21 @@ export default function CalculatorClient({
                     const amount = line?.amount ?? null;
                     const milestone =
                       derived?.milestonePercent ?? kind.milestonePercent ?? "100";
+                    const closing =
+                      (derived?.beneficiaryRole ?? record?.beneficiaryRole) === "CLOSING_CUSTOMER";
                     const verdict =
-                      beneficiary && !record
-                        ? preview(beneficiary, kind.type, milestone, percent?.toString() ?? null)
-                        : null;
+                      beneficiary && !record ? preview(beneficiary, kind.type, milestone, closing) : null;
 
                     // Not applicable is a real answer and is printed as one.
                     const status = !line
                       ? "N/A"
                       : record
-                        ? record.eligibility === "NO_BENEFIT"
-                          ? noBenefitLabel(record.type as "INVITE" | "ROYALTY")
-                          : humanise(record.eligibility)
+                        ? humanise(record.eligibility)
                         : !beneficiary
                           ? "N/A"
                           : verdict?.state === "READY"
                             ? "Ready"
-                            : verdict?.state === "NO_BENEFIT"
-                              ? noBenefitLabel(kind.type as "INVITE" | "ROYALTY")
-                              : "On hold";
+                            : "On hold";
 
                     const why = record
                       ? [
@@ -1068,11 +1023,17 @@ export default function CalculatorClient({
                             `Aadhaar ${beneficiary.aadhaarAvailable ? "available" : "pending"}`,
                             `bank ${beneficiary.bankVerified ? "verified" : "not verified"}`,
                             `payable at ${milestone}% Payment Received`,
-                            ...ruleNotes(beneficiary, kind.type),
+                            ...ruleNotes(beneficiary, kind.type, closing),
                           ]
                             .filter(Boolean)
                             .join(" · ")
-                        : kind.note;
+                        : terms
+                          ? `${kind.note} · this Project: ${
+                              (kind.type === "DIRECT" ? terms.directPercent : terms.loyaltyPercent)
+                                ? `${rateLabel((kind.type === "DIRECT" ? terms.directPercent : terms.loyaltyPercent)!)}%`
+                                : "Disabled"
+                            }`
+                          : kind.note;
 
                     const held = status !== "Ready" && status !== "N/A" && !record;
 
@@ -1121,13 +1082,6 @@ export default function CalculatorClient({
                   <span className="tabular-nums">{total ? formatRupees(totalShare) : "—"}</span>
                 </div>
 
-                {overCap && (
-                  <p className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
-                    Above the {capPercent}% combined sale-commission cap (RD-03). A real Booking
-                    would be refused this combination until Sold By or a beneficiary is corrected —
-                    no component is ever trimmed to fit.
-                  </p>
-                )}
               </>
             )}
           </Card>

@@ -13,12 +13,7 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { can, canViewField } from "@/lib/security/permissions";
 import { maskAadhaar, maskMobile, maskPan } from "@/lib/security/identity";
 import { isLocked } from "@/lib/security/auth";
-import {
-  anniversaryDay,
-  eligibilityLabel,
-  experienceSince,
-  type CommissionType,
-} from "@/lib/domain/commission";
+import { eligibilityLabel, experienceSince } from "@/lib/domain/commission";
 import { MEMBER_TERMS_VERSION } from "@/lib/terms";
 import { formatIst, formatIstDateTime, istDay } from "@/lib/tasks";
 import { auditHistory, mergeHistory, newestFirst } from "@/lib/profile-history";
@@ -87,9 +82,6 @@ const PAYMENT_LABEL: Record<string, string> = {
   ACCOUNTS_ADJUSTMENT_REQUIRED: "Accounts Adjustment Required",
 };
 
-/** CR-014 — a cycle is positions 1 to 9. */
-const CYCLE_SIZE = 9;
-
 /** One table style for every table on the page. */
 const TH = "pb-2 pr-4 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
 const TD = "py-2.5 pr-4 align-top";
@@ -102,13 +94,11 @@ function NetworkRow({
   code,
   name,
   note,
-  band,
 }: {
   href: string;
   code: string;
   name: string;
   note?: React.ReactNode;
-  band: string;
 }) {
   return (
     <li className="flex items-center justify-between gap-3 py-2.5">
@@ -120,7 +110,6 @@ function NetworkRow({
       </span>
       <span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-muted-foreground">
         {note}
-        {band}
       </span>
     </li>
   );
@@ -151,11 +140,10 @@ export default async function MemberDetailPage({
     include: {
       person: { include: { customerProfile: { select: { id: true, customerId: true } } } },
       invitedByMember: { include: { person: true } },
-      invitedMembers: { include: { person: true }, orderBy: { invitePosition: "asc" } },
+      invitedMembers: { include: { person: true }, orderBy: { activationDate: "asc" } },
       portalAccount: {
         select: { status: true, lastLoginAt: true, lockedUntil: true, failedAttempts: true },
       },
-      performanceCycles: { orderBy: [{ kind: "asc" }, { cycleNumber: "asc" }] },
       termsAcceptances: { select: { version: true, acceptedAt: true } },
     },
   });
@@ -201,7 +189,7 @@ export default async function MemberDetailPage({
     db.customerProfile.findMany({
       where: { royaltyLinkedMemberId: member.id },
       include: { person: true },
-      orderBy: { royaltyPosition: "asc" },
+      orderBy: { royaltyLinkFinalAt: "asc" },
     }),
     db.booking.findMany({
       where: { soldByType: "MEMBER", soldByPersonId: personId },
@@ -256,23 +244,6 @@ export default async function MemberDetailPage({
   // nothing is verified yet. Replaced accounts are in History.
   const bank =
     banks.find((b) => b.status === "VERIFIED") ?? banks.find((b) => b.status === "PENDING") ?? null;
-
-  /* ---------------------------------------------------------------- cycles */
-
-  const activationDay = member.activationDate ? istDay(member.activationDate) : null;
-  const todayDay = istDay(new Date());
-  // RD-02 — the anniversary is the activation date's, 29 Feb falling to 28 Feb.
-  const nextAnniversary = (() => {
-    if (!activationDay) return null;
-    const year = Number(todayDay.slice(0, 4));
-    const thisYear = anniversaryDay(activationDay, year);
-    return thisYear > todayDay ? thisYear : anniversaryDay(activationDay, year + 1);
-  })();
-  const latestCycleIds = new Set(
-    (["INVITE", "ROYALTY"] as const)
-      .map((kind) => member.performanceCycles.filter((c) => c.kind === kind).at(-1)?.id)
-      .filter(Boolean)
-  );
 
   /* ---------------------------------------------------------------- access */
 
@@ -485,15 +456,6 @@ export default async function MemberDetailPage({
               }
               hint={member.invitedByMember?.person.fullName ?? "No inviting Member"}
             />
-            <Stat
-              label="Invite position"
-              value={member.invitePosition ? `Position ${member.invitePosition}` : "3% Club"}
-              hint={
-                member.invitePosition && member.inviteRatePercent
-                  ? `${member.inviteRatePercent.toFixed(2)}% band`
-                  : "No Invite position taken"
-              }
-            />
           </dl>
         </Card>
 
@@ -616,11 +578,6 @@ export default async function MemberDetailPage({
                     code={m.memberId}
                     name={m.person.fullName}
                     note={m.status === "ACTIVE" ? null : <Badge variant="destructive">Deactivated</Badge>}
-                    band={
-                      m.invitePosition
-                        ? `Pos ${m.invitePosition} · ${m.inviteRatePercent?.toFixed(2) ?? "—"}%`
-                        : "—"
-                    }
                   />
                 ))}
               </ul>
@@ -647,60 +604,12 @@ export default async function MemberDetailPage({
                         {c.royaltyLinkFinalAt ? "Final" : "Provisional"}
                       </Badge>
                     }
-                    band={
-                      c.royaltyPosition
-                        ? `Pos ${c.royaltyPosition} · ${c.royaltyRatePercent?.toFixed(2) ?? "—"}%`
-                        : "—"
-                    }
                   />
                 ))}
               </ul>
             )}
           </Section>
         </div>
-
-        <Section title="Invite & Royalty cycles" icon={<Layers className="h-3.5 w-3.5" />}>
-          {member.performanceCycles.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No cycle has opened yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[40rem] text-xs">
-                <thead className="border-b border-border/50">
-                  <tr>
-                    <th className={TH}>Counter</th>
-                    <th className={TH}>Cycle</th>
-                    <th className={TH}>Opened on</th>
-                    <th className={TH}>Progress</th>
-                    <th className={TH}>Completed</th>
-                    <th className={TH}>Status</th>
-                    <th className={`${TH} pr-0`}>Next anniversary</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40">
-                  {member.performanceCycles.map((c) => (
-                    <tr key={c.id}>
-                      <td className={`${TD} font-medium`}>{c.kind === "INVITE" ? "Invite" : "Royalty"}</td>
-                      <td className={`${TD} tabular-nums`}>#{c.cycleNumber}</td>
-                      <td className={TD}>{formatIst(c.openedOn)}</td>
-                      <td className={`${TD} tabular-nums`}>
-                        {c.positionsFilled} of {CYCLE_SIZE} filled
-                      </td>
-                      <td className={`${TD} tabular-nums`}>{c.positionsComplete}</td>
-                      <td className={TD}>
-                        <Badge variant={c.status === "UPGRADE_ELIGIBLE" ? "success" : "outline"}>
-                          {c.status === "UPGRADE_ELIGIBLE" ? "Upgrade Eligible" : "In progress"}
-                        </Badge>
-                      </td>
-                      <td className={`${TD} pr-0`}>
-                        {latestCycleIds.has(c.id) && nextAnniversary ? formatIst(nextAnniversary) : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Section>
 
         {/* 7 Deals */}
         <Section
@@ -921,7 +830,7 @@ export default async function MemberDetailPage({
                         <td className={`${TD} font-medium`}>{words(c.type)}</td>
                         <td className={`${TD} pr-0`}>
                           <span className="font-medium">
-                            {eligibilityLabel(c.eligibility, c.type as CommissionType)}
+                            {eligibilityLabel(c.eligibility)}
                           </span>
                           {" · "}
                           {PAYMENT_LABEL[c.payment] ?? c.payment}
