@@ -9,8 +9,7 @@
 
 import { Prisma } from "@prisma/client";
 import { db, inWaves } from "@/lib/db";
-import { SALE_CAP_PERCENT } from "@/lib/domain/commission";
-import { rebuildLoyaltyCount } from "@/lib/domain/completion";
+import { CUSTOMER_CLOSING_LOYALTY_LIMIT } from "@/lib/domain/commission";
 
 const D = Prisma.Decimal;
 
@@ -285,7 +284,7 @@ async function commissionIntegrity(): Promise<RuleResult> {
   });
 
   const exceptions: Exception[] = [];
-  const saleTotals = new Map<string, Prisma.Decimal>();
+  const saleTypes = new Map<string, Set<string>>();
 
   for (const record of records) {
     const label = record.booking?.bookingNumber ?? record.booking?.requestNo ?? record.id;
@@ -309,117 +308,70 @@ async function commissionIntegrity(): Promise<RuleResult> {
       });
     }
 
-    if (record.isCurrent && record.bookingId) {
-      const running = saleTotals.get(record.bookingId) ?? new D(0);
-      saleTotals.set(record.bookingId, running.add(record.percent));
+    if (record.isCurrent && record.bookingId && record.payment !== "CANCELLED") {
+      const types = saleTypes.get(record.bookingId) ?? new Set<string>();
+      types.add(record.type);
+      saleTypes.set(record.bookingId, types);
     }
   }
 
-  for (const [bookingId, total] of saleTotals) {
-    if (total.gt(SALE_CAP_PERCENT)) {
+  // v2.1 §11 — one sale never pays both Direct and Loyalty.
+  for (const [bookingId, types] of saleTypes) {
+    if (types.has("DIRECT") && types.has("LOYALTY")) {
       const record = records.find((r) => r.bookingId === bookingId);
       exceptions.push({
         record: record?.booking?.bookingNumber ?? record?.booking?.requestNo ?? bookingId,
-        detail: `Current sale commission totals ${total.toFixed(2)}%, above the 4% cap (RD-03)`,
+        detail: "Direct and Customer Loyalty are both current on one sale (v2.1 §11)",
       });
     }
   }
 
   return {
     rule: "commission_integrity",
-    source: "PRD §6.9, RD-03 — supersession intact, eligibility and payment separate, 4% cap held",
+    source: "PRD §6.9, v2.1 §11 — supersession intact, eligibility and payment separate, never Direct and Loyalty together",
     checked: records.length,
     exceptions,
   };
 }
 
 /**
- * PRD §6.5, §22 — Loyalty slots are rebuilt from unique qualifying events, so a
- * migrated count must equal the events behind it and never exceed three.
+ * v2.1 §21, §25, §77 — at most three Customer-closing Loyalty events qualify per
+ * real person, merged-away identities included.
  */
-async function loyaltySlots(): Promise<RuleResult> {
-  const customers = await db.customerProfile.findMany({
-    select: { customerId: true, personId: true, loyaltySlotsConsumed: true },
-  });
-  const opportunities = await db.commissionOpportunity.findMany({
-    where: { kind: "LOYALTY", status: "CONSUMED" },
-    select: { subjectPersonId: true, consumedByBookingId: true },
-  });
-
-  const byPerson = new Map<string, { qualifyingKey: string }[]>();
-  for (const opportunity of opportunities) {
-    const list = byPerson.get(opportunity.subjectPersonId) ?? [];
-    list.push({ qualifyingKey: opportunity.consumedByBookingId! });
-    byPerson.set(opportunity.subjectPersonId, list);
-  }
-
-  const exceptions: Exception[] = [];
-  for (const customer of customers) {
-    const rebuilt = rebuildLoyaltyCount(byPerson.get(customer.personId) ?? []);
-    if (rebuilt !== customer.loyaltySlotsConsumed) {
-      exceptions.push({
-        record: customer.customerId,
-        detail: `Loyalty slots consumed is ${customer.loyaltySlotsConsumed}, but the unique qualifying events rebuild to ${rebuilt}`,
-      });
-    }
-  }
-
-  return {
-    rule: "loyalty_slots_rebuilt",
-    source: "PRD §6.5, §22 — rebuilt from unique qualifying events, capped at three",
-    checked: customers.length,
-    exceptions,
-  };
-}
-
-/**
- * RD-02; ARCHITECTURE §13.8 — annual positions are rebuilt without renumbering,
- * so within one cycle a position is issued once.
- */
-async function annualPositions(): Promise<RuleResult> {
-  const members = await db.memberProfile.findMany({
-    where: { invitePosition: { not: null } },
-    select: { memberId: true, invitedByMemberId: true, invitePosition: true, inviteCycleId: true },
-  });
-  const customers = await db.customerProfile.findMany({
-    where: { royaltyPosition: { not: null } },
-    select: {
-      customerId: true,
-      royaltyLinkedMemberId: true,
-      royaltyPosition: true,
-      royaltyCycleId: true,
+async function customerClosingLoyalty(): Promise<RuleResult> {
+  const qualified = await db.commissionRecord.findMany({
+    where: {
+      type: "LOYALTY",
+      beneficiaryRole: "CLOSING_CUSTOMER",
+      isCurrent: true,
+      payment: { not: "CANCELLED" },
+      qualifiedAt: { not: null },
     },
+    select: { beneficiaryPerson: { select: { id: true, fullName: true, survivingPersonId: true } } },
   });
 
-  const exceptions: Exception[] = [];
-  const seen = new Set<string>();
-
-  for (const member of members) {
-    const key = `invite:${member.invitedByMemberId}:${member.inviteCycleId ?? "none"}:${member.invitePosition}`;
-    if (seen.has(key)) {
-      exceptions.push({
-        record: member.memberId,
-        detail: `Invite position ${member.invitePosition} is issued twice in the same cycle`,
-      });
-    }
-    seen.add(key);
+  const byPerson = new Map<string, { name: string; count: number }>();
+  for (const { beneficiaryPerson: p } of qualified) {
+    const key = p.survivingPersonId ?? p.id;
+    const entry = byPerson.get(key) ?? { name: p.fullName, count: 0 };
+    entry.count++;
+    byPerson.set(key, entry);
   }
 
-  for (const customer of customers) {
-    const key = `royalty:${customer.royaltyLinkedMemberId}:${customer.royaltyCycleId ?? "none"}:${customer.royaltyPosition}`;
-    if (seen.has(key)) {
+  const exceptions: Exception[] = [];
+  for (const { name, count } of byPerson.values()) {
+    if (count > CUSTOMER_CLOSING_LOYALTY_LIMIT) {
       exceptions.push({
-        record: customer.customerId,
-        detail: `Royalty position ${customer.royaltyPosition} is issued twice in the same cycle`,
+        record: name,
+        detail: `${count} Customer-closing Loyalty events qualified; the lifetime limit is ${CUSTOMER_CLOSING_LOYALTY_LIMIT}`,
       });
     }
-    seen.add(key);
   }
 
   return {
-    rule: "annual_positions_not_renumbered",
-    source: "RD-02 — annual counters rebuilt without renumbering existing relationships",
-    checked: members.length + customers.length,
+    rule: "customer_closing_loyalty_limit",
+    source: "v2.1 §21, §25 — three successful Customer-closing events for life",
+    checked: byPerson.size,
     exceptions,
   };
 }
@@ -544,8 +496,7 @@ const RULES = [
   bookingPlotPairs,
   paymentDatasets,
   commissionIntegrity,
-  loyaltySlots,
-  annualPositions,
+  customerClosingLoyalty,
   personMerges,
   portalLogins,
   deliveredCompletions,

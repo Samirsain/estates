@@ -220,16 +220,8 @@ export type BusinessState = {
   /** AC-01 — split by the classification frozen at approval, never by who the buyer is today. */
   business: { customer: number; member: number; unclassified: number };
   transactions: { active: number; unwound: number; cancelled: number; completed: number };
-  /**
-   * AC-02, TC-ROY-001/002 — earned means the qualifying activity is complete,
-   * which is not the same as paid. A Royalty at its 100% payment milestone but
-   * not yet legally completed is pending, however far the money has come.
-   */
-  royalty: { earned: number; pending: number; paid: number };
-  cycles: { inProgress: number; upgradeEligible: number; positions: number };
   buying: { records: number; totalPercent: string; overCapExceptions: number };
   paidEarly: { approvedAwaitingPayment: number; notReadyUnapproved: number; processed: number };
-  conflicts: { aboveCap: number };
   recoveries: { refundPending: number; cancellationsDecided: number };
   conversions: { customersActivatedAsMembers: number };
   audit: { reversals: number; supersededRecords: number };
@@ -260,16 +252,9 @@ export async function businessState(): Promise<BusinessState> {
     unwoundTx,
     cancelledTx,
     completedTx,
-    royaltyEarned,
-    royaltyPending,
-    royaltyPaid,
-    cyclesInProgress,
-    cyclesUpgradeEligible,
-    cyclePositions,
     paidEarlyApproved,
     paidEarlyUnapproved,
     paidEarlyProcessed,
-    conflicts,
     refundPending,
     cancellationsDecided,
     conversions,
@@ -286,30 +271,6 @@ export async function businessState(): Promise<BusinessState> {
     () => db.booking.count({ where: { status: "BUYBACK_COMPLETED" } }),
     () => db.booking.count({ where: { status: { in: ["CANCELLED", "REFUND_PENDING"] } } }),
     () => db.booking.count({ where: { status: "DELIVERED" } }),
-    // CR-004 — Royalty is earned at its own milestone now, so "earned" is the
-    // consumed one-time opportunity rather than a completed cycle, and pending
-    // is everything still short of it.
-    () => db.commissionRecord.count({
-      where: { type: "ROYALTY", isCurrent: true, opportunityId: { not: null } },
-    }),
-    () => db.commissionRecord.count({
-      where: {
-        type: "ROYALTY",
-        isCurrent: true,
-        opportunityId: null,
-        payment: { notIn: ["CANCELLED"] },
-      },
-    }),
-    () => db.commissionRecord.count({
-      where: { type: "ROYALTY", isCurrent: true, payment: { in: ["PAID", "PAID_EARLY"] } },
-    }),
-    // CR-014 — cycles in progress, cycles that reached Upgrade Eligible, and the
-    // positions those cycles hold.
-    () => db.performanceCycle.count({ where: { status: "IN_PROGRESS" } }),
-    () => db.performanceCycle.count({ where: { status: "UPGRADE_ELIGIBLE" } }),
-    () => db.performanceCycle
-      .aggregate({ _sum: { positionsFilled: true } })
-      .then((r) => r._sum.positionsFilled ?? 0),
     () => db.commissionRecord.count({
       where: { isCurrent: true, payment: "NOT_PAID", earlyApprovedAt: { not: null } },
     }),
@@ -324,9 +285,6 @@ export async function businessState(): Promise<BusinessState> {
       },
     }),
     () => db.commissionRecord.count({ where: { payment: "PAID_EARLY" } }),
-    () => db.commissionRecord.count({
-      where: { isCurrent: true, holdReason: "COMMISSION_CONFLICT_ABOVE_4" },
-    }),
     () => db.booking.count({ where: { activeProcess: "REFUND_PENDING" } }),
     () => db.cancellationRequest.count({ where: { status: { not: "PENDING" } } }),
     // AC-01 — a Customer who later activated as a Member, evidenced by the
@@ -345,11 +303,8 @@ export async function businessState(): Promise<BusinessState> {
           in: [
             "BOOKING_CANCELLED",
             "MILESTONE_LOST",
-            "OPPORTUNITY_LOST",
+            "LIMIT_REACHED",
             "SUPERSEDED",
-            "CYCLE_RELEASED",
-            "CYCLE_REOPENED",
-            "CYCLE_ACTIVITY_REOPENED",
           ],
         },
       },
@@ -373,12 +328,6 @@ export async function businessState(): Promise<BusinessState> {
       cancelled: cancelledTx,
       completed: completedTx,
     },
-    royalty: { earned: royaltyEarned, pending: royaltyPending, paid: royaltyPaid },
-    cycles: {
-      inProgress: cyclesInProgress,
-      upgradeEligible: cyclesUpgradeEligible,
-      positions: cyclePositions,
-    },
     buying: {
       records: buyingRecords.length,
       totalPercent: totalBuying.toFixed(2),
@@ -389,7 +338,6 @@ export async function businessState(): Promise<BusinessState> {
       notReadyUnapproved: paidEarlyUnapproved,
       processed: paidEarlyProcessed,
     },
-    conflicts: { aboveCap: conflicts },
     recoveries: { refundPending, cancellationsDecided },
     conversions: { customersActivatedAsMembers: conversions },
     audit: { reversals, supersededRecords },

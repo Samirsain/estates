@@ -22,7 +22,9 @@ import { freezePlcSnapshot, loadPlotForPlc, type PlotForPlc } from "./plc-servic
 import { countOpenPositions } from "./hold-service";
 import { syncRoyaltyLink } from "./network-service";
 import {
+  freezeAtSubmission,
   generateForBooking,
+  loyaltySubjectDeactivated,
   previewCommission,
   raiseCommissionConflict,
   reassessCommission,
@@ -144,6 +146,13 @@ function reviewSnapshot(input: {
   customerType: string | null;
   schedule: readonly { seq: number; scheduledPercent: { toFixed(dp: number): string }; dueDate: Date }[];
   remark: string | null;
+  /** v2.1 §16 — the Project commission version this request version froze. */
+  commissionTerms: {
+    versionId: string;
+    version: number;
+    directPercent: string | null;
+    loyaltyPercent: string | null;
+  };
 }) {
   return canonicalSnapshot({
     projectId: input.projectId,
@@ -166,6 +175,7 @@ function reviewSnapshot(input: {
       dueDate: i.dueDate,
     })),
     remark: input.remark,
+    commissionTerms: input.commissionTerms,
   });
 }
 
@@ -245,7 +255,16 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
         if (!allocatable.ok) blocked(allocatable.reason);
       }
 
-      await validateSoldBy(tx, input.soldByType, input.soldByPersonId ?? null);
+      await validateSoldBy(tx, input.soldByType, input.soldByPersonId ?? null, { sale: true });
+
+      // v2.1 §16 — the Project's approved commission settings, the buyer's
+      // classification and the Loyalty earner's status freeze with the request.
+      const frozen = await freezeAtSubmission(tx, {
+        projectId: plot.projectId,
+        soldByType: input.soldByType,
+        soldByPersonId: input.soldByPersonId ?? null,
+        buyerPersonId: primary.personId,
+      });
 
       // PRD §8.2 — the three-position limit is checked before the Plot moves.
       // The Hold being converted is already counted, so it is not counted twice.
@@ -274,6 +293,9 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
           enquiryId: input.enquiryId ?? null,
           holdId: hold?.id ?? null,
           plcSnapshotId: snapshot.id,
+          commissionVersionId: frozen.commissionVersionId,
+          originalClassification: frozen.originalClassification,
+          loyaltySubjectDeactivated: frozen.loyaltySubjectDeactivated,
           submittedByRef: input.actorRef,
           parties: {
             create: parties.map((p) => ({
@@ -290,7 +312,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
               actorRef: input.actorRef,
               action: "BOOKING_REQUEST_SUBMITTED",
               toStatus: "REQUEST_PENDING",
-              detail: { requestNo, version: 1 },
+              detail: { requestNo, version: 1, commissionVersion: frozen.terms.version },
             },
           },
         },
@@ -320,6 +342,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
             customerType: input.customerType ?? null,
             schedule: schedule.instalments,
             remark: input.remark ?? null,
+            commissionTerms: frozen.terms,
           }) as never,
           submittedByRef: input.actorRef,
         },
@@ -429,7 +452,16 @@ export async function reviseBookingRequest(args: {
       });
       if (!pending) blocked("There is no Booking Request waiting for a decision to correct.");
 
-      await validateSoldBy(tx, args.soldByType, args.soldByPersonId ?? null);
+      await validateSoldBy(tx, args.soldByType, args.soldByPersonId ?? null, { sale: true });
+
+      // v2.1 §16 — a corrected request is a new submission, so it freezes again.
+      // The version Accounts finally approves is the one that counts.
+      const frozen = await freezeAtSubmission(tx, {
+        projectId: booking.projectId,
+        soldByType: args.soldByType,
+        soldByPersonId: args.soldByPersonId ?? null,
+        buyerPersonId: primary.personId,
+      });
 
       // The superseded version stays in History exactly as submitted (PRD §9.1).
       await tx.bookingReviewVersion.update({
@@ -472,6 +504,9 @@ export async function reviseBookingRequest(args: {
           bookingDate: args.bookingDate,
           customerType: args.customerType ?? null,
           remark: args.remark ?? null,
+          commissionVersionId: frozen.commissionVersionId,
+          originalClassification: frozen.originalClassification,
+          loyaltySubjectDeactivated: frozen.loyaltySubjectDeactivated,
         },
       });
 
@@ -504,6 +539,7 @@ export async function reviseBookingRequest(args: {
             customerType: args.customerType ?? null,
             schedule: schedule.instalments,
             remark: args.remark ?? null,
+            commissionTerms: frozen.terms,
           }) as never,
           submittedByRef: args.actorRef,
         },
@@ -528,7 +564,7 @@ export async function reviseBookingRequest(args: {
           bookingId: args.bookingId,
           actorRef: args.actorRef,
           action: "BOOKING_REQUEST_REVISED",
-          detail: { fromVersion: pending.version, toVersion: version },
+          detail: { fromVersion: pending.version, toVersion: version, commissionVersion: frozen.terms.version },
           reason: args.reason,
         },
       });
@@ -641,9 +677,9 @@ export async function decideBookingRequest(args: {
       const move = canTransition("REQUEST_PENDING", "BOOKED");
       if (!move.ok) blocked(move.reason);
 
-      // RD-03 — a Booking Request may be saved, but Accounts cannot approve it
-      // while the generated commission combination exceeds 4%. Nothing is
-      // trimmed: the conflict is raised for CRM/Admin to correct the source.
+      // Accounts cannot approve while the engine reports a Commission Conflict —
+      // a Sold By that contradicts the buyer, or no frozen commission settings.
+      // Nothing is trimmed: the conflict is raised for CRM/Admin to correct.
       const commission = await previewCommission(tx, args.bookingId);
       if (!commission.ok) {
         await raiseCommissionConflict(tx, args.bookingId, commission.conflict, args.actorRef);
@@ -1310,7 +1346,7 @@ export async function requestSoldByCorrection(args: {
       if (unchanged) blocked("The proposed attribution is the same as the current one.");
 
       // The same closer rules the Booking itself enforces (PRD §6.7, §11.3).
-      await validateSoldBy(tx, args.toSoldByType, args.toSoldByPersonId ?? null);
+      await validateSoldBy(tx, args.toSoldByType, args.toSoldByPersonId ?? null, { sale: true });
 
       const correction = await tx.soldByCorrection.create({
         data: {
@@ -1456,6 +1492,13 @@ export async function decideSoldByCorrection(args: {
           soldByType: correction.toSoldByType,
           soldByPersonId: correction.toSoldByPersonId,
           activeProcess: "NONE",
+          // v2.1 §24, §75 — recalculated on the Booking's frozen version, with
+          // the Deactivated test re-read for the corrected closer.
+          loyaltySubjectDeactivated: await loyaltySubjectDeactivated(tx, {
+            soldByType: correction.toSoldByType,
+            soldByPersonId: correction.toSoldByPersonId,
+            buyerPersonId: booking.primaryPersonId,
+          }),
         },
       });
 

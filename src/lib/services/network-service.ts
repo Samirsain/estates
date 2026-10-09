@@ -1,87 +1,15 @@
-// Member activation and the two network counters.
-// prd-corrections.md RD-02, §6.2, §6.3, §6.4; prd-complete §7.1, §14.3, §14.4;
-// Approved Changes (2) CR-001 – CR-004.
+// Member activation, who invited whom, and the Royalty Linked Member.
+// Business Model v2.1 §26, §49–§51; prd-complete §7.1, §14.3.
 //
-// An Invite position is assigned once, at activation. A Royalty position is
-// assigned once, when the Customer's first qualifying purchase reaches its
-// milestone — never from an Enquiry (CR-001). Both are then permanently fixed
-// with the band rate they earned: existing positions never reset, renumber or
-// move.
+// v2.1 §1 retires the Invite and Royalty positions, bands and cycles. What
+// stays is the relationship itself: the inviting Member (part 3, Trip
+// Reference Credit) and the Royalty Linked Member (part 2, Royalty Gift).
 
-import { db } from "@/lib/db";
-import { bandRate, counterYearStart, nextNetworkPosition } from "@/lib/domain/commission";
+import { BUYBACK_MIN_SOURCE_PAYMENT } from "@/lib/domain/commission";
 import { INITIAL_PORTAL_PASSWORD, hashPassword } from "@/lib/security/auth";
-import { istDay } from "@/lib/tasks";
 import { blocked, nextReference, runCommand, type Tx } from "./command";
-import { currentCycle, refreshCycle } from "./cycle-service";
-import { generateForBooking, reassessCommission } from "./commission-service";
+import { reassessCommission } from "./commission-service";
 import { closeTasksFor, ensureTask } from "./task-service";
-
-/**
- * RD-02 with CR-014 — the next free position in the inviting Member's *current
- * Invite cycle*.
- *
- * The counter year used to be the grouping key, which is exactly the annual
- * reset the pack removes: a Member who invited four people a year got position 1
- * again every anniversary. The cycle is the grouping key now, so positions keep
- * climbing — past nine into CR-013's 0% band — until the cycle's own nine are
- * complete and the next anniversary opens a new one.
- */
-export async function assignInvitePosition(
-  tx: Tx,
-  args: { invitedMemberId: string; invitingMemberId: string; at?: Date }
-) {
-  const inviter = await tx.memberProfile.findUniqueOrThrow({
-    where: { id: args.invitingMemberId },
-  });
-  if (!inviter.activationDate) {
-    blocked("The inviting Member is not activated, so no Network position can be assigned.");
-  }
-
-  // currentCycle takes the lock that serialises this counter, so two
-  // activations in the same instant cannot take the same position.
-  const cycle = await currentCycle(tx, inviter.id, "INVITE");
-
-  const taken = await tx.memberProfile.findMany({
-    where: { inviteCycleId: cycle.id, invitePosition: { not: null } },
-    select: { invitePosition: true },
-  });
-  const position = nextNetworkPosition(taken.map((t) => t.invitePosition!));
-  const ratePercent = bandRate(position);
-
-  await tx.memberProfile.update({
-    where: { id: args.invitedMemberId },
-    data: {
-      invitedByMemberId: inviter.id,
-      invitePosition: position,
-      inviteRatePercent: ratePercent,
-      inviteCycleId: cycle.id,
-    },
-  });
-  await refreshCycle(tx, cycle.id, `MEMBER:${inviter.memberId}`);
-  return { position, ratePercent, cycleNumber: cycle.cycleNumber };
-}
-
-/**
- * CR-002 — the Customer takes the next free position in the Royalty Linked
- * Member's Royalty counter. Called only when the link becomes final, because
- * that is the moment the pack says the position is taken: a provisional link
- * consumes nothing.
- */
-async function assignRoyaltyPosition(tx: Tx, args: { royaltyMemberId: string }) {
-  const member = await tx.memberProfile.findUniqueOrThrow({ where: { id: args.royaltyMemberId } });
-  if (!member.activationDate) {
-    blocked("The Royalty Linked Member is not activated, so no Royalty position can be assigned.");
-  }
-
-  const cycle = await currentCycle(tx, member.id, "ROYALTY");
-  const taken = await tx.customerProfile.findMany({
-    where: { royaltyCycleId: cycle.id, royaltyPosition: { not: null } },
-    select: { royaltyPosition: true },
-  });
-  const position = nextNetworkPosition(taken.map((t) => t.royaltyPosition!));
-  return { position, ratePercent: bandRate(position), cycleId: cycle.id, cycleNumber: cycle.cycleNumber };
-}
 
 /**
  * CR-001 – CR-004 — the Royalty Linked Member, recomputed from the Bookings
@@ -100,10 +28,12 @@ async function assignRoyaltyPosition(tx: Tx, args: { royaltyMemberId: string }) 
  *   as Primary Customer; an exact tie goes to the lower Booking Number;
  * - Sold By Member on it stores that Member as the provisional link; Sold By
  *   3% CLUB or Sold By Customer stores no Member at all (CR-003);
- * - the link becomes final — and only then takes a Royalty position — at 100%
- *   verified Payment Received or an Approved Buyback on that same Booking;
+ * - the link becomes final at 100% verified Payment Received, or at an
+ *   Approved Buyback on that same Booking once it has 25% received (v2.1 §49);
  * - a final link is never recomputed. Not by a later sale, not by a later
  *   cancellation: CR-003's "no Royalty Member" is as final as a named one.
+ *
+ * No position is taken any more (v2.1 §48): the link is the whole of it.
  */
 export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string) {
   const customer = await tx.customerProfile.findUnique({ where: { personId } });
@@ -133,7 +63,7 @@ export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string
           action: "ROYALTY_LINK_REMOVED",
           reason:
             "The Booking that held the unconfirmed Royalty link is no longer a qualifying first " +
-            "purchase. No Royalty position was consumed (CR-002).",
+            "purchase. Nothing was consumed (v2.1 §50).",
         },
       });
       await tx.customerProfile.update({
@@ -173,75 +103,42 @@ export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string
     });
   }
 
-  // CR-002 — the two milestones that make the link final.
+  // v2.1 §49 — the two milestones that make the link final. The Buyback counts
+  // only once the purchase has 25% verified Payment Received (§41).
   const paidInFull = first.paymentReceivedPercent.gte(100);
-  const approvedBuyback = paidInFull
-    ? 0
-    : await tx.acquisition.count({
-        where: { sourceBookingId: first.id, type: "BUYBACK", status: "APPROVED" },
-      });
+  const approvedBuyback =
+    paidInFull || first.paymentReceivedPercent.lt(BUYBACK_MIN_SOURCE_PAYMENT)
+      ? 0
+      : await tx.acquisition.count({
+          where: { sourceBookingId: first.id, type: "BUYBACK", status: "APPROVED" },
+        });
   if (!paidInFull && approvedBuyback === 0) return linkedMember?.id ?? null;
-
-  const at = new Date();
-  const position = linkedMember
-    ? await assignRoyaltyPosition(tx, { royaltyMemberId: linkedMember.id })
-    : null;
 
   await tx.customerProfile.update({
     where: { id: customer.id },
-    data: {
-      royaltyLinkFinalAt: at,
-      royaltyPosition: position?.position ?? null,
-      royaltyRatePercent: position?.ratePercent ?? null,
-      royaltyCycleId: position?.cycleId ?? null,
-    },
+    data: { royaltyLinkFinalAt: new Date() },
   });
-  // CR-014 — the new position joins the Member's Royalty cycle, so the cycle's
-  // own count of filled positions moves with it.
-  if (position) await refreshCycle(tx, position.cycleId, actorRef);
   await tx.bookingEvent.create({
     data: {
       bookingId: first.id,
       actorRef,
       action: "ROYALTY_LINK_FINAL",
       reason: linkedMember
-        ? `Royalty Linked Member final — ${linkedMember.memberId} at Royalty position ` +
-          `${position!.position} (${position!.ratePercent}%) of cycle ${position!.cycleNumber}, on ${
+        ? `Royalty Linked Member final — ${linkedMember.memberId}, on ${
             paidInFull ? "100% Payment Received" : "an Approved Buyback"
-          } (CR-002).`
+          } (v2.1 §49).`
         : `No Royalty Linked Member, now final on ${
             paidInFull ? "100% Payment Received" : "an Approved Buyback"
-          }. No later sale can create one (CR-003).`,
+          }. No later sale can create one (v2.1 §51).`,
     },
   });
-
-  // The link can go final after a later purchase was already approved — a first
-  // Booking still being paid off while a second one is booked is ordinary. That
-  // later Booking's commission was generated when there was no final link, so
-  // without this its Royalty would never be created by anything.
-  if (linkedMember) {
-    const later = await tx.booking.findMany({
-      where: {
-        primaryPersonId: personId,
-        id: { not: first.id },
-        bookingNumber: { not: null },
-        approvedAt: { not: null },
-        status: { notIn: ["CANCELLED", "REQUEST_REJECTED", "REQUEST_CANCELLED"] },
-      },
-      select: { id: true },
-    });
-    for (const booking of later) {
-      await generateForBooking(tx, booking.id, actorRef);
-      await reassessCommission(tx, booking.id, actorRef);
-    }
-  }
   return linkedMember?.id ?? null;
 }
 
 /**
- * prd-complete §7.1 — only Admin or MD may activate a Member. The Member ID and the
- * Network position become active at activation, and activation cannot be
- * backdated.
+ * prd-complete §7.1 — only Admin or MD may activate a Member. The Member ID becomes
+ * active at activation, and activation cannot be backdated. The inviting Member
+ * is recorded with it (v2.1 §26).
  */
 export async function activateMember(args: {
   idempotencyKey: string;
@@ -286,6 +183,15 @@ export async function activateMember(args: {
         blocked("A Registered RERA status requires the Registration Number.");
       }
 
+      // v2.1 §26 — the inviter must be a real activated Member.
+      if (args.invitedByMemberId) {
+        const inviter = await tx.memberProfile.findUnique({ where: { id: args.invitedByMemberId } });
+        if (!inviter?.activationDate) {
+          blocked("The inviting Member is not activated, so they cannot be recorded as the inviter.");
+        }
+      }
+      const invitedByMemberId = args.invitedByMemberId ?? null;
+
       // Activation is now; it cannot be backdated (prd-complete §7.1).
       const activationDate = new Date();
       const memberId =
@@ -297,6 +203,7 @@ export async function activateMember(args: {
             data: {
               activationDate,
               status: "ACTIVE",
+              invitedByMemberId,
               reraStatus: rera,
               reraNumber: args.reraNumber?.trim() || null,
               reraExpiryDate: args.reraExpiryDate ?? null,
@@ -309,6 +216,7 @@ export async function activateMember(args: {
               personId: person.id,
               activationDate,
               status: "ACTIVE",
+              invitedByMemberId,
               reraStatus: rera,
               reraNumber: args.reraNumber?.trim() || null,
               reraExpiryDate: args.reraExpiryDate ?? null,
@@ -337,21 +245,10 @@ export async function activateMember(args: {
         });
       }
 
-      let position: { position: number; ratePercent: string } | null = null;
-      if (args.invitedByMemberId) {
-        position = await assignInvitePosition(tx, {
-          invitedMemberId: member.id,
-          invitingMemberId: args.invitedByMemberId,
-          at: activationDate,
-        });
-      }
-
       return {
         result: {
           memberProfileId: member.id,
           memberId: member.memberId,
-          invitePosition: position?.position ?? null,
-          inviteRatePercent: position?.ratePercent ?? null,
         },
         audit: {
           entity: "MemberProfile",
@@ -359,9 +256,7 @@ export async function activateMember(args: {
           action: "MEMBER_ACTIVATED",
           after: {
             memberId: member.memberId,
-            invitedByMemberId: args.invitedByMemberId ?? null,
-            invitePosition: position?.position ?? null,
-            inviteRatePercent: position?.ratePercent ?? null,
+            invitedByMemberId,
           },
         },
       };
@@ -370,24 +265,9 @@ export async function activateMember(args: {
 }
 
 /**
- * CR-027 — the Members whose Activation Anniversary falls today in IST, which is
- * the set the Performance Cycle Anniversary Upgrade Check walks. 29 February
- * resolves to 28 February in a non-leap year inside `counterYearStart`.
- */
-export function membersRollingToday(at: Date = new Date()) {
-  return db.memberProfile.findMany({
-    where: { status: "ACTIVE", activationDate: { not: null } },
-    select: { id: true, memberId: true, activationDate: true },
-  }).then((members) =>
-    members.filter((m) => counterYearStart(m.activationDate!, at) === istDay(at))
-  );
-}
-
-/**
  * PRD §13 — deactivation disables portal access immediately, stops new Member
  * activity, and puts every unpaid commission On Hold — Member Deactivated while
- * paid and Paid Early records remain historical. Network positions stay exactly
- * as they are. Reactivation rechecks unpaid eligibility rather than assuming it.
+ * paid and Paid Early records remain historical. Reactivation rechecks unpaid eligibility rather than assuming it.
  */
 export async function setMemberStatus(args: {
   idempotencyKey: string;

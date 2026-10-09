@@ -153,7 +153,7 @@ export async function decidePersonMergeAction(
     return {
       ok: true,
       message: approve
-        ? `Merged. Loyalty rebuilt from unique qualifying events to ${result.loyaltyRebuiltTo}.`
+        ? "Merged. The surviving identity now carries both histories."
         : "Merge rejected. Both identities stay exactly as they were.",
     };
   } catch (error) {

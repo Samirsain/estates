@@ -15,7 +15,9 @@ import { blocked, type Tx } from "./command";
 export async function validateSoldBy(
   tx: Tx,
   soldByType: SoldByType,
-  soldByPersonId: string | null
+  soldByPersonId: string | null,
+  /** A sale's Sold By, rather than a Hold's Sourced By (v2.1 §22). */
+  options: { sale?: boolean } = {}
 ) {
   if (soldByType === "THREE_PERCENT_CLUB") {
     if (soldByPersonId) blocked("A 3% Club direct close names no Sold By Person.");
@@ -42,5 +44,21 @@ export async function validateSoldBy(
       "This Person holds an Active Member capability, so the close must be recorded as Sold By " +
         "Member. An Active Member cannot close as a Customer."
     );
+  }
+
+  // v2.1 §22 — a Sold By Customer is a real existing Customer: their own
+  // approved, uncancelled personal purchase must exist. Being related to the
+  // buyer, or a co-buyer on this Booking, does not disqualify them (§83.2).
+  if (options.sale) {
+    const ownPurchase = await tx.booking.count({
+      where: {
+        primaryPersonId: soldByPersonId,
+        bookingNumber: { not: null },
+        status: { notIn: ["CANCELLED", "REQUEST_REJECTED", "REQUEST_CANCELLED"] },
+      },
+    });
+    if (ownPurchase === 0) {
+      blocked("A Sold By Customer must be an existing Customer with their own approved purchase.");
+    }
   }
 }
