@@ -7,7 +7,6 @@
 
 import { Prisma } from "@prisma/client";
 import type { Check, Numeric } from "./booking.ts";
-import { MAX_LOYALTY_SLOTS } from "./commission.ts";
 
 const D = Prisma.Decimal;
 const OK: Check = { ok: true };
@@ -175,17 +174,6 @@ export function validateMergeRequest(survivor: MergeSide, merged: MergeSide): Ch
     );
   }
   return OK;
-}
-
-/**
- * PRD §22 — the Loyalty count is rebuilt from unique qualifying events: not the
- * sum of both counts, not the higher of the two. The same qualifying Booking
- * recorded against both identities collapses to one, and the result is capped
- * at three.
- */
-export function rebuildLoyaltyCount(events: readonly { qualifyingKey: string }[]): number {
-  const unique = new Set(events.map((e) => e.qualifyingKey));
-  return Math.min(unique.size, MAX_LOYALTY_SLOTS);
 }
 
 /**

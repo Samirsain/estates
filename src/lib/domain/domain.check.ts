@@ -20,7 +20,6 @@ import {
   canReopenDelivered,
   maskExportRow,
   readyForCompletion,
-  rebuildLoyaltyCount,
   validateCompletion,
   validateFinalBuyers,
   validateMergeRequest,
@@ -106,32 +105,30 @@ import {
   type Check,
 } from "./booking.ts";
 import {
-  MAX_LOYALTY_SLOTS,
+  BUYBACK_MIN_SOURCE_PAYMENT,
+  CUSTOMER_CLOSING_LOYALTY_LIMIT,
   afterAffectingChange,
   anniversaryDay,
-  bandRate,
+  buybackAccelerates,
+  buybackMilestoneMet,
   canMarkPaid,
-  checkSaleCap,
   classifyApprovedBooking,
-  counterYearRolled,
-  counterYearStart,
+  closingLoyaltyQualifies,
   countsAsUnpaid,
-  CYCLE_POSITIONS,
-  countsTowardsCycle,
-  cycleComplete,
-  cycleEntitlement,
+  experienceSince,
   generateCommission,
   isLeapYear,
-  experienceSince,
+  needsLoyaltyException,
   needsPaymentTask,
-  noBenefitLabel,
-  nextNetworkPosition,
-  opportunityReopens,
   previewInput,
-  mayOpenNextCycle,
-  buybackAccelerates,
+  rateLabel,
   resolveEligibility,
   totalOf,
+  validateCommissionTerms,
+  type CommissionInput,
+  type CommissionOutcome,
+  type CommissionTermsInput,
+  type FrozenTerms,
   type PersonFacts,
 } from "./commission.ts";
 import {
@@ -954,51 +951,9 @@ assert.equal(
   '{"b":1,"c":"2026-01-01T00:00:00.000Z"}'
 );
 
-/* ==================================================== Phase 4 — commission */
+/* ============================================ Phase 4 — commission (v2.1) */
 
-const M_SELLER = "P-SELLER";
-const M_INVITER = "P-INVITER";
-const M_INTRODUCER = "P-INTRODUCER";
-const C_BUYER = "P-BUYER";
-const C_CLOSER = "P-CLOSER";
-
-const baseInput = {
-  soldByType: "THREE_PERCENT_CLUB" as const,
-  soldByPersonId: null as string | null,
-  buyerPersonId: C_BUYER,
-  buyerIsActiveMember: false,
-  buyerHasPriorPurchase: false,
-  invite: null,
-  inviteOpportunityOpen: true,
-  royalty: null,
-  royaltyOpportunityOpen: true,
-  loyaltySlotsConsumed: 0,
-};
-const link = (personId: string, position: number) => ({
-  beneficiaryPersonId: personId,
-  position,
-  ratePercent: bandRate(position),
-});
-const types = (o: ReturnType<typeof generateCommission>) =>
-  o.ok ? o.components.map((c) => `${c.type}:${c.percent}@${c.milestonePercent}`) : [`CONFLICT`];
-
-/* ------------------------------------------------------------------ bands */
-
-assert.equal(bandRate(1), "1");
-assert.equal(bandRate(3), "1");
-assert.equal(bandRate(4), "0.5");
-assert.equal(bandRate(6), "0.5");
-assert.equal(bandRate(7), "0.25");
-assert.equal(bandRate(9), "0.25");
-assert.equal(bandRate(10), "0", "after position 9 the band is 0%");
-assert.throws(() => bandRate(0));
-
-// Existing positions never renumber; the next one continues past the highest.
-assert.equal(nextNetworkPosition([]), 1);
-assert.equal(nextNetworkPosition([1, 2, 3]), 4);
-assert.equal(nextNetworkPosition([1, 5]), 6, "a gap never gets reused");
-
-/* ------------------------------------------ RD-02 anniversary and counters */
+/* ------------------------------------------------------------ anniversary */
 
 assert.ok(isLeapYear(2024) && isLeapYear(2000));
 assert.ok(!isLeapYear(2026) && !isLeapYear(1900));
@@ -1008,251 +963,219 @@ assert.equal(anniversaryDay("2024-02-29", 2026), "2026-02-28");
 assert.equal(anniversaryDay("2024-02-29", 2028), "2028-02-29");
 assert.equal(anniversaryDay("2024-08-19", 2026), "2026-08-19");
 
-const activation = new Date("2024-02-29T06:00:00Z");
-assert.equal(
-  counterYearStart(activation, new Date("2026-03-05T06:00:00Z")),
-  "2026-02-28",
-  "the counter year starts on the fallback anniversary"
-);
-assert.equal(
-  counterYearStart(activation, new Date("2026-02-27T06:00:00Z")),
-  "2025-02-28",
-  "before the anniversary the previous counter year still runs"
-);
-assert.ok(counterYearRolled(activation, "2025-02-28", new Date("2026-03-05T06:00:00Z")));
-assert.ok(!counterYearRolled(activation, "2026-02-28", new Date("2026-03-05T06:00:00Z")));
+/* ------------------------------------- v2 engine (v2.1 §11, §19–§24) */
 
-/* ------------------------------- prd-complete §25 compatibility matrix, by row */
+const T = (directPercent: string | null, loyaltyPercent: string | null): FrozenTerms => ({
+  version: 2,
+  directPercent,
+  loyaltyPercent,
+});
+const base = {
+  soldByPersonId: null as string | null,
+  buyerPersonId: "buyer",
+  buyerIsActiveMember: false,
+  buyerHasPriorPurchase: false,
+  loyaltySubjectDeactivated: false,
+};
+const comps = (o: CommissionOutcome) => {
+  assert.ok(o.ok, o.ok ? "" : o.conflict);
+  return o.components.map(
+    (c) =>
+      `${c.type}|${c.beneficiaryRole}|${c.beneficiaryPersonId}|${c.percent}|${c.milestonePercent}|${c.ruleVersion}`
+  );
+};
 
-// Member closes a third-party sale: 3% Direct at 25% + the inviter's band at 100%.
+// Third-party Member sale — Direct at 25%.
 assert.deepEqual(
-  types(
+  comps(generateCommission({ ...base, soldByType: "MEMBER", soldByPersonId: "seller", terms: T("3", "1") })),
+  ["DIRECT|SELLING_MEMBER|seller|3|25|DIRECT/THIRD_PARTY/V2/3%@25"]
+);
+// Self-purchase — Direct at 100%, nothing else.
+assert.deepEqual(
+  comps(
     generateCommission({
-      ...baseInput,
+      ...base,
+      buyerIsActiveMember: true,
       soldByType: "MEMBER",
-      soldByPersonId: M_SELLER,
-      invite: link(M_INVITER, 2),
+      soldByPersonId: "buyer",
+      buyerHasPriorPurchase: true,
+      terms: T("3", "1"),
     })
   ),
-  ["DIRECT:3@25", "INVITE:1@100"]
+  ["DIRECT|SELLING_MEMBER|buyer|3|100|DIRECT/SELF_PURCHASE/V2/3%@100"]
 );
-
-// A consumed Invite opportunity yields Direct only.
+// Customer closes — Loyalty to the closer.
 assert.deepEqual(
-  types(
+  comps(generateCommission({ ...base, soldByType: "CUSTOMER", soldByPersonId: "closer", terms: T("3", "1") })),
+  ["LOYALTY|CLOSING_CUSTOMER|closer|1|100|LOYALTY/INTRODUCED_BUYER/V2/1%@100"]
+);
+// 3% Club repeat purchase — Loyalty to the buyer.
+assert.deepEqual(
+  comps(
+    generateCommission({ ...base, soldByType: "THREE_PERCENT_CLUB", buyerHasPriorPurchase: true, terms: T("3", "1") })
+  ),
+  ["LOYALTY|REPEAT_PURCHASE_CUSTOMER|buyer|1|100|LOYALTY/REPEAT_PURCHASE/V2/1%@100"]
+);
+// 3% Club first purchase — nothing.
+assert.deepEqual(comps(generateCommission({ ...base, soldByType: "THREE_PERCENT_CLUB", terms: T("3", "1") })), []);
+// Member-closed repeat purchase — Direct only, never Loyalty (v2.1 §23).
+assert.deepEqual(
+  comps(
     generateCommission({
-      ...baseInput,
+      ...base,
       soldByType: "MEMBER",
-      soldByPersonId: M_SELLER,
-      invite: link(M_INVITER, 2),
-      inviteOpportunityOpen: false,
+      soldByPersonId: "seller",
+      buyerHasPriorPurchase: true,
+      terms: T("3", "1"),
     })
   ),
-  ["DIRECT:3@25"]
+  ["DIRECT|SELLING_MEMBER|seller|3|25|DIRECT/THIRD_PARTY/V2/3%@25"]
 );
-
-// CR-013 — past position 9 the band is 0%, and the record is created anyway.
-// It used to be dropped, which left the position invisible on the Booking and
-// the invited Member's one-time opportunity open for a later sale to take at 1%.
-const pastNine = generateCommission({
-  ...baseInput,
-  soldByType: "MEMBER",
-  soldByPersonId: M_SELLER,
-  invite: link(M_INVITER, 12),
-});
-assert.deepEqual(types(pastNine), ["DIRECT:3@25", "INVITE:0@100"]);
-assert.ok(pastNine.ok);
-assert.equal(
-  pastNine.components.find((c) => c.type === "INVITE")?.ruleVersion,
-  "INVITE/POSITION_12/0%@100",
-  "the position and its rate stay on the record, which is what keeps them visible"
-);
-assert.equal(
-  pastNine.totalPercent.toFixed(2),
-  "3.00",
-  "and a 0% line adds nothing to the 4% cap"
-);
-
-// The same on the Royalty side: a repeat direct purchase whose Royalty position
-// is past the ninth still records the line.
-{
-  const royaltyPastNine = generateCommission({
-    ...baseInput,
-    buyerHasPriorPurchase: true,
-    royalty: link(M_INVITER, 10),
-    loyaltySlotsConsumed: MAX_LOYALTY_SLOTS,
-  });
-  assert.deepEqual(types(royaltyPastNine), ["ROYALTY:0@100"]);
-}
-
-// Active Member buys personally: 3% Direct at 100%, and nothing else. The
-// inviting Member's opportunity is deliberately left untouched (prd-complete §14.2).
-const selfPurchase = generateCommission({
-  ...baseInput,
-  soldByType: "MEMBER",
-  soldByPersonId: C_BUYER,
-  buyerIsActiveMember: true,
-  invite: link(M_INVITER, 1),
-});
-assert.deepEqual(types(selfPurchase), ["DIRECT:3@100"]);
-
-// An Active Member buyer whose Sold By names someone else is a conflict, not a guess.
-const misattributed = generateCommission({
-  ...baseInput,
-  soldByType: "MEMBER",
-  soldByPersonId: M_SELLER,
-  buyerIsActiveMember: true,
-});
-assert.equal(misattributed.ok, false);
-assert.match(misattributed.ok === false ? misattributed.conflict : "", /Member personal purchase/);
-
-// Customer closes a sale for a different buyer: 1% Loyalty at 100%.
+// Direct Disabled, Loyalty Disabled, Deactivated Loyalty subject.
 assert.deepEqual(
-  types(generateCommission({ ...baseInput, soldByType: "CUSTOMER", soldByPersonId: C_CLOSER })),
-  ["LOYALTY:1@100"]
+  comps(generateCommission({ ...base, soldByType: "MEMBER", soldByPersonId: "seller", terms: T(null, "1") })),
+  []
 );
-
-// The lifetime limit of three never resets.
 assert.deepEqual(
-  types(
+  comps(generateCommission({ ...base, soldByType: "CUSTOMER", soldByPersonId: "closer", terms: T("3", null) })),
+  []
+);
+assert.deepEqual(
+  comps(
     generateCommission({
-      ...baseInput,
+      ...base,
       soldByType: "CUSTOMER",
-      soldByPersonId: C_CLOSER,
-      loyaltySlotsConsumed: MAX_LOYALTY_SLOTS,
+      soldByPersonId: "closer",
+      loyaltySubjectDeactivated: true,
+      terms: T("3", "1"),
     })
   ),
-  [],
-  "a fourth Loyalty is never generated"
+  []
+);
+assert.deepEqual(
+  comps(
+    generateCommission({
+      ...base,
+      soldByType: "THREE_PERCENT_CLUB",
+      buyerHasPriorPurchase: true,
+      loyaltySubjectDeactivated: true,
+      terms: T("3", "1"),
+    })
+  ),
+  []
+);
+// No cap, even at the 5% ceiling.
+assert.deepEqual(
+  comps(generateCommission({ ...base, soldByType: "MEMBER", soldByPersonId: "seller", terms: T("5", "3") })),
+  ["DIRECT|SELLING_MEMBER|seller|5|25|DIRECT/THIRD_PARTY/V2/5%@25"]
+);
+// Kept conflicts, and the new one.
+const conflictOf = (i: CommissionInput) => {
+  const o = generateCommission(i);
+  assert.equal(o.ok, false);
+  return o.ok ? "" : o.conflict;
+};
+assert.match(conflictOf({ ...base, buyerIsActiveMember: true, soldByType: "THREE_PERCENT_CLUB", terms: T("3", "1") }), /Active Member/);
+assert.match(conflictOf({ ...base, soldByType: "MEMBER", terms: T("3", "1") }), /names no selling Member/);
+assert.match(conflictOf({ ...base, soldByType: "CUSTOMER", terms: T("3", "1") }), /names no closing Customer/);
+assert.match(
+  conflictOf({ ...base, soldByType: "CUSTOMER", soldByPersonId: "buyer", terms: T("3", "1") }),
+  /cannot close their own purchase/
+);
+assert.match(
+  conflictOf({ ...base, soldByType: "MEMBER", soldByPersonId: "seller", terms: null }),
+  /no frozen commission settings/
 );
 
-// A Customer cannot close their own purchase as Sold By Customer.
-const ownClose = generateCommission({
-  ...baseInput,
-  soldByType: "CUSTOMER",
-  soldByPersonId: C_BUYER,
+/* ---------------------------------------- version validation (v2.1 §13) */
+
+const termsIn = (o: Partial<CommissionTermsInput>): CommissionTermsInput => ({
+  directEnabled: true,
+  directPercent: "3",
+  loyaltyEnabled: true,
+  loyaltyPercent: "1",
+  loyaltyExceptionReason: null,
+  ...o,
 });
-assert.equal(ownClose.ok, false);
-assert.match(ownClose.ok === false ? ownClose.conflict : "", /cannot close their own purchase/);
-
-// 3% Club direct, first purchase: nothing at all.
-assert.deepEqual(types(generateCommission(baseInput)), []);
-
-// 3% Club direct, repeat purchase: Loyalty for the buyer plus Royalty for the
-// Member who originally introduced them — both allowed together (PRD §6.5).
-assert.deepEqual(
-  types(
-    generateCommission({
-      ...baseInput,
-      buyerHasPriorPurchase: true,
-      royalty: link(M_INTRODUCER, 5),
-    })
-  ),
-  ["LOYALTY:1@100", "ROYALTY:0.5@100"]
+assert.ok(validateCommissionTerms(termsIn({})).ok);
+assert.ok(validateCommissionTerms(termsIn({ directPercent: "5", loyaltyPercent: "3", loyaltyExceptionReason: null })).ok);
+assert.equal(validateCommissionTerms(termsIn({ directPercent: "5.01" })).ok, false);
+assert.equal(validateCommissionTerms(termsIn({ loyaltyPercent: "3.01", loyaltyExceptionReason: "x" })).ok, false);
+assert.equal(validateCommissionTerms(termsIn({ directPercent: "0" })).ok, false, "Disabled, never 0%");
+assert.equal(
+  validateCommissionTerms(termsIn({ directEnabled: false, directPercent: "3", loyaltyExceptionReason: "x" })).ok,
+  false
 );
-
-// Royalty is generated only once per introduced Customer.
-assert.deepEqual(
-  types(
-    generateCommission({
-      ...baseInput,
-      buyerHasPriorPurchase: true,
-      royalty: link(M_INTRODUCER, 5),
-      royaltyOpportunityOpen: false,
-    })
-  ),
-  ["LOYALTY:1@100"]
-);
-
-// A frozen band that disagrees with the table is a data fault, not a silent fix.
-assert.throws(
-  () =>
-    generateCommission({
-      ...baseInput,
-      soldByType: "MEMBER",
-      soldByPersonId: M_SELLER,
-      invite: { beneficiaryPersonId: M_INVITER, position: 5, ratePercent: "1" },
-    }),
-  /frozen rate/
-);
-
-/* ------------------------- the Calculator's input, built from two people */
-
-// The wiring the Calculator screen depends on: the Invite band belongs to the
-// seller and the Royalty band to the buyer, and crossing them over would pay
-// the wrong person at a rate that still looks right.
-{
-  const facts = (id: string, over: Partial<PersonFacts> = {}): PersonFacts => ({
-    id,
-    memberActive: false,
-    hasPriorPurchase: false,
-    invite: null,
-    inviteUsed: false,
-    royalty: null,
-    royaltyUsed: false,
-    loyaltyUsed: 0,
-    ...over,
-  });
-
-  const seller = facts(M_SELLER, { invite: link(M_INVITER, 2), royalty: link("P-WRONG", 1) });
-  const buyer = facts(C_BUYER, { royalty: link(M_INTRODUCER, 4), loyaltyUsed: 1 });
-
-  const sale = previewInput("MEMBER", seller, buyer);
-  assert.equal(sale.soldByPersonId, M_SELLER);
-  assert.equal(sale.invite?.beneficiaryPersonId, M_INVITER, "the seller's inviting Member");
-  assert.equal(sale.royalty?.beneficiaryPersonId, M_INTRODUCER, "the buyer's introducing Member");
-  assert.equal(sale.loyaltySlotsConsumed, 1, "the buyer's slots, nobody else's");
-  assert.equal(sale.inviteOpportunityOpen, true);
-
-  // A Customer close has no invited Member behind it, and Loyalty belongs to
-  // the Customer who closed rather than to the buyer (PRD §6.5).
-  const closed = previewInput("CUSTOMER", facts(C_CLOSER, { loyaltyUsed: 3 }), buyer);
-  assert.equal(closed.invite, null);
-  assert.equal(closed.inviteOpportunityOpen, false, "no invited Member, so no open opportunity");
-  assert.equal(closed.loyaltySlotsConsumed, 3, "the closing Customer's slots");
-
-  // A 3% Club close names nobody, whatever is left in the picker.
-  const direct = previewInput("THREE_PERCENT_CLUB", seller, buyer);
-  assert.equal(direct.soldByPersonId, null);
-  assert.equal(direct.invite, null);
-  assert.equal(direct.loyaltySlotsConsumed, 1, "the buyer's own slots");
-
-  // A consumed opportunity closes, and it is the subject's own that counts.
-  assert.equal(
-    previewInput("MEMBER", facts(M_SELLER, { inviteUsed: true }), buyer).inviteOpportunityOpen,
-    false
-  );
-  assert.equal(
-    previewInput("MEMBER", seller, facts(C_BUYER, { royaltyUsed: true })).royaltyOpportunityOpen,
-    false
-  );
+assert.equal(validateCommissionTerms(termsIn({ directEnabled: true, directPercent: null })).ok, false);
+// Review Focus 1 — malformed and over-precise rates.
+for (const bad of ["3.12345", "3,5", "abc", " ", "-1", "1e1"]) {
+  assert.equal(validateCommissionTerms(termsIn({ directPercent: bad })).ok, false, bad);
 }
+// Review Focus 2 — equal is not lower.
+assert.equal(validateCommissionTerms(termsIn({ directPercent: "3", loyaltyPercent: "3" })).ok, false);
+assert.ok(
+  validateCommissionTerms(
+    termsIn({ directPercent: "3", loyaltyPercent: "3", loyaltyExceptionReason: "MD exception: launch offer" })
+  ).ok
+);
+assert.equal(validateCommissionTerms(termsIn({ directEnabled: false, directPercent: null })).ok, false);
+assert.ok(
+  validateCommissionTerms(termsIn({ directEnabled: false, directPercent: null, loyaltyExceptionReason: "Loyalty only" })).ok
+);
+assert.ok(
+  validateCommissionTerms(
+    termsIn({ directEnabled: false, directPercent: null, loyaltyEnabled: false, loyaltyPercent: null })
+  ).ok
+);
+assert.equal(needsLoyaltyException(termsIn({ loyaltyPercent: "2.9999" })), false);
+assert.equal(rateLabel("3.0000"), "3");
+assert.equal(rateLabel("2.5000"), "2.5");
 
-/* ------------------------------------------------------- RD-03 the 4% cap */
+/* ------------------------- Customer-closing lifetime limit (v2.1 §21, §25) */
 
-// 3% Direct + 1% Invite is exactly the cap and is allowed.
-const atCap = generateCommission({
-  ...baseInput,
-  soldByType: "MEMBER",
-  soldByPersonId: M_SELLER,
-  invite: link(M_INVITER, 1),
+assert.equal(CUSTOMER_CLOSING_LOYALTY_LIMIT, 3);
+assert.ok(closingLoyaltyQualifies(0) && closingLoyaltyQualifies(2));
+assert.ok(!closingLoyaltyQualifies(3), "the fourth successful event does not qualify");
+
+/* ----------------------------------- Buyback (v2.1 §20, §41) — Loyalty only */
+
+assert.equal(buybackAccelerates("LOYALTY"), true);
+assert.equal(buybackAccelerates("DIRECT"), false);
+assert.equal(buybackAccelerates("BUYING"), false);
+assert.equal(BUYBACK_MIN_SOURCE_PAYMENT, "25");
+assert.equal(buybackMilestoneMet({ type: "LOYALTY", buybackApproved: true, progressPercent: "24.99" }), false);
+assert.equal(buybackMilestoneMet({ type: "LOYALTY", buybackApproved: true, progressPercent: "25" }), true);
+assert.equal(buybackMilestoneMet({ type: "DIRECT", buybackApproved: true, progressPercent: "90" }), false);
+assert.equal(buybackMilestoneMet({ type: "LOYALTY", buybackApproved: false, progressPercent: "90" }), false);
+
+/* ---------------------- previewInput — the Calculator's input, from two people */
+
+const person = (id: string, o: Partial<PersonFacts> = {}): PersonFacts => ({
+  id,
+  memberActive: false,
+  memberDeactivated: false,
+  hasPriorPurchase: false,
+  ...o,
 });
-assert.equal(atCap.ok, true);
-assert.equal(atCap.ok === true ? atCap.totalPercent.toFixed(2) : "", "4.00");
+assert.equal(
+  previewInput("CUSTOMER", person("closer", { memberDeactivated: true }), person("buyer"), T("3", "1"))
+    .loyaltySubjectDeactivated,
+  true
+);
+assert.equal(
+  previewInput("THREE_PERCENT_CLUB", person("closer", { memberDeactivated: true }), person("buyer"), T("3", "1"))
+    .loyaltySubjectDeactivated,
+  false
+);
+assert.equal(previewInput("THREE_PERCENT_CLUB", null, person("buyer"), T("3", "1")).soldByPersonId, null);
+assert.equal(previewInput("MEMBER", person("seller"), person("buyer"), null).terms, null);
 
-// Nothing is ever trimmed to fit: an over-cap combination is reported instead.
-assert.equal(checkSaleCap([{ percent: "3" }, { percent: "1" }]).ok, true);
-const over = checkSaleCap([{ percent: "3" }, { percent: "1" }, { percent: "1" }]);
-assert.equal(over.ok, false);
-assert.match(over.ok === false ? over.reason : "", /Commission Conflict — Above 4%/);
-assert.equal(checkSaleCap([{ percent: "4.0001" }]).ok, false, "exact decimal, not float");
-assert.equal(totalOf([]).toFixed(2), "0.00");
+
 
 /* ------------------------------------------------------------ eligibility */
 
 const eligibilityBase = {
   type: "DIRECT" as const,
-  percent: "3",
   progressPercent: "100",
   milestonePercent: "25",
   beneficiaryAadhaarAvailable: true,
@@ -1262,94 +1185,48 @@ const eligibilityBase = {
   reraStatus: "REGISTERED" as const,
   bookingProcess: "NONE" as const,
   acquisitionPaymentPending: false,
-  commissionConflictAbove4: false,
+  closer: null,
 };
 
 assert.deepEqual(resolveEligibility(eligibilityBase), { state: "READY", holdReason: null });
 
-/* CR-015 — an Approved Buyback is an *alternative* milestone: it earns Invite,
-   Royalty and Loyalty before 100%, and it never touches Direct. */
-
-const inviteAt40 = {
+/* v2.1 §21, §41 — an Approved Buyback is an *alternative* milestone for Loyalty. */
+const loyaltyAt40 = {
   ...eligibilityBase,
-  type: "INVITE" as const,
-  percent: "1",
+  type: "LOYALTY" as const,
   milestonePercent: "100",
   progressPercent: "40",
+  memberStatus: null,
+  reraStatus: null,
 };
+assert.equal(resolveEligibility(loyaltyAt40).state, "MILESTONE_PENDING");
+assert.equal(resolveEligibility({ ...loyaltyAt40, buybackMilestoneMet: true }).state, "READY");
+// Accelerating the milestone accelerates nothing else.
 assert.equal(
-  resolveEligibility(inviteAt40).state,
-  "MILESTONE_PENDING",
-  "on its own an Invite at 40% is still waiting for 100%"
-);
-assert.equal(
-  resolveEligibility({ ...inviteAt40, buybackMilestoneMet: true }).state,
-  "READY",
-  "CR-015 — an Approved Buyback earns the Invite before 100% (pack acceptance 10)"
-);
-// Accelerating the milestone accelerates nothing else: every deal-level and
-// beneficiary condition is still decided in the same order.
-assert.equal(
-  resolveEligibility({ ...inviteAt40, buybackMilestoneMet: true, beneficiaryBankVerified: false })
-    .holdReason,
-  "BANK_VERIFICATION_PENDING",
-  "an accelerated record still meets every beneficiary condition"
-);
-assert.equal(
-  resolveEligibility({ ...inviteAt40, buybackMilestoneMet: true, memberCommissionHold: true })
-    .holdReason,
-  "MEMBER_COMMISSION_HOLD",
-  "a Member-level hold still outranks the milestone, however it was reached"
+  resolveEligibility({ ...loyaltyAt40, buybackMilestoneMet: true, beneficiaryBankVerified: false }).holdReason,
+  "BANK_VERIFICATION_PENDING"
 );
 
-/* The type rule itself — pack acceptance 10 to 13. */
-assert.ok(
-  buybackAccelerates("INVITE") && buybackAccelerates("ROYALTY") && buybackAccelerates("LOYALTY"),
-  "Invite, Royalty and Loyalty all take the alternative milestone"
+/* v2.1 §22, §77 — the Customer closer's own conditions, after Aadhaar and bank. */
+const closing = { ...loyaltyAt40, progressPercent: "100" };
+assert.equal(
+  resolveEligibility({ ...closing, closer: { kycVerified: false, termsAccepted: false } }).holdReason,
+  "CLOSER_KYC_PENDING"
 );
 assert.equal(
-  buybackAccelerates("DIRECT"),
-  false,
-  "a Buyback never accelerates Direct (pack acceptance 13)"
+  resolveEligibility({ ...closing, closer: { kycVerified: true, termsAccepted: false } }).holdReason,
+  "CUSTOMER_TERMS_PENDING"
 );
-assert.equal(
-  buybackAccelerates("BUYING"),
-  false,
-  "Buying Commission hangs off the acquisition, not the sale the Buyback undoes"
-);
-
-/* CR-013 — a 0% band is settled at zero, not pending and not held. It is
-   decided before every other condition, because none of them can change it. */
-assert.deepEqual(resolveEligibility({ ...eligibilityBase, type: "INVITE", percent: "0" }), {
-  state: "NO_BENEFIT",
+assert.deepEqual(resolveEligibility({ ...closing, closer: { kycVerified: true, termsAccepted: true } }), {
+  state: "READY",
   holdReason: null,
 });
-assert.deepEqual(
-  resolveEligibility({
-    ...eligibilityBase,
-    type: "INVITE",
-    percent: "0",
-    progressPercent: "0",
-    memberStatus: "DEACTIVATED",
-    beneficiaryBankVerified: false,
-    commissionConflictAbove4: true,
-  }),
-  { state: "NO_BENEFIT", holdReason: null },
-  "nothing else outranks it — there is no amount for a hold to be holding"
+assert.equal(
+  resolveEligibility({ ...closing, beneficiaryBankVerified: false, closer: { kycVerified: false, termsAccepted: false } })
+    .holdReason,
+  "BANK_VERIFICATION_PENDING",
+  "the ordinary beneficiary conditions come first"
 );
-// A rate that is not decided yet is not a zero one.
-assert.equal(resolveEligibility({ ...eligibilityBase, percent: null }).state, "READY");
-
-// "no payable amount is created" — including by the Paid Early route, which is
-// what a waived condition looks like and cannot conjure an amount.
-assert.equal(canMarkPaid("NOT_PAID", "NO_BENEFIT", false).ok, false);
-const earlyOnZero = canMarkPaid("NOT_PAID", "NO_BENEFIT", true, true);
-assert.equal(earlyOnZero.ok, false);
-assert.match(earlyOnZero.ok === false ? earlyOnZero.reason : "", /no amount to pay/);
-assert.equal(needsPaymentTask("NOT_PAID", "NO_BENEFIT"), false, "and no Accounts task is raised");
-
-assert.equal(noBenefitLabel("INVITE"), "No Invite Benefit — Position Above 9");
-assert.equal(noBenefitLabel("ROYALTY"), "No Royalty Benefit — Position Above 9");
 
 // The milestone decides only once the deal-level holds are clear.
 assert.equal(
@@ -1370,12 +1247,6 @@ assert.equal(
 assert.equal(
   resolveEligibility({ ...eligibilityBase, acquisitionPaymentPending: true }).holdReason,
   "PAYMENT_PENDING"
-);
-
-// RD-03 — nothing is Ready while the combination is above 4%.
-assert.equal(
-  resolveEligibility({ ...eligibilityBase, commissionConflictAbove4: true }).holdReason,
-  "COMMISSION_CONFLICT_ABOVE_4"
 );
 
 // Member-level holds.
@@ -1547,111 +1418,6 @@ assert.equal(
   );
 }
 
-/* ------------------------------- CR-014, CR-027 · performance cycles */
-
-// A cycle is completed by its positions 1 to 9, and by nothing else. Position
-// 10 and beyond are real, visible and consuming (CR-013) but they are outside
-// the cycle, so they neither complete it nor hold it open.
-assert.ok(countsTowardsCycle(1) && countsTowardsCycle(9));
-assert.ok(!countsTowardsCycle(10) && !countsTowardsCycle(0));
-assert.equal(CYCLE_POSITIONS, 9);
-
-const nine = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-assert.ok(cycleComplete(nine), "all nine successful is Upgrade Eligible");
-assert.ok(!cycleComplete([]), "an empty cycle is not complete");
-assert.ok(!cycleComplete(nine.slice(0, 8)), "eight of nine is not complete");
-assert.ok(
-  !cycleComplete([...nine.slice(0, 8), 10, 11, 12]),
-  "positions past the ninth cannot stand in for a missing one"
-);
-assert.ok(
-  cycleComplete([...nine, 10, 11]),
-  "and they do not stop a cycle whose own nine are done"
-);
-assert.ok(cycleComplete([...nine, 5, 5]), "a repeated position counts once");
-
-/* CR-027 — the anniversary run. Three things must hold at once, and the third
-   is the pack's own convention: a completion recorded on the anniversary itself
-   waits for the next one. */
-{
-  const activation = new Date("2024-06-10T00:00:00+05:30");
-  const anniversary = new Date("2027-06-10T09:00:00+05:30");
-
-  assert.ok(
-    mayOpenNextCycle({
-      activationDate: activation,
-      status: "UPGRADE_ELIGIBLE",
-      completedAt: new Date("2027-01-04T10:00:00+05:30"),
-      at: anniversary,
-    }),
-    "eligible, on the anniversary, completed earlier — the next cycle opens"
-  );
-  assert.ok(
-    !mayOpenNextCycle({
-      activationDate: activation,
-      status: "IN_PROGRESS",
-      completedAt: null,
-      at: anniversary,
-    }),
-    "an incomplete counter is untouched by its anniversary — nothing resets"
-  );
-  assert.ok(
-    !mayOpenNextCycle({
-      activationDate: activation,
-      status: "UPGRADE_ELIGIBLE",
-      completedAt: new Date("2027-01-04T10:00:00+05:30"),
-      at: new Date("2027-06-11T09:00:00+05:30"),
-    }),
-    "and it only rolls on the anniversary itself"
-  );
-  assert.ok(
-    !mayOpenNextCycle({
-      activationDate: activation,
-      status: "UPGRADE_ELIGIBLE",
-      completedAt: new Date("2027-06-10T18:00:00+05:30"),
-      at: anniversary,
-    }),
-    "completion recorded on the anniversary day waits until the next anniversary"
-  );
-
-  // RD-02's 29 February rule carries into the anniversary, so a Member
-  // activated on a leap day rolls on 28 February in a common year.
-  assert.ok(
-    mayOpenNextCycle({
-      activationDate: new Date("2024-02-29T00:00:00+05:30"),
-      status: "UPGRADE_ELIGIBLE",
-      completedAt: new Date("2026-11-01T10:00:00+05:30"),
-      at: new Date("2027-02-28T09:00:00+05:30"),
-    })
-  );
-}
-
-assert.match(cycleEntitlement("INVITE", 1), /Invite cycle 1 complete/);
-assert.match(cycleEntitlement("ROYALTY", 3), /Royalty cycle 3 complete/);
-
-/* CR-004 supersedes AC-02: Royalty is earned at its own milestone, and the
-   performance cycle decides an upgrade rather than a payment. */
-assert.equal(
-  resolveEligibility({ ...eligibilityBase, type: "ROYALTY", milestonePercent: "100" }).state,
-  "READY",
-  "Royalty at 100% Payment Received is Ready — no cycle gates it"
-);
-assert.equal(
-  resolveEligibility({ ...eligibilityBase, type: "ROYALTY", progressPercent: "99", milestonePercent: "100" }).state,
-  "MILESTONE_PENDING",
-  "and below the milestone it is simply pending"
-);
-assert.equal(
-  resolveEligibility({
-    ...eligibilityBase,
-    type: "ROYALTY",
-    milestonePercent: "100",
-    beneficiaryAadhaarAvailable: false,
-  }).holdReason,
-  "AADHAAR_PENDING",
-  "the beneficiary conditions still apply"
-);
-
 /* ---------------------------------------------------------- payment states */
 
 assert.deepEqual(canMarkPaid("NOT_PAID", "READY", false), { ok: true });
@@ -1702,11 +1468,6 @@ assert.equal(afterAffectingChange("NOT_PAID", "MILESTONE_LOST"), "NOT_PAID");
 assert.equal(afterAffectingChange("NOT_PAID", "CANCELLED_BEFORE_COMPLETION"), "CANCELLED");
 assert.equal(afterAffectingChange("NOT_PAID", "BENEFICIARY_CORRECTED"), "CANCELLED");
 assert.equal(afterAffectingChange("CANCELLED", "MILESTONE_LOST"), "CANCELLED");
-
-// PRD §6.1, §6.5 — cancellation before legal completion reopens the slot; a
-// completed sale later bought back keeps it consumed.
-assert.ok(opportunityReopens(false));
-assert.ok(!opportunityReopens(true));
 
 /* ================================================= Phase 5 — acquisition */
 
@@ -2059,30 +1820,6 @@ assert.deepEqual(
   { ok: true }
 );
 assert.equal(validateMergeRequest({ personId: "a" }, { personId: "a" }).ok, false);
-
-// PRD §22 — the Loyalty count is rebuilt from unique qualifying events: the
-// same Booking recorded against both identities counts once, and 2 + 2 is not 4.
-assert.equal(
-  rebuildLoyaltyCount([
-    { qualifyingKey: "bk-1" },
-    { qualifyingKey: "bk-2" },
-    { qualifyingKey: "bk-1" },
-    { qualifyingKey: "bk-2" },
-  ]),
-  2,
-  "duplicate events collapse rather than adding up"
-);
-assert.equal(
-  rebuildLoyaltyCount([
-    { qualifyingKey: "bk-1" },
-    { qualifyingKey: "bk-2" },
-    { qualifyingKey: "bk-3" },
-    { qualifyingKey: "bk-4" },
-  ]),
-  3,
-  "the rebuilt count is capped at three lifetime slots"
-);
-assert.equal(rebuildLoyaltyCount([]), 0);
 
 /* ---------------------------- Member experience (derived, never stored) */
 
