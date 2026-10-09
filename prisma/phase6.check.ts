@@ -489,10 +489,10 @@ async function main() {
     },
   });
   await db.customerProfile.create({
-    data: { customerId: `${TAG}-CUS-1`, personId: survivorPerson.id, loyaltySlotsConsumed: 2 },
+    data: { customerId: `${TAG}-CUS-1`, personId: survivorPerson.id },
   });
   await db.customerProfile.create({
-    data: { customerId: `${TAG}-CUS-2`, personId: duplicatePerson.id, loyaltySlotsConsumed: 2 },
+    data: { customerId: `${TAG}-CUS-2`, personId: duplicatePerson.id },
   });
 
   // PRD §22 — two Active Members cannot merge through ordinary merge.
@@ -510,25 +510,6 @@ async function main() {
   await db.memberProfile.update({
     where: { id: duplicateMember.id },
     data: { status: "DEACTIVATED" },
-  });
-
-  // Both identities recorded the same two qualifying Bookings: four consumed
-  // slots, two unique qualifying events (PRD §22).
-  const consumed = (personId: string, slotIndex: number, bookingId: string) => ({
-    kind: "LOYALTY" as const,
-    subjectPersonId: personId,
-    slotIndex,
-    status: "CONSUMED" as const,
-    consumedByBookingId: bookingId,
-    consumedAt: today,
-  });
-  await db.commissionOpportunity.createMany({
-    data: [
-      consumed(survivorPerson.id, 1, bookingA),
-      consumed(survivorPerson.id, 2, bookingB),
-      consumed(duplicatePerson.id, 1, bookingA),
-      consumed(duplicatePerson.id, 2, bookingB),
-    ],
   });
 
   const request = await requestPersonMerge({
@@ -560,16 +541,11 @@ async function main() {
     approve: true,
     note: "Verified as one Person.",
   });
-  assert.equal(
-    decided.loyaltyRebuiltTo,
-    2,
-    "the Loyalty count is rebuilt from unique qualifying events: not 2 + 2, and not 3"
-  );
+  assert.equal(decided.status, "APPROVED");
 
   const survivorCustomer = await db.customerProfile.findUniqueOrThrow({
     where: { personId: survivorPerson.id },
   });
-  assert.equal(survivorCustomer.loyaltySlotsConsumed, 2);
   assert.ok(
     survivorCustomer.legacyCustomerIds.includes(`${TAG}-CUS-2`),
     "old Customer IDs stay searchable"

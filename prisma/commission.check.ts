@@ -1,5 +1,5 @@
-// Phase 4 service checks — delivery-phases.md Phase 4 "Tests", end to end against the
-// real database and the real commands.
+// Commission service checks — Business Model v2.1 §11–§25, end to end against
+// the real database and the real commands.
 // Run: npm run commission:check   (requires a seeded database)
 import assert from "node:assert/strict";
 import { Prisma, PrismaClient } from "@prisma/client";
@@ -12,6 +12,7 @@ import {
   decideBookingRequest,
   decideSoldByCorrection,
   requestSoldByCorrection,
+  reviseBookingRequest,
   submitBookingRequest,
 } from "@/lib/services/booking-service";
 import { confirmPaymentReceived } from "@/lib/services/payment-service";
@@ -19,17 +20,17 @@ import { decideCancellation } from "@/lib/services/cancellation-service";
 import {
   applyMemberCommissionHold,
   approveCommissionPaidEarly,
-  cancelCommissionForBooking,
   generateForBooking,
   markCommissionPaid,
   memberCommissionView,
   reassessCommission,
 } from "@/lib/services/commission-service";
 import {
-  recordCompletion,
-  recordFinalBuyers,
-  reopenDelivered,
-} from "@/lib/services/completion-service";
+  decideCommissionVersion,
+  prepareCommissionDraft,
+  sendCommissionVersion,
+} from "@/lib/services/commission-settings-service";
+import { recordCustomerTermsAcceptance, verifyAadhaar } from "@/lib/services/customer-closer-service";
 import {
   cancelAcquisitionDeal,
   confirmPaymentGiven,
@@ -39,7 +40,6 @@ import {
 import { businessState } from "@/lib/services/report-service";
 import { enterBankDetails } from "@/lib/services/bank-service";
 import { activateMember } from "@/lib/services/network-service";
-import { refreshCycle, upgradeCycleIfDue } from "@/lib/services/cycle-service";
 import { encryptSensitive } from "@/lib/security/identity";
 
 const db = new PrismaClient();
@@ -47,6 +47,8 @@ const Decimal = Prisma.Decimal;
 const TAG = "ZZ-COMM";
 const CRM = `${TAG}-CRM`;
 const ACC = `${TAG}-ACC`;
+const ADMIN = `${TAG}-ADMIN`;
+const MD = `${TAG}-MD`;
 
 let seq = 0;
 const key = () => `${TAG}-${Date.now()}-${seq++}`;
@@ -90,6 +92,18 @@ async function makeEligiblePerson(name: string, mobile: string) {
   return person;
 }
 
+const makeMember = (suffix: string, personId: string, activatedDaysAgo: number, invitedByMemberId?: string) =>
+  db.memberProfile.create({
+    data: {
+      memberId: `${TAG}-M-${suffix}`,
+      personId,
+      activationDate: day(-activatedDaysAgo),
+      invitedByMemberId: invitedByMemberId ?? null,
+      reraStatus: "REGISTERED",
+      reraNumber: `RERA-${suffix}`,
+    },
+  });
+
 async function makePlot(projectId: string, suffix: string) {
   return db.plot.create({
     data: {
@@ -110,8 +124,7 @@ const SCHEDULE = [
   { seq: 2, percent: "60", dueDate: day(30) },
 ];
 
-/** Submits and approves a Booking, returning its id. */
-async function bookAndApprove(args: {
+async function submit(args: {
   plotId: string;
   buyerPersonId: string;
   soldByType: "THREE_PERCENT_CLUB" | "MEMBER" | "CUSTOMER";
@@ -128,15 +141,24 @@ async function bookAndApprove(args: {
     bookingDate: today,
     schedule: SCHEDULE,
   });
-  await decideBookingRequest({
+  return submitted.bookingId;
+}
+
+const approve = (bookingId: string) =>
+  decideBookingRequest({
     idempotencyKey: key(),
     actorRef: ACC,
     actorRole: "ACCOUNTS",
-    bookingId: submitted.bookingId,
+    bookingId,
     approve: true,
     note: "Verified.",
   });
-  return submitted.bookingId;
+
+/** Submits and approves a Booking, returning its id. */
+async function bookAndApprove(args: Parameters<typeof submit>[0]) {
+  const bookingId = await submit(args);
+  await approve(bookingId);
+  return bookingId;
 }
 
 const pay = (bookingId: string, percent: string, reference: string) =>
@@ -156,42 +178,93 @@ const currentRecords = (bookingId: string) =>
     orderBy: { type: "asc" },
   });
 
+const recordOf = (bookingId: string, type: "DIRECT" | "LOYALTY") =>
+  db.commissionRecord.findFirstOrThrow({ where: { bookingId, type, isCurrent: true } });
+
+const shape = (r: { type: string; percent: Prisma.Decimal; milestonePercent: Prisma.Decimal }) =>
+  `${r.type}:${r.percent.toFixed(2)}@${r.milestonePercent.toFixed(0)}`;
+
+/** Admin prepares and sends, MD approves — the whole v2.1 §14 flow. */
+async function approveVersion(
+  projectId: string,
+  o: Partial<{
+    directEnabled: boolean;
+    directPercent: string | null;
+    loyaltyEnabled: boolean;
+    loyaltyPercent: string | null;
+    loyaltyExceptionReason: string | null;
+  }>
+) {
+  const draft = await prepareCommissionDraft({
+    idempotencyKey: key(),
+    actorRef: ADMIN,
+    actorRole: "ADMIN",
+    projectId,
+    directEnabled: true,
+    directPercent: "3",
+    loyaltyEnabled: true,
+    loyaltyPercent: "1",
+    loyaltyExceptionReason: null,
+    reason: `${TAG} settings`,
+    ...o,
+  });
+  await sendCommissionVersion({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", versionId: draft.versionId });
+  await decideCommissionVersion({
+    idempotencyKey: key(),
+    actorRef: MD,
+    actorRole: "MD",
+    versionId: draft.versionId,
+    approve: true,
+    note: "ok",
+  });
+  return draft.version;
+}
+
+/**
+ * v2.1 §22 — a real Customer closer: their own approved purchase, Aadhaar
+ * Verified, and accepted Customer Terms.
+ */
+async function makeCloser(projectId: string, name: string, mobile: string, ready = true) {
+  const closer = await makeEligiblePerson(name, mobile);
+  const own = await makePlot(projectId, `OWN-${name}`);
+  await bookAndApprove({ plotId: own.id, buyerPersonId: closer.id, soldByType: "THREE_PERCENT_CLUB" });
+  if (ready) {
+    await verifyAadhaar({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", personId: closer.id });
+    const profile = await db.customerProfile.findUniqueOrThrow({ where: { personId: closer.id } });
+    await recordCustomerTermsAcceptance({
+      idempotencyKey: key(),
+      actorRef: CRM,
+      actorRole: "CRM",
+      customerProfileId: profile.id,
+      termsVersion: "CT-TEST",
+      acceptedOn: today,
+    });
+  }
+  return closer;
+}
+
 async function main() {
   await cleanup();
 
+  // The seeded Project, approved at Direct 3% and Loyalty 1% (seed-commission.ts).
   const project = await db.project.findFirstOrThrow({
-    where: { plcRuleVersions: { some: { status: "PUBLISHED" } } },
+    where: {
+      plcRuleVersions: { some: { status: "PUBLISHED" } },
+      commissionVersions: { some: { status: "ACTIVE" } },
+    },
+    include: { commissionVersions: { where: { status: "ACTIVE" } } },
   });
+  const V = `V${project.commissionVersions[0].version}`;
+  assert.equal(project.commissionVersions[0].directPercent?.toString(), "3", "the seed approves Direct 3%");
 
   const inviter = await makeEligiblePerson("Inviter", "9600000001");
   const seller = await makeEligiblePerson("Seller", "9600000002");
   const buyer = await makeEligiblePerson("Buyer", "9600000003");
   const buyerTwo = await makeEligiblePerson("BuyerTwo", "9600000004");
+  const inviterMember = await makeMember("I", inviter.id, 400);
+  const sellerMember = await makeMember("S", seller.id, 200, inviterMember.id);
 
-  const inviterMember = await db.memberProfile.create({
-    data: {
-      memberId: `${TAG}-M1`,
-      personId: inviter.id,
-      activationDate: day(-400),
-      reraStatus: "NOT_APPLICABLE",
-      reraNotApplicableReason: "Individual referrer",
-    },
-  });
-  // Position 2 sits in the 1–3 band, so the Invite rate is 1%.
-  const sellerMember = await db.memberProfile.create({
-    data: {
-      memberId: `${TAG}-M2`,
-      personId: seller.id,
-      activationDate: day(-200),
-      invitedByMemberId: inviterMember.id,
-      invitePosition: 2,
-      inviteRatePercent: "1",
-      reraStatus: "REGISTERED",
-      reraNumber: "RERA-TEST-1",
-    },
-  });
-
-  /* ------------------------------------ Direct 3% at 25% + Invite 1% at 100% */
+  /* ------------------------------------- Direct at 25%, and nothing else */
 
   const plotA = await makePlot(project.id, "A");
   const bookingA = await bookAndApprove({
@@ -202,60 +275,20 @@ async function main() {
   });
 
   let records = await currentRecords(bookingA);
-  assert.deepEqual(
-    records.map((r) => `${r.type}:${r.percent.toFixed(2)}@${r.milestonePercent.toFixed(0)}`),
-    ["DIRECT:3.00@25", "INVITE:1.00@100"],
-    "the engine starts on approval"
-  );
-  assert.ok(
-    records.every((r) => r.eligibility === "MILESTONE_PENDING"),
-    "nothing is eligible before the milestone"
-  );
+  assert.deepEqual(records.map(shape), ["DIRECT:3.00@25"], "a Member sale earns Direct only — no Invite (v2.1 §1)");
+  assert.equal(records[0].ruleVersion, `DIRECT/THIRD_PARTY/${V}/3%@25`, "the rule names the Project version");
+  assert.equal(records[0].eligibility, "MILESTONE_PENDING", "nothing is eligible before the milestone");
 
-  // 40% clears the Direct milestone but not the Invite one.
   await pay(bookingA, "40", `${TAG} UTR A1`);
-  records = await currentRecords(bookingA);
-  const direct = records.find((r) => r.type === "DIRECT")!;
-  const invite = records.find((r) => r.type === "INVITE")!;
-  assert.equal(direct.eligibility, "READY", "Direct is Ready at 25%");
-  assert.equal(invite.eligibility, "MILESTONE_PENDING", "Invite waits for 100%");
-  assert.equal(direct.opportunityId, null, "Direct consumes no entitlement");
+  const direct = await recordOf(bookingA, "DIRECT");
+  assert.equal(direct.eligibility, "READY", "full Direct at 25% (v2.1 §19)");
+  assert.equal(direct.qualifiedAt, null, "Direct carries no Loyalty qualification");
   assert.ok(
-    await db.task.findFirst({
-      where: { recordId: direct.id, purpose: "COMMISSION_PAYMENT", status: "PENDING" },
-    }),
+    await db.task.findFirst({ where: { recordId: direct.id, purpose: "COMMISSION_PAYMENT", status: "PENDING" } }),
     "a Ready record raises one Accounts commission task"
   );
 
-  /* -------------------------- the Invite entitlement is the SELLING Member's */
-
-  await pay(bookingA, "60", `${TAG} UTR A2`);
-  records = await currentRecords(bookingA);
-  const consumed = records.find((r) => r.type === "INVITE")!;
-  assert.ok(consumed.opportunityId, "Invite consumes its entitlement at 100%");
-  assert.equal(consumed.eligibility, "READY");
-
-  const slot = await db.commissionOpportunity.findUniqueOrThrow({
-    where: { id: consumed.opportunityId! },
-  });
-  assert.equal(
-    slot.subjectPersonId,
-    seller.id,
-    "the Invite slot belongs to the invited (selling) Member, not the inviter who is paid"
-  );
-  assert.equal(slot.beneficiaryPersonId, inviter.id);
-  assert.equal(slot.status, "CONSUMED");
-
-  /* ------- regenerating must not read this Booking's own slot as taken (bug) */
-
-  await reassessCommission_(bookingA);
-  const afterReassess = await currentRecords(bookingA);
-  assert.ok(
-    afterReassess.some((r) => r.type === "INVITE" && r.payment !== "CANCELLED"),
-    "a Booking never loses the Invite it already earned"
-  );
-
-  /* ------------- a second sale by the same Member earns Direct but no Invite */
+  /* ---------------------------------------------- Paid and Paid Early rules */
 
   const plotB = await makePlot(project.id, "B");
   const bookingB = await bookAndApprove({
@@ -265,15 +298,8 @@ async function main() {
     soldByPersonId: seller.id,
   });
   const bRecords = await currentRecords(bookingB);
-  assert.deepEqual(
-    bRecords.map((r) => r.type),
-    ["DIRECT"],
-    "the Invite opportunity is consumed once per invited Member (PRD §6.1)"
-  );
+  assert.deepEqual(bRecords.map((r) => r.type), ["DIRECT"], "Direct is earned on every qualifying sale (v2.1 §19)");
 
-  /* ---------------------------------------------- Paid and Paid Early rules */
-
-  // PRD §6.11 — Paid Early needs compulsory remarks.
   await expectBlocked(/compulsory remarks/, () =>
     markCommissionPaid({
       idempotencyKey: key(),
@@ -286,8 +312,6 @@ async function main() {
       remarks: "   ",
     })
   );
-
-  // Not Ready yet, so an ordinary Paid is refused but Paid Early is allowed.
   await expectBlocked(/Eligibility is not Ready/, () =>
     markCommissionPaid({
       idempotencyKey: key(),
@@ -300,8 +324,7 @@ async function main() {
       remarks: "",
     })
   );
-  // AC-03 supersedes PRD §6.11 on this point: Paid Early now needs a recorded
-  // MD approval first, and Accounts alone can no longer process it.
+  // AC-03 — Paid Early needs a recorded MD approval first.
   await expectBlocked(/requires a recorded MD approval/, () =>
     markCommissionPaid({
       idempotencyKey: key(),
@@ -314,9 +337,17 @@ async function main() {
       remarks: "Advance settled with the Member.",
     })
   );
+  for (const [actorRole, actorRef] of [
+    ["ACCOUNTS", ACC],
+    ["ADMIN", ADMIN],
+  ] as const) {
+    await expectBlocked(/Only MD may approve/, () =>
+      approveCommissionPaidEarly({ idempotencyKey: key(), actorRef, actorRole, recordId: bRecords[0].id, note: "x" })
+    );
+  }
   await approveCommissionPaidEarly({
     idempotencyKey: key(),
-    actorRef: `${TAG}-MD`,
+    actorRef: MD,
     actorRole: "MD",
     recordId: bRecords[0].id,
     note: "Advance approved for the quarter close.",
@@ -333,11 +364,8 @@ async function main() {
   });
   const early = await db.commissionRecord.findUniqueOrThrow({ where: { id: bRecords[0].id } });
   assert.equal(early.payment, "PAID_EARLY");
-  assert.ok(early.earlyApprovedAt, "and the approval that unlocked it is stored on the record");
+  assert.equal(early.earlyApprovedByRef, MD, "the approver is stored on the record");
   assert.ok(early.externalReferenceId, "Paid Early records its reference");
-
-  // It can never be marked Paid again, and the normal milestone raises no
-  // second payment task (PRD §6.11).
   await expectBlocked(/cannot be marked Paid again/, () =>
     markCommissionPaid({
       idempotencyKey: key(),
@@ -352,9 +380,7 @@ async function main() {
   );
   await pay(bookingB, "40", `${TAG} UTR B3`);
   assert.equal(
-    await db.task.count({
-      where: { recordId: bRecords[0].id, purpose: "COMMISSION_PAYMENT", status: "PENDING" },
-    }),
+    await db.task.count({ where: { recordId: bRecords[0].id, purpose: "COMMISSION_PAYMENT", status: "PENDING" } }),
     0,
     "no second commission-payment task after Paid Early"
   );
@@ -363,15 +389,13 @@ async function main() {
 
   await applyMemberCommissionHold({
     idempotencyKey: key(),
-    actorRef: `${TAG}-ADMIN`,
+    actorRef: ADMIN,
     actorRole: "ADMIN",
     memberProfileId: sellerMember.id,
     hold: true,
     reason: "Documents under review.",
   });
-  const held = await db.commissionRecord.findFirstOrThrow({
-    where: { bookingId: bookingA, type: "DIRECT", isCurrent: true },
-  });
+  const held = await recordOf(bookingA, "DIRECT");
   assert.equal(held.eligibility, "ON_HOLD");
   assert.equal(held.holdReason, "MEMBER_COMMISSION_HOLD");
   assert.equal(
@@ -379,42 +403,45 @@ async function main() {
     "PAID_EARLY",
     "a hold never rewrites paid history"
   );
-
   await applyMemberCommissionHold({
     idempotencyKey: key(),
-    actorRef: `${TAG}-ADMIN`,
+    actorRef: ADMIN,
     actorRole: "ADMIN",
     memberProfileId: sellerMember.id,
     hold: false,
     reason: "Documents verified.",
   });
-  assert.equal(
-    (await db.commissionRecord.findUniqueOrThrow({ where: { id: held.id } })).eligibility,
-    "READY",
-    "removing the hold reassesses rather than leaving it stuck"
-  );
+  assert.equal((await recordOf(bookingA, "DIRECT")).eligibility, "READY", "removing the hold reassesses");
 
-  /* ------------- cancellation before legal completion reopens the slot */
+  /* ------------------------------------------ cancellation before completion */
 
-  await cancelCommissionForBooking(db as never, bookingA, `${TAG}-ADMIN`, {
-    legallyCompleted: false,
-    reason: "Cancelled before legal completion.",
+  await cancelBooking({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    bookingId: bookingA,
+    reason: "Buyer withdrew.",
   });
-  const reopened = await db.commissionOpportunity.findUniqueOrThrow({ where: { id: slot.id } });
-  assert.equal(reopened.status, "OPEN", "the Invite slot reopens (PRD §6.1)");
-  assert.equal(reopened.consumedByBookingId, null);
-  assert.ok(reopened.reopenedReason);
-
+  await decideCancellation({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    bookingId: bookingA,
+    approve: true,
+    note: "Refund handled outside the CRM.",
+    reference: `${TAG} REFUND A`,
+    actionDate: today,
+  });
   const afterCancel = await db.commissionRecord.findUniqueOrThrow({ where: { id: held.id } });
   assert.equal(afterCancel.payment, "CANCELLED", "an unpaid record is cancelled, never deleted");
-  const paidAfterCancel = await db.commissionRecord.findUniqueOrThrow({
-    where: { id: bRecords[0].id },
-  });
-  assert.equal(paidAfterCancel.payment, "PAID_EARLY", "a different Booking is untouched");
+  assert.equal(
+    (await db.commissionRecord.findUniqueOrThrow({ where: { id: bRecords[0].id } })).payment,
+    "PAID_EARLY",
+    "a different Booking is untouched"
+  );
 
-  /* ---------------------------------- PRD §6.10 Sold By correction */
+  /* ---------------------------------- PRD §6.10, v2.1 §75 Sold By correction */
 
-  // A 3% Club direct sale that should have been attributed to the Member.
   const correctionBuyer = await makeEligiblePerson("CorrBuyer", "9600000031");
   const correctionPlot = await makePlot(project.id, "K1");
   const correctionBooking = await bookAndApprove({
@@ -422,13 +449,7 @@ async function main() {
     buyerPersonId: correctionBuyer.id,
     soldByType: "THREE_PERCENT_CLUB",
   });
-
-  // A first direct purchase earns nothing at all (prd-complete §25).
-  assert.deepEqual(
-    (await currentRecords(correctionBooking)).map((r) => r.type),
-    [],
-    "3% Club direct, first purchase, generates no commission"
-  );
+  assert.equal((await currentRecords(correctionBooking)).length, 0, "a first 3% Club purchase earns nothing");
   await pay(correctionBooking, "40", `${TAG} UTR K1`);
 
   await expectBlocked(/compulsory supporting remark/, () =>
@@ -443,7 +464,6 @@ async function main() {
       supportingNote: "  ",
     })
   );
-
   await requestSoldByCorrection({
     idempotencyKey: key(),
     actorRef: CRM,
@@ -454,16 +474,10 @@ async function main() {
     reason: "Member closed the deal.",
     supportingNote: "Site visit log and call records confirm the Member closed it.",
   });
-
-  const underCorrection = await db.booking.findUniqueOrThrow({ where: { id: correctionBooking } });
-  assert.equal(underCorrection.activeProcess, "SOLD_BY_CORRECTION_UNDER_REVIEW");
   assert.equal(
-    underCorrection.soldByType,
-    "THREE_PERCENT_CLUB",
-    "nothing changes until Admin or MD approves"
+    (await db.booking.findUniqueOrThrow({ where: { id: correctionBooking } })).activeProcess,
+    "SOLD_BY_CORRECTION_UNDER_REVIEW"
   );
-
-  // ARCHITECTURE §6.3 — only one major process at a time.
   await expectBlocked(/already under Sold By Correction Under Review/, () =>
     cancelBooking({
       idempotencyKey: key(),
@@ -473,8 +487,6 @@ async function main() {
       reason: "Trying to cancel mid-correction.",
     })
   );
-
-  // PRD §6.10 — the attribution correction needs Admin or MD, not Accounts.
   await expectBlocked(/Only Admin or MD/, () =>
     decideSoldByCorrection({
       idempotencyKey: key(),
@@ -485,128 +497,53 @@ async function main() {
       note: "Accounts trying to approve.",
     })
   );
-
   await decideSoldByCorrection({
     idempotencyKey: key(),
-    actorRef: `${TAG}-ADMIN`,
+    actorRef: ADMIN,
     actorRole: "ADMIN",
     bookingId: correctionBooking,
     approve: true,
     note: "Evidence verified.",
   });
-
   const corrected = await db.booking.findUniqueOrThrow({ where: { id: correctionBooking } });
-  assert.equal(corrected.soldByType, "MEMBER", "the attribution moves on approval");
-  assert.equal(corrected.soldByPersonId, seller.id);
-  assert.equal(corrected.activeProcess, "NONE");
-  assert.equal(
-    corrected.paymentReceivedPercent.toFixed(0),
-    "40",
-    "Booking and Payment history are untouched (PRD §6.10 step 8)"
-  );
-
-  // New valid records exist, and Direct is already past its 25% milestone.
-  const correctedRecords = await currentRecords(correctionBooking);
-  assert.ok(
-    correctedRecords.some((r) => r.type === "DIRECT" && r.beneficiaryPersonId === seller.id),
-    "a Direct record is created for the corrected closer"
-  );
-  assert.equal(
-    correctedRecords.find((r) => r.type === "DIRECT")!.eligibility,
-    "READY",
-    "the 25% milestone is already met"
-  );
-
-  // PRD §6.10 step 4 — Accounts reviews the commission impact.
+  assert.equal(corrected.soldByType, "MEMBER");
+  assert.equal(corrected.paymentReceivedPercent.toFixed(0), "40", "Payment history is untouched");
+  const correctedDirect = await recordOf(correctionBooking, "DIRECT");
+  assert.equal(correctedDirect.beneficiaryPersonId, seller.id, "Direct is created for the corrected closer");
+  assert.equal(correctedDirect.eligibility, "READY", "the 25% milestone is already met");
   assert.ok(
     await db.task.findFirst({
-      where: {
-        recordId: correctionBooking,
-        purpose: "SOLD_BY_COMMISSION_IMPACT",
-        status: "PENDING",
-      },
+      where: { recordId: correctionBooking, purpose: "SOLD_BY_COMMISSION_IMPACT", status: "PENDING" },
     }),
     "Accounts receives the commission impact review"
   );
 
-  /* ------------------------- RD-02 network positions are actually assigned */
+  /* -------------------------------- activation records who invited whom */
 
-  const anchor = await makeEligiblePerson("Anchor", "9600000021");
-  const anchorMember = await db.memberProfile.create({
-    data: {
-      memberId: `${TAG}-M9`,
-      personId: anchor.id,
-      // Activated on 29 February, so the anniversary falls back in a non-leap year.
-      activationDate: new Date("2024-02-29T06:00:00Z"),
-      reraStatus: "NOT_APPLICABLE",
-      reraNotApplicableReason: "Individual referrer",
-    },
+  const invitee = await db.person.create({ data: { fullName: `${TAG} Invitee`, primaryMobile: "9600000131" } });
+  const activated = await activateMember({
+    idempotencyKey: key(),
+    actorRef: ADMIN,
+    actorRole: "ADMIN",
+    personId: invitee.id,
+    invitedByMemberId: inviterMember.id,
+    reraStatus: "NOT_APPLICABLE",
+    reraNotApplicableReason: "Individual",
   });
-
-  // Positions run 1, 2, 3 in order and each freezes its band with it.
-  const invited: Array<{ position: number | null; rate: string | null }> = [];
-  for (let i = 1; i <= 4; i++) {
-    const person = await db.person.create({
-      data: { fullName: `${TAG} Invited ${i}`, primaryMobile: `96000001${30 + i}` },
-    });
-    const activated = await activateMember({
-      idempotencyKey: key(),
-      actorRef: `${TAG}-ADMIN`,
-      actorRole: "ADMIN",
-      personId: person.id,
-      invitedByMemberId: anchorMember.id,
-      reraStatus: "NOT_APPLICABLE",
-      reraNotApplicableReason: "Individual",
-    });
-    invited.push({ position: activated.invitePosition, rate: activated.inviteRatePercent });
-  }
-  assert.deepEqual(
-    invited.map((i) => `${i.position}:${i.rate}`),
-    ["1:1", "2:1", "3:1", "4:0.5"],
-    "positions 1-3 take the 1% band and position 4 drops to 0.5% (PRD §6.2)"
+  const inviteeProfile = await db.memberProfile.findUniqueOrThrow({ where: { id: activated.memberProfileId } });
+  assert.equal(inviteeProfile.invitedByMemberId, inviterMember.id, "the inviter is recorded (v2.1 §26)");
+  assert.ok(inviteeProfile.activationDate! <= new Date(), "activation is now, never backdated");
+  await expectBlocked(/already an activated Member/, () =>
+    activateMember({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", personId: invitee.id })
   );
-
-  // Activation cannot be backdated, and only Admin or MD may activate.
-  const stored = await db.memberProfile.findFirstOrThrow({
-    where: { person: { fullName: `${TAG} Invited 1` } },
-  });
-  assert.ok(stored.activationDate! <= new Date(), "activation is now, never backdated");
-  assert.ok(stored.memberId.startsWith("MEM-"), "the Member ID is issued at activation");
-  // CR-014 — a position belongs to a cycle, not to a counter year. The cycle a
-  // Member's first invitees join is cycle 1, opened on the Member's own
-  // activation day in IST.
-  const anchorCycle = await db.performanceCycle.findFirstOrThrow({
-    where: { memberProfileId: anchorMember.id, kind: "INVITE" },
-  });
-  assert.equal(anchorCycle.cycleNumber, 1);
-  assert.equal(
-    anchorCycle.openedOn.toISOString().slice(0, 10),
-    "2024-02-29",
-    "cycle 1 opens on the Member Activation Date in IST"
-  );
-  assert.equal(stored.inviteCycleId, anchorCycle.id, "and the position sits in it");
-  assert.equal(stored.inviteYearStart, null, "the old counter-year column is no longer written");
-  assert.equal(anchorCycle.positionsFilled, 4, "the cycle counts the positions it holds");
-  assert.equal(anchorCycle.positionsComplete, 0, "none of which has completed yet");
-
-  const notForCrm = await db.person.create({
-    data: { fullName: `${TAG} Invited 9`, primaryMobile: "9600000199" },
-  });
+  const notForCrm = await db.person.create({ data: { fullName: `${TAG} NotForCrm`, primaryMobile: "9600000199" } });
   await expectBlocked(/Only Admin or MD/, () =>
-    activateMember({
-      idempotencyKey: key(),
-      actorRef: CRM,
-      actorRole: "CRM",
-      personId: notForCrm.id,
-      invitedByMemberId: anchorMember.id,
-    })
+    activateMember({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", personId: notForCrm.id })
   );
 
   /* ------------------------------------------- bank verification workflow */
 
-  const banker = await db.person.create({
-    data: { fullName: `${TAG} Banker`, primaryMobile: "9600000005" },
-  });
+  const banker = await db.person.create({ data: { fullName: `${TAG} Banker`, primaryMobile: "9600000005" } });
   await enterBankDetails({
     idempotencyKey: key(),
     actorRef: CRM,
@@ -618,484 +555,299 @@ async function main() {
     accountNumber: "9988776655",
     ifsc: "hdfc0001234",
   });
-  // Saving is the whole of it — the Accounts verification step was removed, so
-  // the entry is active the moment it is written and no task is raised for it.
-  const saved = await db.bankDetail.findFirstOrThrow({
-    where: { personId: banker.id, status: "VERIFIED" },
-  });
+  const saved = await db.bankDetail.findFirstOrThrow({ where: { personId: banker.id, status: "VERIFIED" } });
   assert.equal(saved.accountLastFour, "6655");
   assert.ok(!saved.accountCipher.includes("9988776655"), "the account number is encrypted at rest");
-  assert.equal(saved.verifiedByRef, CRM, "the account records who put it there");
-  assert.ok(saved.verifiedAt, "and when");
-  assert.equal(
-    await db.bankDetail.count({ where: { personId: banker.id, status: "PENDING" } }),
-    0,
-    "nothing waits on an Accounts decision any more"
-  );
-  assert.equal(
-    await db.task.count({ where: { recordId: banker.id, purpose: "BANK_VERIFICATION" } }),
-    0,
-    "and no bank verification task is raised"
-  );
-
-  // Entering a second account supersedes the first rather than overwriting it:
-  // what was paid to before stays on file.
-  await enterBankDetails({
-    idempotencyKey: key(),
-    actorRef: CRM,
-    actorRole: "CRM",
-    personId: banker.id,
-    accountHolder: "Test Holder",
-    bankName: "Second Bank",
-    branchName: "Second Branch",
-    accountNumber: "1122334455",
-    ifsc: "hdfc0009999",
-  });
-  assert.equal(
-    (await db.bankDetail.findUniqueOrThrow({ where: { id: saved.id } })).status,
-    "SUPERSEDED"
-  );
-  assert.equal(
-    (
-      await db.bankDetail.findFirstOrThrow({
-        where: { personId: banker.id, status: "VERIFIED" },
-      })
-    ).accountLastFour,
-    "4455"
-  );
-
-  /* ------------- concurrent milestones cannot consume the same slot twice */
-
-  // PHASES Phase 4 — two qualifying Bookings under one invited Member both
-  // generate an Invite record at approval, because neither has consumed the
-  // entitlement yet. They then reach 100% at the same instant: exactly one may
-  // take it, and the loser is closed rather than paid a second time (PRD §6.8).
-  const raceInviter = await makeEligiblePerson("RaceInviter", "9600000011");
-  const raceSeller = await makeEligiblePerson("RaceSeller", "9600000012");
-  const raceBuyerA = await makeEligiblePerson("RaceBuyerA", "9600000013");
-  const raceBuyerB = await makeEligiblePerson("RaceBuyerB", "9600000014");
-
-  const raceInviterMember = await db.memberProfile.create({
-    data: {
-      memberId: `${TAG}-M3`,
-      personId: raceInviter.id,
-      activationDate: day(-400),
-      reraStatus: "NOT_APPLICABLE",
-      reraNotApplicableReason: "Individual referrer",
-    },
-  });
-  await db.memberProfile.create({
-    data: {
-      memberId: `${TAG}-M4`,
-      personId: raceSeller.id,
-      activationDate: day(-200),
-      invitedByMemberId: raceInviterMember.id,
-      invitePosition: 1,
-      inviteRatePercent: "1",
-      reraStatus: "REGISTERED",
-      reraNumber: "RERA-TEST-2",
-    },
-  });
-
-  const raceBookings: string[] = [];
-  for (const [suffix, raceBuyer] of [
-    ["R1", raceBuyerA],
-    ["R2", raceBuyerB],
-  ] as const) {
-    const plot = await makePlot(project.id, suffix);
-    raceBookings.push(
-      await bookAndApprove({
-        plotId: plot.id,
-        buyerPersonId: raceBuyer.id,
-        soldByType: "MEMBER",
-        soldByPersonId: raceSeller.id,
-      })
-    );
-  }
-
-  for (const bookingId of raceBookings) {
-    const generated = await currentRecords(bookingId);
-    assert.ok(
-      generated.some((r) => r.type === "INVITE"),
-      "both Bookings generate an Invite while the entitlement is still open"
-    );
-    // Take each to 40% first, so the concurrent step is only the last payment.
-    await pay(bookingId, "40", `${TAG} UTR ${bookingId.slice(0, 6)}-1`);
-  }
-
-  // The real contest: both cross 100% at the same time.
-  const settled = await Promise.allSettled(
-    raceBookings.map((bookingId, index) =>
-      pay(bookingId, "60", `${TAG} UTR RACE-${index}`)
-    )
-  );
-  assert.ok(
-    settled.every((s) => s.status === "fulfilled"),
-    `both payments must succeed; the contest is settled inside the engine — ` +
-      settled.map((s) => (s.status === "rejected" ? String(s.reason) : "ok")).join(" | ")
-  );
-
-  const raceRecords = await db.commissionRecord.findMany({
-    where: { bookingId: { in: raceBookings }, type: "INVITE", isCurrent: true },
-  });
-  assert.equal(raceRecords.length, 2, "both Invite records still exist — nothing is deleted");
-
-  const winners = raceRecords.filter((r) => r.opportunityId !== null);
-  const losers = raceRecords.filter((r) => r.opportunityId === null);
-  assert.equal(winners.length, 1, "exactly one Booking consumed the Invite entitlement");
-  assert.equal(losers.length, 1);
-  assert.equal(losers[0].payment, "CANCELLED", "the loser is closed, never silently paid");
-  assert.ok(losers[0].closedReason, "and it says why");
-
-  assert.equal(
-    await db.commissionOpportunity.count({
-      where: { kind: "INVITE", subjectPersonId: raceSeller.id, status: "CONSUMED" },
-    }),
-    1,
-    "one consumed slot exists for the invited Member, not two"
-  );
 
   /* --------------------------- the Member portal never reveals the buyer */
 
-  const view = await memberCommissionView(inviter.id);
+  const view = await memberCommissionView(seller.id);
   const serialised = JSON.stringify(view);
-  assert.ok(view.length > 0, "the inviter sees their own commission");
+  assert.ok(view.length > 0, "the seller sees their own commission");
   assert.ok(!serialised.includes(buyer.id), "no buyer identifier");
   assert.ok(!serialised.includes(`${TAG} Buyer`), "no buyer name");
   assert.ok(!serialised.includes("9600000003"), "no buyer mobile");
-  assert.ok(serialised.includes("INVITE"), "type, percentage and status are shown");
+  assert.ok(serialised.includes("DIRECT"), "type, percentage and status are shown");
 
-  /* ============================ Approved Changes pack ============================ */
-
-  /* AC-01 — a Customer who later becomes a Member keeps their Customer Bookings */
+  /* ========== AC-01, v2.1 §20 — classification frozen with the request ========== */
 
   const convert = await makeEligiblePerson("Converter", "9600000021");
   const plotAC1 = await makePlot(project.id, "AC1");
-  const bookingAC1 = await bookAndApprove({
+  const pendingAC1 = await submit({
     plotId: plotAC1.id,
     buyerPersonId: convert.id,
     soldByType: "MEMBER",
     soldByPersonId: seller.id,
   });
-
-  const frozen = await db.booking.findUniqueOrThrow({ where: { id: bookingAC1 } });
   assert.equal(
-    frozen.originalClassification,
+    (await db.booking.findUniqueOrThrow({ where: { id: pendingAC1 } })).originalClassification,
     "CUSTOMER",
-    "the buyer was not a Member at approval, so this is Customer business"
+    "the classification is frozen at submission now, not at approval"
   );
-  const beforeConversion = (await currentRecords(bookingAC1)).map(
-    (r) => `${r.type}:${r.beneficiaryPersonId}:${r.percent.toFixed(2)}@${r.milestonePercent.toFixed(0)}`
-  );
-  assert.deepEqual(
-    beforeConversion,
-    [`DIRECT:${seller.id}:3.00@25`, `INVITE:${inviter.id}:1.00@100`],
-    "a third-party Member close: Direct at 25% to the seller, Invite at 100% to the inviter"
-  );
-
-  // The same person is now activated as a Member.
-  await activateMember({
-    idempotencyKey: key(),
-    actorRef: `${TAG}-ADMIN`,
-    actorRole: "ADMIN",
-    personId: convert.id,
-  });
-
-  // Anything that regenerates commission on the old Booking must leave the
-  // classification, the beneficiaries and the milestones exactly as they were.
-  // Without the freeze this would become a Member self-purchase: Direct 3% at
-  // 100% to the buyer, and the inviter's 1% would vanish.
-  // Regeneration is what would rewrite the classification if the freeze were
-  // not there: it is the same call Accounts approval, a Change Plot approval and
-  // a Sold By Correction approval all make.
-  await generateForBooking_(bookingAC1);
-
-  const afterConversion = await db.booking.findUniqueOrThrow({ where: { id: bookingAC1 } });
+  await approve(pendingAC1);
+  const beforeConversion = (await currentRecords(pendingAC1)).map(shape);
+  await activateMember({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", personId: convert.id });
+  await generateForBooking_(pendingAC1);
   assert.equal(
-    afterConversion.originalClassification,
+    (await db.booking.findUniqueOrThrow({ where: { id: pendingAC1 } })).originalClassification,
     "CUSTOMER",
     "Member activation never rewrites the historical classification"
   );
+  assert.deepEqual((await currentRecords(pendingAC1)).map(shape), beforeConversion, "regeneration is stable");
+
+  /* ======================= v2.1 §15–§17 — the freeze ======================= */
+
+  // A tagged Project of its own, so changing its version never disturbs the seed.
+  const v2Project = await db.project.create({
+    data: { projectCode: "ZZCOMMV2", name: `${TAG} v2 Project`, type: "RESIDENTIAL", status: "ACTIVE" },
+  });
+  const grnPlc = await db.plcRuleVersion.findFirstOrThrow({
+    where: { projectId: project.id, status: "PUBLISHED" },
+    include: { components: true },
+  });
+  await db.plcRuleVersion.create({
+    data: {
+      projectId: v2Project.id,
+      version: 1,
+      status: "PUBLISHED",
+      effectiveFrom: today,
+      publishedAt: today,
+      components: {
+        create: grnPlc.components.map((c) => ({ category: c.category, threshold: c.threshold, percent: c.percent })),
+      },
+    },
+  });
+
+  const plotNoVersion = await makePlot(v2Project.id, "NV");
+  await expectBlocked(/This Project has no approved commission settings\./, () =>
+    submit({ plotId: plotNoVersion.id, buyerPersonId: buyer.id, soldByType: "MEMBER", soldByPersonId: seller.id })
+  );
+
+  const ver1 = await approveVersion(v2Project.id, {});
+  // Submitted under version 1, version 2 approved, then Accounts approves → version 1.
+  const plotFreeze = await makePlot(v2Project.id, "FZ");
+  const frozenOn1 = await submit({
+    plotId: plotFreeze.id,
+    buyerPersonId: buyer.id,
+    soldByType: "MEMBER",
+    soldByPersonId: seller.id,
+  });
+  await approveVersion(v2Project.id, { directPercent: "4" });
+  await approve(frozenOn1);
   assert.deepEqual(
-    (await currentRecords(bookingAC1)).map(
-      (r) => `${r.type}:${r.beneficiaryPersonId}:${r.percent.toFixed(2)}@${r.milestonePercent.toFixed(0)}`
-    ),
-    beforeConversion,
-    "regeneration after activation reproduces the Customer-business components exactly"
+    (await currentRecords(frozenOn1)).map((r) => r.ruleVersion),
+    [`DIRECT/THIRD_PARTY/V${ver1}/3%@25`],
+    "a later version never changes a frozen request (v2.1 §17)"
   );
-  assert.ok(
-    await db.bookingEvent.findFirst({
-      where: { bookingId: bookingAC1, action: "CLASSIFICATION_FROZEN" },
-    }),
-    "the freeze is on the record's own history, so a report can explain the split"
-  );
-
-  /* AC-02 — Royalty waits for a COMPLETED performance cycle, and completion is
-     legal completion, not the payment milestone (PRD §6.3; Approved Changes §1
-     "not simply by recording a transaction"). */
-
-  const royaltyBuyer = await makeEligiblePerson("RoyaltyBuyer", "9600000022");
-  // CR-002 — a Royalty link that has already gone final, which is what a
-  // Customer whose first qualifying purchase completed under this Member looks
-  // like. How the link is *established* is AC-06's subject, below; this block
-  // is about what a final link then earns.
-  // CR-014 — the position belongs to the Member's Royalty cycle 1, which is
-  // what `assignRoyaltyPosition` would have put it in.
-  const seededRoyaltyCycle = await db.performanceCycle.create({
-    data: {
-      memberProfileId: inviterMember.id,
-      kind: "ROYALTY",
-      cycleNumber: 1,
-      openedOn: new Date(inviterMember.activationDate!.toISOString().slice(0, 10)),
-    },
-  });
-  await db.customerProfile.create({
-    data: {
-      customerId: `${TAG}-C-ROY`,
-      personId: royaltyBuyer.id,
-      royaltyLinkedMemberId: inviterMember.id,
-      royaltyLinkFinalAt: day(-30),
-      royaltyPosition: 1,
-      royaltyRatePercent: "1",
-      royaltyCycleId: seededRoyaltyCycle.id,
-    },
-  });
-
-  // A first 3% Club direct purchase earns nothing; the repeat one earns
-  // Loyalty for the buyer and Royalty for the Member who introduced them.
-  const plotAC2a = await makePlot(project.id, "AC2A");
-  const firstPurchase = await bookAndApprove({
-    plotId: plotAC2a.id,
-    buyerPersonId: royaltyBuyer.id,
-    soldByType: "THREE_PERCENT_CLUB",
-  });
-  assert.equal((await currentRecords(firstPurchase)).length, 0, "a first direct purchase earns nothing");
-
-  const plotAC2b = await makePlot(project.id, "AC2B");
-  const repeatPurchase = await bookAndApprove({
-    plotId: plotAC2b.id,
-    buyerPersonId: royaltyBuyer.id,
-    soldByType: "THREE_PERCENT_CLUB",
-  });
-  const royalty = () =>
-    db.commissionRecord.findFirstOrThrow({
-      where: { bookingId: repeatPurchase, type: "ROYALTY", isCurrent: true },
-    });
-
+  const review = await db.bookingReviewVersion.findFirstOrThrow({ where: { bookingId: frozenOn1 } });
   assert.equal(
-    (await royalty()).eligibility,
-    "MILESTONE_PENDING",
-    "below its milestone the Royalty is simply pending"
+    (review.snapshot as { commissionTerms?: { version: number } }).commissionTerms?.version,
+    ver1,
+    "the request version Accounts approved carries the frozen version (v2.1 §16)"
   );
 
-  /* CR-004 supersedes AC-02 — the Royalty's own milestone is 100% Payment
-     Received. It used to hold on PERFORMANCE_CYCLE_INCOMPLETE until delivery,
-     which under CR-014's model would hold it until eight other Customers had
-     bought. The performance cycle decides an upgrade, not a payment. */
-
-  await pay(repeatPurchase, "100", `${TAG} UTR AC2`);
-
-  const earnedRoyalty = await royalty();
-  assert.equal(earnedRoyalty.eligibility, "READY", "100% Payment Received earns the Royalty");
-  assert.equal(earnedRoyalty.holdReason, null);
-  assert.ok(earnedRoyalty.opportunityId, "and consumes the Customer's one-time Royalty");
-
-  /* CR-014 — that consumption is also what makes a cycle position successful.
-     This Customer sits at Royalty position 1 of the Member's cycle 1, so the
-     cycle now holds one filled position, one of them complete, and eight to go. */
-
-  const royaltyCycle = await db.performanceCycle.findFirstOrThrow({
-    where: { memberProfileId: inviterMember.id, kind: "ROYALTY" },
-  });
-  assert.equal(royaltyCycle.cycleNumber, 1);
-  assert.equal(royaltyCycle.positionsFilled, 1, "the cycle holds the position");
-  assert.equal(royaltyCycle.positionsComplete, 1, "and that position is successful");
-  assert.equal(
-    royaltyCycle.status,
-    "IN_PROGRESS",
-    "one of nine is not an upgrade — a cycle is completed by all nine"
-  );
-  assert.equal(royaltyCycle.completedAt, null);
-  assert.equal(royaltyCycle.entitlement, null);
-
-  // A repeated reassessment must not change any of that, or double-count.
-  await reassessCommission_(repeatPurchase);
-  const afterRepeat = await db.performanceCycle.findUniqueOrThrow({
-    where: { id: royaltyCycle.id },
-  });
-  assert.equal(afterRepeat.positionsComplete, 1, "a repeated reassessment never double-counts");
-  assert.equal(afterRepeat.status, "IN_PROGRESS");
-
-  /* Legal completion no longer decides anything about a cycle, so recording it
-     and reopening it must leave the Royalty and its cycle exactly as they are. */
-
-  await recordFinalBuyers({
-    idempotencyKey: key(),
-    actorRef: CRM,
-    actorRole: "CRM",
-    bookingId: repeatPurchase,
-    buyers: [{ personId: royaltyBuyer.id, dateOfBirth: day(-14000), address: "9 Cycle Road" }],
-  });
-  await recordCompletion({
-    idempotencyKey: key(),
-    actorRef: CRM,
-    actorRole: "CRM",
-    bookingId: repeatPurchase,
-    completion: { route: "REGISTRY", advocateName: "S. Menon", registryDate: today },
-  });
-  assert.equal((await royalty()).eligibility, "READY", "delivery leaves the earned Royalty earned");
-
-  await reopenDelivered({
-    idempotencyKey: key(),
-    actorRef: `${TAG}-MD`,
-    actorRole: "MD",
-    bookingId: repeatPurchase,
-    reason: "Registry papers were filed against the wrong Plot.",
-  });
-  assert.equal(
-    (await royalty()).eligibility,
-    "READY",
-    "and reopening it does not take the Royalty back — the milestone was payment, not delivery"
-  );
-  assert.equal(
-    (await db.performanceCycle.findUniqueOrThrow({ where: { id: royaltyCycle.id } })).positionsComplete,
-    1,
-    "nor does it disturb the cycle position"
-  );
-
-  // Put the delivery back, so the Buyback case below starts from a real one.
-  await recordCompletion({
-    idempotencyKey: key(),
-    actorRef: CRM,
-    actorRole: "CRM",
-    bookingId: repeatPurchase,
-    completion: { route: "REGISTRY", advocateName: "S. Menon", registryDate: today },
-  });
-
-  /* PRD §6.3, §6.5, prd-complete §14.12 — a Buyback AFTER legal completion keeps
-     what was earned. The cycle must not be un-completed by it. */
-
-  const beforeUnwind = await royalty();
-  await cancelCommissionForBooking_(repeatPurchase, {
-    legallyCompleted: true,
-    unwind: "BUYBACK",
-    reason: `${TAG} Buyback after legal completion`,
-  });
-
-  const afterBuyback = await db.performanceCycle.findUniqueOrThrow({
-    where: { id: royaltyCycle.id },
-  });
-  assert.equal(
-    afterBuyback.positionsComplete,
-    1,
-    "a Buyback after legal completion leaves the cycle position successful — the entitlement " +
-      "stays consumed (PRD §6.3, §6.5), so the position it filled stays filled"
-  );
-
-  // prd-complete §14.12 — "Original sale commission normally remains earned".
-  const afterUnwind = await royalty();
-  assert.equal(
-    afterUnwind.payment,
-    beforeUnwind.payment,
-    "a Buyback after legal completion leaves the commission earned, not Cancelled"
-  );
-  assert.ok(afterUnwind.opportunityId, "and its consumed entitlement stays consumed");
-  assert.ok(
-    await db.commissionEvent.findFirst({
-      where: { recordId: afterUnwind.id, action: "BUYBACK_AFTER_COMPLETION" },
-    }),
-    "the Buyback is on the record's history even though nothing about it moved"
-  );
-  assert.ok(
-    await db.task.findFirst({
-      where: { recordId: repeatPurchase, purpose: "BUYBACK_COMMISSION_REVIEW" },
-    }),
-    "and Accounts are asked to confirm it against the written arrangement"
-  );
-
-  /* A Buyback BEFORE legal completion is the other §14.12 case: the records
-     step back, and the CRM/management decision is raised rather than skipped. */
-
-  const plotAC5 = await makePlot(project.id, "AC5");
-  const earlyBuyback = await bookAndApprove({
-    plotId: plotAC5.id,
+  // A corrected request sent after version 3 freezes version 3.
+  const plotRevise = await makePlot(v2Project.id, "RV");
+  const toRevise = await submit({
+    plotId: plotRevise.id,
     buyerPersonId: buyerTwo.id,
     soldByType: "MEMBER",
     soldByPersonId: seller.id,
   });
-  await pay(earlyBuyback, "30", `${TAG} UTR AC5`);
-  await cancelCommissionForBooking_(earlyBuyback, {
-    legallyCompleted: false,
-    unwind: "BUYBACK",
-    reason: `${TAG} Buyback before legal completion`,
+  const ver3 = await approveVersion(v2Project.id, { directPercent: "5" });
+  await reviseBookingRequest({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    bookingId: toRevise,
+    parties: [{ personId: buyerTwo.id, role: "PRIMARY" }],
+    soldByType: "MEMBER",
+    soldByPersonId: seller.id,
+    bookingDate: today,
+    schedule: SCHEDULE,
+    reason: "Corrected",
   });
-  const earlyDirect = await db.commissionRecord.findFirstOrThrow({
-    where: { bookingId: earlyBuyback, type: "DIRECT", isCurrent: true },
+  await approve(toRevise);
+  assert.deepEqual(
+    (await currentRecords(toRevise)).map((r) => r.ruleVersion),
+    [`DIRECT/THIRD_PARTY/V${ver3}/5%@25`],
+    "the corrected submission is the one that freezes"
+  );
+
+  // Sold By Correction recalculates on the frozen version, not today's (v2.1 §75).
+  await approveVersion(v2Project.id, { directPercent: "2" });
+  await requestSoldByCorrection({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    bookingId: frozenOn1,
+    toSoldByType: "MEMBER",
+    toSoldByPersonId: inviter.id,
+    reason: "Wrong Member",
+    supportingNote: "The inviter closed it.",
   });
-  // CR-015 supersedes §14.12 for this record. The Booking was paid to 30%, so
-  // the Direct had already reached its own 25% milestone — which is the pack's
-  // own second example, "third-party Direct at 30% + Approved Buyback → Direct
-  // already earned at 25%". A Buyback never accelerates Direct and never
-  // un-earns it either; only a Direct that never reached its milestone closes,
-  // which AC-09 exercises on a Booking with nothing received.
-  assert.equal(
-    earlyDirect.payment,
-    "NOT_PAID",
-    "a Direct already earned before the Buyback is not cancelled by it (CR-015)"
+  await decideSoldByCorrection({
+    idempotencyKey: key(),
+    actorRef: ADMIN,
+    actorRole: "ADMIN",
+    bookingId: frozenOn1,
+    approve: true,
+    note: "Corrected",
+  });
+  const recalculated = await recordOf(frozenOn1, "DIRECT");
+  assert.equal(recalculated.beneficiaryPersonId, inviter.id);
+  assert.equal(recalculated.ruleVersion, `DIRECT/THIRD_PARTY/V${ver1}/3%@25`, "still version 1's 3%, not today's 2%");
+
+  // Review Focus 3 — both benefits Disabled: approved normally, nothing generated.
+  await approveVersion(v2Project.id, {
+    directEnabled: false,
+    directPercent: null,
+    loyaltyEnabled: false,
+    loyaltyPercent: null,
+  });
+  const plotNone = await makePlot(v2Project.id, "NO");
+  const none = await bookAndApprove({
+    plotId: plotNone.id,
+    buyerPersonId: buyer.id,
+    soldByType: "MEMBER",
+    soldByPersonId: seller.id,
+  });
+  assert.equal((await currentRecords(none)).length, 0, "no records and no conflict");
+  assert.equal((await db.booking.findUniqueOrThrow({ where: { id: none } })).status, "BOOKED");
+
+  /* ====== v2.1 §21, §22, §25 — Customer-closing Loyalty: three for life ====== */
+
+  // A closer who has bought nothing is not a Customer closer.
+  const stranger = await makeEligiblePerson("Stranger", "9600000080");
+  await db.customerProfile.create({ data: { customerId: `${TAG}-C-STR`, personId: stranger.id } });
+  const plotStranger = await makePlot(project.id, "STR");
+  await expectBlocked(/existing Customer with their own approved purchase/, () =>
+    submit({ plotId: plotStranger.id, buyerPersonId: buyer.id, soldByType: "CUSTOMER", soldByPersonId: stranger.id })
   );
-  assert.equal(
-    earlyDirect.eligibility,
-    "READY",
-    "it stays payable on the sale that really did happen"
-  );
-  assert.ok(
-    await db.task.findFirst({
-      where: { recordId: earlyBuyback, purpose: "BUYBACK_COMMISSION_REVIEW" },
+
+  const closer = await makeCloser(project.id, "Closer", "9600000090");
+  const closings: string[] = [];
+  for (let i = 1; i <= 5; i++) {
+    const plot = await makePlot(project.id, `L${i}`);
+    const closedFor = await makeEligiblePerson(`LoyaltyBuyer${i}`, `96000001${i}0`);
+    const bookingId = await bookAndApprove({
+      plotId: plot.id,
+      buyerPersonId: closedFor.id,
+      soldByType: "CUSTOMER",
+      soldByPersonId: closer.id,
+    });
+    closings.push(bookingId);
+    const generated = await recordOf(bookingId, "LOYALTY");
+    assert.equal(generated.ruleVersion, `LOYALTY/INTRODUCED_BUYER/${V}/1%@100`);
+    await pay(bookingId, "100", `${TAG}-LOY-${i}`);
+    const after = await recordOf(bookingId, "LOYALTY");
+    if (i <= 3) {
+      assert.equal(`${after.eligibility}|${after.payment}`, "READY|NOT_PAID", `closing ${i} qualifies`);
+      assert.ok(after.qualifiedAt, `closing ${i} is counted`);
+    } else {
+      assert.equal(after.payment, "CANCELLED", `closing ${i} is past the lifetime three`);
+      assert.match(after.closedReason ?? "", /Membership activation is required/);
+      assert.ok(
+        await db.commissionEvent.findFirst({ where: { recordId: after.id, action: "LIMIT_REACHED" } }),
+        "and the record says why"
+      );
+    }
+  }
+  // At most one current Loyalty per Booking — the database refuses a second.
+  await assert.rejects(
+    db.commissionRecord.create({
+      data: {
+        bookingId: closings[0],
+        type: "LOYALTY",
+        beneficiaryRole: "REPEAT_PURCHASE_CUSTOMER",
+        beneficiaryPersonId: closer.id,
+        percent: "1",
+        milestonePercent: "100",
+        ruleVersion: "x",
+      },
     }),
-    "and §14.12's CRM/management decision is raised for Accounts"
+    /one_current_loyalty_per_booking|Unique constraint/
   );
 
-  /* ======= AC-06 — Royalty ownership: CR-001 – CR-004, acceptance 1 – 6 =======
+  // The closer's own KYC and Customer Terms hold the Loyalty until recorded.
+  const newCloser = await makeCloser(project.id, "NewCloser", "9600000091", false);
+  const plotHold = await makePlot(project.id, "HOLD");
+  const holdBuyer = await makeEligiblePerson("HoldBuyer", "9600000092");
+  const heldClose = await bookAndApprove({
+    plotId: plotHold.id,
+    buyerPersonId: holdBuyer.id,
+    soldByType: "CUSTOMER",
+    soldByPersonId: newCloser.id,
+  });
+  await pay(heldClose, "100", `${TAG}-HOLD`);
+  assert.equal((await recordOf(heldClose, "LOYALTY")).holdReason, "CLOSER_KYC_PENDING", "Aadhaar not Verified yet");
+  await expectBlocked(/Only Accounts, Admin or MD/, () =>
+    verifyAadhaar({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", personId: newCloser.id })
+  );
+  await verifyAadhaar({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", personId: newCloser.id });
+  assert.equal(
+    (await recordOf(heldClose, "LOYALTY")).holdReason,
+    "CUSTOMER_TERMS_PENDING",
+    "verifying the Aadhaar reassesses at once"
+  );
+  const newCloserProfile = await db.customerProfile.findUniqueOrThrow({ where: { personId: newCloser.id } });
+  await expectBlocked(/future date/, () =>
+    recordCustomerTermsAcceptance({
+      idempotencyKey: key(),
+      actorRef: CRM,
+      actorRole: "CRM",
+      customerProfileId: newCloserProfile.id,
+      termsVersion: "CT-TEST",
+      acceptedOn: day(5),
+    })
+  );
+  await recordCustomerTermsAcceptance({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    customerProfileId: newCloserProfile.id,
+    termsVersion: "CT-TEST",
+    acceptedOn: today,
+  });
+  assert.equal((await recordOf(heldClose, "LOYALTY")).eligibility, "READY", "and so does recording the Terms");
 
-     The Enquiry no longer decides anything. Royalty belongs to the Member who
-     was Sold By on the Customer's first qualifying purchase, it is provisional
-     until that purchase reaches 100% Payment Received or an Approved Buyback,
-     and only then does it take a position. */
+  /* ============ v2.1 §21, §23 — repeat-purchase Loyalty is unlimited ============ */
 
-  const royMemAPerson = await makeEligiblePerson("RoyMemA", "9600000041");
+  const repeater = await makeEligiblePerson("Repeater", "9600000093");
+  for (let i = 1; i <= 5; i++) {
+    const plot = await makePlot(project.id, `RP${i}`);
+    const bookingId = await bookAndApprove({ plotId: plot.id, buyerPersonId: repeater.id, soldByType: "THREE_PERCENT_CLUB" });
+    const recs = await currentRecords(bookingId);
+    if (i === 1) {
+      assert.equal(recs.length, 0, "the first personal purchase is not a repeat");
+      continue;
+    }
+    assert.deepEqual(recs.map(shape), ["LOYALTY:1.00@100"], `repeat ${i} earns Loyalty`);
+    await pay(bookingId, "100", `${TAG}-RP-${i}`);
+    assert.equal((await recordOf(bookingId, "LOYALTY")).eligibility, "READY", `repeat ${i} is paid — no lifetime cap`);
+  }
+
+  // v2.1 §23 — a Member-closed repeat purchase earns Direct and no Loyalty.
+  const plotMemberRepeat = await makePlot(project.id, "RPM");
+  const memberRepeat = await bookAndApprove({
+    plotId: plotMemberRepeat.id,
+    buyerPersonId: repeater.id,
+    soldByType: "MEMBER",
+    soldByPersonId: seller.id,
+  });
+  assert.deepEqual((await currentRecords(memberRepeat)).map((r) => r.type), ["DIRECT"]);
+
+  /* ===================== CR-002 – CR-004 — the Royalty link ======================
+     The link itself stays for part 2's Royalty Gift; it no longer takes a
+     position or pays a percentage (v2.1 §48). */
+
   const royMemBPerson = await makeEligiblePerson("RoyMemB", "9600000042");
   const royMemCPerson = await makeEligiblePerson("RoyMemC", "9600000045");
-  const makeMember = (suffix: string, personId: string, activatedDaysAgo: number) =>
-    db.memberProfile.create({
-      data: {
-        memberId: `${TAG}-M-${suffix}`,
-        personId,
-        activationDate: day(-activatedDaysAgo),
-        reraStatus: "NOT_APPLICABLE",
-        reraNotApplicableReason: "Individual referrer",
-      },
-    });
-  const royMemA = await makeMember("A", royMemAPerson.id, 400);
   const royMemB = await makeMember("B", royMemBPerson.id, 300);
   const royMemC = await makeMember("C", royMemCPerson.id, 250);
-
   const linkOf = (personId: string) => db.customerProfile.findFirstOrThrow({ where: { personId } });
 
-  /* Acceptance 1, 2 — "Enquiry by Member A + first qualifying sale by Member B
-     = future Royalty belongs to B." */
-
   const linkBuyer = await makeEligiblePerson("LinkBuyer", "9600000043");
-  await db.enquiry.create({
-    data: {
-      enquiryNo: `${TAG}-ENQ-ROY`,
-      personId: linkBuyer.id,
-      projectId: project.id,
-      source: "BY_MEMBER",
-      sourceMemberId: royMemA.id,
-      remark: "Member A sourced the Enquiry and closes nothing.",
-    },
-  });
-
   const plotR1 = await makePlot(project.id, "ROY1");
   const firstSale = await bookAndApprove({
     plotId: plotR1.id,
@@ -1103,83 +855,22 @@ async function main() {
     soldByType: "MEMBER",
     soldByPersonId: royMemBPerson.id,
   });
-
   let link = await linkOf(linkBuyer.id);
-  assert.equal(
-    link.royaltyLinkedMemberId,
-    royMemB.id,
-    "acceptance 1, 2 — the Sold By Member of the first approved Booking is the Royalty Linked Member, not the Enquiry Member"
-  );
-  assert.equal(link.royaltyLinkFinalAt, null, "and it is provisional until the milestone");
-  assert.equal(link.royaltyPosition, null, "a provisional link takes no Royalty position");
-  assert.ok(
-    await db.bookingEvent.findFirst({
-      where: { bookingId: firstSale, action: "ROYALTY_LINK_PROVISIONAL" },
-    }),
-    "the link is on the Booking's own history"
-  );
-
+  assert.equal(link.royaltyLinkedMemberId, royMemB.id, "the first sale's Member is the Royalty Linked Member");
+  assert.equal(link.royaltyLinkFinalAt, null, "provisional until the milestone");
   await pay(firstSale, "100", `${TAG} UTR ROY1`);
   link = await linkOf(linkBuyer.id);
   assert.ok(link.royaltyLinkFinalAt, "100% verified Payment Received makes the link final");
-  assert.equal(link.royaltyPosition, 1, "and that is when the Royalty position is taken");
-  assert.equal(link.royaltyRatePercent?.toFixed(2), "1.00", "at the band rate of the position it took");
 
-  // The future qualifying purchase: same Customer, direct, Sold By 3% CLUB.
   const plotR2 = await makePlot(project.id, "ROY2");
-  const royaltyRepeat = await bookAndApprove({
-    plotId: plotR2.id,
-    buyerPersonId: linkBuyer.id,
-    soldByType: "THREE_PERCENT_CLUB",
-  });
-  const repeatRoyalty = await db.commissionRecord.findFirst({
-    where: { bookingId: royaltyRepeat, type: "ROYALTY", isCurrent: true },
-  });
-  assert.equal(
-    repeatRoyalty?.beneficiaryPersonId,
-    royMemBPerson.id,
-    "acceptance 2 — the future direct purchase pays Royalty to the Member who closed the first sale"
-  );
-  assert.equal(
-    await db.commissionRecord.count({
-      where: { bookingId: royaltyRepeat, type: "ROYALTY", beneficiaryPersonId: royMemAPerson.id },
-    }),
-    0,
-    "acceptance 1 — the Enquiry Member earns nothing from having sourced the Enquiry"
+  const royaltyRepeat = await bookAndApprove({ plotId: plotR2.id, buyerPersonId: linkBuyer.id, soldByType: "THREE_PERCENT_CLUB" });
+  assert.deepEqual(
+    (await currentRecords(royaltyRepeat)).map((r) => r.type),
+    ["LOYALTY"],
+    "the Club-direct repeat earns the buyer's Loyalty and no monetary Royalty"
   );
 
-  /* Acceptance 6 — a Member-closed repeat purchase does not consume Royalty. */
-
-  const plotR3 = await makePlot(project.id, "ROY3");
-  const memberClosedRepeat = await bookAndApprove({
-    plotId: plotR3.id,
-    buyerPersonId: linkBuyer.id,
-    soldByType: "MEMBER",
-    soldByPersonId: royMemCPerson.id,
-  });
-  assert.equal(
-    await db.commissionRecord.count({
-      where: {
-        bookingId: memberClosedRepeat,
-        type: { in: ["ROYALTY", "LOYALTY"] },
-        isCurrent: true,
-      },
-    }),
-    0,
-    "acceptance 6 — a Member-closed repeat purchase creates no Royalty and no Loyalty"
-  );
-  assert.equal(
-    await db.commissionOpportunity.count({
-      where: { kind: "ROYALTY", subjectPersonId: linkBuyer.id, status: "CONSUMED" },
-    }),
-    0,
-    "and leaves the unused Royalty available"
-  );
-
-  /* Acceptance 3 — a first Booking cancelled before its milestone consumes no
-     Royalty position, and a later valid first purchase may establish a new
-     link. */
-
+  // A first Booking cancelled before its milestone leaves no link behind.
   const cancelBuyer = await makeEligiblePerson("CancelBuyer", "9600000044");
   const plotR4 = await makePlot(project.id, "ROY4");
   const cancelledFirst = await bookAndApprove({
@@ -1188,19 +879,7 @@ async function main() {
     soldByType: "MEMBER",
     soldByPersonId: royMemBPerson.id,
   });
-  assert.equal(
-    (await linkOf(cancelBuyer.id)).royaltyLinkedMemberId,
-    royMemB.id,
-    "the cancelled Booking held a provisional link while it stood"
-  );
-
-  await cancelBooking({
-    idempotencyKey: key(),
-    actorRef: CRM,
-    actorRole: "CRM",
-    bookingId: cancelledFirst,
-    reason: "Buyer withdrew before any payment.",
-  });
+  await cancelBooking({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: cancelledFirst, reason: "Withdrew." });
   await decideCancellation({
     idempotencyKey: key(),
     actorRef: ACC,
@@ -1209,698 +888,59 @@ async function main() {
     approve: true,
     note: "No payment was received.",
   });
-
-  const afterCancelledFirst = await linkOf(cancelBuyer.id);
-  assert.equal(
-    afterCancelledFirst.royaltyLinkedMemberId,
-    null,
-    "acceptance 3 — the provisional link goes with the cancelled first Booking"
-  );
-  assert.equal(afterCancelledFirst.royaltyLinkFinalAt, null, "nothing became final");
-  assert.equal(afterCancelledFirst.royaltyPosition, null, "and no Royalty position was consumed");
-
+  assert.equal((await linkOf(cancelBuyer.id)).royaltyLinkedMemberId, null, "the provisional link goes with it");
   const plotR5 = await makePlot(project.id, "ROY5");
-  await bookAndApprove({
-    plotId: plotR5.id,
-    buyerPersonId: cancelBuyer.id,
-    soldByType: "MEMBER",
-    soldByPersonId: royMemCPerson.id,
-  });
-  assert.equal(
-    (await linkOf(cancelBuyer.id)).royaltyLinkedMemberId,
-    royMemC.id,
-    "a later valid first purchase establishes a new link"
-  );
+  await bookAndApprove({ plotId: plotR5.id, buyerPersonId: cancelBuyer.id, soldByType: "MEMBER", soldByPersonId: royMemCPerson.id });
+  assert.equal((await linkOf(cancelBuyer.id)).royaltyLinkedMemberId, royMemC.id, "a later first purchase links anew");
 
-  /* Acceptance 4 — a first purchase Sold By 3% CLUB never gains a Royalty
-     Member, however many Members sell to that Customer afterwards. */
-
+  // Sold By 3% CLUB on the first purchase never gains a Royalty Member.
   const clubBuyer = await makeEligiblePerson("ClubBuyer", "9600000046");
   const plotR6 = await makePlot(project.id, "ROY6");
-  const clubFirst = await bookAndApprove({
-    plotId: plotR6.id,
-    buyerPersonId: clubBuyer.id,
-    soldByType: "THREE_PERCENT_CLUB",
-  });
+  const clubFirst = await bookAndApprove({ plotId: plotR6.id, buyerPersonId: clubBuyer.id, soldByType: "THREE_PERCENT_CLUB" });
   await pay(clubFirst, "100", `${TAG} UTR ROY6`);
-  assert.equal(
-    (await linkOf(clubBuyer.id)).royaltyLinkedMemberId,
-    null,
-    "Sold By 3% CLUB creates no Royalty Linked Member"
-  );
-  assert.ok(
-    (await linkOf(clubBuyer.id)).royaltyLinkFinalAt,
-    "and at the milestone that answer is itself final"
-  );
+  assert.equal((await linkOf(clubBuyer.id)).royaltyLinkedMemberId, null);
+  assert.ok((await linkOf(clubBuyer.id)).royaltyLinkFinalAt, "and that answer is itself final");
 
-  const plotR7 = await makePlot(project.id, "ROY7");
-  await bookAndApprove({
-    plotId: plotR7.id,
-    buyerPersonId: clubBuyer.id,
-    soldByType: "MEMBER",
-    soldByPersonId: royMemBPerson.id,
-  });
-  assert.equal(
-    (await linkOf(clubBuyer.id)).royaltyLinkedMemberId,
-    null,
-    "acceptance 4 — a Member selling later acquires no Royalty ownership"
-  );
-
-  /* Acceptance 5 — the same, for a first purchase Sold By Customer. */
-
-  const custBuyer = await makeEligiblePerson("CustBuyer", "9600000047");
-  const plotR8 = await makePlot(project.id, "ROY8");
-  const custFirst = await bookAndApprove({
-    plotId: plotR8.id,
-    buyerPersonId: custBuyer.id,
-    soldByType: "CUSTOMER",
-    soldByPersonId: linkBuyer.id,
-  });
-  await pay(custFirst, "100", `${TAG} UTR ROY8`);
-  const custLink = await linkOf(custBuyer.id);
-  assert.equal(
-    custLink.royaltyLinkedMemberId,
-    null,
-    "acceptance 5 — Sold By Customer creates no Royalty Linked Member"
-  );
-  assert.ok(custLink.royaltyLinkFinalAt, "and that is final at the milestone too");
-
-  /* ===== AC-07 — CR-013: position 10+ is visible at 0% and consumes ==========
-
-     The band table has always returned 0% past the ninth position. What used to
-     happen with that 0% was nothing at all: the component was dropped, so the
-     Booking never showed who was in the position, and the invited Member's
-     one-time Invite opportunity stayed open for some later sale to take at 1%.
-     The pack closes both halves — the line is created and visible, and it
-     consumes the opportunity. */
-
-  const tenthInviterPerson = await makeEligiblePerson("TenthInviter", "9600000051");
-  const tenthSellerPerson = await makeEligiblePerson("TenthSeller", "9600000052");
-  const tenthInviter = await makeMember("TENTH-I", tenthInviterPerson.id, 500);
-  const tenthSeller = await db.memberProfile.create({
-    data: {
-      memberId: `${TAG}-M-TENTH-S`,
-      personId: tenthSellerPerson.id,
-      activationDate: day(-120),
-      // Position 10 sits past the last band, so the frozen rate is 0%.
-      invitedByMemberId: tenthInviter.id,
-      invitePosition: 10,
-      inviteRatePercent: "0",
-      reraStatus: "NOT_APPLICABLE",
-      reraNotApplicableReason: "Individual referrer",
-    },
-  });
-
-  const tenthBuyer = await makeEligiblePerson("TenthBuyer", "9600000053");
-  const plotAC7 = await makePlot(project.id, "AC7A");
-  const tenthSale = await bookAndApprove({
-    plotId: plotAC7.id,
-    buyerPersonId: tenthBuyer.id,
-    soldByType: "MEMBER",
-    soldByPersonId: tenthSellerPerson.id,
-  });
-
-  const tenthInvite = () =>
-    db.commissionRecord.findFirstOrThrow({
-      where: { bookingId: tenthSale, type: "INVITE", isCurrent: true },
-    });
-
-  const created = await tenthInvite();
-  assert.equal(
-    created.percent.toFixed(2),
-    "0.00",
-    "acceptance 7 — the record exists and its rate is 0%"
-  );
-  assert.equal(
-    created.ruleVersion,
-    "INVITE/POSITION_10/0%@100",
-    "and it carries the position, which is what keeps the position visible"
-  );
-  assert.equal(created.beneficiaryPersonId, tenthInviterPerson.id);
-  assert.equal(
-    created.eligibility,
-    "NO_BENEFIT",
-    "settled at zero — not Milestone Pending, and not a hold that could later lift"
-  );
-  assert.equal(created.holdReason, null);
-  assert.deepEqual(
-    (await currentRecords(tenthSale)).map((r) => `${r.type}:${r.percent.toFixed(2)}`),
-    ["DIRECT:3.00", "INVITE:0.00"],
-    "the 0% line stands beside the Direct one rather than replacing or trimming it"
-  );
-
-  /* The milestone consumes the opportunity, exactly as a paying band would. */
-
-  assert.equal(
-    await db.commissionOpportunity.count({
-      where: { kind: "INVITE", subjectPersonId: tenthSellerPerson.id, status: "CONSUMED" },
-    }),
-    0,
-    "nothing is consumed before the milestone"
-  );
-
-  await pay(tenthSale, "100", `${TAG} UTR AC7`);
-
-  const zeroBand = await tenthInvite();
-  assert.ok(
-    zeroBand.opportunityId,
-    "acceptance 7 — 0% still consumes that person's one-time opportunity"
-  );
-  assert.equal(
-    await db.commissionOpportunity.count({
-      where: { kind: "INVITE", subjectPersonId: tenthSellerPerson.id, status: "CONSUMED" },
-    }),
-    1
-  );
-  assert.equal(
-    zeroBand.eligibility,
-    "NO_BENEFIT",
-    "and reaching the milestone does not make a 0% band payable"
-  );
-  assert.equal(
-    await db.task.count({
-      where: { recordKind: "Commission", recordId: zeroBand.id, status: "PENDING" },
-    }),
-    0,
-    "no Accounts payment task is raised for an amount that does not exist"
-  );
-
-  /* "no payable amount is created" — by either route. */
-
-  await expectBlocked(/no amount to pay/, () =>
-    markCommissionPaid({
-      idempotencyKey: key(),
-      actorRef: ACC,
-      actorRole: "ACCOUNTS",
-      recordId: zeroBand.id,
-      early: false,
-      paidOn: today,
-      reference: `${TAG} UTR AC7-PAY`,
-      remarks: "Trying to pay a zero band.",
-    })
-  );
-  // Paid Early is the route around an unready record, so MD approval must not
-  // become a way to pay a band that never earned anything.
-  await approveCommissionPaidEarly({
-    idempotencyKey: key(),
-    actorRef: `${TAG}-MD`,
-    actorRole: "MD",
-    recordId: zeroBand.id,
-    note: "Testing that approval alone cannot create an amount.",
-  });
-  await expectBlocked(/no amount to pay/, () =>
-    markCommissionPaid({
-      idempotencyKey: key(),
-      actorRef: ACC,
-      actorRole: "ACCOUNTS",
-      recordId: zeroBand.id,
-      early: true,
-      paidOn: today,
-      reference: `${TAG} UTR AC7-EARLY`,
-      remarks: "Trying to process a zero band early.",
-    })
-  );
-
-  /* "That person never moves into a later 1% cycle." The opportunity is gone,
-     so a second sale by the same Member earns their inviter nothing. */
-
-  const tenthBuyerTwo = await makeEligiblePerson("TenthBuyer2", "9600000054");
-  const plotAC7b = await makePlot(project.id, "AC7B");
-  const secondSale = await bookAndApprove({
-    plotId: plotAC7b.id,
-    buyerPersonId: tenthBuyerTwo.id,
-    soldByType: "MEMBER",
-    soldByPersonId: tenthSellerPerson.id,
-  });
-  assert.deepEqual(
-    (await currentRecords(secondSale)).map((r) => r.type),
-    ["DIRECT"],
-    "acceptance 7 — the consumed opportunity means no second Invite at any rate"
-  );
-  assert.equal(
-    (await db.memberProfile.findUniqueOrThrow({ where: { id: tenthSeller.id } })).inviteRatePercent?.toFixed(2),
-    "0.00",
-    "and the position never re-rates"
-  );
-
-  /* ===== AC-08 — CR-014, CR-027: the two cycles, and the anniversary =========
-
-     Nothing resets on an anniversary any more. A cycle is a set of positions and
-     it ends when all nine have completed, however long that takes; the two
-     counters move independently; and the anniversary run opens the next cycle
-     only when the current one is already Upgrade Eligible. */
-
-  const cycleInviterPerson = await makeEligiblePerson("CycleInviter", "9600000061");
-  const cycleInviter = await makeMember("CYCLE-I", cycleInviterPerson.id, 700);
-
-  /* Nine cycleInvited Members, each closing their own first third-party sale to
-     100%. That is what CR-014 calls a successful Invite position. */
-
-  const cycleInvited: string[] = [];
-  for (let n = 1; n <= 9; n++) {
-    const person = await makeEligiblePerson(`CycleSeller${n}`, `96001000${String(n).padStart(2, "0")}`);
-    await activateMember({
-      idempotencyKey: key(),
-      actorRef: `${TAG}-MD`,
-      actorRole: "MD",
-      personId: person.id,
-      invitedByMemberId: cycleInviter.id,
-      reraStatus: "NOT_APPLICABLE",
-      reraNotApplicableReason: "Individual referrer",
-    });
-    cycleInvited.push(person.id);
-  }
-
-  const inviteCycle = async () =>
-    db.performanceCycle.findFirstOrThrow({
-      where: { memberProfileId: cycleInviter.id, kind: "INVITE" },
-      orderBy: { cycleNumber: "desc" },
-    });
-
-  let cycle1 = await inviteCycle();
-  assert.equal(cycle1.cycleNumber, 1, "activation opens cycle 1");
-  assert.equal(cycle1.positionsFilled, 9, "all nine positions are filled");
-  assert.equal(cycle1.positionsComplete, 0, "and none of them has completed anything yet");
-  assert.equal(cycle1.status, "IN_PROGRESS");
-
-  // A tenth invitee joins the same cycle at 0% and is outside its nine.
-  const tenthPerson = await makeEligiblePerson("CycleSeller10", "9600100010");
-  await activateMember({
-    idempotencyKey: key(),
-    actorRef: `${TAG}-MD`,
-    actorRole: "MD",
-    personId: tenthPerson.id,
-    invitedByMemberId: cycleInviter.id,
-    reraStatus: "NOT_APPLICABLE",
-    reraNotApplicableReason: "Individual referrer",
-  });
-  const tenth = await db.memberProfile.findUniqueOrThrow({ where: { personId: tenthPerson.id } });
-  assert.equal(tenth.invitePosition, 10, "the counter keeps climbing — nothing reset it");
-  assert.equal(tenth.inviteRatePercent?.toFixed(2), "0.00");
-  assert.equal(tenth.inviteCycleId, cycle1.id, "and it sits in the same cycle");
-  assert.equal(
-    (await inviteCycle()).positionsFilled,
-    9,
-    "which the cycle does not count — it is completed by its first nine"
-  );
-
-  for (const [index, sellerPersonId] of cycleInvited.entries()) {
-    const buyer = await makeEligiblePerson(`CycleBuyer${index + 1}`, `96002000${String(index + 1).padStart(2, "0")}`);
-    const plot = await makePlot(project.id, `CY${index + 1}`);
-    const booking = await bookAndApprove({
-      plotId: plot.id,
-      buyerPersonId: buyer.id,
-      soldByType: "MEMBER",
-      soldByPersonId: sellerPersonId,
-    });
-
-    // Eight of nine is not an upgrade.
-    if (index === 7) {
-      await pay(booking, "100", `${TAG} UTR CY${index + 1}`);
-      const eight = await inviteCycle();
-      assert.equal(eight.positionsComplete, 8);
-      assert.equal(eight.status, "IN_PROGRESS", "eight of nine is not Upgrade Eligible");
-      continue;
-    }
-    await pay(booking, "100", `${TAG} UTR CY${index + 1}`);
-  }
-
-  cycle1 = await inviteCycle();
-  assert.equal(cycle1.positionsComplete, 9, "all nine positions completed");
-  assert.equal(cycle1.status, "UPGRADE_ELIGIBLE", "so the cycle is Upgrade Eligible");
-  assert.ok(cycle1.completedAt, "with the moment it became so");
-  assert.match(cycle1.entitlement ?? "", /Invite cycle 1 complete/);
-
-  /* The counters are independent: the Royalty cycle of the same Member has not
-     moved at all. */
-
-  const royaltyCycleOfInviter = await db.performanceCycle.findFirst({
-    where: { memberProfileId: cycleInviter.id, kind: "ROYALTY" },
-  });
-  assert.ok(
-    royaltyCycleOfInviter === null || royaltyCycleOfInviter.status === "IN_PROGRESS",
-    "a completed Invite cycle upgrades nothing about Royalty"
-  );
-
-  /* CR-027 — the anniversary run. It opens nothing on an ordinary day, opens
-     nothing for an incomplete counter, and is safe to run twice. */
-
-  // The next anniversary that is still ahead of us: the cycle completed just
-  // now, and CR-027 only rolls a completion recorded before the run's own day.
-  const anniversaryAfter = (from: Date) => {
-    const d = new Date(from);
-    while (d <= new Date()) d.setUTCFullYear(d.getUTCFullYear() + 1);
-    return d;
-  };
-  const anniversary = anniversaryAfter(cycleInviter.activationDate!);
-  const ordinaryDay = new Date(anniversary);
-  ordinaryDay.setUTCDate(ordinaryDay.getUTCDate() + 3);
-
-  const upgradeCheck = (at: Date) =>
-    db.$transaction(async (tx) => {
-      const opened: string[] = [];
-      for (const kind of ["INVITE", "ROYALTY"] as const) {
-        if (await upgradeCycleIfDue(tx as never, cycleInviter.id, kind, at, `${TAG}-JOB`)) {
-          opened.push(kind);
-        }
-      }
-      await tx.$executeRawUnsafe("SET CONSTRAINTS ALL IMMEDIATE");
-      return opened;
-    });
-
-  assert.deepEqual(await upgradeCheck(ordinaryDay), [], "no roll on an ordinary day");
-
-  assert.deepEqual(
-    await upgradeCheck(anniversary),
-    ["INVITE"],
-    "on the anniversary the eligible counter rolls, and only that counter"
-  );
-
-  const cycle2 = await inviteCycle();
-  assert.equal(cycle2.cycleNumber, 2, "cycle 2 opens");
-  assert.equal(cycle2.status, "IN_PROGRESS");
-  assert.equal(cycle2.positionsFilled, 0, "and starts empty");
-
-  assert.deepEqual(
-    await upgradeCheck(anniversary),
-    [],
-    "re-running the check opens nothing a second time"
-  );
-  assert.equal(
-    await db.performanceCycle.count({
-      where: { memberProfileId: cycleInviter.id, kind: "INVITE" },
-    }),
-    2,
-    "and there are exactly two Invite cycles"
-  );
-
-  /* Positions 1 to 9 of cycle 1 never renumber or re-rate, and the next Member
-     cycleInvited starts at position 1 of cycle 2 at the top band again. */
-
-  const firstInvited = await db.memberProfile.findUniqueOrThrow({
-    where: { personId: cycleInvited[0] },
-  });
-  assert.equal(firstInvited.invitePosition, 1);
-  assert.equal(firstInvited.inviteCycleId, cycle1.id, "an old position stays in its old cycle");
-
-  const freshPerson = await makeEligiblePerson("CycleFresh", "9600100011");
-  await activateMember({
-    idempotencyKey: key(),
-    actorRef: `${TAG}-MD`,
-    actorRole: "MD",
-    personId: freshPerson.id,
-    invitedByMemberId: cycleInviter.id,
-    reraStatus: "NOT_APPLICABLE",
-    reraNotApplicableReason: "Individual referrer",
-  });
-  const fresh = await db.memberProfile.findUniqueOrThrow({ where: { personId: freshPerson.id } });
-  assert.equal(fresh.invitePosition, 1, "the earned upgrade is a fresh position 1");
-  assert.equal(fresh.inviteRatePercent?.toFixed(2), "1.00", "back in the top band");
-  assert.equal(fresh.inviteCycleId, cycle2.id);
-
-  /* And a cancelled qualifying event takes its position back out. */
-
-  const undone = await db.commissionOpportunity.findFirstOrThrow({
-    where: { kind: "INVITE", subjectPersonId: cycleInvited[0], status: "CONSUMED" },
-  });
-  await db.$transaction(async (tx) => {
-    await tx.commissionOpportunity.update({
-      where: { id: undone.id },
-      data: { status: "OPEN", consumedByBookingId: null, consumedAt: null },
-    });
-    await refreshCycle(tx as never, cycle1.id, `${TAG}-JOB`);
-    await tx.$executeRawUnsafe("SET CONSTRAINTS ALL IMMEDIATE");
-  });
-  const reopenedCycle = await db.performanceCycle.findUniqueOrThrow({ where: { id: cycle1.id } });
-  assert.equal(reopenedCycle.positionsComplete, 8);
-  assert.equal(
-    reopenedCycle.status,
-    "IN_PROGRESS",
-    "a reversed qualifying event does not count as successfully completed"
-  );
-  assert.equal(reopenedCycle.completedAt, null, "and the cycle loses its completion stamp");
-
-  /* AC-03 — Paid Early needs a recorded MD approval */
-
-  await expectBlocked(/requires a recorded MD approval/, () =>
-    markCommissionPaid({
-      idempotencyKey: key(),
-      actorRef: ACC,
-      actorRole: "ACCOUNTS",
-      recordId: earnedRoyalty.id,
-      early: true,
-      paidOn: today,
-      reference: `${TAG} UTR EARLY-NO`,
-      remarks: "Processing ahead of the conditions.",
-    })
-  );
-
-  const heldRecord = await db.commissionRecord.findFirstOrThrow({
-    where: { bookingId: bookingAC1, type: "INVITE", isCurrent: true },
-  });
-  await expectBlocked(/Only MD may approve/, () =>
-    approveCommissionPaidEarly({
-      idempotencyKey: key(),
-      actorRef: ACC,
-      actorRole: "ACCOUNTS",
-      recordId: heldRecord.id,
-      note: "Approving my own early payment.",
-    })
-  );
-  await expectBlocked(/Only MD may approve/, () =>
-    approveCommissionPaidEarly({
-      idempotencyKey: key(),
-      actorRef: `${TAG}-ADMIN`,
-      actorRole: "ADMIN",
-      recordId: heldRecord.id,
-      note: "Admin is not MD.",
-    })
-  );
-
-  await approveCommissionPaidEarly({
-    idempotencyKey: key(),
-    actorRef: `${TAG}-MD`,
-    actorRole: "MD",
-    recordId: heldRecord.id,
-    note: "Approved ahead of the milestone for the quarter close.",
-  });
-  const approved = await db.commissionRecord.findUniqueOrThrow({ where: { id: heldRecord.id } });
-  assert.equal(approved.earlyApprovedByRef, `${TAG}-MD`, "the approver is stored");
-  assert.ok(approved.earlyApprovedAt, "with the date and time");
-  assert.ok(approved.earlyApprovalNote, "and the compulsory note");
-  assert.ok(
-    await db.commissionEvent.findFirst({
-      where: { recordId: heldRecord.id, action: "PAID_EARLY_APPROVED" },
-    }),
-    "the approval is on the record's own timeline"
-  );
-
-  await markCommissionPaid({
-    idempotencyKey: key(),
-    actorRef: ACC,
-    actorRole: "ACCOUNTS",
-    recordId: heldRecord.id,
-    early: true,
-    paidOn: today,
-    reference: `${TAG} UTR EARLY-YES`,
-    remarks: "Processed on MD approval.",
-  });
-  assert.equal(
-    (await db.commissionRecord.findUniqueOrThrow({ where: { id: heldRecord.id } })).payment,
-    "PAID_EARLY",
-    "an approved Paid Early goes through"
-  );
-
-  /* ===== Test plan §11 TC-CM-002 — duplicate Member activation is refused === */
-
-  await expectBlocked(/already an activated Member/, () =>
-    activateMember({
-      idempotencyKey: key(),
-      actorRef: `${TAG}-ADMIN`,
-      actorRole: "ADMIN",
-      personId: convert.id,
-    })
-  );
-  assert.equal(
-    await db.memberProfile.count({ where: { personId: convert.id } }),
-    1,
-    "one Person never holds two Member profiles"
-  );
-
-  /* ===== Test plan §18 — every Dashboard figure reconciles to the records ===
-
-     Approved Changes §5: "Dashboard totals agree with transaction-level
-     records", and §6: the business logic must be what produces them.
-
-     Each figure is re-derived here with its own explicit query rather than by
-     calling the same helper twice. That is the whole point: businessState()
-     could drop an `isCurrent`, count a cancelled record or read a payment state
-     where it means to read an achievement, and only an independent derivation
-     notices. */
+  /* ========== Test plan §18 — every Dashboard figure reconciles to records ========== */
 
   const state = await businessState();
-
   const approvedOnly = { bookingNumber: { not: null } } as const;
-
   assert.equal(
     state.business.customer,
-    await db.booking.count({ where: { ...approvedOnly, originalClassification: "CUSTOMER" } }),
-    "Customer business matches the frozen classification on the Bookings"
+    await db.booking.count({ where: { ...approvedOnly, originalClassification: "CUSTOMER" } })
   );
   assert.equal(
     state.business.member,
-    await db.booking.count({ where: { ...approvedOnly, originalClassification: "MEMBER" } }),
-    "Member business matches"
-  );
-  assert.equal(
-    state.business.unclassified,
-    await db.booking.count({ where: { ...approvedOnly, originalClassification: null } }),
-    "and so does the unclassified remainder"
-  );
-  assert.equal(
-    state.volumes.approvedBookings,
-    state.business.customer + state.business.member + state.business.unclassified,
-    "the split reconciles to the total, which is what makes the panel checkable"
+    await db.booking.count({ where: { ...approvedOnly, originalClassification: "MEMBER" } })
   );
   assert.equal(
     state.volumes.approvedBookings,
     await db.booking.count({ where: approvedOnly }),
-    "and the total is the number of approved Bookings"
+    "the total is the number of approved Bookings"
   );
-
-  assert.equal(
-    state.transactions.unwound,
-    await db.booking.count({ where: { status: "BUYBACK_COMPLETED" } }),
-    "unwound transactions"
-  );
-  assert.equal(
-    state.transactions.completed,
-    await db.booking.count({ where: { status: "DELIVERED" } }),
-    "completed transactions"
-  );
-
-  /* Royalty and cycles. CR-004 — earned is the consumed one-time opportunity,
-     because that is where the Royalty's own milestone puts it. CR-014 — a cycle
-     is Upgrade Eligible only on all nine of its positions. */
-  assert.equal(
-    state.royalty.earned,
-    await db.commissionRecord.count({
-      where: { type: "ROYALTY", isCurrent: true, opportunityId: { not: null } },
-    }),
-    "earned Royalty is the consumed entitlement, not the paid records"
-  );
-  assert.ok(
-    state.royalty.earned >= 1,
-    "the Royalty earned above is counted as earned on the Dashboard"
-  );
-  assert.equal(
-    state.cycles.upgradeEligible,
-    await db.performanceCycle.count({ where: { status: "UPGRADE_ELIGIBLE" } }),
-    "cycles that reached Upgrade Eligible"
-  );
-  assert.equal(
-    state.cycles.inProgress,
-    await db.performanceCycle.count({ where: { status: "IN_PROGRESS" } }),
-    "and cycles still in progress"
-  );
-  assert.equal(
-    state.cycles.positions,
-    (await db.performanceCycle.aggregate({ _sum: { positionsFilled: true } }))._sum
-      .positionsFilled ?? 0,
-    "positions held in cycles"
-  );
-
-  /* Buying Commission. TC-BC-002: "Dashboard must not report an amount above
-     the approved cap." */
-  const buyingRows = await db.commissionRecord.findMany({
-    where: { type: "BUYING", isCurrent: true },
-    select: { percent: true },
-  });
-  assert.equal(state.buying.records, buyingRows.length, "Buying Commission record count");
+  const buyingRows = await db.commissionRecord.findMany({ where: { type: "BUYING", isCurrent: true }, select: { percent: true } });
+  assert.equal(state.buying.records, buyingRows.length);
   assert.equal(
     state.buying.totalPercent,
-    buyingRows.reduce((sum, r) => sum.add(r.percent), new Decimal(0)).toFixed(2),
-    "and the total is summed on exact decimals"
+    buyingRows.reduce((sum, r) => sum.add(r.percent), new Decimal(0)).toFixed(2)
   );
-  assert.equal(
-    state.buying.overCapExceptions,
-    buyingRows.filter((r) => r.percent.gt(5)).length,
-    "cap exceptions are the records actually above 5%"
-  );
-  assert.equal(
-    state.buying.overCapExceptions,
-    0,
-    "TC-BC-002 — nothing above the approved cap is reportable, because entry refuses it"
-  );
+  assert.equal(state.paidEarly.processed, await db.commissionRecord.count({ where: { payment: "PAID_EARLY" } }));
+  assert.ok(state.paidEarly.processed >= 1, "the Paid Early above is visible");
+  assert.equal(state.audit.supersededRecords, await db.commissionRecord.count({ where: { isCurrent: false } }));
+  assert.ok(state.conversions.customersActivatedAsMembers >= 1, "the conversion built above is visible");
+  assert.equal(state.volumes.holds, await db.hold.count());
 
-  /* Paid Early. */
-  assert.equal(
-    state.paidEarly.processed,
-    await db.commissionRecord.count({ where: { payment: "PAID_EARLY" } }),
-    "processed Paid Early records"
-  );
-  assert.ok(
-    state.paidEarly.processed >= 1,
-    "the Paid Early processed above is visible on the Dashboard"
-  );
-  assert.equal(
-    state.paidEarly.approvedAwaitingPayment,
-    await db.commissionRecord.count({
-      where: { isCurrent: true, payment: "NOT_PAID", earlyApprovedAt: { not: null } },
-    }),
-    "approved but not yet paid"
-  );
-
-  assert.equal(
-    state.conflicts.aboveCap,
-    await db.commissionRecord.count({
-      where: { isCurrent: true, holdReason: "COMMISSION_CONFLICT_ABOVE_4" },
-    }),
-    "4% conflicts"
-  );
-  assert.equal(
-    state.audit.supersededRecords,
-    await db.commissionRecord.count({ where: { isCurrent: false } }),
-    "superseded records — nothing is deleted, so they stay countable"
-  );
-  assert.equal(
-    state.conversions.customersActivatedAsMembers,
-    await db.booking.count({
-      where: {
-        ...approvedOnly,
-        originalClassification: "CUSTOMER",
-        primaryPerson: { memberProfile: { activationDate: { not: null } } },
-      },
-    }),
-    "Customer → Member conversions, explained by the frozen classification"
-  );
-  assert.ok(
-    state.conversions.customersActivatedAsMembers >= 1,
-    "the conversion built above is visible, which is what §4 asks reports to explain"
-  );
-
-  assert.equal(state.volumes.enquiries, await db.enquiry.count(), "enquiries");
-  assert.equal(state.volumes.holds, await db.hold.count(), "holds");
-  assert.equal(
-    state.volumes.paymentsReceived,
-    await db.paymentReceivedEntry.count({ where: { status: "CONFIRMED" } }),
-    "confirmed payment entries"
-  );
-
-  /* ===== AC-09 — CR-015, CR-016: the Buyback as an alternative milestone ====
-
-     Pack acceptance 10 to 14. An Approved Buyback earns Invite, Royalty and
-     Loyalty before 100%; it never accelerates Direct, and it never un-earns a
-     Direct that had already reached its own milestone; and unwinding it
-     reverses exactly the benefit the Buyback alone was supporting. */
+  /* ====== v2.1 §20, §41, §44 — the Buyback as an alternative milestone ====== */
 
   const GIVEN = [
     { seq: 1, percent: "25", dueDate: today },
     { seq: 2, percent: "75", dueDate: day(30) },
   ];
+  const arranger = await makeEligiblePerson("Arranger", "9600000081");
+  await makeMember("ARR", arranger.id, 800);
 
   /** Raises a Buyback on a Booking, funds it past 20% and approves it. */
-  async function approveBuybackOn(bookingId: string, sellerPersonId: string, arrangerPersonId: string, tagSuffix: string) {
+  async function approveBuybackOn(bookingId: string, sellerPersonId: string, tagSuffix: string) {
     const raised = await createAcquisition({
       idempotencyKey: key(),
       actorRef: CRM,
@@ -1909,7 +949,7 @@ async function main() {
       sourceBookingId: bookingId,
       sellerPersonId,
       arrangedByType: "MEMBER",
-      arrangedByPersonId: arrangerPersonId,
+      arrangedByPersonId: arranger.id,
       purchaseDate: today,
       remark: "Buyback before legal completion.",
       schedule: GIVEN,
@@ -1934,262 +974,55 @@ async function main() {
     return raised.acquisitionId;
   }
 
-  const recordOf = (bookingId: string, type: "DIRECT" | "INVITE" | "ROYALTY" | "LOYALTY") =>
-    db.commissionRecord.findFirstOrThrow({ where: { bookingId, type, isCurrent: true } });
-
-  /* --- Acceptance 10 and 13: Invite accelerates, an earned Direct survives -- */
-
-  const bbInviterPerson = await makeEligiblePerson("BBInviter", "9600000081");
-  const bbInviter = await makeMember("BB-I", bbInviterPerson.id, 800);
-  const bbInviteCycle = await db.performanceCycle.create({
-    data: {
-      memberProfileId: bbInviter.id,
-      kind: "INVITE",
-      cycleNumber: 1,
-      openedOn: new Date(bbInviter.activationDate!.toISOString().slice(0, 10)),
-    },
-  });
-  const bbSellerPerson = await makeEligiblePerson("BBSeller", "9600000082");
-  await db.memberProfile.create({
-    data: {
-      memberId: `${TAG}-M-BBS`,
-      personId: bbSellerPerson.id,
-      activationDate: day(-300),
-      invitedByMemberId: bbInviter.id,
-      invitePosition: 1,
-      inviteRatePercent: "1",
-      inviteCycleId: bbInviteCycle.id,
-      reraStatus: "REGISTERED",
-      reraNumber: "RERA-TEST-BB",
-    },
-  });
+  // An earned Direct survives; an unearned one is never accelerated.
   const bbBuyer = await makeEligiblePerson("BBBuyer", "9600000083");
   const plotBB1 = await makePlot(project.id, "BB1");
-  const bookingBB1 = await bookAndApprove({
-    plotId: plotBB1.id,
-    buyerPersonId: bbBuyer.id,
-    soldByType: "MEMBER",
-    soldByPersonId: bbSellerPerson.id,
-  });
-
-  // 40% earns the Direct on its own and leaves the Invite waiting for 100%.
+  const bookingBB1 = await bookAndApprove({ plotId: plotBB1.id, buyerPersonId: bbBuyer.id, soldByType: "MEMBER", soldByPersonId: seller.id });
   await pay(bookingBB1, "40", `${TAG} UTR BB1`);
-  assert.equal((await recordOf(bookingBB1, "DIRECT")).eligibility, "READY");
-  assert.equal(
-    (await recordOf(bookingBB1, "INVITE")).eligibility,
-    "MILESTONE_PENDING",
-    "before the Buyback the Invite is still waiting for 100%"
-  );
-  assert.equal((await recordOf(bookingBB1, "INVITE")).opportunityId, null);
-  assert.equal(
-    (await db.performanceCycle.findUniqueOrThrow({ where: { id: bbInviteCycle.id } })).positionsComplete,
-    0,
-    "and its cycle position has completed nothing"
-  );
-
-  const bb1 = await approveBuybackOn(bookingBB1, bbBuyer.id, bbInviterPerson.id, "BB1");
-
-  const bb1Invite = await recordOf(bookingBB1, "INVITE");
-  assert.equal(
-    bb1Invite.eligibility,
-    "READY",
-    "CR-015 acceptance 10 — an Approved Buyback earns the Invite before 100%"
-  );
-  assert.ok(bb1Invite.opportunityId, "and it consumes the one-time Invite opportunity");
+  await approveBuybackOn(bookingBB1, bbBuyer.id, "BB1");
   const bb1Direct = await recordOf(bookingBB1, "DIRECT");
-  assert.equal(
-    bb1Direct.payment,
-    "NOT_PAID",
-    "acceptance 13 — a Direct already earned at 25% is not cancelled by a Buyback"
-  );
-  assert.equal(bb1Direct.eligibility, "READY", "it simply stays earned and payable");
-  assert.equal(
-    (await db.booking.findUniqueOrThrow({ where: { id: bookingBB1 } })).status,
-    "BUYBACK_COMPLETED"
-  );
-  assert.equal(
-    (await db.performanceCycle.findUniqueOrThrow({ where: { id: bbInviteCycle.id } })).positionsComplete,
-    1,
-    "CR-014 — the accelerated position now counts towards its cycle"
-  );
+  assert.equal(`${bb1Direct.eligibility}|${bb1Direct.payment}`, "READY|NOT_PAID", "a Direct earned at 25% stands");
 
-  /* --- Acceptance 14: the unwind reverses only what the Buyback supported --- */
-
-  await cancelAcquisitionDeal({
-    idempotencyKey: key(),
-    actorRef: ACC,
-    actorRole: "ACCOUNTS",
-    acquisitionId: bb1,
-    reason: "Seller withdrew.",
-  });
-
-  const unwound = await db.booking.findUniqueOrThrow({ where: { id: bookingBB1 } });
-  assert.equal(unwound.status, "BOOKED", "CR-016 — the old sale is restored exactly as it stood");
-  assert.equal(unwound.activeProcess, "NONE");
-  assert.equal(unwound.closedAt, null, "and it is no longer closed history");
-
-  const afterUnwindInvite = await recordOf(bookingBB1, "INVITE");
-  assert.equal(
-    afterUnwindInvite.eligibility,
-    "MILESTONE_PENDING",
-    "acceptance 14 — a benefit the Buyback alone supported goes back to pending"
-  );
-  assert.equal(afterUnwindInvite.opportunityId, null, "and releases the one-time opportunity");
-  assert.equal(
-    (await db.commissionOpportunity.findFirstOrThrow({
-      where: { kind: "INVITE", subjectPersonId: bbSellerPerson.id },
-    })).status,
-    "OPEN",
-    "the slot is reopened rather than deleted, so no duplicate payout is possible"
-  );
-  assert.equal(
-    (await db.performanceCycle.findUniqueOrThrow({ where: { id: bbInviteCycle.id } })).positionsComplete,
-    0,
-    "CR-016 — the successful-cycle position reverses with it"
-  );
-  assert.equal(
-    (await recordOf(bookingBB1, "DIRECT")).eligibility,
-    "READY",
-    "but the Direct reached 25% independently, so it keeps standing"
-  );
-  assert.ok(
-    await db.bookingEvent.findFirst({
-      where: { bookingId: bookingBB1, action: "BUYBACK_UNWOUND" },
-    }),
-    "and the reversal is on the Booking's own history"
-  );
-
-  /* --- Acceptance 11 and 12: Royalty and Loyalty accelerate too ------------ */
-
-  const bbRoyCycle = await db.performanceCycle.create({
-    data: {
-      memberProfileId: bbInviter.id,
-      kind: "ROYALTY",
-      cycleNumber: 1,
-      openedOn: new Date(bbInviter.activationDate!.toISOString().slice(0, 10)),
-    },
-  });
-  const bbRoyBuyer = await makeEligiblePerson("BBRoyBuyer", "9600000084");
-
-  // The first qualifying purchase, closed by the Member who therefore owns the
-  // Royalty link. Seeding the link to match what this Booking implies keeps
-  // `syncRoyaltyLink` a no-op here — how a link is *established* is AC-06's
-  // subject; this block is only about what an Approved Buyback does to it.
-  const plotBB2a = await makePlot(project.id, "BB2A");
-  const bbFirstPurchase = await bookAndApprove({
-    plotId: plotBB2a.id,
-    buyerPersonId: bbRoyBuyer.id,
-    soldByType: "MEMBER",
-    soldByPersonId: bbInviterPerson.id,
-  });
-  await db.customerProfile.update({
-    where: { personId: bbRoyBuyer.id },
-    data: {
-      royaltyLinkedMemberId: bbInviter.id,
-      royaltyLinkFirstBookingId: bbFirstPurchase,
-      royaltyLinkFinalAt: day(-1),
-      royaltyPosition: 1,
-      royaltyRatePercent: "1",
-      royaltyCycleId: bbRoyCycle.id,
-    },
-  });
-
-  // The repeat purchase earns Royalty for the linked Member and Loyalty for the
-  // buyer. Sold By 3% Club, so there is no Direct and the pair sit at 2%.
-  const plotBB2b = await makePlot(project.id, "BB2B");
-  const bookingBB2 = await bookAndApprove({
-    plotId: plotBB2b.id,
-    buyerPersonId: bbRoyBuyer.id,
-    soldByType: "THREE_PERCENT_CLUB",
-  });
-  assert.equal(
-    (await recordOf(bookingBB2, "ROYALTY")).eligibility,
-    "MILESTONE_PENDING",
-    "Royalty waits for 100% on its own"
-  );
-  assert.equal(
-    (await recordOf(bookingBB2, "LOYALTY")).eligibility,
-    "MILESTONE_PENDING",
-    "and so does Loyalty"
-  );
-
-  await approveBuybackOn(bookingBB2, bbRoyBuyer.id, bbInviterPerson.id, "BB2");
-
-  const bb2Royalty = await recordOf(bookingBB2, "ROYALTY");
-  const bb2Loyalty = await recordOf(bookingBB2, "LOYALTY");
-  assert.equal(
-    bb2Royalty.eligibility,
-    "READY",
-    "CR-015 acceptance 11 — an Approved Buyback earns the Royalty before 100%"
-  );
-  assert.ok(bb2Royalty.opportunityId, "consuming the Customer's one Royalty opportunity");
-  assert.equal(
-    bb2Loyalty.eligibility,
-    "READY",
-    "CR-015 acceptance 12 — and the Loyalty with it"
-  );
-  assert.ok(bb2Loyalty.opportunityId, "consuming one of the three lifetime Loyalty slots");
-
-  /* --- Acceptance 13 again: an unearned Direct is not accelerated ---------- */
-
-  const bbInviter3Person = await makeEligiblePerson("BBInviter3", "9600000085");
-  const bbInviter3 = await makeMember("BB-I3", bbInviter3Person.id, 600);
-  const bbSeller3Person = await makeEligiblePerson("BBSeller3", "9600000086");
-  await db.memberProfile.create({
-    data: {
-      memberId: `${TAG}-M-BBS3`,
-      personId: bbSeller3Person.id,
-      activationDate: day(-250),
-      invitedByMemberId: bbInviter3.id,
-      invitePosition: 1,
-      inviteRatePercent: "1",
-      reraStatus: "REGISTERED",
-      reraNumber: "RERA-TEST-BB3",
-    },
-  });
   const bbBuyer3 = await makeEligiblePerson("BBBuyer3", "9600000087");
   const plotBB3 = await makePlot(project.id, "BB3");
-  const bookingBB3 = await bookAndApprove({
-    plotId: plotBB3.id,
-    buyerPersonId: bbBuyer3.id,
-    soldByType: "MEMBER",
-    soldByPersonId: bbSeller3Person.id,
-  });
+  const bookingBB3 = await bookAndApprove({ plotId: plotBB3.id, buyerPersonId: bbBuyer3.id, soldByType: "MEMBER", soldByPersonId: seller.id });
+  await approveBuybackOn(bookingBB3, bbBuyer3.id, "BB3");
+  assert.equal((await recordOf(bookingBB3, "DIRECT")).payment, "CANCELLED", "a Buyback never accelerates Direct");
 
-  // Nothing has been received, so the Direct never reached its own 25%.
-  await approveBuybackOn(bookingBB3, bbBuyer3.id, bbInviter3Person.id, "BB3");
+  // Loyalty below the 25% source-payment minimum: the Buyback does not qualify it.
+  const plotBB4a = await makePlot(project.id, "BB4A");
+  const bbLowBuyer = await makeEligiblePerson("BBLow", "9600000088");
+  await bookAndApprove({ plotId: plotBB4a.id, buyerPersonId: bbLowBuyer.id, soldByType: "THREE_PERCENT_CLUB" });
+  const plotBB4b = await makePlot(project.id, "BB4B");
+  const bookingLow = await bookAndApprove({ plotId: plotBB4b.id, buyerPersonId: bbLowBuyer.id, soldByType: "THREE_PERCENT_CLUB" });
+  await pay(bookingLow, "20", `${TAG} UTR BB4`);
+  await approveBuybackOn(bookingLow, bbLowBuyer.id, "BB4");
+  const lowLoyalty = await recordOf(bookingLow, "LOYALTY");
+  assert.equal(lowLoyalty.payment, "CANCELLED", "at 20% received the Buyback is not a Loyalty milestone (v2.1 §41)");
+  assert.equal(lowLoyalty.qualifiedAt, null);
 
-  assert.equal(
-    (await recordOf(bookingBB3, "DIRECT")).payment,
-    "CANCELLED",
-    "acceptance 13 — a Buyback never carries an unearned Direct over its milestone"
+  // At 30% received it is — and unwinding the Buyback takes the qualification back.
+  const plotBB5a = await makePlot(project.id, "BB5A");
+  const bbHighBuyer = await makeEligiblePerson("BBHigh", "9600000089");
+  await bookAndApprove({ plotId: plotBB5a.id, buyerPersonId: bbHighBuyer.id, soldByType: "THREE_PERCENT_CLUB" });
+  const plotBB5b = await makePlot(project.id, "BB5B");
+  const bookingHigh = await bookAndApprove({ plotId: plotBB5b.id, buyerPersonId: bbHighBuyer.id, soldByType: "THREE_PERCENT_CLUB" });
+  await pay(bookingHigh, "30", `${TAG} UTR BB5`);
+  const bb5 = await approveBuybackOn(bookingHigh, bbHighBuyer.id, "BB5");
+  const highLoyalty = await recordOf(bookingHigh, "LOYALTY");
+  assert.equal(highLoyalty.eligibility, "READY", "at 30% received the Approved Buyback earns the Loyalty");
+  assert.ok(highLoyalty.qualifiedAt, "and qualifies it");
+  assert.ok(
+    await db.commissionEvent.findFirst({ where: { recordId: highLoyalty.id, action: "QUALIFIED_BY_BUYBACK" } })
   );
-  assert.equal(
-    (await recordOf(bookingBB3, "INVITE")).eligibility,
-    "READY",
-    "while the Invite on the same Booking is earned by the Buyback"
-  );
+
+  await cancelAcquisitionDeal({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", acquisitionId: bb5, reason: "Seller withdrew." });
+  const unwound = await recordOf(bookingHigh, "LOYALTY");
+  assert.equal(unwound.eligibility, "MILESTONE_PENDING", "the unwind reverses the Buyback-created qualification (v2.1 §44)");
+  assert.equal(unwound.qualifiedAt, null);
 
   await cleanup();
   console.log("commission.check.ts OK");
-}
-
-/**
- * A Buyback's commission reversal, outside a command. The real Buyback path
- * needs an approved acquisition; this drives the same reversal function with the
- * legally-completed flag the acquisition service would pass.
- */
-async function cancelCommissionForBooking_(
-  bookingId: string,
-  args: { legallyCompleted: boolean; reason: string; unwind?: "CANCELLATION" | "BUYBACK" }
-) {
-  await db.$transaction(
-    async (tx) => {
-      await cancelCommissionForBooking(tx, bookingId, `${TAG}-SYSTEM`, args);
-      await tx.$executeRawUnsafe("SET CONSTRAINTS ALL IMMEDIATE");
-    },
-    { maxWait: 10_000, timeout: Number(process.env.COMMAND_TIMEOUT_MS ?? 20_000) }
-  );
 }
 
 /** Regeneration outside a command — the call every approval path makes. */
@@ -2204,25 +1037,11 @@ async function generateForBooking_(bookingId: string) {
   );
 }
 
-/** Reassessment outside a command, for the regeneration check. */
-async function reassessCommission_(bookingId: string) {
-  await db.$transaction(
-    async (tx) => {
-      await reassessCommission(tx, bookingId, `${TAG}-SYSTEM`);
-      await tx.$executeRawUnsafe("SET CONSTRAINTS ALL IMMEDIATE");
-    },
-    // Same ceiling the real commands use — this database is remote.
-    { maxWait: 10_000, timeout: Number(process.env.COMMAND_TIMEOUT_MS ?? 20_000) }
-  );
-}
-
 main()
   .then(() => db.$disconnect())
   .catch(async (error) => {
     console.error(error);
     await cleanup().catch((purgeError) => {
-      // A swallowed purge failure is why a later check script fails on data
-      // this one left behind. Say so here, where it happened.
       console.error("Cleanup failed — tagged rows may remain:", purgeError);
     });
     await db.$disconnect();

@@ -403,7 +403,8 @@ async function main() {
   );
 
   // Approval: same Booking Number, Accounts records the applicable percentage.
-  const beforeNumber = (await db.booking.findUniqueOrThrow({ where: { id: bookingB } })).bookingNumber;
+  const beforeMove = await db.booking.findUniqueOrThrow({ where: { id: bookingB } });
+  const beforeNumber = beforeMove.bookingNumber;
   await submitChangePlot({
     idempotencyKey: key(),
     actorRef: CRM,
@@ -440,6 +441,9 @@ async function main() {
   const moved = await db.booking.findUniqueOrThrow({ where: { id: bookingB } });
   assert.equal(moved.plotId, plotC.id, "the Booking moved to the replacement Plot");
   assert.equal(moved.bookingNumber, beforeNumber, "the same Booking Number continues (PRD §5.3)");
+  // v2.1 §74 — the same Booking keeps its frozen commission version.
+  assert.ok(beforeMove.commissionVersionId, "the Booking froze a commission version");
+  assert.equal(moved.commissionVersionId, beforeMove.commissionVersionId, "Change Plot keeps the frozen version");
   assert.equal(moved.primaryPersonId, buyer.id, "the same Primary Customer continues");
   assert.equal(moved.paymentReceivedPercent.toFixed(0), "35", "Accounts recorded the applicable %");
   assert.equal(moved.activeProcess, "NONE");

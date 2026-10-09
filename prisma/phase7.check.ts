@@ -304,8 +304,6 @@ async function main() {
     "PAYMENT_GIVEN_REMINDER",
     "BOOKING_DECISION_ALERT",
     "RERA_EXPIRY_REMINDER",
-    // CR-027 replaced the Annual Counter Reset with this.
-    "PERFORMANCE_CYCLE_UPGRADE_CHECK",
   ]) {
     assert.ok(jobTypes.includes(expectedJob), `${expectedJob} records its run`);
   }
