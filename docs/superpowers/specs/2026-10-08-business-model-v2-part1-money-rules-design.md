@@ -11,6 +11,22 @@ v2 is delivered in three parts. This is part 1. Part 2 is the Royalty Gift with 
 
 ---
 
+## v2.1 amendments (9 October 2026) — these override the sections below
+
+Source: [`system/3_Percent_Club_Business_Model_v2.1_Final_Implementation_Baseline.md`](../../../system/3_Percent_Club_Business_Model_v2.1_Final_Implementation_Baseline.md), cited **v2.1 §n**. It supersedes v2.0. The owner's answers of 9 October 2026 are marked *(owner)*.
+
+1. **Freeze (v2.1 §16, §17).** The terms that count are those frozen on the Booking Request version Accounts approves. This is what §2 already does: each submission freezes, a corrected submission re-freezes, and approval makes it permanent. Each review snapshot now also stores the frozen version's ID. A rejected request earns nothing.
+2. **Customer-closing Loyalty is limited to 3 successful events for life (v2.1 §21, §25).** Repeat-purchase Loyalty stays unlimited. A Loyalty record is *qualified* when it reaches its milestone (`CommissionRecord.qualifiedAt`). When a Customer-closing record reaches its milestone and the closer already has three qualified, uncancelled Customer-closing records, it is Cancelled with the reason "Membership activation is required to earn from further third-party sales". A qualified record that loses its milestone is un-qualified. This **replaces** the Membership invitation task in §4: v2.1 §25 makes it a block, not an invitation.
+3. **A Sold By Customer must be a real existing Customer (v2.1 §22).**
+   - **Own approved purchase** — checked when Sold By Customer is chosen (submission, revision, Sold By Correction). The closer needs an approved, uncancelled Booking as Primary Customer. Otherwise the request is refused.
+   - **Verified KYC** — Aadhaar status `VERIFIED` *(owner)*. Until then the Customer-closing Loyalty record is On Hold: `CLOSER_KYC_PENDING`.
+   - **Accepted Customer Terms** — CRM records the acceptance on the Customer (Terms version reference + acceptance date) *(owner)*; the Terms text is supplied later. Until it is recorded the record is On Hold: `CUSTOMER_TERMS_PENDING`.
+   - A closer who is related to the buyer or is a co-buyer is not disqualified (v2.1 §22, §83.2). Closing for oneself as Primary Customer is still the existing conflict.
+4. **Buyback minimum (v2.1 §41, §49).** An Approved Buyback stands in for the Loyalty milestone only when the source Booking has at least 25% verified Payment Received. The same 25% applies to the Royalty link becoming final through a Buyback.
+5. **Not in part 1 *(owner)*:** Recovery Outstanding, set-off, the 15-day deadline and Circumvention Review (v2.1 §19, §67, §74); one bank account per Person (§77); staff conflict approval (§72). A paid record that becomes invalid keeps today's Accounts Adjustment Required. Commission settings live on the Project page only, not on the create form *(owner)*.
+
+---
+
 ## Goal
 
 Each Project's sale commission comes from an MD-approved, versioned Project setting, frozen onto the Booking at Booking Request submission (v2 §12–§17). Direct and Loyalty follow v2 §11 and §19–§24. Everything v2 §1 retires from the money side is removed: monetary Invite bands, positions and cycles; monetary Royalty bands, positions and cycles; the 3-Loyalty lifetime limit; the fixed 3% Direct; and the combined 4% cap.
