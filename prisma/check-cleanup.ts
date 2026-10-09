@@ -92,14 +92,8 @@ export async function purgeCheckData(
   await db.taskEvent.deleteMany({ where: { taskId: { in: taskIds } } });
   await db.task.deleteMany({ where: { id: { in: taskIds } } });
 
-  // Commission, then the entitlements it consumed.
   await db.commissionEvent.deleteMany({ where: { recordId: { in: commissionIds } } });
   await db.commissionRecord.deleteMany({ where: { id: { in: commissionIds } } });
-  await db.commissionOpportunity.deleteMany({
-    where: {
-      OR: [{ consumedByBookingId: { in: bookingIds } }, { subjectPersonId: { in: personIds } }],
-    },
-  });
 
   // Acquisition side.
   await db.acquisitionEvent.deleteMany({ where: { acquisitionId: { in: acquisitionIds } } });
@@ -161,6 +155,9 @@ export async function purgeCheckData(
     data: { supersededById: null },
   });
   await db.plcRuleVersion.deleteMany({ where: { projectId: { in: projectIds } } });
+  // v2.1 §15 — a Booking keeps its frozen version id, and the tagged Bookings
+  // are already gone, so the versions can follow.
+  await db.projectCommissionVersion.deleteMany({ where: { projectId: { in: projectIds } } });
   await db.project.deleteMany({ where: { id: { in: projectIds } } });
 
   // Identity last: everything above referenced it.
@@ -171,22 +168,6 @@ export async function purgeCheckData(
   await db.memberProfile.updateMany({
     where: { personId: { in: personIds } },
     data: { invitedByMemberId: null },
-  });
-  // CR-014 — a Member's performance cycles hold a foreign key to the profile,
-  // and each position holds one back to the cycle, so the position links are
-  // cleared first and the cycles go before the profiles. Missing this is exactly
-  // the failure mode this file's header warns about: the profile delete fails,
-  // cleanup aborts, and the run's rows stay behind looking like real data.
-  await db.memberProfile.updateMany({
-    where: { personId: { in: personIds } },
-    data: { inviteCycleId: null },
-  });
-  await db.customerProfile.updateMany({
-    where: { personId: { in: personIds } },
-    data: { royaltyCycleId: null },
-  });
-  await db.performanceCycle.deleteMany({
-    where: { memberProfile: { personId: { in: personIds } } },
   });
   await db.memberProfile.deleteMany({ where: { personId: { in: personIds } } });
   await db.customerProfile.deleteMany({ where: { personId: { in: personIds } } });

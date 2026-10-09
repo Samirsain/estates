@@ -14,6 +14,7 @@ import {
 } from "../src/lib/security/identity.ts";
 import { calculateAreas } from "../src/lib/domain/inventory.ts";
 import { INITIAL_PASSWORD } from "./seed-password.ts";
+import { ensureActiveCommissionVersion } from "./seed-commission.ts";
 
 const db = new PrismaClient();
 
@@ -92,8 +93,6 @@ async function main() {
       memberId: "MEM-0217",
       personId: memberPerson.id,
       activationDate: new Date("2024-03-11T00:00:00+05:30"),
-      invitePosition: 1,
-      inviteRatePercent: "1.000",
       portalAccount: { create: { loginId: "MEM-0217", passwordHash } },
     },
     update: { status: "ACTIVE" },
@@ -110,8 +109,6 @@ async function main() {
       // like. Nothing is seeded from an Enquiry any more (CR-001).
       royaltyLinkedMemberId: member.id,
       royaltyLinkFinalAt: new Date(),
-      royaltyPosition: 1,
-      royaltyRatePercent: "1.000",
     },
     update: {},
   });
@@ -269,7 +266,12 @@ async function main() {
     });
   }
 
-  console.log(`Seeded Project ${project.name} with PLC version ${plc.version} and ${plots.length} Plots.`);
+  const commission = await ensureActiveCommissionVersion(db, project.id, "SEED");
+
+  console.log(
+    `Seeded Project ${project.name} with PLC version ${plc.version}, commission settings version ` +
+      `${commission.version} and ${plots.length} Plots.`
+  );
   console.log(`Seeded ${STAFF.length} staff accounts, 1 Member and 1 Customer.`);
   console.log(`Initial password for every seeded account: ${INITIAL_PASSWORD}`);
 }

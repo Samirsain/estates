@@ -18,11 +18,6 @@ ALTER TABLE "Person" ADD CONSTRAINT "aadhaar_status_matches_value"
   CHECK (("aadhaarStatus" = 'PENDING' AND "aadhaarCipher" IS NULL)
       OR ("aadhaarStatus" <> 'PENDING' AND "aadhaarCipher" IS NOT NULL));
 
--- PRD §6.5 — combined lifetime maximum of three Loyalty Bonuses.
-ALTER TABLE "CustomerProfile" DROP CONSTRAINT IF EXISTS "loyalty_slots_max_three";
-ALTER TABLE "CustomerProfile" ADD CONSTRAINT "loyalty_slots_max_three"
-  CHECK ("loyaltySlotsConsumed" BETWEEN 0 AND 3);
-
 -- ---------------------------------------------------------------- Phase 2
 
 -- ARCHITECTURE §7.1 — one active commercial allocation per Plot.
@@ -274,29 +269,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS "one_current_commission_per_key"
   ON "CommissionRecord" ("bookingId", "type", "beneficiaryRole")
   WHERE "isCurrent" = true;
 
--- PRD §6.8 — the entitlement limits are database controls, not a count taken at
--- read time: more than one consumed Invite opportunity per invited Member, more
--- than one consumed Royalty per introduced Customer, and more than three
--- consumed Loyalty slots per Customer must all be impossible.
-CREATE UNIQUE INDEX IF NOT EXISTS "one_consumed_opportunity_per_slot"
-  ON "CommissionOpportunity" ("kind", "subjectPersonId", "slotIndex")
-  WHERE "status" = 'CONSUMED';
-
-ALTER TABLE "CommissionOpportunity" DROP CONSTRAINT IF EXISTS "opportunity_slot_bounds";
-ALTER TABLE "CommissionOpportunity" ADD CONSTRAINT "opportunity_slot_bounds"
-  CHECK (("kind" = 'LOYALTY' AND "slotIndex" BETWEEN 1 AND 3)
-      OR ("kind" <> 'LOYALTY' AND "slotIndex" = 1));
-
-ALTER TABLE "CommissionOpportunity" DROP CONSTRAINT IF EXISTS "consumed_opportunity_names_its_booking";
-ALTER TABLE "CommissionOpportunity" ADD CONSTRAINT "consumed_opportunity_names_its_booking"
-  CHECK ("status" <> 'CONSUMED' OR ("consumedByBookingId" IS NOT NULL AND "consumedAt" IS NOT NULL));
-
--- A commission percentage is never negative, and no single sale component can
--- exceed the 4% ceiling on its own (RD-03). Buying Commission sits outside that
--- cap and is bounded only by 100%.
+-- v2.1 §13, §63 — a commission percentage is never negative. Direct is at
+-- most 5%, Loyalty at most 3%, Buying Commission at most 5%.
 ALTER TABLE "CommissionRecord" DROP CONSTRAINT IF EXISTS "commission_percent_bounds";
 ALTER TABLE "CommissionRecord" ADD CONSTRAINT "commission_percent_bounds"
-  CHECK ("percent" >= 0 AND (("type" = 'BUYING' AND "percent" <= 100) OR ("type" <> 'BUYING' AND "percent" <= 4)));
+  CHECK ("percent" >= 0
+     AND (("type" = 'LOYALTY' AND "percent" <= 3) OR ("type" <> 'LOYALTY' AND "percent" <= 5)));
 
 -- PRD §14.8 — On Hold always names its reason, and no other state carries one.
 ALTER TABLE "CommissionRecord" DROP CONSTRAINT IF EXISTS "hold_names_its_reason";
@@ -356,43 +334,6 @@ ALTER TABLE "BankDetail" ADD CONSTRAINT "verified_bank_names_its_checker"
 -- and the maker/checker check would refuse every save.
 ALTER TABLE "BankDetail" DROP CONSTRAINT IF EXISTS "bank_maker_checker_differ";
 
--- RD-03 — combined sale commission for one Booking never exceeds 4%. Buying
--- Commission is outside the cap. Deferred so a supersede-and-replace rewrite is
--- judged as a whole rather than mid-flight.
-CREATE OR REPLACE FUNCTION assert_sale_commission_cap(b_id text) RETURNS void AS $$
-DECLARE
-  total numeric;
-BEGIN
-  SELECT COALESCE(sum("percent"), 0) INTO total
-    FROM "CommissionRecord"
-   WHERE "bookingId" = b_id
-     AND "isCurrent" = true
-     AND "type" <> 'BUYING'
-     AND "payment" <> 'CANCELLED';
-
-  IF total > 4 THEN
-    RAISE EXCEPTION 'Combined sale commission cannot exceed 4%%, found %.', total;
-  END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION trg_sale_commission_cap() RETURNS trigger AS $$
-BEGIN
-  IF TG_OP <> 'INSERT' THEN
-    PERFORM assert_sale_commission_cap(OLD."bookingId");
-  END IF;
-  IF TG_OP <> 'DELETE' THEN
-    PERFORM assert_sale_commission_cap(NEW."bookingId");
-  END IF;
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "sale_commission_within_4_percent" ON "CommissionRecord";
-CREATE CONSTRAINT TRIGGER "sale_commission_within_4_percent"
-  AFTER INSERT OR UPDATE OR DELETE ON "CommissionRecord"
-  DEFERRABLE INITIALLY DEFERRED
-  FOR EACH ROW EXECUTE FUNCTION trg_sale_commission_cap();
 
 -- PRD §6.10 — one Sold By correction under review at a time, and it must
 -- actually change the attribution.
@@ -733,3 +674,47 @@ ALTER TABLE "LandInquiryJamabandiEntry" ADD CONSTRAINT "land_inquiry_jamabandi_r
   CHECK (length(btrim(COALESCE("murbbaNo", ''))) > 0
       OR length(btrim(COALESCE("patharNo", ''))) > 0
       OR length(btrim(COALESCE("khasraNo", ''))) > 0);
+
+-- ------------------------------------------------- Business Model v2.1 part 1
+
+-- v2.1 §11 — the combined 4% cap is gone. Dropped here as well as in the
+-- migration, so re-running this file on any database leaves no trace of it.
+DROP TRIGGER IF EXISTS "sale_commission_within_4_percent" ON "CommissionRecord";
+DROP FUNCTION IF EXISTS trg_sale_commission_cap();
+DROP FUNCTION IF EXISTS assert_sale_commission_cap(text);
+
+-- v2.1 §13 — Enabled ⇔ a rate; ceilings 5% Direct and 3% Loyalty; never 0%.
+ALTER TABLE "ProjectCommissionVersion" DROP CONSTRAINT IF EXISTS "direct_enabled_has_rate";
+ALTER TABLE "ProjectCommissionVersion" ADD CONSTRAINT "direct_enabled_has_rate"
+  CHECK (("directEnabled" AND "directPercent" > 0 AND "directPercent" <= 5)
+      OR (NOT "directEnabled" AND "directPercent" IS NULL));
+ALTER TABLE "ProjectCommissionVersion" DROP CONSTRAINT IF EXISTS "loyalty_enabled_has_rate";
+ALTER TABLE "ProjectCommissionVersion" ADD CONSTRAINT "loyalty_enabled_has_rate"
+  CHECK (("loyaltyEnabled" AND "loyaltyPercent" > 0 AND "loyaltyPercent" <= 3)
+      OR (NOT "loyaltyEnabled" AND "loyaltyPercent" IS NULL));
+
+-- v2.1 §13 — Loyalty not lower than Direct needs the MD exception's written reason.
+ALTER TABLE "ProjectCommissionVersion" DROP CONSTRAINT IF EXISTS "loyalty_exception_has_reason";
+ALTER TABLE "ProjectCommissionVersion" ADD CONSTRAINT "loyalty_exception_has_reason"
+  CHECK (NOT "loyaltyEnabled"
+      OR ("directEnabled" AND "loyaltyPercent" < "directPercent")
+      OR length(trim(coalesce("loyaltyExceptionReason", ''))) > 0);
+
+-- v2.1 §14, §15 — an approved version carries its approver and an effective
+-- time no earlier than the approval; a sent one carries when it was sent.
+ALTER TABLE "ProjectCommissionVersion" DROP CONSTRAINT IF EXISTS "commission_version_stamps";
+ALTER TABLE "ProjectCommissionVersion" ADD CONSTRAINT "commission_version_stamps"
+  CHECK (("status" NOT IN ('ACTIVE', 'SUPERSEDED')
+          OR ("decidedByRef" IS NOT NULL AND "decidedAt" IS NOT NULL
+              AND "effectiveFrom" IS NOT NULL AND "effectiveFrom" >= "decidedAt"))
+     AND ("status" = 'DRAFT' OR "submittedAt" IS NOT NULL));
+
+-- v2.1 §14 — at most one Active, and at most one Draft-or-Pending, per Project.
+CREATE UNIQUE INDEX IF NOT EXISTS "one_active_commission_version_per_project"
+  ON "ProjectCommissionVersion" ("projectId") WHERE "status" = 'ACTIVE';
+CREATE UNIQUE INDEX IF NOT EXISTS "one_open_commission_version_per_project"
+  ON "ProjectCommissionVersion" ("projectId") WHERE "status" IN ('DRAFT', 'PENDING_APPROVAL');
+
+-- v2.1 §21 — one Booking earns at most one Customer Loyalty.
+CREATE UNIQUE INDEX IF NOT EXISTS "one_current_loyalty_per_booking"
+  ON "CommissionRecord" ("bookingId") WHERE "type" = 'LOYALTY' AND "isCurrent" = true;

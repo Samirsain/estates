@@ -29,13 +29,9 @@ async function main() {
   // Leaves of the commission tree first.
   await db.commissionEvent.deleteMany({});
   await db.commissionRecord.deleteMany({});
-  await db.commissionOpportunity.deleteMany({});
   // CR-014 — a position points at its cycle, and the cycle points at the Member,
   // so neither can go first. The position links are cleared, then the cycles,
   // then the profiles.
-  await db.memberProfile.updateMany({ data: { inviteCycleId: null } });
-  await db.customerProfile.updateMany({ data: { royaltyCycleId: null } });
-  await db.performanceCycle.deleteMany({});
 
   // Everything that hangs off a Booking.
   await db.bookingCompletion.deleteMany({});
@@ -57,6 +53,9 @@ async function main() {
   // A Buyback names its source Booking, so acquisitions leave before Bookings.
   await db.acquisition.deleteMany({});
   await db.booking.deleteMany({});
+  // v2.1 §15 — a Booking names its frozen commission version, so the versions
+  // leave after the Bookings and before their Projects.
+  await db.projectCommissionVersion.deleteMany({});
 
   await db.enquiryFollowUp.deleteMany({});
   await db.enquiry.deleteMany({});

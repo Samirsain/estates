@@ -109,14 +109,13 @@ model Person {
   soldBookings    Booking[]      @relation("BookingSoldBy")
   bookingParties  BookingParty[]
 
-  commissions             CommissionRecord[]      @relation("CommissionBeneficiary")
-  acquisitionsAsSeller    Acquisition[]           @relation("AcquisitionSeller")
-  acquisitionsArranged    Acquisition[]           @relation("AcquisitionArranger")
-  commissionOpportunities CommissionOpportunity[] @relation("OpportunitySubject")
+  commissions             CommissionRecord[]   @relation("CommissionBeneficiary")
+  acquisitionsAsSeller    Acquisition[]        @relation("AcquisitionSeller")
+  acquisitionsArranged    Acquisition[]        @relation("AcquisitionArranger")
   bankDetails             BankDetail[]
-  mergeRequestsAsSurvivor PersonMergeRequest[]    @relation("MergeSurvivor")
-  mergeRequestsAsMerged   PersonMergeRequest[]    @relation("MergeMerged")
-  landInquiriesSourced    LandInquiry[]           @relation("LandInquirySource")
+  mergeRequestsAsSurvivor PersonMergeRequest[] @relation("MergeSurvivor")
+  mergeRequestsAsMerged   PersonMergeRequest[] @relation("MergeMerged")
+  landInquiriesSourced    LandInquiry[]        @relation("LandInquirySource")
 
   @@index([primaryMobile])
   @@index([fullName])
@@ -136,32 +135,23 @@ model CustomerProfile {
   /// the commission engine. Nothing writes it any more.
   originalIntroducedByMemberId String?
   originalIntroducedByMember   MemberProfile? @relation("IntroducedCustomers", fields: [originalIntroducedByMemberId], references: [id])
-  introducedPosition           Int?
-  introducedRatePercent        Decimal?       @db.Decimal(7, 4)
-  introducedYearStart          DateTime?
 
   /// CR-002 — the Royalty Linked Member: whoever was Sold By Member on this
   /// Customer's first qualifying purchase. Provisional while
   /// `royaltyLinkFinalAt` is null; final at 100% Payment Received or an
-  /// Approved Buyback on that purchase, which is also when the position in the
-  /// Member's Royalty counter is taken. Null against a set
+  /// Approved Buyback on that purchase (v2.1 §49 — a Buyback only once the
+  /// purchase has 25% Payment Received). Kept for the Royalty Gift (part 2). Null against a set
   /// `royaltyLinkFirstBookingId` is CR-003's permanent "no Royalty Member":
   /// the first purchase was Sold By 3% CLUB or Sold By Customer.
   royaltyLinkedMemberId     String?
-  royaltyLinkedMember       MemberProfile?    @relation("RoyaltyLinkedCustomers", fields: [royaltyLinkedMemberId], references: [id])
+  royaltyLinkedMember       MemberProfile? @relation("RoyaltyLinkedCustomers", fields: [royaltyLinkedMemberId], references: [id])
   royaltyLinkFirstBookingId String?
-  royaltyLinkFirstBooking   Booking?          @relation("RoyaltyFirstPurchase", fields: [royaltyLinkFirstBookingId], references: [id])
+  royaltyLinkFirstBooking   Booking?       @relation("RoyaltyFirstPurchase", fields: [royaltyLinkFirstBookingId], references: [id])
   royaltyLinkFinalAt        DateTime?
-  royaltyPosition           Int?
-  royaltyRatePercent        Decimal?          @db.Decimal(7, 4)
-  /// History only, for the same reason `inviteYearStart` is (CR-014).
-  royaltyYearStart          DateTime?
-  /// CR-014 — the Royalty Linked Member's Royalty cycle this position sits in.
-  royaltyCycleId            String?
-  royaltyCycle              PerformanceCycle? @relation("RoyaltyCyclePositions", fields: [royaltyCycleId], references: [id])
 
-  /// PRD §6.5 — combined lifetime maximum of three; the limit never resets.
-  loyaltySlotsConsumed Int @default(0)
+  /// v2.1 §22 — a Sold By Customer must have accepted Customer Terms before
+  /// Customer-closing Loyalty can be paid. Recorded by CRM, append-only.
+  termsAcceptances CustomerTermsAcceptance[]
 
   /// Old Customer IDs kept searchable after a merge (PRD §22).
   legacyCustomerIds String[] @default([])
@@ -171,8 +161,24 @@ model CustomerProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// The Royalty counter is read per Member per counter year on every link.
-  @@index([royaltyLinkedMemberId, royaltyYearStart])
+  @@index([royaltyLinkedMemberId])
+}
+
+/// v2.1 §22, §79 — the Customer Terms a Customer closer accepted. The Terms
+/// text is published outside the CRM; CRM records which version was accepted
+/// and when. One row per acceptance, never updated in place.
+model CustomerTermsAcceptance {
+  id                String          @id @default(uuid())
+  customerProfileId String
+  customerProfile   CustomerProfile @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
+  /// The Terms version reference, e.g. CT-2026-10.
+  termsVersion      String
+  /// The day the Customer accepted. Never in the future.
+  acceptedOn        DateTime
+  recordedByRef     String
+  createdAt         DateTime        @default(now())
+
+  @@index([customerProfileId])
 }
 
 /// Terms §2.1 — "The person accepts the applicable Terms and Privacy Notice".
@@ -207,16 +213,6 @@ model MemberProfile {
   invitedByMember   MemberProfile?  @relation("MemberNetwork", fields: [invitedByMemberId], references: [id])
   invitedMembers    MemberProfile[] @relation("MemberNetwork")
 
-  /// Positions are assigned once and never renumbered (PRD RD-02).
-  invitePosition    Int?
-  inviteRatePercent Decimal?          @db.Decimal(7, 4)
-  /// History only. CR-014 removes the annual reset, so a position belongs to a
-  /// cycle rather than to a counter year. Nothing writes this any more.
-  inviteYearStart   DateTime?
-  /// CR-014 — the inviting Member's Invite cycle this position sits in.
-  inviteCycleId     String?
-  inviteCycle       PerformanceCycle? @relation("InviteCyclePositions", fields: [inviteCycleId], references: [id])
-
   /// A new Member has provided nothing yet, so Pending is the honest default:
   /// Not Applicable is a decision that carries a compulsory reason (PRD §19.5).
   reraStatus              ReraStatus @default(PENDING)
@@ -239,14 +235,11 @@ model MemberProfile {
   updatedAt DateTime @updatedAt
 
   portalAccount          PortalAccount?
-  introducedCustomers    CustomerProfile[]  @relation("IntroducedCustomers")
+  introducedCustomers    CustomerProfile[] @relation("IntroducedCustomers")
   /// CR-002 — the Customers whose first qualifying purchase this Member closed.
-  royaltyLinkedCustomers CustomerProfile[]  @relation("RoyaltyLinkedCustomers")
-  sourcedEnquiries       Enquiry[]          @relation("MemberSourcedEnquiries")
+  royaltyLinkedCustomers CustomerProfile[] @relation("RoyaltyLinkedCustomers")
+  sourcedEnquiries       Enquiry[]         @relation("MemberSourcedEnquiries")
   holdRequests           HoldRequest[]
-  /// AC-02 — the annual counter windows, stored so a cycle's progress and
-  /// achievement can be shown and audited rather than recomputed on a screen.
-  performanceCycles      PerformanceCycle[]
 }
 
 model StaffAccount {
@@ -500,9 +493,54 @@ model Project {
 
   plots                Plot[]
   plcRuleVersions      PlcRuleVersion[]
+  commissionVersions   ProjectCommissionVersion[]
   enquiries            Enquiry[]
   bookings             Booking[]
-  externalAcquisitions Acquisition[]    @relation("ExternalResaleGroup")
+  externalAcquisitions Acquisition[]              @relation("ExternalResaleGroup")
+}
+
+/// v2.1 §12–§15 — a Project's Direct and Loyalty terms. Every change is a new
+/// version; Admin prepares, MD approves, and a version is never edited after it
+/// leaves Draft.
+enum CommissionVersionStatus {
+  DRAFT
+  PENDING_APPROVAL
+  ACTIVE
+  SUPERSEDED
+  REJECTED
+}
+
+model ProjectCommissionVersion {
+  id        String                  @id @default(uuid())
+  projectId String
+  project   Project                 @relation(fields: [projectId], references: [id])
+  /// 1, 2, 3 … per Project; never reused.
+  version   Int
+  status    CommissionVersionStatus @default(DRAFT)
+
+  /// v2.1 §13 — Enabled ⇔ a rate. A benefit not offered is Disabled, never 0%.
+  directEnabled          Boolean
+  directPercent          Decimal? @db.Decimal(7, 4)
+  /// v2.1 §21 — one rate for both Loyalty routes.
+  loyaltyEnabled         Boolean
+  loyaltyPercent         Decimal? @db.Decimal(7, 4)
+  /// v2.1 §13 — the MD exception's written commercial reason.
+  loyaltyExceptionReason String?
+
+  reason        String
+  preparedByRef String
+  preparedAt    DateTime  @default(now())
+  submittedAt   DateTime?
+  decidedByRef  String?
+  decidedAt     DateTime?
+  decisionNote  String?
+  /// v2.1 §15 — set at MD approval; never earlier than the approval itself.
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+
+  bookings Booking[]
+
+  @@unique([projectId, version])
 }
 
 /// PLC spec §3.1 — a version is Draft until it is published. Publishing
@@ -1009,10 +1047,17 @@ model Booking {
   customerType String?
   remark       String?
 
-  /// AC-01 — frozen when commission is first generated at Accounts approval and
-  /// never rewritten afterwards. Null only on rows written before it existed and
-  /// on requests that were never approved.
+  /// AC-01, v2.1 §20 — whether the Primary Customer was an Active Member,
+  /// frozen with each Booking Request version and permanent after approval.
   originalClassification BookingClassification?
+
+  /// v2.1 §15, §16 — the exact Project commission version frozen with the
+  /// Booking Request version Accounts approves. Never re-derived from dates.
+  commissionVersionId       String?
+  commissionVersion         ProjectCommissionVersion? @relation(fields: [commissionVersionId], references: [id])
+  /// v2.1 §24 — the Person who would earn Loyalty held a Deactivated Member
+  /// capability when the request was submitted. Re-read on a Sold By Correction.
+  loyaltySubjectDeactivated Boolean                   @default(false)
 
   /// Set when the request came from a Hold, so a rejection can restore the
   /// frozen remainder to the exact Hold it paused (PRD §10.5).
@@ -1295,18 +1340,14 @@ model BookingEvent {
 
 enum CommissionType {
   DIRECT
-  INVITE
-  ROYALTY
   LOYALTY
-  /// Acquisition-side, outside the 4% sale cap. Arrives with Phase 5.
+  /// Acquisition-side, separate from Direct and Loyalty (v2.1 §63).
   BUYING
 }
 
 /// One current record per Booking + commission type + beneficiary role (PRD §6.9).
 enum BeneficiaryRole {
   SELLING_MEMBER
-  INVITING_MEMBER
-  INTRODUCING_MEMBER
   CLOSING_CUSTOMER
   REPEAT_PURCHASE_CUSTOMER
   ACQUISITION_ARRANGER
@@ -1317,10 +1358,6 @@ enum EligibilityState {
   MILESTONE_PENDING
   READY
   ON_HOLD
-  /// CR-013 — a network position past the ninth earns 0%. The record is real
-  /// and visible and it consumes the one-time opportunity, but there is no
-  /// amount to pay, so it is neither pending nor held: it is settled at zero.
-  NO_BENEFIT
 }
 
 enum CommissionPaymentState {
@@ -1344,21 +1381,10 @@ enum CommissionHoldReason {
   CHANGE_PLOT_PENDING
   BUYBACK_PENDING
   PAYMENT_PENDING
-  /// RD-03 — no sale-commission record is Ready or Paid while the total is above 4%.
-  COMMISSION_CONFLICT_ABOVE_4
-  /// AC-02 — Royalty waits for its performance cycle to be complete.
-}
-
-/// PRD §6.8 — the entitlements that must never be consumed twice.
-enum OpportunityKind {
-  INVITE
-  ROYALTY
-  LOYALTY
-}
-
-enum OpportunityStatus {
-  OPEN
-  CONSUMED
+  /// v2.1 §22, §77 — the Customer closer's Aadhaar is not Verified yet.
+  CLOSER_KYC_PENDING
+  /// v2.1 §22 — the Customer closer has not accepted Customer Terms yet.
+  CUSTOMER_TERMS_PENDING
 }
 
 /// PRD §19.5 — Registered or Not Applicable satisfies the Member condition.
@@ -1390,7 +1416,7 @@ model CommissionRecord {
   beneficiaryPerson   Person          @relation("CommissionBeneficiary", fields: [beneficiaryPersonId], references: [id])
 
   percent          Decimal @db.Decimal(7, 4)
-  /// The band and rule the percentage came from, frozen for traceability.
+  /// The rule and Project version the percentage came from (v2.1 §15).
   ruleVersion      String
   /// Verified Payment Received the record becomes eligible at: 25 or 100.
   milestonePercent Decimal @db.Decimal(7, 4)
@@ -1416,10 +1442,10 @@ model CommissionRecord {
   supersededBy                CommissionRecord? @relation("CommissionSupersession", fields: [supersededById], references: [id])
   supersedes                  CommissionRecord? @relation("CommissionSupersession")
 
-  /// Set when the record consumed a one-shot entitlement, so a cancellation
-  /// before legal completion can reopen exactly that slot (PRD §6.1, §6.5).
-  opportunityId String?                @unique
-  opportunity   CommissionOpportunity? @relation(fields: [opportunityId], references: [id])
+  /// v2.1 §21 — when the record reached its milestone (Payment Received or an
+  /// Approved Buyback). Cleared if the milestone is lost. It is what counts a
+  /// Customer-closing Loyalty event towards the lifetime three.
+  qualifiedAt DateTime?
 
   /// AC-03 — Paid Early needs a recorded MD approval before Accounts may
   /// process it. Approver, timestamp and note are kept on the record itself so
@@ -1436,118 +1462,6 @@ model CommissionRecord {
   @@index([bookingId, isCurrent])
   @@index([beneficiaryPersonId, payment])
   @@index([eligibility, payment])
-}
-
-/// PRD §6.8 — atomic entitlement tracking. One Invite opportunity per invited
-/// Member, one Royalty opportunity per introduced Customer, and at most three
-/// Loyalty slots per Customer, enforced by unique indexes rather than by
-/// counting rows at read time.
-model CommissionOpportunity {
-  id   String          @id @default(uuid())
-  kind OpportunityKind
-
-  /// The invited Member, the introduced Customer, or the Loyalty Customer.
-  subjectPersonId     String
-  subjectPerson       Person  @relation("OpportunitySubject", fields: [subjectPersonId], references: [id])
-  /// The Member the entitlement belongs to. Null for a Customer's own Loyalty.
-  beneficiaryPersonId String?
-
-  /// 1, 2 or 3 for Loyalty; always 1 for Invite and Royalty.
-  slotIndex Int               @default(1)
-  status    OpportunityStatus @default(OPEN)
-
-  consumedByBookingId String?
-  consumedAt          DateTime?
-  /// Why a consumed slot was reopened — cancellation before legal completion.
-  reopenedReason      String?
-  reopenedAt          DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  record CommissionRecord?
-
-  @@index([kind, subjectPersonId, status])
-}
-
-/// AC-02 — Royalty is earned through a completed performance cycle, not merely
-/// by a transaction being recorded (Approved Changes §1 "Royalty").
-///
-/// The cycle window is the Member's own annual counter year (RD-02): it opens on
-/// the Member Activation Date anniversary and runs to the day before the next
-/// one, so a Member activated on 29 February rolls on 28 February in a non-leap
-/// year — the same day their Introduced Customer Counter rolls.
-///
-/// "Completed qualifying activity" is not a count. PRD §6.3 and main-PRD §14.4
-/// define the qualifying activity for Royalty and its terminal state: "A
-/// legally completed qualifying purchase consumes it", against "Cancellation
-/// before legal completion restores the opportunity". Legally completed means
-/// the sale reached final delivery (COMMISSION-TEST-PLAN §1 glossary).
-///
-/// So a qualifying transaction that has reached its 100% payment milestone but
-/// not yet final delivery is exactly a *partially* completed cycle: recorded,
-/// but not completed. That is the state Approved Changes §1 refuses to treat as
-/// complete, and the state the test plan's TC-ROY-002 exercises.
-///
-/// The cycle is COMPLETED when every qualifying transaction inside it is legally
-/// completed — the test plan's "satisfy all cycle conditions" (TC-ROY-001)
-/// against "only part of the qualifying conditions are met" (TC-ROY-002).
-/// CR-014 — the two counters, kept apart because they upgrade independently.
-enum PerformanceCycleKind {
-  INVITE
-  ROYALTY
-}
-
-/// CR-014 — a cycle is either still being filled, or its positions 1 to 9 are
-/// all successful and it is waiting for the next anniversary to roll.
-enum PerformanceCycleStatus {
-  IN_PROGRESS
-  UPGRADE_ELIGIBLE
-}
-
-/// CR-014 — a Member holds two of these, one per counter, and they upgrade
-/// independently. A cycle is a set of positions, not a span of time: it opens
-/// on an anniversary, and it ends when positions 1 to 9 have each succeeded —
-/// never because a year passed.
-model PerformanceCycle {
-  id              String               @id @default(uuid())
-  memberProfileId String
-  memberProfile   MemberProfile        @relation(fields: [memberProfileId], references: [id])
-  kind            PerformanceCycleKind
-  /// 1 for the cycle that opens at activation, then 2, 3 … Cycles never merge
-  /// and a number is never reused.
-  cycleNumber     Int
-
-  /// The IST day the cycle opened: the Member's activation for cycle 1, and an
-  /// activation anniversary for every later one.
-  openedOn DateTime @db.Date
-
-  status PerformanceCycleStatus @default(IN_PROGRESS)
-
-  /// Derived counts the Dashboard reads. Both are recomputed from the positions
-  /// themselves rather than incremented, so they cannot drift.
-  /// How many of positions 1 to 9 are filled at all.
-  positionsFilled   Int @default(0)
-  /// Of those, how many have completed their qualifying transaction.
-  positionsComplete Int @default(0)
-
-  /// Set when positions 1 to 9 are all successful, and cleared if one is later
-  /// reversed. The anniversary job reads it to decide whether the next cycle may
-  /// open yet (CR-014's "completion recorded after that run waits").
-  completedAt DateTime?
-  /// What the completed cycle earned, derived from its own positions.
-  entitlement String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  /// The Members holding an Invite position in this cycle.
-  invitePositions  MemberProfile[]   @relation("InviteCyclePositions")
-  /// The Customers holding a Royalty position in this cycle.
-  royaltyPositions CustomerProfile[] @relation("RoyaltyCyclePositions")
-
-  @@unique([memberProfileId, kind, cycleNumber])
-  @@index([memberProfileId, kind, status])
 }
 
 /// Append-only commission history for the record timeline (DESIGN §14.3).
@@ -1692,11 +1606,11 @@ model Acquisition {
 
   /// Set from the start for a Buyback; created on approval for a Purchase for
   /// Resale, when the property enters normal Plot Inventory (main-PRD §17.4).
-  plotId          String?
-  plot            Plot?    @relation(fields: [plotId], references: [id])
+  plotId               String?
+  plot                 Plot?    @relation(fields: [plotId], references: [id])
   /// The Buyback's original Booking. Its history is never overwritten.
-  sourceBookingId String?
-  sourceBooking   Booking? @relation("BuybackSource", fields: [sourceBookingId], references: [id])
+  sourceBookingId      String?
+  sourceBooking        Booking? @relation("BuybackSource", fields: [sourceBookingId], references: [id])
   /// CR-016 — the source Booking's state at the moment an approved Buyback
   /// closed it, so an unwind restores it rather than guessing. Same shape and
   /// the same reason as CancellationRequest.restoreSnapshot (main-PRD §15.4):
