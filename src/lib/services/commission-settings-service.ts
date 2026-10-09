@@ -22,6 +22,34 @@ const termsData = (t: CommissionVersionInput) => ({
   reason: t.reason.trim(),
 });
 
+/**
+ * The checks every prepared version passes, wherever it is prepared — the
+ * Project page or the create form.
+ */
+export function checkPreparable(actorRole: string, input: CommissionVersionInput) {
+  if (actorRole !== "ADMIN") blocked("Only Admin prepares commission settings.");
+  if (!input.reason.trim()) blocked("A compulsory reason is required for a commission settings version.");
+  const valid = validateCommissionTerms(input);
+  if (!valid.ok) blocked(valid.reason);
+}
+
+/** A new Draft, numbered after the Project's latest version. */
+export async function insertDraft(tx: Tx, projectId: string, actorRef: string, input: CommissionVersionInput) {
+  const latest = await tx.projectCommissionVersion.findFirst({
+    where: { projectId },
+    orderBy: { version: "desc" },
+    select: { version: true },
+  });
+  return tx.projectCommissionVersion.create({
+    data: {
+      projectId,
+      version: (latest?.version ?? 0) + 1,
+      ...termsData(input),
+      preparedByRef: actorRef,
+    },
+  });
+}
+
 /** Serialises every write to one Project's versions. */
 const lockProject = (tx: Tx, projectId: string) => lockKey(tx, `commission-version:${projectId}`);
 
@@ -41,10 +69,7 @@ async function lockedVersion(tx: Tx, versionId: string) {
  * A Draft is the only state that can be edited.
  */
 export async function prepareCommissionDraft(args: Actor & { projectId: string } & CommissionVersionInput) {
-  if (args.actorRole !== "ADMIN") blocked("Only Admin prepares commission settings.");
-  if (!args.reason.trim()) blocked("A compulsory reason is required for a commission settings version.");
-  const valid = validateCommissionTerms(args);
-  if (!valid.ok) blocked(valid.reason);
+  checkPreparable(args.actorRole, args);
 
   return runCommand<{ versionId: string; version: number; projectId: string }>(
     {
@@ -63,27 +88,12 @@ export async function prepareCommissionDraft(args: Actor & { projectId: string }
         blocked(`Version ${open.version} is waiting for MD. It can no longer be edited.`);
       }
 
-      let saved;
-      if (open) {
-        saved = await tx.projectCommissionVersion.update({
-          where: { id: open.id },
-          data: { ...termsData(args), preparedByRef: args.actorRef, preparedAt: new Date() },
-        });
-      } else {
-        const latest = await tx.projectCommissionVersion.findFirst({
-          where: { projectId: args.projectId },
-          orderBy: { version: "desc" },
-          select: { version: true },
-        });
-        saved = await tx.projectCommissionVersion.create({
-          data: {
-            projectId: args.projectId,
-            version: (latest?.version ?? 0) + 1,
-            ...termsData(args),
-            preparedByRef: args.actorRef,
-          },
-        });
-      }
+      const saved = open
+        ? await tx.projectCommissionVersion.update({
+            where: { id: open.id },
+            data: { ...termsData(args), preparedByRef: args.actorRef, preparedAt: new Date() },
+          })
+        : await insertDraft(tx, args.projectId, args.actorRef, args);
 
       return {
         result: { versionId: saved.id, version: saved.version, projectId: args.projectId },

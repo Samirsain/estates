@@ -18,6 +18,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
+import {
+  DIRECT_MAX_PERCENT,
+  LOYALTY_MAX_PERCENT,
+  needsLoyaltyException,
+  validateCommissionTerms,
+} from "@/lib/domain/commission";
+import { Benefit } from "./[id]/commission-settings";
 import { downloadProjectSheet } from "@/lib/pdf/project-sheet";
 import {
   PLC_CATEGORIES,
@@ -353,6 +360,7 @@ export default function ProjectsClient({
       {creating && (
         <ProjectDialog
           busy={busy}
+          canPrepareCommission={role === "ADMIN"}
           onClose={() => setCreating(false)}
           onSubmit={(input) => run(() => createProjectAction(input, newKey()))}
         />
@@ -925,13 +933,36 @@ function readProjectFields(f: FormData): ProjectFields {
 
 function ProjectDialog({
   busy,
+  canPrepareCommission,
   onClose,
   onSubmit,
 }: {
   busy: boolean;
+  /** v2.1 §14 — only Admin prepares commission settings; MD approves them. */
+  canPrepareCommission: boolean;
   onClose: () => void;
   onSubmit: (input: Parameters<typeof createProjectAction>[0]) => void;
 }) {
+  // v2.1 §12 — Direct and Loyalty may be entered with the Project. They are
+  // saved as Draft v1 and change nothing until MD approves them.
+  const [withCommission, setWithCommission] = React.useState(canPrepareCommission);
+  const [directEnabled, setDirectEnabled] = React.useState(true);
+  const [directPercent, setDirectPercent] = React.useState("3");
+  const [loyaltyEnabled, setLoyaltyEnabled] = React.useState(true);
+  const [loyaltyPercent, setLoyaltyPercent] = React.useState("1");
+  const [exception, setException] = React.useState("");
+
+  const commission = {
+    directEnabled,
+    directPercent: directEnabled ? directPercent : null,
+    loyaltyEnabled,
+    loyaltyPercent: loyaltyEnabled ? loyaltyPercent : null,
+    loyaltyExceptionReason: exception.trim() || null,
+  };
+  const showException = needsLoyaltyException(commission);
+  const check = validateCommissionTerms(commission);
+  const commissionProblem = withCommission && !check.ok ? check.reason : null;
+
   return (
     <Modal
       title="New Project"
@@ -948,6 +979,10 @@ function ProjectDialog({
             projectCode: String(form.get("projectCode")),
             isExternalResaleGroup: false,
             components: [],
+            commission:
+              canPrepareCommission && withCommission
+                ? { ...commission, loyaltyExceptionReason: showException ? commission.loyaltyExceptionReason : null }
+                : null,
           });
         }}
       >
@@ -963,11 +998,58 @@ function ProjectDialog({
         </Field>
         <ProjectFieldset />
 
+        {canPrepareCommission && (
+          <fieldset className="space-y-3 rounded-xl border border-border/60 p-3">
+            <label className="flex items-center gap-2 text-xs font-semibold">
+              <input
+                type="checkbox"
+                checked={withCommission}
+                onChange={(e) => setWithCommission(e.target.checked)}
+              />
+              Commission settings
+            </label>
+            <p className="text-[11px] text-muted-foreground">
+              Saved as Draft v1. Send it to MD from the Project page; no Booking Request can be
+              submitted until MD approves a version.
+            </p>
+            {withCommission && (
+              <>
+                <Benefit
+                  label="Direct Commission"
+                  max={DIRECT_MAX_PERCENT}
+                  enabled={directEnabled}
+                  value={directPercent}
+                  onEnabled={setDirectEnabled}
+                  onValue={setDirectPercent}
+                />
+                <Benefit
+                  label="Customer Loyalty"
+                  max={LOYALTY_MAX_PERCENT}
+                  enabled={loyaltyEnabled}
+                  value={loyaltyPercent}
+                  onEnabled={setLoyaltyEnabled}
+                  onValue={setLoyaltyPercent}
+                />
+                {showException && (
+                  <Field label="MD exception — why Loyalty is not lower than Direct">
+                    <textarea
+                      className={`${inputClass} h-16 py-2`}
+                      value={exception}
+                      onChange={(e) => setException(e.target.value)}
+                    />
+                  </Field>
+                )}
+                {commissionProblem && <p className="text-xs text-red-700">{commissionProblem}</p>}
+              </>
+            )}
+          </fieldset>
+        )}
+
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Back
           </Button>
-          <Button type="submit" size="sm" disabled={busy}>
+          <Button type="submit" size="sm" disabled={busy || commissionProblem !== null}>
             {busy ? "Creating…" : "Create Project"}
           </Button>
         </div>

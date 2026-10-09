@@ -20,6 +20,7 @@ import {
   sendCommissionVersion,
   type CommissionVersionInput,
 } from "@/lib/services/commission-settings-service";
+import type { CommissionTermsInput } from "@/lib/domain/commission";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
@@ -52,6 +53,8 @@ export async function createProjectAction(
     projectCode: string;
     isExternalResaleGroup: boolean;
     components: PlcComponentInput[];
+    /** v2.1 §12 — optional; saved as Draft v1 for MD to approve. */
+    commission?: CommissionTermsInput | null;
   },
   key: string
 ): Promise<ActionResult> {
@@ -79,11 +82,16 @@ export async function createProjectAction(
       reraNumber: input.reraNumber || null,
       isExternalResaleGroup: input.isExternalResaleGroup,
       components: input.components,
+      commission: input.commission ?? null,
     });
     refresh();
     return {
       ok: true,
-      message: `${input.name} created as Unreleased (code ${result.projectCode}). Prepare inventory, then make it Active before anything is sold.`,
+      message:
+        `${input.name} created as Unreleased (code ${result.projectCode}). Prepare inventory, then make it Active before anything is sold.` +
+        (input.commission
+          ? " Its commission settings are saved as Draft v1 — send them to MD from the Project page."
+          : ""),
     };
   } catch (error) {
     return toResult(error);

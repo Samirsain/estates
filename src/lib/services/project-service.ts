@@ -16,6 +16,8 @@ import {
 } from "@/lib/domain/inventory";
 import { blocked, runCommand, type Tx } from "./command";
 import { plcRules } from "./plc-service";
+import { checkPreparable, insertDraft } from "./commission-settings-service";
+import type { CommissionTermsInput } from "@/lib/domain/commission";
 
 const D = Prisma.Decimal;
 
@@ -169,10 +171,20 @@ export async function createProject(args: {
   /** PRD §11.6 — an External Resale Property Group holds acquired properties. */
   isExternalResaleGroup?: boolean;
   components: PlcComponentInput[];
+  /**
+   * v2.1 §12, §14 — optional commission settings entered with the Project.
+   * Saved as Draft v1: Admin sends it and MD approves it on the Project page,
+   * exactly as a version prepared there.
+   */
+  commission?: CommissionTermsInput | null;
 }) {
   if (!args.name.trim()) blocked("A Project Name is required.");
 
   validateComponents(args.components);
+  const commission = args.commission
+    ? { ...args.commission, reason: "Entered when the Project was created" }
+    : null;
+  if (commission) checkPreparable(args.actorRole, commission);
 
   return runCommand<{ projectId: string; projectCode: string }>(
     {
@@ -220,13 +232,20 @@ export async function createProject(args: {
         });
       }
 
+      const draft = commission ? await insertDraft(tx, project.id, args.actorRef, commission) : null;
+
       return {
         result: { projectId: project.id, projectCode: project.projectCode },
         audit: {
           entity: "Project",
           entityId: project.id,
           action: "PROJECT_CREATED",
-          after: { projectCode: project.projectCode, name: project.name, type: project.type },
+          after: {
+            projectCode: project.projectCode,
+            name: project.name,
+            type: project.type,
+            commissionDraftVersion: draft?.version ?? null,
+          },
         },
       };
     }

@@ -14,6 +14,7 @@ import {
   prepareCommissionDraft,
   sendCommissionVersion,
 } from "@/lib/services/commission-settings-service";
+import { createProject } from "@/lib/services/project-service";
 
 const db = new PrismaClient();
 const TAG = "ZZ-CSET";
@@ -192,6 +193,53 @@ async function main() {
     }),
     /one_active_commission_version_per_project|Unique constraint/
   );
+
+  /* The create form may carry the settings too: they are saved as Draft v1,
+     which Admin sends and MD approves exactly as above. */
+  const base = { name: `${TAG} Created`, type: "RESIDENTIAL" as const, components: [] };
+  const created = await createProject({
+    idempotencyKey: key(),
+    ...ADMIN,
+    ...base,
+    projectCode: "ZZCSETC1",
+    commission: { ...terms, directPercent: "4", loyaltyPercent: "2" },
+  });
+  const draft = await db.projectCommissionVersion.findFirstOrThrow({ where: { projectId: created.projectId } });
+  assert.equal(`${draft.version}:${draft.status}`, "1:DRAFT", "the create form saves Draft v1, not an Active version");
+  assert.equal(draft.directPercent?.toString(), "4");
+  assert.equal(draft.preparedByRef, ADMIN.actorRef);
+
+  // Only Admin prepares, on the create form too; PC can still create without settings.
+  await assert.rejects(
+    createProject({
+      idempotencyKey: key(),
+      actorRef: `${TAG}-PC`,
+      actorRole: "PC",
+      ...base,
+      projectCode: "ZZCSETC2",
+      commission: terms,
+    }),
+    /Only Admin prepares/
+  );
+  await assert.rejects(
+    createProject({
+      idempotencyKey: key(),
+      ...ADMIN,
+      ...base,
+      projectCode: "ZZCSETC3",
+      commission: { ...terms, loyaltyPercent: "3" },
+    }),
+    /MD exception/,
+    "the same validation as the Project page"
+  );
+  const plain = await createProject({
+    idempotencyKey: key(),
+    actorRef: `${TAG}-PC`,
+    actorRole: "PC",
+    ...base,
+    projectCode: "ZZCSETC4",
+  });
+  assert.equal(await db.projectCommissionVersion.count({ where: { projectId: plain.projectId } }), 0);
 
   await purgeCheckData(db, TAG);
   console.log("commission-settings.check.ts OK");

@@ -332,7 +332,7 @@ function VersionForm({
   );
 }
 
-function Benefit({
+export function Benefit({
   label,
   max,
   enabled,
