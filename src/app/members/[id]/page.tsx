@@ -168,6 +168,7 @@ export default async function MemberDetailPage({
     tripCredits,
     tripBuckets,
     referenceWins,
+    openRecoveries,
   ] = await Promise.all([
     db.commissionRecord.findMany({
       where: {
@@ -264,6 +265,7 @@ export default async function MemberDetailPage({
       where: { id: { in: member.invitedMembers.map((m) => m.referenceWinningBookingId).filter((b): b is string => !!b) } },
       select: { id: true, bookingNumber: true },
     }),
+    db.recovery.findMany({ where: { personId, status: "OUTSTANDING" }, orderBy: { dueOn: "asc" } }),
   ]);
 
   const experience = experienceSince(member.activationDate);
@@ -463,6 +465,12 @@ export default async function MemberDetailPage({
 
           <dl className="mt-4 grid grid-cols-2 gap-y-4 border-t border-border/60 pt-4 md:grid-cols-4 md:divide-x md:divide-border/60">
             <Stat label="Member for" value={experience?.label ?? "—"} />
+            {/* CP §68 — a safe Recovery indicator; Accounts' notes stay on the Booking. */}
+            <Stat
+              label="Recovery"
+              value={openRecoveries.length ? `${openRecoveries.length} outstanding` : "None"}
+              hint={openRecoveries[0] ? `${openRecoveries[0].recoveryNo} due ${formatIst(openRecoveries[0].dueOn)}` : undefined}
+            />
             <Stat
               label="Activated on"
               value={member.activationDate ? formatIst(member.activationDate) : "—"}

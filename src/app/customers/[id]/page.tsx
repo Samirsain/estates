@@ -125,6 +125,10 @@ export default async function CustomerDetailPage({
   });
 
   if (!customer) notFound();
+  const openRecoveries = await db.recovery.findMany({
+    where: { personId: customer.personId, status: "OUTSTANDING" },
+    orderBy: { dueOn: "asc" },
+  });
 
   const personId = customer.personId;
   const bookingRef = { id: true, bookingNumber: true, requestNo: true } as const;
@@ -428,6 +432,12 @@ export default async function CustomerDetailPage({
 
           <dl className="mt-4 grid grid-cols-2 gap-y-4 border-t border-border/60 pt-4 md:grid-cols-4 md:divide-x md:divide-border/60">
             <Stat label="Customer for" value={experience?.label ?? "—"} />
+            {/* CP §69 — a Customer closer can owe a Recovery too; a safe indicator only. */}
+            <Stat
+              label="Recovery"
+              value={openRecoveries.length ? `${openRecoveries.length} outstanding` : "None"}
+              hint={openRecoveries[0] ? `${openRecoveries[0].recoveryNo} due ${formatIst(openRecoveries[0].dueOn)}` : undefined}
+            />
             <Stat label="Properties" value={`${bookedCount} booked · ${deliveredCount} delivered`} />
             <Stat
               label="Closing Loyalty"

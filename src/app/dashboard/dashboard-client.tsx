@@ -83,6 +83,7 @@ export default function DashboardClient({
   staffAccountId,
   initialTasks,
   seesAllWork,
+  cards,
 }: {
   role: StaffRole;
   actorName: string;
@@ -90,6 +91,8 @@ export default function DashboardClient({
   initialTasks: Task[];
   /** PRD §3.2 — only MD and Admin are served other people's work at all. */
   seesAllWork: boolean;
+  /** CP §67 — the reward cards, rendered on the server. */
+  cards?: React.ReactNode;
 }) {
   const tasks = initialTasks;
   const [now, setNow] = React.useState<Date | null>(null);
@@ -164,6 +167,7 @@ export default function DashboardClient({
             </Button>
           </div>
         </header>
+        {cards}
 
         <div className="flex flex-wrap items-center gap-2">
           {VIEWS.map((v) => (

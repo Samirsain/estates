@@ -7,15 +7,16 @@
 import React from "react";
 import { usePathname } from "next/navigation";
 import {
+  BarChart3,
+  Building2,
   Calculator,
+  Gift,
   LandPlot,
   LayoutDashboard,
-  Building2,
-  Users,
   Network,
-  BarChart3,
-  Settings,
   Search,
+  Settings,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +47,8 @@ const NAV = [
   { label: "Land Inquiries", icon: LandPlot, href: "/land-inquiries", phase: null },
   { label: "Customers", icon: Users, href: "/customers", phase: null },
   { label: "Members", icon: Network, href: "/members", phase: null },
+  // CP §90 — Monetary Benefits, Trip Rewards, Royalty Gifts and Recovery in one place.
+  { label: "Rewards", icon: Gift, href: "/rewards", phase: null },
   // DESIGN §3.1 lists six top-level areas and §1 says not to reintroduce a
   // standalone calculator. The owner asked for it at the top level anyway, so
   // this is a deliberate seventh — recorded here rather than left to look like

@@ -1899,6 +1899,22 @@ function BookingDetailPanel({
             statuses, and a superseded record stays visible rather than being removed.
           </p>
 
+          {/* CP §90 — non-cash rewards this sale created; no value attaches to them. */}
+          {detail.rewards.length > 0 && (
+            <ul className="space-y-1 rounded-lg border border-border/60 p-2.5 text-xs">
+              {detail.rewards.map((r, i) => (
+                <li key={i} className="flex flex-wrap justify-between gap-2">
+                  <span>
+                    {r.kind} · {r.member}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {r.state.toLowerCase()} · {r.detail}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
           {detail.commissions.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               Commission is generated when Accounts approves the Booking Request.

@@ -62,6 +62,8 @@ export type CalcProjectView = {
   location: string | null;
   /** v2.1 §12 — the Project's Active commission settings; null when none are approved. */
   terms: FrozenTerms | null;
+  /** CP §72 — the Project's Trip Programme as a non-cash indicator, or null. */
+  trip: string | null;
 };
 
 /** One sale-commission component, with the milestone the engine gives it. */
@@ -259,7 +261,9 @@ export default function CalculatorClient({
   people,
   commissionTypes,
   initialPlotId,
+  royaltyProgramme,
 }: {
+  royaltyProgramme: string | null;
   role: StaffRole;
   actorName: string;
   staffAccountId: string;
@@ -623,6 +627,15 @@ export default function CalculatorClient({
             </Button>
           )}
         </div>
+
+        {/* CP §72 — non-cash rewards are eligibility indicators only, never a value. */}
+        {projectId && (
+          <p className="text-xs text-muted-foreground">
+            Sales &amp; Reference Trip:{" "}
+            {projects.find((p) => p.id === projectId)?.trip ?? "no Trip Programme on this Project"} · Royalty Gift
+            Programme: {royaltyProgramme ?? "none live"}. Non-cash; one Royalty Credit is one Gift.
+          </p>
+        )}
 
         {/* Everything chosen sits on one row. Nothing below repeats it. */}
         <Card className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-5">

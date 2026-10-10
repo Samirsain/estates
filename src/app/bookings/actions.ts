@@ -970,6 +970,32 @@ export async function loadBookingDetail(bookingId: string) {
       correctsEntryId: e.correctsEntryId,
     })),
     // DESIGN §14.1 — eligibility and payment are shown as two separate fields.
+    // CP §90 — the safe reward summary: this Booking's non-cash credits.
+    rewards: [
+      ...(
+        await db.tripCredit.findMany({
+          where: { sourceBookingId: bookingId },
+          include: { memberProfile: { select: { memberId: true } } },
+          orderBy: { createdAt: "asc" },
+        })
+      ).map((t) => ({
+        kind: t.creditType === "OWN_SALE" ? "Own-Sale Trip Credit" : "Reference Credit",
+        member: t.memberProfile.memberId,
+        state: t.state,
+        detail: `${t.programmeCode}${t.qualificationRoute === "APPROVED_BUYBACK" ? " · by Buyback" : ""}${t.reversalReason ? ` · ${t.reversalReason}` : ""}`,
+      })),
+      ...(
+        await db.royaltyCredit.findMany({
+          where: { triggerBookingId: bookingId },
+          include: { memberProfile: { select: { memberId: true } }, programmeVersion: { select: { programmeRef: true } } },
+        })
+      ).map((r) => ({
+        kind: "Royalty Gift",
+        member: r.memberProfile.memberId,
+        state: r.state,
+        detail: `${r.programmeVersion.programmeRef}${r.holdReason ? ` · ${r.holdReason.replaceAll("_", " ").toLowerCase()}` : ""}`,
+      })),
+    ],
     commissions: commissions.map((c) => ({
       id: c.id,
       type: c.type,
