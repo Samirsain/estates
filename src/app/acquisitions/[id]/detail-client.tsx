@@ -18,7 +18,7 @@ import { Card } from "@/components/ui/card";
 import { PersonLink } from "@/components/person-link";
 import { formatIst, type StaffRole } from "@/lib/tasks";
 import { AcquisitionDialogs } from "../acquisition-dialogs";
-import type { ActionResult } from "../actions";
+import { recordDocumentsReturnedAction, type ActionResult } from "../actions";
 import {
   STATUS_LABEL,
   TYPE_LABEL,
@@ -106,6 +106,18 @@ export default function AcquisitionDetailClient({
             <div className="flex flex-wrap gap-x-10 gap-y-3">
               <Stat label="Payment Given" value={`${row.paymentGivenPercent}%`} />
               <Stat label="Purchase Date" value={formatIst(row.purchaseDate)} />
+              {row.type === "BUYBACK" && row.status === "APPROVED" && (
+                <Stat
+                  label="Stable Buyback Completion"
+                  value={
+                    row.stableCompletedAt
+                      ? `Yes · ${formatIst(row.stableCompletedAt)}`
+                      : row.documentsReturnRequired && !row.documentsReturnedAt
+                        ? "No · papers not back"
+                        : "No · Payment Given below 100%"
+                  }
+                />
+              )}
             </div>
           </div>
 
@@ -142,6 +154,27 @@ export default function AcquisitionDetailClient({
                   onClick={() => setDialog({ kind: "COMMISSION", row })}
                 >
                   <Coins className="mr-2 h-3.5 w-3.5" /> Record Buying Commission
+                </Button>
+              )}
+            {row.status === "APPROVED" &&
+              row.documentsReturnRequired &&
+              !row.documentsReturnedAt &&
+              ["CRM", "ADMIN", "MD"].includes(role) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    run(() =>
+                      recordDocumentsReturnedAction(
+                        row.id,
+                        new Date().toISOString().slice(0, 10),
+                        `docs-${row.id}-${Date.now()}`
+                      )
+                    )
+                  }
+                >
+                  Papers back
                 </Button>
               )}
             {live && permissions.cancel && (

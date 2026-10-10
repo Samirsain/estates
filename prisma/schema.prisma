@@ -144,11 +144,17 @@ model CustomerProfile {
   /// purchase has 25% Payment Received). Kept for the Royalty Gift (part 2). Null against a set
   /// `royaltyLinkFirstBookingId` is CR-003's permanent "no Royalty Member":
   /// the first purchase was Sold By 3% CLUB or Sold By Customer.
-  royaltyLinkedMemberId     String?
-  royaltyLinkedMember       MemberProfile? @relation("RoyaltyLinkedCustomers", fields: [royaltyLinkedMemberId], references: [id])
-  royaltyLinkFirstBookingId String?
-  royaltyLinkFirstBooking   Booking?       @relation("RoyaltyFirstPurchase", fields: [royaltyLinkFirstBookingId], references: [id])
-  royaltyLinkFinalAt        DateTime?
+  royaltyLinkedMemberId        String?
+  royaltyLinkedMember          MemberProfile?            @relation("RoyaltyLinkedCustomers", fields: [royaltyLinkedMemberId], references: [id])
+  royaltyLinkFirstBookingId    String?
+  royaltyLinkFirstBooking      Booking?                  @relation("RoyaltyFirstPurchase", fields: [royaltyLinkFirstBookingId], references: [id])
+  royaltyLinkFinalAt           DateTime?
+  /// CP §41 — how the link became final: PAYMENT_100 or APPROVED_BUYBACK.
+  royaltyLinkFinalRoute        RewardQualificationRoute?
+  /// SSOT §74; CP §41 — the one lifetime Royalty opportunity, consumed by the
+  /// Booking whose Royalty Credit it created. Null while unused.
+  royaltyOpportunityConsumedAt DateTime?
+  royaltyCredits               RoyaltyCredit[]
 
   /// v2.1 §22 — a Sold By Customer must have accepted Customer Terms before
   /// Customer-closing Loyalty can be paid. Recorded by CRM, append-only.
@@ -239,6 +245,8 @@ model MemberProfile {
   introducedCustomers    CustomerProfile[] @relation("IntroducedCustomers")
   /// CR-002 — the Customers whose first qualifying purchase this Member closed.
   royaltyLinkedCustomers CustomerProfile[] @relation("RoyaltyLinkedCustomers")
+  /// SSOT §75 — the Royalty Credits (Gift entitlements) this Member owns.
+  royaltyCredits         RoyaltyCredit[]
   sourcedEnquiries       Enquiry[]         @relation("MemberSourcedEnquiries")
   holdRequests           HoldRequest[]
 }
@@ -1062,6 +1070,12 @@ model Booking {
   /// capability when the request was submitted. Re-read on a Sold By Correction.
   loyaltySubjectDeactivated Boolean                   @default(false)
 
+  /// SSOT §76; CP §10, §46 — the Royalty Gift Programme Version live when the
+  /// Booking Request version Accounts approves was submitted. Null when none was.
+  royaltyProgrammeVersionId String?
+  royaltyProgrammeVersion   RoyaltyProgrammeVersion? @relation(fields: [royaltyProgrammeVersionId], references: [id])
+  royaltyCredit             RoyaltyCredit?
+
   /// Set when the request came from a Hold, so a rejection can restore the
   /// frozen remainder to the exact Hold it paused (PRD §10.5).
   holdId    String?
@@ -1535,6 +1549,133 @@ model Recovery {
   @@index([commissionRecordId])
 }
 
+/// CP §24, §41, §45 — which milestone qualified a non-cash reward.
+enum RewardQualificationRoute {
+  PAYMENT_100
+  APPROVED_BUYBACK
+}
+
+/// SSOT §76, §77; Terms 6.2 §38 — a company-wide Royalty Gift Programme Version.
+/// The catalogue lives outside the CRM; the CRM keeps the references, the
+/// economics review (CP §7.4) and the approval. Same lifecycle as Project settings.
+model RoyaltyProgrammeVersion {
+  id               String                  @id @default(uuid())
+  /// 1, 2, 3 … never reused.
+  version          Int                     @unique
+  status           CommissionVersionStatus @default(DRAFT)
+  /// e.g. RGP-01 — the Programme Version name in the published Terms.
+  programmeRef     String
+  catalogueVersion String
+  termsVersion     String
+  reason           String
+
+  preparedByRef          String
+  preparedAt             DateTime  @default(now())
+  submittedAt            DateTime?
+  decidedByRef           String?
+  decidedAt              DateTime?
+  decisionNote           String?
+  /// SSOT §101 — reviewed outside the CRM; only the fact, who and when are kept.
+  economicsReviewedByRef String?
+  economicsReviewedAt    DateTime?
+  effectiveFrom          DateTime?
+  effectiveTo            DateTime?
+
+  bookings Booking[]
+  credits  RoyaltyCredit[]
+}
+
+/// SSOT §75; CP §45 — one Royalty Credit = one catalogue Gift. No rate, no amount.
+enum RoyaltyCreditState {
+  ELIGIBLE
+  SELECTED
+  ORDERED
+  DELIVERED
+  REVERSED
+}
+
+/// CP §85; Terms doc 5 §88 — why non-cash fulfilment is held. A hold never
+/// deletes the entitlement.
+enum RewardHoldReason {
+  RECOVERY_OUTSTANDING
+  MEMBER_DEACTIVATED
+  BUYBACK_STABLE_COMPLETION_PENDING
+  REWARD_DEFICIENT
+  NOMINEE_APPROVAL_PENDING
+  PROGRAMME_TERMS_ACTION_REQUIRED
+  STAFF_CONFLICT_REVIEW
+  RECOVERY_CIRCUMVENTION_REVIEW
+}
+
+/// Terms doc 5 §6, §7 — who receives a non-cash reward. Immediate family needs
+/// no approval; one non-family recipient needs MD.
+enum RewardRecipient {
+  SELF
+  SPOUSE
+  PARENT
+  CHILD
+  SIBLING
+  NON_FAMILY
+}
+
+model RoyaltyCredit {
+  id                 String                  @id @default(uuid())
+  customerProfileId  String
+  customerProfile    CustomerProfile         @relation(fields: [customerProfileId], references: [id])
+  /// The Royalty Linked Member who owns it (SSOT §81).
+  memberProfileId    String
+  memberProfile      MemberProfile           @relation(fields: [memberProfileId], references: [id])
+  /// The Club-direct repeat purchase that triggered it.
+  triggerBookingId   String                  @unique
+  triggerBooking     Booking                 @relation(fields: [triggerBookingId], references: [id])
+  /// Frozen from the trigger Booking (SSOT §76).
+  programmeVersionId String
+  programmeVersion   RoyaltyProgrammeVersion @relation(fields: [programmeVersionId], references: [id])
+
+  state              RoyaltyCreditState       @default(ELIGIBLE)
+  qualificationRoute RewardQualificationRoute
+  eligibleAt         DateTime                 @default(now())
+  holdReason         RewardHoldReason?
+
+  selectedRewardRef      String?
+  selectedAt             DateTime?
+  recipient              RewardRecipient?
+  recipientName          String?
+  recipientApprovedByRef String?
+  recipientApprovedAt    DateTime?
+
+  orderedAt         DateTime?
+  orderReference    String?
+  deliveredAt       DateTime?
+  deliveryReference String?
+
+  reversedAt     DateTime?
+  reversalReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events RoyaltyCreditEvent[]
+
+  @@index([memberProfileId, state])
+  @@index([customerProfileId])
+}
+
+/// Append-only history of a Royalty Credit (CP §79).
+model RoyaltyCreditEvent {
+  id        String        @id @default(uuid())
+  creditId  String
+  credit    RoyaltyCredit @relation(fields: [creditId], references: [id])
+  at        DateTime      @default(now())
+  actorRef  String
+  action    String
+  fromState String?
+  toState   String?
+  reason    String?
+
+  @@index([creditId, at])
+}
+
 /// Append-only commission history for the record timeline (DESIGN §14.3).
 model CommissionEvent {
   id        String           @id @default(uuid())
@@ -1713,6 +1854,15 @@ model Acquisition {
 
   /// Cumulative confirmed Payment Given. Never above 100%.
   paymentGivenPercent Decimal @default(0) @db.Decimal(7, 4)
+
+  /// SSOT §61 — set at approval when the old sale had an Allotment or Registry,
+  /// so the papers must come back before the Buyback is stable.
+  documentsReturnRequired Boolean   @default(false)
+  documentsReturnedAt     DateTime?
+  documentsReturnedByRef  String?
+  /// SSOT §61; CP §51 — Approved, Payment Given 100%, not unwound, documents
+  /// back where required. Set when achieved, cleared when lost (audited).
+  stableCompletedAt       DateTime?
 
   submittedByRef String
   submittedAt    DateTime  @default(now())

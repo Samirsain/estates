@@ -20,7 +20,7 @@ import { canAllocate, plotReturnState, type PlotRestriction } from "@/lib/domain
 import { blocked, lockBooking, lockPlot, nextReference, runCommand, type Tx } from "./command";
 import { freezePlcSnapshot, loadPlotForPlc, type PlotForPlc } from "./plc-service";
 import { countOpenPositions } from "./hold-service";
-import { syncRoyaltyLink } from "./network-service";
+import { relinkAfterSoldByCorrection, syncRoyaltyLink } from "./network-service";
 import {
   freezeAtSubmission,
   generateForBooking,
@@ -30,6 +30,7 @@ import {
   reassessCommission,
 } from "./commission-service";
 import { createScheduleVersion, syncPaymentFollowUp, type ScheduleInput } from "./payment-service";
+import { touchesDeliveredGift } from "./royalty-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 import { ensureCustomerProfile, linkOrCreatePerson } from "./enquiry-service";
 import { validateSoldBy } from "./sold-by";
@@ -153,6 +154,8 @@ function reviewSnapshot(input: {
     directPercent: string | null;
     loyaltyPercent: string | null;
   };
+  /** SSOT §76 — the Royalty Gift Programme Version live at this submission, if any. */
+  royaltyProgrammeVersionId: string | null;
 }) {
   return canonicalSnapshot({
     projectId: input.projectId,
@@ -176,6 +179,7 @@ function reviewSnapshot(input: {
     })),
     remark: input.remark,
     commissionTerms: input.commissionTerms,
+    royaltyProgrammeVersionId: input.royaltyProgrammeVersionId,
   });
 }
 
@@ -294,6 +298,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
           holdId: hold?.id ?? null,
           plcSnapshotId: snapshot.id,
           commissionVersionId: frozen.commissionVersionId,
+          royaltyProgrammeVersionId: frozen.royaltyProgrammeVersionId,
           originalClassification: frozen.originalClassification,
           loyaltySubjectDeactivated: frozen.loyaltySubjectDeactivated,
           submittedByRef: input.actorRef,
@@ -343,6 +348,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
             schedule: schedule.instalments,
             remark: input.remark ?? null,
             commissionTerms: frozen.terms,
+            royaltyProgrammeVersionId: frozen.royaltyProgrammeVersionId,
           }) as never,
           submittedByRef: input.actorRef,
         },
@@ -505,6 +511,7 @@ export async function reviseBookingRequest(args: {
           customerType: args.customerType ?? null,
           remark: args.remark ?? null,
           commissionVersionId: frozen.commissionVersionId,
+          royaltyProgrammeVersionId: frozen.royaltyProgrammeVersionId,
           originalClassification: frozen.originalClassification,
           loyaltySubjectDeactivated: frozen.loyaltySubjectDeactivated,
         },
@@ -540,6 +547,7 @@ export async function reviseBookingRequest(args: {
             schedule: schedule.instalments,
             remark: args.remark ?? null,
             commissionTerms: frozen.terms,
+            royaltyProgrammeVersionId: frozen.royaltyProgrammeVersionId,
           }) as never,
           submittedByRef: args.actorRef,
         },
@@ -1250,11 +1258,10 @@ export async function decidePrimaryCustomerChange(args: {
           where: { id: args.bookingId },
           data: { primaryPersonId: request.toPersonId, activeProcess: "NONE" },
         });
-        // CR-002 — the Booking changed hands, so it may now be the incoming
-        // Customer's first qualifying purchase and is no longer the outgoing
-        // one's. Both sides are recomputed.
-        await syncRoyaltyLink(tx, request.fromPersonId, args.actorRef);
-        await syncRoyaltyLink(tx, request.toPersonId, args.actorRef);
+        // SSOT §36; CP §21 — the change moves ownership only. The Royalty
+        // relationship keeps reading the Booking's original Primary Customer
+        // (royalty-service `originalPurchasesOf`), so nothing is recomputed and
+        // no relationship is created from the transfer (UAT COR-06, RISK-03).
       } else {
         await tx.booking.update({ where: { id: args.bookingId }, data: { activeProcess: "NONE" } });
       }
@@ -1440,6 +1447,11 @@ export async function decideSoldByCorrection(args: {
       if (correction.requestedByRef === args.actorRef) {
         blocked("A Sold By Correction must be approved by a different staff account.");
       }
+      // CP §60; SSOT §98 — after a Gift was delivered on this attribution, only
+      // MD may correct it, and no second Gift follows.
+      if (args.approve && args.actorRole !== "MD" && (await touchesDeliveredGift(tx, args.bookingId))) {
+        blocked("A Royalty Gift was already delivered on this attribution, so only MD may approve this correction.");
+      }
 
       const booking = await tx.booking.findUniqueOrThrow({
         where: { id: args.bookingId },
@@ -1502,10 +1514,10 @@ export async function decideSoldByCorrection(args: {
         },
       });
 
-      // CR-002 — a corrected Sold By on a first qualifying purchase corrects
-      // who the provisional Royalty Linked Member is. A link already made final
-      // by its milestone is left alone, exactly as a paid commission is.
-      await syncRoyaltyLink(tx, booking.primaryPersonId, args.actorRef);
+      // CP §59 — a corrected Sold By re-links the Royalty relationship of a
+      // first purchase, final or not, and rechecks any Royalty Credit this
+      // Booking triggered, using the frozen Programme Version.
+      await relinkAfterSoldByCorrection(tx, args.bookingId, args.actorRef);
 
       const regenerated = await generateForBooking(tx, args.bookingId, args.actorRef);
       await reassessCommission(tx, args.bookingId, args.actorRef);
@@ -1583,6 +1595,7 @@ export function listBookings(where?: Prisma.BookingWhereInput) {
       },
       reviewVersions: { where: { status: "PENDING" }, take: 1 },
       // v2.1 §15 — the exact version frozen on the request, shown with it.
+      royaltyProgrammeVersion: { select: { programmeRef: true } },
       commissionVersion: {
         select: { version: true, directEnabled: true, directPercent: true, loyaltyEnabled: true, loyaltyPercent: true },
       },

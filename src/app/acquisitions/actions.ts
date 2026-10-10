@@ -12,6 +12,7 @@ import {
   correctPaymentGiven,
   createAcquisition,
   decideAcquisition,
+  recordBuybackDocumentsReturned,
   recordBuyingCommission,
 } from "@/lib/services/acquisition-service";
 
@@ -219,6 +220,33 @@ export async function recordBuyingCommissionAction(
         result.eligibility === "READY"
           ? "Buying Commission recorded and Ready — Payment Given is already 100%."
           : "Buying Commission recorded. It becomes payable at 100% Payment Given.",
+    };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/**
+ * SSOT §61 — the old sale's Allotment papers collected back, or the Registry
+ * back completed. The service decides who may record it (CRM, Admin, MD).
+ */
+export async function recordDocumentsReturnedAction(acquisitionId: string, returnedOn: string, key: string): Promise<ActionResult> {
+  const actor = await requireStaff();
+  try {
+    const result = await recordBuybackDocumentsReturned({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      acquisitionId,
+      returnedOn: new Date(returnedOn),
+    });
+    revalidatePath("/acquisitions");
+    revalidatePath(`/acquisitions/${acquisitionId}`);
+    return {
+      ok: true,
+      message: result.stable
+        ? "Papers recorded back. The Buyback is now a Stable Buyback Completion."
+        : "Papers recorded back. Stable Buyback Completion still needs 100% Payment Given.",
     };
   } catch (error) {
     return toResult(error);

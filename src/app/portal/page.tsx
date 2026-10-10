@@ -22,6 +22,12 @@ export default async function PortalPage() {
         invitedByMember: { include: { person: true } },
         invitedMembers: { include: { person: true }, orderBy: { activationDate: "asc" } },
         royaltyLinkedCustomers: { select: { royaltyLinkFinalAt: true }, orderBy: { royaltyLinkFinalAt: "asc" } },
+        // SSOT §102; CP §70 — the Member's own Royalty Credits, non-cash, no Customer identity.
+        royaltyCredits: {
+          where: { state: { not: "REVERSED" } },
+          include: { programmeVersion: { select: { programmeRef: true } } },
+          orderBy: { eligibleAt: "desc" },
+        },
       },
     }),
     db.plot.findMany({
@@ -71,6 +77,13 @@ export default async function PortalPage() {
     // relationships they hold and whether each is final, never the Customer.
     royaltyLinkedCustomers: profile.royaltyLinkedCustomers.map((c) => ({
       final: c.royaltyLinkFinalAt !== null,
+    })),
+    royaltyCredits: profile.royaltyCredits.map((c) => ({
+      state: c.state,
+      held: c.holdReason !== null,
+      programmeRef: c.programmeVersion.programmeRef,
+      selectedRewardRef: c.selectedRewardRef,
+      deliveredAt: c.deliveredAt?.toISOString() ?? null,
     })),
     projects: [...new Map(availablePlots.map((p) => [p.projectId, p.project.name])).entries()].map(
       ([id, name]) => ({ id, name })

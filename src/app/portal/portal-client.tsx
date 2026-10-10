@@ -83,6 +83,14 @@ export type PortalData = {
    * Customer's name and Customer ID are buyer-private and never reach the portal.
    */
   royaltyLinkedCustomers: Array<{ final: boolean }>;
+  /** CP §70 — each Gift's state, Programme and chosen Gift; never the Customer. */
+  royaltyCredits: Array<{
+    state: string;
+    held: boolean;
+    programmeRef: string;
+    selectedRewardRef: string | null;
+    deliveredAt: string | null;
+  }>;
   projects: Array<{ id: string; name: string }>;
   plots: Array<{ id: string; projectId: string; project: string; label: string; areaSqYd: string }>;
   buyers: Array<{ id: string; label: string }>;
@@ -407,6 +415,36 @@ export default function PortalClient({ data }: { data: PortalData }) {
                 {data.royaltyLinkedCustomers.filter((c) => !c.final).length} waiting for the first
                 purchase to be paid in full
               </p>
+            )}
+          </div>
+
+          <div className="border-t border-border/50 pt-4 space-y-3">
+            <h3 className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-emerald-700">
+              <Layers className="h-3 w-3" /> Royalty Relationship Reward
+            </h3>
+            {data.royaltyCredits.length === 0 ? (
+              <p className="text-muted-foreground">
+                One Gift is earned when a final linked Customer makes their first direct personal purchase
+                through 3% Club and it qualifies. Nothing is earned yet.
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {data.royaltyCredits.map((c, i) => (
+                  <li key={i} className="flex flex-wrap justify-between gap-2">
+                    <span>
+                      Royalty Credit · {c.programmeRef}
+                      {c.selectedRewardRef ? ` · Gift ${c.selectedRewardRef}` : ""}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {c.state === "DELIVERED" && c.deliveredAt
+                        ? `Delivered ${formatIst(c.deliveredAt)}`
+                        : c.held
+                          ? "On Hold"
+                          : c.state.charAt(0) + c.state.slice(1).toLowerCase()}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
 

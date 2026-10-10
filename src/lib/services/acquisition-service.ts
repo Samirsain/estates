@@ -42,6 +42,7 @@ import {
   reassessCommission,
 } from "./commission-service";
 import { syncRoyaltyLink } from "./network-service";
+import { refreshCreditOfBooking } from "./royalty-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
 const D = Prisma.Decimal;
@@ -410,6 +411,7 @@ export async function confirmPaymentGiven(args: {
         await settleBuyingCommission(tx, args.acquisitionId, args.actorRef);
       }
       await syncGivenFollowUp(tx, args.acquisitionId, args.actorRef);
+      await refreshStableCompletion(tx, args.acquisitionId, args.actorRef);
 
       await tx.acquisitionEvent.create({
         data: {
@@ -566,6 +568,7 @@ export async function correctPaymentGiven(args: {
       if (outcome.buyingCommissionMilestoneLost) {
         await stepBackBuyingCommission(tx, acquisition.id, args.actorRef, outcome.note);
       }
+      await refreshStableCompletion(tx, acquisition.id, args.actorRef);
 
       if (outcome.managementActionRequired) {
         await ensureTask(tx, {
@@ -826,6 +829,9 @@ export async function decideAcquisition(args: {
               closeReason: acquisition.sourceBooking.closeReason,
               completionId: priorCompletion?.id ?? null,
             },
+            // SSOT §61 — papers given out on the old sale must come back
+            // before the Buyback is stable.
+            documentsReturnRequired: priorCompletion !== null,
           },
         });
 
@@ -928,6 +934,7 @@ export async function decideAcquisition(args: {
           reason: args.note,
         },
       });
+      await refreshStableCompletion(tx, acquisition.id, args.actorRef);
 
       return {
         result: {
@@ -1043,6 +1050,89 @@ async function unwindApprovedBuyback(
   await raiseBuybackUnwindReview(tx, acquisition.sourceBookingId, reason);
 }
 
+/**
+ * SSOT §61; CP §51 — Stable Buyback Completion: Approved, Payment Given 100%,
+ * not unwound, and the old sale's papers back where it had any. Stored when
+ * achieved and cleared when lost, each with an event (CP §79). It releases
+ * Buyback-based Gift fulfilment (SSOT §80); it never accelerates Direct.
+ */
+export async function refreshStableCompletion(tx: Tx, acquisitionId: string, actorRef: string) {
+  const acquisition = await tx.acquisition.findUniqueOrThrow({ where: { id: acquisitionId } });
+  if (acquisition.type !== "BUYBACK") return false;
+  const stable =
+    acquisition.status === "APPROVED" &&
+    acquisition.paymentGivenPercent.gte(100) &&
+    (!acquisition.documentsReturnRequired || acquisition.documentsReturnedAt !== null);
+  if (stable === (acquisition.stableCompletedAt !== null)) return stable;
+
+  await tx.acquisition.update({ where: { id: acquisition.id }, data: { stableCompletedAt: stable ? new Date() : null } });
+  await tx.acquisitionEvent.create({
+    data: {
+      acquisitionId: acquisition.id,
+      actorRef,
+      action: stable ? "STABLE_COMPLETION_ACHIEVED" : "STABLE_COMPLETION_LOST",
+      reason: stable
+        ? "Approved, Payment Given 100%, not unwound, and the papers are back where required (SSOT §61)."
+        : "Stable Buyback Completion no longer holds (SSOT §61).",
+    },
+  });
+  if (acquisition.sourceBookingId) await refreshCreditOfBooking(tx, acquisition.sourceBookingId, actorRef);
+  return stable;
+}
+
+/**
+ * SSOT §61 — the old sale's Allotment papers collected back, or the Registry
+ * back completed. Closes the paper task the approval raised.
+ */
+export async function recordBuybackDocumentsReturned(args: {
+  idempotencyKey: string;
+  actorRef: string;
+  actorRole: string;
+  acquisitionId: string;
+  returnedOn: Date;
+}) {
+  if (!["CRM", "ADMIN", "MD"].includes(args.actorRole)) {
+    blocked("Only CRM, Admin or MD records the Buyback papers back.");
+  }
+  const dated = notFutureDated("Return date", args.returnedOn);
+  if (!dated.ok) blocked(dated.reason);
+
+  return runCommand<{ acquisitionId: string; stable: boolean }>(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "BUYBACK_DOCUMENTS_RETURNED",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { acquisitionId: args.acquisitionId },
+    },
+    async (tx) => {
+      await lockKey(tx, `acquisition:${args.acquisitionId}`);
+      const acquisition = await tx.acquisition.findUniqueOrThrow({ where: { id: args.acquisitionId } });
+      if (acquisition.status !== "APPROVED") blocked("Only an approved Buyback has papers to bring back.");
+      if (!acquisition.documentsReturnRequired) blocked("This Buyback has no papers to bring back.");
+      if (acquisition.documentsReturnedAt) blocked("The papers are already recorded as back.");
+      await tx.acquisition.update({
+        where: { id: acquisition.id },
+        data: { documentsReturnedAt: args.returnedOn, documentsReturnedByRef: args.actorRef },
+      });
+      await tx.acquisitionEvent.create({
+        data: { acquisitionId: acquisition.id, actorRef: args.actorRef, action: "DOCUMENTS_RETURNED" },
+      });
+      await closeTasksFor(tx, "Acquisition", acquisition.id, args.actorRef, "Papers back.", "BUYBACK_PAPERS");
+      const stable = await refreshStableCompletion(tx, acquisition.id, args.actorRef);
+      return {
+        result: { acquisitionId: acquisition.id, stable },
+        audit: {
+          entity: "Acquisition",
+          entityId: acquisition.id,
+          action: "BUYBACK_DOCUMENTS_RETURNED",
+          after: { returnedOn: args.returnedOn.toISOString(), stable },
+        },
+      };
+    }
+  );
+}
+
 /** PRD §11.4 — Deal Cancelled, only while no new buyer process is active. */
 export async function cancelAcquisitionDeal(args: {
   idempotencyKey: string;
@@ -1112,6 +1202,7 @@ export async function cancelAcquisitionDeal(args: {
       }
 
       await stepBackBuyingCommission(tx, acquisition.id, args.actorRef, `Deal cancelled — ${args.reason}`);
+      await refreshStableCompletion(tx, acquisition.id, args.actorRef);
       await closeTasksFor(tx, "Acquisition", acquisition.id, args.actorRef, `Deal cancelled — ${args.reason}`);
       await tx.acquisitionEvent.create({
         data: {

@@ -22,6 +22,7 @@ const REPORTS: Array<{ name: ReportName; label: string; note: string }> = [
   { name: "PAYMENTS_GIVEN", label: "Payment Given", note: "Money we pay out on Buyback and Resale. Never merged with the sale side." },
   { name: "COMMISSION", label: "Commission", note: "Direct, Customer Loyalty and Buying Commission — current records with their frozen rate and Project settings version." },
   { name: "LOYALTY", label: "Customer Loyalty", note: "Customer-closing (of three for life) and repeat-purchase Loyalty, reported apart." },
+  { name: "ROYALTY", label: "Royalty Relationship Reward", note: "Each Customer's Royalty relationship, its one opportunity, and the non-cash Gift it led to." },
   { name: "INVENTORY", label: "Plot Inventory", note: "Every Plot with status, restriction and resale flag." },
   { name: "COMPLETIONS", label: "Allotment / Registry", note: "Delivered Bookings and the route that completed them." },
 ];

@@ -16,6 +16,9 @@ export type EntryView = {
 
 export type AcquisitionRowView = {
   id: string;
+  documentsReturnRequired: boolean;
+  documentsReturnedAt: string | null;
+  stableCompletedAt: string | null;
   acquisitionNo: string;
   type: string;
   status: string;

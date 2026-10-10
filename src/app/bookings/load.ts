@@ -132,6 +132,8 @@ export const bookingRow = (b: Awaited<ReturnType<typeof listBookings>>[number]):
               : null,
         }
       : null,
+    // SSOT §76 — the Royalty Gift Programme the request froze, if one was live.
+    royaltyProgramme: b.royaltyProgrammeVersion?.programmeRef ?? null,
     // The buyer's Member ID only where they hold an Active Member profile now.
     // Null keeps an ordinary Booking silent about a distinction it does not have.
     buyerMemberIdNow:

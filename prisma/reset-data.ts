@@ -28,6 +28,8 @@ async function main() {
 
   // Leaves of the commission tree first.
   await db.recovery.deleteMany({});
+  await db.royaltyCreditEvent.deleteMany({});
+  await db.royaltyCredit.deleteMany({});
   await db.commissionEvent.deleteMany({});
   await db.commissionRecord.deleteMany({});
   // CR-014 — a position points at its cycle, and the cycle points at the Member,
@@ -57,6 +59,7 @@ async function main() {
   // v2.1 §15 — a Booking names its frozen commission version, so the versions
   // leave after the Bookings and before their Projects.
   await db.projectCommissionVersion.deleteMany({});
+  await db.royaltyProgrammeVersion.deleteMany({});
 
   await db.enquiryFollowUp.deleteMany({});
   await db.enquiry.deleteMany({});

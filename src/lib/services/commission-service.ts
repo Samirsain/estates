@@ -30,6 +30,7 @@ import { normaliseReference, notFutureDated } from "@/lib/domain/booking";
 import { hasVerifiedBank } from "./bank-service";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { activateDueVersions } from "./commission-settings-service";
+import { liveRoyaltyProgramme } from "./royalty-programme-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
 const D = Prisma.Decimal;
@@ -85,8 +86,11 @@ export async function freezeAtSubmission(
     where: { personId: args.buyerPersonId },
     select: { status: true },
   });
+  // SSOT §76; CP §10 — and the Royalty Gift Programme Version live now, if any.
+  const programme = await liveRoyaltyProgramme(tx);
   return {
     commissionVersionId: version.id,
+    royaltyProgrammeVersionId: programme?.id ?? null,
     originalClassification: (buyer?.status === "ACTIVE" ? "MEMBER" : "CUSTOMER") as "MEMBER" | "CUSTOMER",
     loyaltySubjectDeactivated: await loyaltySubjectDeactivated(tx, args),
     terms: { versionId: version.id, ...termsOf(version) },
@@ -1094,7 +1098,8 @@ export async function raiseBuybackUnwindReview(tx: Tx, bookingId: string, reason
     decision: true,
     latestResult:
       `Buyback unwound — ${reason}. Source Payment Received ` +
-      `${booking.paymentReceivedPercent.toFixed(2)}%; anything the Buyback alone qualified is stepped back. ` +
+      `${booking.paymentReceivedPercent.toFixed(2)}%; anything the Buyback alone qualified — Loyalty, a Royalty ` +
+      `Credit not yet delivered — is stepped back. ` +
       (adjustments > 0
         ? `${adjustments} paid record${adjustments === 1 ? "" : "s"} need${adjustments === 1 ? "s" : ""} an Accounts adjustment.`
         : "No paid record needs adjustment."),
@@ -1241,7 +1246,9 @@ export async function cancelCommissionForBooking(
       decision: true,
       latestResult:
         `Source Payment Received ${received.toFixed(2)}% — 25% reward gate ` +
-        (gateMet ? "met: Loyalty may qualify by the Buyback." : "not met: no reward qualifies by the Buyback.") +
+        (gateMet
+          ? "met: Loyalty and the Royalty Gift may qualify by the Buyback; Gift fulfilment waits for Stable Buyback Completion."
+          : "not met: no reward qualifies by the Buyback.") +
         ` Direct stays on its normal milestone. ` +
         (remainsEarned ? `${n} still earned; check the written arrangement.` : `${n} reviewed.`),
     });

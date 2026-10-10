@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { istDay } from "@/lib/tasks";
 import { settleConstraints } from "@/lib/services/command";
 import { activateDueVersions } from "@/lib/services/commission-settings-service";
+import { activateDueRoyaltyProgrammes } from "@/lib/services/royalty-programme-service";
 import { releaseHold } from "@/lib/services/hold-service";
 import { syncPaymentFollowUp } from "@/lib/services/payment-service";
 import { ensureTask, reviseTask } from "@/lib/services/task-service";
@@ -247,7 +248,8 @@ export async function runPreSalesJobs(now: Date = new Date()): Promise<JobResult
 export function runCommissionVersionActivation(_now: Date = new Date()): Promise<JobResult> {
   return withRun("COMMISSION_VERSION_ACTIVATION", async () => {
     const changed = await db.$transaction(async (tx) => {
-      const activated = await activateDueVersions(tx);
+      // SSOT §76 — the Royalty Gift Programme Version follows the same clock.
+      const activated = (await activateDueVersions(tx)) + (await activateDueRoyaltyProgrammes(tx));
       await settleConstraints(tx);
       return activated;
     });

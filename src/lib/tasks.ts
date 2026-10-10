@@ -348,6 +348,12 @@ export function recordHref(
   if (record.kind === "Commission") {
     return subject?.bookingId ? `/bookings?booking=${subject.bookingId}` : null;
   }
+  // SSOT §81 — a Gift is fulfilled from the owning Member's page.
+  if (record.kind === "Royalty Credit") {
+    return subject?.partyPersonId ? `/people/${subject.partyPersonId}?as=member` : null;
+  }
+  // CP §65 NT07 — Royalty Gift Programme Versions are approved in Administration.
+  if (record.kind === "Royalty Programme") return "/administration";
   if (!INTERNAL_ID.test(record.id)) return null;
   switch (record.kind) {
     case "Booking":

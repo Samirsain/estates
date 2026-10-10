@@ -163,6 +163,7 @@ export async function taskSubjects(
   const plotIds = idsFor("Plot");
   const acquisitionIds = idsFor("Acquisition");
   const commissionIds = idsFor("Commission");
+  const creditIds = idsFor("Royalty Credit");
 
   /** A Person carries at most one of each id; the task is about the Person. */
   const party = (person: {
@@ -184,7 +185,7 @@ export async function taskSubjects(
     customerProfile: { select: { customerId: true } },
   } as const;
 
-  const [bookings, enquiries, members, customers, plots, acquisitions, commissions] =
+  const [bookings, enquiries, members, customers, plots, acquisitions, commissions, credits] =
     await Promise.all([
       bookingIds.length
         ? db.booking.findMany({
@@ -257,6 +258,23 @@ export async function taskSubjects(
                 },
               },
               beneficiaryPerson: { select: personSelect },
+            },
+          })
+        : [],
+      // SSOT §81 — a Royalty Credit's work is about the Member who owns it.
+      creditIds.length
+        ? db.royaltyCredit.findMany({
+            where: { id: { in: creditIds } },
+            select: {
+              id: true,
+              triggerBooking: {
+                select: {
+                  bookingNumber: true,
+                  project: { select: { name: true } },
+                  plot: { select: { id: true, plotNumber: true } },
+                },
+              },
+              memberProfile: { select: { person: { select: personSelect } } },
             },
           })
         : [],
@@ -337,6 +355,16 @@ export async function taskSubjects(
       // Booking's id, not only its number.
       bookingId: r.booking?.id ?? null,
       ...party(r.beneficiaryPerson),
+    });
+  }
+
+  for (const c of credits) {
+    add(c.id, {
+      project: c.triggerBooking.project.name,
+      plot: c.triggerBooking.plot.plotNumber,
+      plotId: c.triggerBooking.plot.id,
+      reference: c.triggerBooking.bookingNumber,
+      ...party(c.memberProfile.person),
     });
   }
 

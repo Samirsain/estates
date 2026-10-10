@@ -748,3 +748,37 @@ ALTER TABLE "Recovery" ADD CONSTRAINT "recovery_cleared_stamps"
 -- One open Recovery per invalid benefit.
 CREATE UNIQUE INDEX IF NOT EXISTS "one_outstanding_recovery_per_record"
   ON "Recovery" ("commissionRecordId") WHERE "status" = 'OUTSTANDING';
+
+-- ------------------------------------- Business Model v2 part 2 — Royalty Gift
+
+-- SSOT §74, §75; CP §80 (7), (8) — one live Royalty Credit per Primary Customer,
+-- and one per trigger Booking (the column is unique).
+CREATE UNIQUE INDEX IF NOT EXISTS "one_live_royalty_credit_per_customer"
+  ON "RoyaltyCredit" ("customerProfileId") WHERE "state" <> 'REVERSED';
+
+-- SSOT §64, §78 — a delivered Gift names what, to whom and when; a reversed
+-- Credit names why. A non-family recipient was approved by MD (doc 5 §6).
+ALTER TABLE "RoyaltyCredit" DROP CONSTRAINT IF EXISTS "royalty_credit_stamps";
+ALTER TABLE "RoyaltyCredit" ADD CONSTRAINT "royalty_credit_stamps"
+  CHECK (("state" NOT IN ('SELECTED', 'ORDERED', 'DELIVERED')
+          OR ("selectedRewardRef" IS NOT NULL AND "selectedAt" IS NOT NULL AND "recipient" IS NOT NULL))
+     AND ("state" NOT IN ('ORDERED', 'DELIVERED') OR ("orderedAt" IS NOT NULL AND "orderReference" IS NOT NULL))
+     AND ("state" <> 'DELIVERED' OR "deliveredAt" IS NOT NULL)
+     AND ("state" NOT IN ('ORDERED', 'DELIVERED') OR "recipient" <> 'NON_FAMILY' OR "recipientApprovedAt" IS NOT NULL)
+     AND ("state" <> 'REVERSED' OR ("reversedAt" IS NOT NULL AND length(btrim(coalesce("reversalReason", ''))) > 0)));
+
+-- SSOT §76; Terms 6.2 §38; CP §7.4 — an approved Programme Version carries its
+-- approver, the economics review, and an effective time no earlier than approval.
+ALTER TABLE "RoyaltyProgrammeVersion" DROP CONSTRAINT IF EXISTS "royalty_programme_stamps";
+ALTER TABLE "RoyaltyProgrammeVersion" ADD CONSTRAINT "royalty_programme_stamps"
+  CHECK (length(btrim("programmeRef")) > 0 AND length(btrim("catalogueVersion")) > 0
+     AND length(btrim("termsVersion")) > 0
+     AND ("status" NOT IN ('APPROVED', 'ACTIVE', 'SUPERSEDED')
+          OR ("decidedByRef" IS NOT NULL AND "decidedAt" IS NOT NULL
+              AND "economicsReviewedAt" IS NOT NULL AND "economicsReviewedByRef" IS NOT NULL
+              AND "effectiveFrom" IS NOT NULL AND "effectiveFrom" >= "decidedAt"))
+     AND ("status" = 'DRAFT' OR "submittedAt" IS NOT NULL));
+CREATE UNIQUE INDEX IF NOT EXISTS "one_active_royalty_programme"
+  ON "RoyaltyProgrammeVersion" ((true)) WHERE "status" = 'ACTIVE';
+CREATE UNIQUE INDEX IF NOT EXISTS "one_open_royalty_programme"
+  ON "RoyaltyProgrammeVersion" ((true)) WHERE "status" IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED');

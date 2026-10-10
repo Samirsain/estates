@@ -18,7 +18,8 @@ export type ReportName =
   | "COMMISSION"
   | "INVENTORY"
   | "COMPLETIONS"
-  | "LOYALTY";
+  | "LOYALTY"
+  | "ROYALTY";
 
 /** CP §73.5 — the two Loyalty routes, named the same on every report. */
 const ROUTE: Record<string, string> = {
@@ -178,6 +179,48 @@ export async function runReport(
           repeatPurchaseEvents:
             r.beneficiaryRole === "REPEAT_PURCHASE_CUSTOMER" ? (repeats.get(r.beneficiaryPersonId) ?? 0) : null,
         }));
+    }
+
+    case "ROYALTY": {
+      // CP §73.4; UAT VIS-10 — the relationship, its opportunity and the Gift it
+      // led to. Non-cash: no rate or amount column exists to show.
+      const rows = await db.customerProfile.findMany({
+        where: { royaltyLinkFirstBookingId: { not: null }, person: NOT_MERGED_AWAY },
+        include: {
+          person: { select: { fullName: true } },
+          royaltyLinkedMember: { select: { memberId: true, person: { select: { fullName: true } } } },
+          royaltyLinkFirstBooking: { select: { bookingNumber: true, projectId: true, project: { select: { name: true } } } },
+          royaltyCredits: {
+            where: { state: { not: "REVERSED" } },
+            include: { triggerBooking: { select: { bookingNumber: true } }, programmeVersion: { select: { programmeRef: true } } },
+            take: 1,
+          },
+        },
+        orderBy: { customerId: "asc" },
+      });
+      return rows
+        .filter((c) => !filters.projectId || c.royaltyLinkFirstBooking?.projectId === filters.projectId)
+        .map((c) => {
+          const credit = c.royaltyCredits[0];
+          return {
+            customerId: c.customerId,
+            customer: c.person.fullName,
+            royaltyLinkedMember: c.royaltyLinkedMember
+              ? `${c.royaltyLinkedMember.memberId} · ${c.royaltyLinkedMember.person.fullName}`
+              : null,
+            sourceFirstBooking: c.royaltyLinkFirstBooking?.bookingNumber ?? null,
+            project: c.royaltyLinkFirstBooking?.project.name ?? null,
+            relationship: !c.royaltyLinkedMemberId ? "No Member" : c.royaltyLinkFinalAt ? "Final" : "Provisional",
+            finalisedBy: c.royaltyLinkFinalRoute,
+            opportunity: c.royaltyOpportunityConsumedAt ? "Consumed" : "Unused",
+            triggerBooking: credit?.triggerBooking.bookingNumber ?? null,
+            programmeVersion: credit?.programmeVersion.programmeRef ?? null,
+            giftState: credit?.state ?? null,
+            holdReason: credit?.holdReason ?? null,
+            selectedGift: credit?.selectedRewardRef ?? null,
+            deliveredOn: credit?.deliveredAt ?? null,
+          };
+        });
     }
 
     case "INVENTORY": {

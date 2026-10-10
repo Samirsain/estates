@@ -1,60 +1,102 @@
-// Member activation, who invited whom, and the Royalty Linked Member.
-// Business Model v2.1 §26, §49–§51; prd-complete §7.1, §14.3.
+// Member activation, who invited whom, and the Royalty relationship.
+// SSOT §37, §67–§71; prd-complete §7.1, §14.3.
 //
-// v2.1 §1 retires the Invite and Royalty positions, bands and cycles. What
-// stays is the relationship itself: the inviting Member (part 3, Trip
-// Reference Credit) and the Royalty Linked Member (part 2, Royalty Gift).
+// The Invite and Royalty positions, bands and cycles are gone (Removal Audit
+// OL-02 to OL-14). What stays is the relationship itself: the inviting Member
+// (Part 3, Reference Credit) and the Royalty Linked Member (Part 2, Gift).
 
+import type { Prisma } from "@prisma/client";
 import { BUYBACK_MIN_SOURCE_PAYMENT } from "@/lib/domain/commission";
 import { INITIAL_PORTAL_PASSWORD, hashPassword } from "@/lib/security/auth";
 import { blocked, nextReference, runCommand, type Tx } from "./command";
 import { CLOSING_LIMIT_PURPOSE, reassessCommission } from "./commission-service";
+import {
+  originalPurchasesOf,
+  refreshCreditsOfMember,
+  reverseUndeliveredCredit,
+  syncRoyaltyReward,
+} from "./royalty-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
 /**
- * CR-001 – CR-004 — the Royalty Linked Member, recomputed from the Bookings
- * themselves.
+ * The Royalty relationship — SSOT §67–§71; CP §40–§42 — recomputed from the
+ * Bookings themselves, then the Royalty Credit it may lead to (SSOT §72).
  *
- * One idempotent function rather than an establish/finalise/remove trio: every
- * event that could move the link (approval, a payment reaching 100%, an
- * approved Buyback, a cancellation) just calls this, and the answer is derived
- * from current state. That is what makes "a cancelled first Booking consumes no
- * position, and a later valid first purchase may establish a new link" fall out
- * rather than needing its own path.
- *
- * The rules, in the order they apply:
+ * One idempotent function: every event that could move the link (approval, a
+ * payment, a Buyback approved or unwound, a cancellation, a Sold By
+ * Correction) calls this, and the answer is derived from current state.
  *
  * - the first qualifying purchase is the Customer's earliest approved Booking
- *   as Primary Customer; an exact tie goes to the lower Booking Number;
- * - Sold By Member on it stores that Member as the provisional link; Sold By
- *   3% CLUB or Sold By Customer stores no Member at all (CR-003);
- * - the link becomes final at 100% verified Payment Received, or at an
- *   Approved Buyback on that same Booking once it has 25% received (v2.1 §49);
- * - a final link is never recomputed. Not by a later sale, not by a later
- *   cancellation: CR-003's "no Royalty Member" is as final as a named one.
- *
- * No position is taken any more (v2.1 §48): the link is the whole of it.
+ *   as original Primary Customer; an exact tie goes to the lower Booking Number;
+ * - Sold By Member on it is the Provisional Royalty Linked Member; Sold By
+ *   3% Club or Sold By Customer means no Member relationship (SSOT §71);
+ * - it becomes Final at 100% verified Payment Received, or at an Approved
+ *   Buyback on that Booking once it has 25% received (SSOT §68, §59);
+ * - a Final link is not recomputed by later sales or cancellations, except
+ *   that a link made final only by a Buyback goes back to Provisional if that
+ *   Buyback unwinds before 100% and the opportunity is still unused (SSOT §62),
+ *   and a Sold By Correction on the first purchase re-links it (CP §59; see
+ *   `relinkAfterSoldByCorrection`).
  */
 export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string) {
-  const customer = await tx.customerProfile.findUnique({ where: { personId } });
+  const linked = await syncLink(tx, personId, actorRef);
+  await syncRoyaltyReward(tx, personId, actorRef);
+  return linked;
+}
+
+/** The first qualifying purchase's Buyback-or-payment milestone, if reached. */
+async function finalisationRoute(
+  tx: Tx,
+  booking: { id: string; paymentReceivedPercent: Prisma.Decimal }
+): Promise<"PAYMENT_100" | "APPROVED_BUYBACK" | null> {
+  if (booking.paymentReceivedPercent.gte(100)) return "PAYMENT_100";
+  if (booking.paymentReceivedPercent.lt(BUYBACK_MIN_SOURCE_PAYMENT)) return null;
+  const buyback = await tx.acquisition.count({
+    where: { sourceBookingId: booking.id, type: "BUYBACK", status: "APPROVED" },
+  });
+  return buyback > 0 ? "APPROVED_BUYBACK" : null;
+}
+
+async function syncLink(tx: Tx, personId: string, actorRef: string) {
+  let customer = await tx.customerProfile.findUnique({ where: { personId } });
   if (!customer) return null;
+
+  // SSOT §62 — a Buyback-only finalisation unwinds with its Buyback.
+  if (
+    customer.royaltyLinkFinalAt &&
+    customer.royaltyLinkFinalRoute === "APPROVED_BUYBACK" &&
+    !customer.royaltyOpportunityConsumedAt &&
+    customer.royaltyLinkFirstBookingId
+  ) {
+    const first = await tx.booking.findUniqueOrThrow({ where: { id: customer.royaltyLinkFirstBookingId } });
+    if ((await finalisationRoute(tx, first)) === null) {
+      customer = await tx.customerProfile.update({
+        where: { id: customer.id },
+        data: { royaltyLinkFinalAt: null, royaltyLinkFinalRoute: null },
+      });
+      await tx.bookingEvent.create({
+        data: {
+          bookingId: first.id,
+          actorRef,
+          action: "ROYALTY_LINK_PROVISIONAL_AGAIN",
+          reason:
+            "The Approved Buyback that made this Royalty relationship final has unwound before 100% " +
+            "Payment Received, so the relationship is provisional again (SSOT §62).",
+        },
+      });
+    }
+  }
   if (customer.royaltyLinkFinalAt) return customer.royaltyLinkedMemberId;
 
-  const first = await tx.booking.findFirst({
-    where: {
-      primaryPersonId: personId,
-      bookingNumber: { not: null },
-      approvedAt: { not: null },
-      status: { notIn: ["CANCELLED", "REQUEST_REJECTED", "REQUEST_CANCELLED"] },
-    },
-    // CR-002 — "if qualifying timestamps are equal, lower permanent Booking
-    // Number wins".
-    orderBy: [{ approvedAt: "asc" }, { bookingNumber: "asc" }],
-  });
+  const candidates = (await originalPurchasesOf(tx, personId)).sort(
+    (a, b) =>
+      a.approvedAt!.getTime() - b.approvedAt!.getTime() || (a.bookingNumber! < b.bookingNumber! ? -1 : 1)
+  );
+  const first = candidates[0];
 
   if (!first) {
-    // Every candidate is gone, so the provisional link goes with them. History
-    // stays on the Booking events; nothing was ever consumed.
+    // SSOT §70 — every candidate is gone, so the provisional link goes with
+    // them. History stays on the Booking events; nothing was consumed.
     if (customer.royaltyLinkFirstBookingId) {
       await tx.bookingEvent.create({
         data: {
@@ -62,8 +104,8 @@ export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string
           actorRef,
           action: "ROYALTY_LINK_REMOVED",
           reason:
-            "The Booking that held the unconfirmed Royalty link is no longer a qualifying first " +
-            "purchase. Nothing was consumed (v2.1 §50).",
+            "The Booking that held the provisional Royalty relationship is no longer a qualifying first " +
+            "purchase. The opportunity was not consumed (SSOT §70).",
         },
       });
       await tx.customerProfile.update({
@@ -93,30 +135,21 @@ export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string
         actorRef,
         action: "ROYALTY_LINK_PROVISIONAL",
         reason: linkedMember
-          ? `Royalty Linked Member named, not confirmed yet — ${linkedMember.memberId}, Sold By ` +
-            `Member on this first qualifying purchase. It is confirmed when this purchase is paid ` +
-            `in full (CR-002).`
+          ? `Provisional Royalty Linked Member — ${linkedMember.memberId}, Sold By Member on this first ` +
+            `qualifying purchase. It becomes final when this purchase is paid in full (SSOT §68).`
           : `No Royalty Linked Member — this first qualifying purchase was ${
               first.soldByType === "CUSTOMER" ? "Sold By Customer" : "Sold By 3% CLUB"
-            } (CR-003).`,
+            } (SSOT §71).`,
       },
     });
   }
 
-  // v2.1 §49 — the two milestones that make the link final. The Buyback counts
-  // only once the purchase has 25% verified Payment Received (§41).
-  const paidInFull = first.paymentReceivedPercent.gte(100);
-  const approvedBuyback =
-    paidInFull || first.paymentReceivedPercent.lt(BUYBACK_MIN_SOURCE_PAYMENT)
-      ? 0
-      : await tx.acquisition.count({
-          where: { sourceBookingId: first.id, type: "BUYBACK", status: "APPROVED" },
-        });
-  if (!paidInFull && approvedBuyback === 0) return linkedMember?.id ?? null;
+  const route = await finalisationRoute(tx, first);
+  if (!route) return linkedMember?.id ?? null;
 
   await tx.customerProfile.update({
     where: { id: customer.id },
-    data: { royaltyLinkFinalAt: new Date() },
+    data: { royaltyLinkFinalAt: new Date(), royaltyLinkFinalRoute: route },
   });
   await tx.bookingEvent.create({
     data: {
@@ -125,14 +158,49 @@ export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string
       action: "ROYALTY_LINK_FINAL",
       reason: linkedMember
         ? `Royalty Linked Member final — ${linkedMember.memberId}, on ${
-            paidInFull ? "100% Payment Received" : "an Approved Buyback"
-          } (v2.1 §49).`
+            route === "PAYMENT_100" ? "100% Payment Received" : "an Approved Buyback"
+          } (SSOT §68).`
         : `No Royalty Linked Member, now final on ${
-            paidInFull ? "100% Payment Received" : "an Approved Buyback"
-          }. No later sale can create one (v2.1 §51).`,
+            route === "PAYMENT_100" ? "100% Payment Received" : "an Approved Buyback"
+          }. No later sale can create one (SSOT §71).`,
     },
   });
   return linkedMember?.id ?? null;
+}
+
+/**
+ * CP §59 — a Sold By Correction on the Customer's first qualifying purchase
+ * re-links the relationship to the corrected closer, final or not. A Royalty
+ * Credit not yet delivered moves with it: the old one is reversed and the
+ * reward sync gives the corrected Member a new one under the same rules. A
+ * delivered Gift stays consumed (SSOT §98); only the history changes.
+ */
+export async function relinkAfterSoldByCorrection(tx: Tx, bookingId: string, actorRef: string) {
+  const booking = await tx.booking.findUniqueOrThrow({ where: { id: bookingId } });
+  const customer = await tx.customerProfile.findFirst({ where: { royaltyLinkFirstBookingId: bookingId } });
+  if (customer) {
+    const member =
+      booking.soldByType === "MEMBER" && booking.soldByPersonId
+        ? await tx.memberProfile.findUnique({ where: { personId: booking.soldByPersonId } })
+        : null;
+    if (customer.royaltyLinkedMemberId !== (member?.id ?? null)) {
+      await tx.customerProfile.update({ where: { id: customer.id }, data: { royaltyLinkedMemberId: member?.id ?? null } });
+      await tx.bookingEvent.create({
+        data: {
+          bookingId,
+          actorRef,
+          action: "ROYALTY_LINK_CORRECTED",
+          reason: member
+            ? `Sold By corrected — Royalty Linked Member is now ${member.memberId} (CP §59).`
+            : "Sold By corrected — this first purchase now has no Royalty Linked Member (CP §59).",
+        },
+      });
+      await reverseUndeliveredCredit(tx, customer.id, actorRef, "Sold By corrected on the first purchase (CP §59).");
+    }
+    await syncRoyaltyReward(tx, customer.personId, actorRef);
+  }
+  // The corrected Booking may itself be a reward trigger (its Sold By moved).
+  await syncRoyaltyLink(tx, booking.primaryPersonId, actorRef);
 }
 
 /**
@@ -375,6 +443,8 @@ export async function setMemberStatus(args: {
         // Buying Commission hangs off an Acquisition rather than a Booking.
         if (bookingId) await reassessCommission(tx, bookingId, args.actorRef);
       }
+      // SSOT §82; CP §86 — the Member's Gift fulfilment holds or resumes too.
+      await refreshCreditsOfMember(tx, member.personId, args.actorRef);
 
       return {
         result: { memberProfileId: member.id, status: next, reassessedBookings: affected.length },

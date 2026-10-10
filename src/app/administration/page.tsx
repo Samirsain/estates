@@ -5,6 +5,7 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { can, canViewField } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
 import AdministrationClient from "./administration-client";
+import RoyaltyProgrammes from "./royalty-programmes";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export default async function AdministrationPage() {
   // outside people and stay masked wherever they appear.
   const canSeeStaffContact = can(actor.role, "STAFF_MANAGE", actor.extraPermissions);
 
-  const [staff, queuedTasks, queuedEnquiries, merges, recentAudit] = await Promise.all([
+  const [staff, queuedTasks, queuedEnquiries, merges, recentAudit, programmes] = await Promise.all([
     db.staffAccount.findMany({
       include: { person: true, _count: { select: { assignedTasks: true, assignedEnquiries: true } } },
       orderBy: [{ status: "asc" }, { staffAccountId: "asc" }],
@@ -41,75 +42,96 @@ export default async function AdministrationPage() {
     can(actor.role, "AUDIT_VIEW", actor.extraPermissions)
       ? db.auditEvent.findMany({ orderBy: { at: "desc" }, take: 50 })
       : Promise.resolve([]),
+    // SSOT §76 — the Royalty Gift Programme Versions, newest first.
+    db.royaltyProgrammeVersion.findMany({ orderBy: { version: "desc" }, take: 30 }),
   ]);
 
   return (
-    <AdministrationClient
-      role={actor.role}
-      actorName={actor.name}
-      staffAccountId={actor.staffAccountId}
-      canEmergencyDisable={can(actor.role, "STAFF_EMERGENCY_DISABLE", actor.extraPermissions)}
-      canReassign={can(actor.role, "WORK_REASSIGN", actor.extraPermissions)}
-      canMerge={can(actor.role, "PERSON_MERGE", actor.extraPermissions)}
-      canManagePermissions={can(actor.role, "ROLE_PERMISSION_MANAGE", actor.extraPermissions)}
-      canRevealIdentity={canViewField(actor.role, "AADHAAR_FULL")}
-      staff={staff.map((account) => ({
-        id: account.id,
-        staffAccountId: account.staffAccountId,
-        name: account.person.fullName,
-        mobileMasked: canSeeStaffContact
-          ? account.person.primaryMobile
-          : maskMobile(account.person.primaryMobile),
-        city: account.person.city,
-        createdAt: account.createdAt.toISOString(),
-        role: account.role,
-        extraPermissions: account.extraPermissions,
-        status: account.status,
-        emergencyDisabled: account.emergencyDisabled,
-        disabledAt: account.disabledAt?.toISOString() ?? null,
-        disabledReason: account.disabledReason,
-        lastLoginAt: account.lastLoginAt?.toISOString() ?? null,
-        openTasks: account._count.assignedTasks,
-        openEnquiries: account._count.assignedEnquiries,
-      }))}
-      queuedTasks={queuedTasks.map((task) => ({
-        id: task.id,
-        taskNo: task.taskNo,
-        title: task.title,
-        recordName: task.recordName,
-        dueAt: task.dueAt.toISOString(),
-      }))}
-      queuedEnquiries={queuedEnquiries.map((enquiry) => ({
-        id: enquiry.id,
-        enquiryNo: enquiry.enquiryNo,
-        person: enquiry.person.fullName,
-        project: enquiry.project.name,
-      }))}
-      merges={merges.map((merge) => ({
-        id: merge.id,
-        status: merge.status,
-        survivor: merge.survivingPerson.fullName,
-        survivorMobile: maskMobile(merge.survivingPerson.primaryMobile),
-        survivorCity: merge.survivingPerson.city ?? "—",
-        merged: merge.mergedPerson.fullName,
-        mergedMobile: maskMobile(merge.mergedPerson.primaryMobile),
-        mergedCity: merge.mergedPerson.city ?? "—",
-        reason: merge.reason,
-        requestedByRef: merge.requestedByRef,
-        requestedAt: merge.requestedAt.toISOString(),
-        decidedByRef: merge.decidedByRef,
-        loyaltyRebuiltTo: merge.loyaltyRebuiltTo,
-      }))}
-      audit={recentAudit.map((event) => ({
-        id: event.id,
-        at: event.at.toISOString(),
-        actorRef: event.actorRef,
-        actorRole: event.actorRole,
-        entity: event.entity,
-        entityId: event.entityId,
-        action: event.action,
-        reason: event.reason,
-      }))}
-    />
+    <div className="space-y-4">
+      <AdministrationClient
+        role={actor.role}
+        actorName={actor.name}
+        staffAccountId={actor.staffAccountId}
+        canEmergencyDisable={can(actor.role, "STAFF_EMERGENCY_DISABLE", actor.extraPermissions)}
+        canReassign={can(actor.role, "WORK_REASSIGN", actor.extraPermissions)}
+        canMerge={can(actor.role, "PERSON_MERGE", actor.extraPermissions)}
+        canManagePermissions={can(actor.role, "ROLE_PERMISSION_MANAGE", actor.extraPermissions)}
+        canRevealIdentity={canViewField(actor.role, "AADHAAR_FULL")}
+        staff={staff.map((account) => ({
+          id: account.id,
+          staffAccountId: account.staffAccountId,
+          name: account.person.fullName,
+          mobileMasked: canSeeStaffContact
+            ? account.person.primaryMobile
+            : maskMobile(account.person.primaryMobile),
+          city: account.person.city,
+          createdAt: account.createdAt.toISOString(),
+          role: account.role,
+          extraPermissions: account.extraPermissions,
+          status: account.status,
+          emergencyDisabled: account.emergencyDisabled,
+          disabledAt: account.disabledAt?.toISOString() ?? null,
+          disabledReason: account.disabledReason,
+          lastLoginAt: account.lastLoginAt?.toISOString() ?? null,
+          openTasks: account._count.assignedTasks,
+          openEnquiries: account._count.assignedEnquiries,
+        }))}
+        queuedTasks={queuedTasks.map((task) => ({
+          id: task.id,
+          taskNo: task.taskNo,
+          title: task.title,
+          recordName: task.recordName,
+          dueAt: task.dueAt.toISOString(),
+        }))}
+        queuedEnquiries={queuedEnquiries.map((enquiry) => ({
+          id: enquiry.id,
+          enquiryNo: enquiry.enquiryNo,
+          person: enquiry.person.fullName,
+          project: enquiry.project.name,
+        }))}
+        merges={merges.map((merge) => ({
+          id: merge.id,
+          status: merge.status,
+          survivor: merge.survivingPerson.fullName,
+          survivorMobile: maskMobile(merge.survivingPerson.primaryMobile),
+          survivorCity: merge.survivingPerson.city ?? "—",
+          merged: merge.mergedPerson.fullName,
+          mergedMobile: maskMobile(merge.mergedPerson.primaryMobile),
+          mergedCity: merge.mergedPerson.city ?? "—",
+          reason: merge.reason,
+          requestedByRef: merge.requestedByRef,
+          requestedAt: merge.requestedAt.toISOString(),
+          decidedByRef: merge.decidedByRef,
+          loyaltyRebuiltTo: merge.loyaltyRebuiltTo,
+        }))}
+        audit={recentAudit.map((event) => ({
+          id: event.id,
+          at: event.at.toISOString(),
+          actorRef: event.actorRef,
+          actorRole: event.actorRole,
+          entity: event.entity,
+          entityId: event.entityId,
+          action: event.action,
+          reason: event.reason,
+        }))}
+      />
+      {(actor.role === "ADMIN" || actor.role === "MD") && (
+        <RoyaltyProgrammes
+          role={actor.role}
+          versions={programmes.map((v) => ({
+            id: v.id,
+            version: v.version,
+            status: v.status,
+            programmeRef: v.programmeRef,
+            catalogueVersion: v.catalogueVersion,
+            termsVersion: v.termsVersion,
+            reason: v.reason,
+            decisionNote: v.decisionNote,
+            effectiveFrom: v.effectiveFrom?.toISOString() ?? null,
+            economicsReviewedAt: v.economicsReviewedAt?.toISOString() ?? null,
+          }))}
+        />
+      )}
+    </div>
   );
 }

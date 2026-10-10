@@ -51,6 +51,10 @@ export function toAcquisitionRow(a: AcquisitionWithRelations): AcquisitionRowVie
       : null,
     purchaseDate: a.purchaseDate.toISOString(),
     paymentGivenPercent: a.paymentGivenPercent.toFixed(2),
+    // SSOT §61 — the papers back where required, and Stable Buyback Completion.
+    documentsReturnRequired: a.documentsReturnRequired,
+    documentsReturnedAt: a.documentsReturnedAt?.toISOString() ?? null,
+    stableCompletedAt: a.stableCompletedAt?.toISOString() ?? null,
     remark: a.remark,
     decisionNote: a.decisionNote,
     closedReason: a.closedReason,

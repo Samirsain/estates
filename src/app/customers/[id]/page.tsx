@@ -119,6 +119,8 @@ export default async function CustomerDetailPage({
       royaltyLinkedMember: { include: { person: true } },
       royaltyLinkFirstBooking: { select: { id: true, bookingNumber: true, requestNo: true } },
       termsAcceptances: { orderBy: { acceptedOn: "desc" } },
+      // SSOT §74, §78 — the one Royalty opportunity and the Credit it created.
+      royaltyCredits: { where: { state: { not: "REVERSED" } }, take: 1 },
     },
   });
 
@@ -792,8 +794,21 @@ export default async function CustomerDetailPage({
               }
               hint={
                 customer.royaltyLinkFinalAt
-                  ? formatIst(customer.royaltyLinkFinalAt)
+                  ? `${formatIst(customer.royaltyLinkFinalAt)}${
+                      customer.royaltyLinkFinalRoute === "APPROVED_BUYBACK" ? " · by Buyback" : ""
+                    }`
                   : undefined
+              }
+            />
+            <Stat
+              label="Royalty opportunity"
+              value={customer.royaltyOpportunityConsumedAt ? "Consumed" : "Unused"}
+              hint={
+                customer.royaltyCredits[0]
+                  ? `Gift ${customer.royaltyCredits[0].state.toLowerCase()}`
+                  : customer.royaltyLinkedMemberId
+                    ? "One Gift for the linked Member on the first Club-direct repeat purchase"
+                    : undefined
               }
             />
           </dl>

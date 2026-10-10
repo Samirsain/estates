@@ -31,6 +31,7 @@ import { MergeButton } from "@/app/customers/[id]/merge-button";
 import { MemberActions } from "./member-actions";
 import { AddTaskButton } from "./add-task-button";
 import PortalAccess from "./portal-access";
+import RoyaltyCredits from "./royalty-credits";
 import {
   ArrowLeft,
   Banknote,
@@ -161,6 +162,7 @@ export default async function MemberDetailPage({
     audit,
     merges,
     tasks,
+    royaltyCredits,
   ] = await Promise.all([
     db.commissionRecord.findMany({
       where: {
@@ -234,6 +236,16 @@ export default async function MemberDetailPage({
       where: { recordKind: "Member", recordId: member.id },
       orderBy: { createdAt: "desc" },
       take: 50,
+    }),
+    // SSOT §75, §78 — the Gifts this Member owns, as Royalty Credits.
+    db.royaltyCredit.findMany({
+      where: { memberProfileId: id },
+      include: {
+        customerProfile: { select: { customerId: true, person: { select: { fullName: true } } } },
+        triggerBooking: { select: { bookingNumber: true } },
+        programmeVersion: { select: { programmeRef: true } },
+      },
+      orderBy: { eligibleAt: "desc" },
     }),
   ]);
 
@@ -610,6 +622,31 @@ export default async function MemberDetailPage({
             )}
           </Section>
         </div>
+
+        {/* SSOT §75, §81; CP §68 — Royalty Credits: one Gift each, non-cash. */}
+        <Section title={`Royalty Credits (${royaltyCredits.length})`} icon={<Users className="h-3.5 w-3.5" />}>
+          <RoyaltyCredits
+            role={actor.role}
+            credits={royaltyCredits.map((c) => ({
+              id: c.id,
+              state: c.state,
+              holdReason: c.holdReason,
+              customerId: c.customerProfile.customerId,
+              customerName: c.customerProfile.person.fullName,
+              bookingNumber: c.triggerBooking.bookingNumber,
+              programmeRef: c.programmeVersion.programmeRef,
+              route: c.qualificationRoute,
+              eligibleAt: c.eligibleAt.toISOString(),
+              selectedRewardRef: c.selectedRewardRef,
+              recipient: c.recipient,
+              recipientName: c.recipientName,
+              recipientApproved: c.recipientApprovedAt !== null,
+              orderReference: c.orderReference,
+              deliveredAt: c.deliveredAt?.toISOString() ?? null,
+              reversalReason: c.reversalReason,
+            }))}
+          />
+        </Section>
 
         {/* 7 Deals */}
         <Section

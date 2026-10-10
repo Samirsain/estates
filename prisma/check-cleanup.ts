@@ -95,6 +95,12 @@ export async function purgeCheckData(
   await db.recovery.deleteMany({
     where: { OR: [{ commissionRecordId: { in: commissionIds } }, { setOffRecordId: { in: commissionIds } }] },
   });
+  // Royalty Credits hang off a Booking and a Customer.
+  const creditScope = {
+    OR: [{ triggerBookingId: { in: bookingIds } }, { customerProfile: { personId: { in: personIds } } }],
+  };
+  await db.royaltyCreditEvent.deleteMany({ where: { credit: creditScope } });
+  await db.royaltyCredit.deleteMany({ where: creditScope });
   await db.commissionEvent.deleteMany({ where: { recordId: { in: commissionIds } } });
   await db.commissionRecord.deleteMany({ where: { id: { in: commissionIds } } });
 

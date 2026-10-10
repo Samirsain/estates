@@ -93,6 +93,7 @@ export type BookingRowView = {
   originalClassification: string | null;
   /** v2.1 §15, §16 — the Project commission version frozen on the request. Null = Disabled. */
   commissionTerms: { version: number; direct: string | null; loyalty: string | null } | null;
+  royaltyProgramme: string | null;
   /** MEM-0012, where the buyer holds an Active Member profile today. */
   buyerMemberIdNow: string | null;
   soldByType: string;
@@ -591,7 +592,10 @@ export default function BookingsClient({
                 · booked {formatIstDate(focusRow.bookingDate)} · submitted by {focusRow.submittedByRef}
               </p>
               {focusRow.commissionTerms && (
-                <p className="mt-1 text-[11px] text-muted-foreground">{termsLine(focusRow.commissionTerms)}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {termsLine(focusRow.commissionTerms)}
+                  {focusRow.royaltyProgramme ? ` · Royalty Gift Programme ${focusRow.royaltyProgramme}` : ""}
+                </p>
               )}
               {/* The one case the classification has to explain itself: the
                   buyer has become a Member since, and the Booking still counts
