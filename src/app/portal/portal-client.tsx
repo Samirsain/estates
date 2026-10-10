@@ -84,7 +84,7 @@ export type PortalData = {
    * PRD §23.1 — whether each relationship is final, and nothing else. A
    * Customer's name and Customer ID are buyer-private and never reach the portal.
    */
-  royaltyLinkedCustomers: Array<{ final: boolean }>;
+  royaltyLinkedCustomers: Array<{ final: boolean; opportunityOpen: boolean }>;
   /** CP §70 — Trip progress per Project programme. */
   trip: Array<{
     project: string;
@@ -101,9 +101,15 @@ export type PortalData = {
   /** CP §70 — each Gift's state, Programme and chosen Gift; never the Customer. */
   royaltyCredits: Array<{
     state: string;
-    held: boolean;
+    holdReason: string | null;
     programmeRef: string;
+    programmeVersion: number;
+    catalogueVersion: string;
+    route: string;
     selectedRewardRef: string | null;
+    recipient: string | null;
+    eligibleAt: string;
+    orderedAt: string | null;
     deliveredAt: string | null;
   }>;
   projects: Array<{ id: string; name: string }>;
@@ -155,6 +161,23 @@ const TRIP_HOLD_LABEL: Record<string, string> = {
   PROGRAMME_TERMS_ACTION_REQUIRED: "Terms action required",
   STAFF_CONFLICT_REVIEW: "Under Review",
   RECOVERY_CIRCUMVENTION_REVIEW: "Under Review",
+};
+
+/** SSOT §81 — a Gift's fulfilment, in order. */
+const GIFT_STEPS = [
+  ["ELIGIBLE", "Earned"],
+  ["SELECTED", "Gift chosen"],
+  ["ORDERED", "Ordered"],
+  ["DELIVERED", "Delivered"],
+] as const;
+
+const RECIPIENT_LABEL: Record<string, string> = {
+  SELF: "You",
+  SPOUSE: "Spouse",
+  PARENT: "Parent",
+  CHILD: "Child",
+  SIBLING: "Sibling",
+  NON_FAMILY: "Nominee (needs MD approval)",
 };
 
 const TRIP_STATE_LABEL: Record<string, string> = {
@@ -568,29 +591,96 @@ export default function PortalClient({ data }: { data: PortalData }) {
             <h3 className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-emerald-700">
               <Layers className="h-3 w-3" /> Royalty Relationship Reward
             </h3>
+            {(() => {
+              const final = data.royaltyLinkedCustomers.filter((c) => c.final).length;
+              const open = data.royaltyLinkedCustomers.filter((c) => c.opportunityOpen).length;
+              const waiting = data.royaltyLinkedCustomers.length - final;
+              return (
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    [final, "Final relationships"],
+                    [open, "Can still earn a Gift"],
+                    [waiting, "Waiting for full payment"],
+                  ].map(([n, label]) => (
+                    <div key={label} className="rounded-xl border border-border/70 px-3 py-2">
+                      <p className="text-lg font-semibold tabular-nums text-foreground">{n}</p>
+                      <p className="text-[11px] text-muted-foreground">{label}</p>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
             {data.royaltyCredits.length === 0 ? (
               <p className="text-muted-foreground">
-                One Gift is earned when a final linked Customer makes their first direct personal purchase
-                through 3% Club and it qualifies. Nothing is earned yet.
+                One Gift is earned when a final linked Customer makes their first direct personal purchase through 3% Club and
+                it is paid in full. No Gift is earned yet.
               </p>
             ) : (
-              <ul className="space-y-1">
-                {data.royaltyCredits.map((c, i) => (
-                  <li key={i} className="flex flex-wrap justify-between gap-2">
-                    <span>
-                      Royalty Credit · {c.programmeRef}
-                      {c.selectedRewardRef ? ` · Gift ${c.selectedRewardRef}` : ""}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {c.state === "DELIVERED" && c.deliveredAt
-                        ? `Delivered ${formatIst(c.deliveredAt)}`
-                        : c.held
-                          ? "On Hold"
-                          : c.state.charAt(0) + c.state.slice(1).toLowerCase()}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {data.royaltyCredits.map((c, i) => {
+                  const reached = GIFT_STEPS.findIndex(([state]) => state === c.state);
+                  return (
+                    <div key={i} className="space-y-2.5 rounded-xl border border-border/70 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-semibold text-foreground">Royalty Gift</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {c.programmeRef} v{c.programmeVersion} · {c.catalogueVersion}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                          {GIFT_STEPS[reached]?.[1] ?? c.state}
+                        </span>
+                      </div>
+                      <ol className="flex items-center gap-1" aria-label="Gift progress">
+                        {GIFT_STEPS.map(([state, label], step) => (
+                          <li key={state} className="flex flex-1 flex-col gap-1">
+                            <span className={`h-1.5 rounded-full ${step <= reached ? "bg-emerald-600" : "bg-muted"}`} />
+                            <span className={`text-[10px] ${step <= reached ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>
+                          </li>
+                        ))}
+                      </ol>
+                      <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
+                        <dt className="text-muted-foreground">Gift</dt>
+                        <dd className="text-right font-medium">{c.selectedRewardRef ?? "Not chosen yet"}</dd>
+                        {c.recipient && (
+                          <>
+                            <dt className="text-muted-foreground">Receives it</dt>
+                            <dd className="text-right">{RECIPIENT_LABEL[c.recipient] ?? c.recipient}</dd>
+                          </>
+                        )}
+                        <dt className="text-muted-foreground">Earned</dt>
+                        <dd className="text-right">
+                          {formatIst(c.eligibleAt)}
+                          <span className="block text-[11px] text-muted-foreground">
+                            {c.route === "APPROVED_BUYBACK" ? "via an approved Buyback" : "Customer paid in full"}
+                          </span>
+                        </dd>
+                        {c.orderedAt && (
+                          <>
+                            <dt className="text-muted-foreground">Ordered</dt>
+                            <dd className="text-right">{formatIst(c.orderedAt)}</dd>
+                          </>
+                        )}
+                        {c.deliveredAt && (
+                          <>
+                            <dt className="text-muted-foreground">Delivered</dt>
+                            <dd className="text-right">{formatIst(c.deliveredAt)}</dd>
+                          </>
+                        )}
+                      </dl>
+                      {c.state === "ELIGIBLE" && !c.holdReason && (
+                        <p className="rounded-lg bg-emerald-50 px-2.5 py-2 text-[11px] text-emerald-800">
+                          The team will contact you to choose your Gift from the {c.programmeRef} catalogue.
+                        </p>
+                      )}
+                      {c.holdReason && (
+                        <p className="text-[11px] font-medium text-amber-700">{TRIP_HOLD_LABEL[c.holdReason] ?? "Under Review"}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
 

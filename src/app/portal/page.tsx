@@ -22,11 +22,14 @@ export default async function PortalPage() {
         person: true,
         invitedByMember: { include: { person: true } },
         invitedMembers: { include: { person: true }, orderBy: { activationDate: "asc" } },
-        royaltyLinkedCustomers: { select: { royaltyLinkFinalAt: true }, orderBy: { royaltyLinkFinalAt: "asc" } },
+        royaltyLinkedCustomers: {
+          select: { royaltyLinkFinalAt: true, royaltyOpportunityConsumedAt: true },
+          orderBy: { royaltyLinkFinalAt: "asc" },
+        },
         // SSOT §102; CP §70 — the Member's own Royalty Credits, non-cash, no Customer identity.
         royaltyCredits: {
           where: { state: { not: "REVERSED" } },
-          include: { programmeVersion: { select: { programmeRef: true } } },
+          include: { programmeVersion: { select: { programmeRef: true, version: true, catalogueVersion: true } } },
           orderBy: { eligibleAt: "desc" },
         },
       },
@@ -78,6 +81,8 @@ export default async function PortalPage() {
     // relationships they hold and whether each is final, never the Customer.
     royaltyLinkedCustomers: profile.royaltyLinkedCustomers.map((c) => ({
       final: c.royaltyLinkFinalAt !== null,
+      // SSOT §74 — one Gift per Customer: whether this relationship can still earn it.
+      opportunityOpen: c.royaltyLinkFinalAt !== null && c.royaltyOpportunityConsumedAt === null,
     })),
     // SSOT §102; CP §70 — Trip progress per Project, privacy-safe.
     trip: (await tripOfMember(member.memberProfileId)).map((p) => ({
@@ -97,11 +102,18 @@ export default async function PortalPage() {
         travelledAt: r.travelledAt,
       })),
     })),
+    // CP §70 — state, Programme Version, chosen Gift and fulfilment; never the Customer.
     royaltyCredits: profile.royaltyCredits.map((c) => ({
       state: c.state,
-      held: c.holdReason !== null,
+      holdReason: c.holdReason,
       programmeRef: c.programmeVersion.programmeRef,
+      programmeVersion: c.programmeVersion.version,
+      catalogueVersion: c.programmeVersion.catalogueVersion,
+      route: c.qualificationRoute,
       selectedRewardRef: c.selectedRewardRef,
+      recipient: c.recipient,
+      eligibleAt: c.eligibleAt.toISOString(),
+      orderedAt: c.orderedAt?.toISOString() ?? null,
       deliveredAt: c.deliveredAt?.toISOString() ?? null,
     })),
     projects: [...new Map(availablePlots.map((p) => [p.projectId, p.project.name])).entries()].map(
