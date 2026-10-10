@@ -7,6 +7,7 @@ import { istDay } from "@/lib/tasks";
 import { settleConstraints } from "@/lib/services/command";
 import { activateDueVersions } from "@/lib/services/commission-settings-service";
 import { activateDueRoyaltyProgrammes } from "@/lib/services/royalty-programme-service";
+import { expireTripCredits, windDownTripBuckets } from "@/lib/services/trip-service";
 import { releaseHold } from "@/lib/services/hold-service";
 import { syncPaymentFollowUp } from "@/lib/services/payment-service";
 import { ensureTask, reviseTask } from "@/lib/services/task-service";
@@ -257,6 +258,30 @@ export function runCommissionVersionActivation(_now: Date = new Date()): Promise
   });
 }
 
+/** SSOT §56; CP §35, §76.1 — unused Qualified Trip Credits expire after 12 months. */
+export function runTripCreditExpiry(now: Date = new Date()): Promise<JobResult> {
+  return withRun("TRIP_CREDIT_EXPIRY", async () => {
+    const changed = await db.$transaction(async (tx) => {
+      const expired = await expireTripCredits(tx, now);
+      await settleConstraints(tx);
+      return expired;
+    });
+    return { processed: changed, changed };
+  });
+}
+
+/** SSOT §48; CP §36, §76.2 — closing programmes: NT05, then expiry at the deadline. */
+export function runTripWindDown(now: Date = new Date()): Promise<JobResult> {
+  return withRun("TRIP_WIND_DOWN", async () => {
+    const changed = await db.$transaction(async (tx) => {
+      const expired = await windDownTripBuckets(tx, now);
+      await settleConstraints(tx);
+      return expired;
+    });
+    return { processed: changed, changed };
+  });
+}
+
 /**
  * PRD §18 — the full daily run. Every job records its own start, finish, counts
  * and error, so one failure is visible per job and never stops the rest.
@@ -276,6 +301,8 @@ export const JOBS = {
   BOOKING_DECISION_ALERT: runBookingDecisionAlert,
   RERA_EXPIRY_REMINDER: runReraExpiryReminder,
   COMMISSION_VERSION_ACTIVATION: runCommissionVersionActivation,
+  TRIP_CREDIT_EXPIRY: runTripCreditExpiry,
+  TRIP_WIND_DOWN: runTripWindDown,
 } as const;
 
 export type JobName = keyof typeof JOBS;

@@ -25,8 +25,10 @@ import { Field, Modal, inputClass } from "@/components/ui/modal";
 import {
   decideCommissionVersionAction,
   prepareCommissionDraftAction,
+  recordEconomicsReviewAction,
   sendCommissionVersionAction,
   type ActionResult,
+  type TripDraftInput,
 } from "../actions";
 
 export type CommissionVersionView = {
@@ -42,7 +44,23 @@ export type CommissionVersionView = {
   decisionNote: string | null;
   effectiveFrom: string | null;
   effectiveTo: string | null;
+  /** SSOT §12.3; CP §7.1 — null when the version's Trip Programme is Disabled. */
+  trip: {
+    target: number;
+    minOwn: number;
+    maxRef: number;
+    code: string;
+    versionRef: string;
+    termsRef: string;
+    cutOffAt: string | null;
+    windDownAt: string | null;
+    excludedPlotIds: string[];
+    sharedPools: { plotId: string; parentPlotId: string }[];
+  } | null;
+  economicsReviewedAt: string | null;
 };
+
+type PlotOption = { id: string; plotNumber: string };
 
 const STATUS: Record<CommissionVersionView["status"], { label: string; variant: "success" | "warning" | "outline" | "destructive" | "info" }> = {
   DRAFT: { label: "Draft", variant: "outline" },
@@ -60,7 +78,7 @@ const direct = (v: CommissionVersionView) =>
 const loyalty = (v: CommissionVersionView) =>
   v.loyaltyEnabled && v.loyaltyPercent ? `${rateLabel(v.loyaltyPercent)}%` : "Disabled";
 
-function Terms({ v }: { v: CommissionVersionView }) {
+function Terms({ v, plotNo }: { v: CommissionVersionView; plotNo: (id: string) => string }) {
   return (
     <dl className="space-y-1 text-xs">
       <div className="flex justify-between gap-3">
@@ -92,6 +110,35 @@ function Terms({ v }: { v: CommissionVersionView }) {
         </div>
       )}
       <div className="flex justify-between gap-3">
+        <dt className="text-muted-foreground">Trip Programme</dt>
+        <dd className="text-right font-medium">
+          {v.trip ? (
+            <>
+              {v.trip.code} · target {v.trip.target} · min Own {v.trip.minOwn} · max Reference {v.trip.maxRef}
+              <span className="block font-normal text-muted-foreground">
+                {v.trip.versionRef} · Terms {v.trip.termsRef}
+                {v.trip.cutOffAt ? ` · cut-off ${formatIst(v.trip.cutOffAt)}` : ""}
+                {v.trip.windDownAt ? ` · wind-down ${formatIst(v.trip.windDownAt)}` : ""}
+              </span>
+              {(v.trip.excludedPlotIds.length > 0 || v.trip.sharedPools.length > 0) && (
+                <span className="block font-normal text-muted-foreground">
+                  {v.trip.excludedPlotIds.length > 0 && `Excluded: ${v.trip.excludedPlotIds.map((id) => plotNo(id)).join(", ")}. `}
+                  {v.trip.sharedPools.length > 0 &&
+                    `Shared pools: ${v.trip.sharedPools.map((sp) => `${plotNo(sp.plotId)} → ${plotNo(sp.parentPlotId)}`).join(", ")}.`}
+                </span>
+              )}
+              {v.economicsReviewedAt && (
+                <span className="block font-normal text-muted-foreground">
+                  Economics reviewed {formatIst(v.economicsReviewedAt)}
+                </span>
+              )}
+            </>
+          ) : (
+            "Disabled"
+          )}
+        </dd>
+      </div>
+      <div className="flex justify-between gap-3">
         <dt className="text-muted-foreground">Reason</dt>
         <dd className="text-right">{v.reason}</dd>
       </div>
@@ -103,11 +150,15 @@ export default function CommissionSettings({
   projectId,
   role,
   versions,
+  plots,
 }: {
   projectId: string;
   role: string;
   versions: CommissionVersionView[];
+  plots: PlotOption[];
 }) {
+  const plotNo = (id: string) => plots.find((p) => p.id === id)?.plotNumber ?? "?";
+  const [reviewing, setReviewing] = React.useState(false);
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
@@ -164,7 +215,7 @@ export default function CommissionSettings({
               <span className="text-muted-foreground">since {formatIst(active.effectiveFrom)}</span>
             )}
           </div>
-          <Terms v={active} />
+          <Terms v={active} plotNo={plotNo} />
         </div>
       ) : (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-800">
@@ -193,6 +244,11 @@ export default function CommissionSettings({
                   </Button>
                 </>
               )}
+              {isMd && open.status === "PENDING_APPROVAL" && open.trip && !open.economicsReviewedAt && (
+                <Button size="xs" variant="outline" disabled={busy} onClick={() => setReviewing(true)}>
+                  Economics reviewed
+                </Button>
+              )}
               {isMd && open.status === "PENDING_APPROVAL" && (
                 <>
                   <Button size="xs" variant="outline" disabled={busy} onClick={() => setDeciding(false)}>
@@ -205,7 +261,7 @@ export default function CommissionSettings({
               )}
             </div>
           </div>
-          <Terms v={open} />
+          <Terms v={open} plotNo={plotNo} />
         </div>
       )}
 
@@ -230,10 +286,30 @@ export default function CommissionSettings({
       {editing && (
         <VersionForm
           busy={busy}
+          plots={plots}
           start={open?.status === "DRAFT" ? open : active}
           onClose={() => setEditing(false)}
           onSubmit={(input) => run(() => prepareCommissionDraftAction(projectId, input, newKey()))}
         />
+      )}
+
+      {reviewing && open && (
+        <Modal
+          title="Economics reviewed"
+          description="Confirms the Trip Programme's economics — Trip cost and Own + Reference exposure against margin — were reviewed outside the CRM. Only the fact, you and the date are kept."
+          onClose={() => setReviewing(false)}
+        >
+          <ReviewNote
+            busy={busy}
+            onSubmit={(note) =>
+              run(async () => {
+                const result = await recordEconomicsReviewAction(open.id, note, newKey());
+                if (result.ok) setReviewing(false);
+                return result;
+              })
+            }
+          />
+        </Modal>
       )}
 
       {deciding !== null && open && (
@@ -249,14 +325,46 @@ export default function CommissionSettings({
   );
 }
 
+function ReviewNote({ busy, onSubmit }: { busy: boolean; onSubmit: (note: string) => void }) {
+  const [note, setNote] = React.useState("");
+  return (
+    <div className="space-y-3">
+      <Field label="Note (compulsory)">
+        <textarea className={`${inputClass} h-16 py-2`} value={note} onChange={(e) => setNote(e.target.value)} />
+      </Field>
+      <div className="flex justify-end">
+        <Button size="sm" disabled={busy || !note.trim()} onClick={() => onSubmit(note)}>
+          Confirm
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** "A-10B=A-10A" lines → shared pools, by Plot Number. */
+function parsePools(text: string, plots: PlotOption[]): { pools: { plotId: string; parentPlotId: string }[]; problem: string | null } {
+  const byNo = new Map(plots.map((p) => [p.plotNumber.trim().toUpperCase(), p.id]));
+  const pools: { plotId: string; parentPlotId: string }[] = [];
+  for (const line of text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
+    const [child, parent] = line.split("=").map((x) => x?.trim().toUpperCase());
+    const plotId = child ? byNo.get(child) : undefined;
+    const parentPlotId = parent ? byNo.get(parent) : undefined;
+    if (!plotId || !parentPlotId) return { pools, problem: `"${line}" — use CHILD=PARENT with Plot Numbers of this Project.` };
+    pools.push({ plotId, parentPlotId });
+  }
+  return { pools, problem: null };
+}
+
 function VersionForm({
   start,
   busy,
+  plots,
   onClose,
   onSubmit,
 }: {
   start: CommissionVersionView | null;
   busy: boolean;
+  plots: PlotOption[];
   onClose: () => void;
   onSubmit: (input: {
     directEnabled: boolean;
@@ -266,8 +374,26 @@ function VersionForm({
     loyaltyExceptionReason: string | null;
     reason: string;
     effectiveFrom: string | null;
+    trip: TripDraftInput | null;
   }) => void;
 }) {
+  const t = start?.trip ?? null;
+  const [tripEnabled, setTripEnabled] = React.useState(t !== null);
+  const [target, setTarget] = React.useState(String(t?.target ?? ""));
+  const [minOwn, setMinOwn] = React.useState(String(t?.minOwn ?? ""));
+  const [maxRef, setMaxRef] = React.useState(String(t?.maxRef ?? ""));
+  const [code, setCode] = React.useState(t?.code ?? "");
+  const [versionRef, setVersionRef] = React.useState(t?.versionRef ?? "");
+  const [termsRef, setTermsRef] = React.useState(t?.termsRef ?? "");
+  const [cutOff, setCutOff] = React.useState(t?.cutOffAt ? toLocalInput(t.cutOffAt) : "");
+  const [windDown, setWindDown] = React.useState(t?.windDownAt ? toLocalInput(t.windDownAt) : "");
+  const [excluded, setExcluded] = React.useState<string[]>(t?.excludedPlotIds ?? []);
+  const [poolText, setPoolText] = React.useState(
+    (t?.sharedPools ?? [])
+      .map((sp) => `${plots.find((p) => p.id === sp.plotId)?.plotNumber}=${plots.find((p) => p.id === sp.parentPlotId)?.plotNumber}`)
+      .join("\n")
+  );
+  const pools = parsePools(poolText, plots);
   const [directEnabled, setDirectEnabled] = React.useState(start?.directEnabled ?? true);
   const [directPercent, setDirectPercent] = React.useState(
     start?.directPercent ? rateLabel(start.directPercent) : "3"
@@ -292,9 +418,23 @@ function VersionForm({
   };
   const showException = needsLoyaltyException(terms);
   const check = validateCommissionTerms(terms);
+  const whole = (x: string) => (/^\d+$/.test(x.trim()) ? Number(x) : NaN);
+  const tripProblem = !tripEnabled
+    ? null
+    : !(whole(target) > 0)
+      ? "Trip Total Target must be a whole number above 0."
+      : !(whole(minOwn) >= 0 && whole(minOwn) <= whole(target))
+        ? "Minimum Own-Sale Credits must be from 0 to the Total Target."
+        : !(whole(maxRef) >= 0 && whole(maxRef) <= whole(target))
+          ? "Maximum Reference Credits must be from 0 to the Total Target."
+          : !code.trim() || !versionRef.trim() || !termsRef.trim()
+            ? "Enter the Trip Programme code, version and Terms version."
+            : pools.problem;
   const problem = !check.ok
     ? check.reason
-    : !reason.trim()
+    : tripProblem
+      ? tripProblem
+      : !reason.trim()
       ? "Write the reason for this version."
       : effectiveFrom && new Date(effectiveFrom) <= new Date()
         ? "Effective from must be in the future, or left empty to take effect on MD approval."
@@ -332,6 +472,63 @@ function VersionForm({
             />
           </Field>
         )}
+        <div className="space-y-2 rounded-lg border border-border/60 p-2.5">
+          <label className="flex items-center gap-2 text-xs font-medium">
+            <input type="checkbox" checked={tripEnabled} onChange={(e) => setTripEnabled(e.target.checked)} />
+            Sales &amp; Reference Trip Programme
+          </label>
+          {tripEnabled && (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                <Field label="Total Target">
+                  <input className={inputClass} inputMode="numeric" value={target} onChange={(e) => setTarget(e.target.value)} />
+                </Field>
+                <Field label="Minimum Own">
+                  <input className={inputClass} inputMode="numeric" value={minOwn} onChange={(e) => setMinOwn(e.target.value)} />
+                </Field>
+                <Field label="Maximum Reference">
+                  <input className={inputClass} inputMode="numeric" value={maxRef} onChange={(e) => setMaxRef(e.target.value)} />
+                </Field>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Field label="Programme code">
+                  <input className={inputClass} placeholder="TRIP-A" value={code} onChange={(e) => setCode(e.target.value)} />
+                </Field>
+                <Field label="Programme version">
+                  <input className={inputClass} value={versionRef} onChange={(e) => setVersionRef(e.target.value)} />
+                </Field>
+                <Field label="Trip Terms version">
+                  <input className={inputClass} value={termsRef} onChange={(e) => setTermsRef(e.target.value)} />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Programme cut-off — optional">
+                  <input type="datetime-local" className={inputClass} value={cutOff} onChange={(e) => setCutOff(e.target.value)} />
+                </Field>
+                <Field label="Final wind-down deadline — optional">
+                  <input type="datetime-local" className={inputClass} value={windDown} onChange={(e) => setWindDown(e.target.value)} />
+                </Field>
+              </div>
+              <Field label="Excluded Plots (every other Plot is eligible)">
+                <select
+                  multiple
+                  className={`${inputClass} h-24 py-1`}
+                  value={excluded}
+                  onChange={(e) => setExcluded([...e.target.selectedOptions].map((o) => o.value))}
+                >
+                  {plots.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.plotNumber}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Shared credit pools — one CHILD=PARENT per line (SSOT §44)">
+                <textarea className={`${inputClass} h-14 py-2`} value={poolText} onChange={(e) => setPoolText(e.target.value)} />
+              </Field>
+            </>
+          )}
+        </div>
         <Field label="Effective from — optional; empty takes effect on MD approval">
           <input
             type="datetime-local"
@@ -357,6 +554,20 @@ function VersionForm({
                 loyaltyExceptionReason: showException ? terms.loyaltyExceptionReason : null,
                 reason,
                 effectiveFrom: effectiveFrom ? new Date(effectiveFrom).toISOString() : null,
+                trip: tripEnabled
+                  ? {
+                      tripTotalTarget: Number(target),
+                      tripMinOwnCredits: Number(minOwn),
+                      tripMaxReferenceCredits: Number(maxRef),
+                      tripProgrammeCode: code,
+                      tripProgrammeVersionRef: versionRef,
+                      tripTermsVersionRef: termsRef,
+                      tripCutOffAt: cutOff ? new Date(cutOff).toISOString() : null,
+                      tripWindDownAt: windDown ? new Date(windDown).toISOString() : null,
+                      excludedPlotIds: excluded,
+                      sharedPools: pools.pools,
+                    }
+                  : null,
               })
             }
           >

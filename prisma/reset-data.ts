@@ -30,6 +30,10 @@ async function main() {
   await db.recovery.deleteMany({});
   await db.royaltyCreditEvent.deleteMany({});
   await db.royaltyCredit.deleteMany({});
+  await db.tripEvent.deleteMany({});
+  await db.tripCredit.deleteMany({});
+  await db.tripReward.deleteMany({});
+  await db.tripBucket.deleteMany({});
   await db.commissionEvent.deleteMany({});
   await db.commissionRecord.deleteMany({});
   // CR-014 — a position points at its cycle, and the cycle points at the Member,

@@ -16,6 +16,7 @@ import { blocked, lockBooking, lockPlot, runCommand, type Tx } from "./command";
 import { freezePlcSnapshot } from "./plc-service";
 import { generateForBooking, raiseAdjustmentTask, reassessCommission } from "./commission-service";
 import { createScheduleVersion, syncPaymentFollowUp, type ScheduleInput } from "./payment-service";
+import { syncTripForBooking } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
 const D = Prisma.Decimal;
@@ -427,6 +428,8 @@ export async function decideChangePlot(args: {
       // Commission is rechecked against the new Plot and the verified progress.
       await generateForBooking(tx, args.bookingId, args.actorRef);
       await reassessCommission(tx, args.bookingId, args.actorRef);
+      // SSOT §45, §107 — the final unit decides Trip eligibility under the frozen version.
+      await syncTripForBooking(tx, args.bookingId, args.actorRef);
       // SSOT §96; CP §61 — the frozen rate stays, but the amount follows the
       // final unit's Commissionable Sale Value, which lives outside the CRM. A
       // benefit already paid goes to Accounts to check for over- or

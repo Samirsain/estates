@@ -14,6 +14,7 @@ import { blocked, lockBooking, runCommand } from "./command";
 import { cancelCommissionForBooking, reassessCommission } from "./commission-service";
 import { syncRoyaltyLink } from "./network-service";
 import { syncPaymentFollowUp } from "./payment-service";
+import { syncTripForBooking } from "./trip-service";
 import { closeTasksFor } from "./task-service";
 
 type RestoreSnapshot = { bookingStatus: BookingStatus; plotStatus: PlotStatus };
@@ -235,6 +236,8 @@ export async function decideCancellation(args: {
       // provisional link goes with it, and a later genuine first qualifying
       // purchase may establish the relationship.
       await syncRoyaltyLink(tx, booking.primaryPersonId, args.actorRef);
+      // SSOT §63 — a cancelled sale's Trip credits reverse; a Travelled Trip stays.
+      await syncTripForBooking(tx, args.bookingId, args.actorRef);
 
       await closeTasksFor(
         tx,

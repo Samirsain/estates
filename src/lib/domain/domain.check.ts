@@ -149,6 +149,7 @@ import {
   validateChangePlot,
 } from "./acquisition.ts";
 import { istDay, formatIst, formatIstDateTime } from "../tasks.ts";
+import { allocate, creditExpiry, validateTripSettings, type AllocatableCredit } from "./trip.ts";
 
 /** Reads the reason off a failed Check so the assertions stay one-liners. */
 const asReason = (check: Check) => (check.ok ? "" : check.reason);
@@ -2702,5 +2703,75 @@ assert.equal(
   "One Hundred Nineteen Rupees Only",
   "the teens are not tens plus ones"
 );
+
+/* ===== Trip — SSOT §40, §56, §57; CP §7.2, §33, §34; UAT TRP-15..18, SET-09 ===== */
+
+const tripBase = {
+  tripEnabled: true,
+  tripTotalTarget: 5 as number | null,
+  tripMinOwnCredits: 3 as number | null,
+  tripMaxReferenceCredits: 2 as number | null,
+  tripProgrammeCode: "TRIP-A" as string | null,
+  tripProgrammeVersionRef: "TRIP-A v1" as string | null,
+  tripTermsVersionRef: "TRIP-A-1" as string | null,
+  tripCutOffAt: null as Date | null,
+  tripWindDownAt: null as Date | null,
+};
+assert.deepEqual(validateTripSettings(tripBase), { ok: true });
+assert.equal(validateTripSettings({ ...tripBase, tripTotalTarget: 0 }).ok, false, "SET-09 — target 0");
+assert.equal(validateTripSettings({ ...tripBase, tripMinOwnCredits: 6 }).ok, false, "SET-09 — Min Own above target");
+assert.equal(validateTripSettings({ ...tripBase, tripMaxReferenceCredits: -1 }).ok, false);
+assert.equal(
+  validateTripSettings({ ...tripBase, tripCutOffAt: new Date("2027-01-01"), tripWindDownAt: new Date("2026-12-01") }).ok,
+  false,
+  "wind-down cannot precede cut-off"
+);
+assert.deepEqual(
+  validateTripSettings({
+    tripEnabled: false,
+    tripTotalTarget: null,
+    tripMinOwnCredits: null,
+    tripMaxReferenceCredits: null,
+    tripProgrammeCode: null,
+    tripProgrammeVersionRef: null,
+    tripTermsVersionRef: null,
+    tripCutOffAt: null,
+    tripWindDownAt: null,
+  }),
+  { ok: true }
+);
+assert.equal(validateTripSettings({ ...tripBase, tripEnabled: false }).ok, false, "Disabled carries nothing");
+
+const tc = (id: string, type: "OWN_SALE" | "REFERENCE", t: number): AllocatableCredit => ({
+  id,
+  type,
+  qualifiedAt: new Date(Date.UTC(2026, 0, t)),
+});
+const rule532 = { target: 5, minOwn: 3, maxRef: 2 };
+// TRP-15 — 3 Own + 2 Reference earns.
+assert.deepEqual(
+  allocate([tc("o1", "OWN_SALE", 1), tc("r1", "REFERENCE", 2), tc("o2", "OWN_SALE", 3), tc("r2", "REFERENCE", 4), tc("o3", "OWN_SALE", 5)], rule532)?.sort(),
+  ["o1", "o2", "o3", "r1", "r2"]
+);
+// TRP-16 — 2 Own + 3 Reference does not.
+assert.equal(
+  allocate([tc("o1", "OWN_SALE", 1), tc("o2", "OWN_SALE", 2), tc("r1", "REFERENCE", 3), tc("r2", "REFERENCE", 4), tc("r3", "REFERENCE", 5)], rule532),
+  null
+);
+// TRP-17 — Reference is optional: five Own earns.
+assert.equal(allocate(["a", "b", "c", "d", "e"].map((id, i) => tc(id, "OWN_SALE", i + 1)), rule532)?.length, 5);
+// TRP-18 — deterministic FIFO: the earliest qualified are taken, extras stay banked.
+const pool = [tc("o4", "OWN_SALE", 9), tc("o1", "OWN_SALE", 1), tc("o2", "OWN_SALE", 2), tc("o3", "OWN_SALE", 3), tc("r1", "REFERENCE", 4), tc("r2", "REFERENCE", 5), tc("r3", "REFERENCE", 6)];
+assert.deepEqual(allocate(pool, rule532), ["o1", "o2", "o3", "r1", "r2"]);
+assert.deepEqual(allocate([...pool].reverse(), rule532), ["o1", "o2", "o3", "r1", "r2"], "the same answer in any order");
+// CP §39 — backfill keeps the valid allocated credits and adds the earliest needed.
+assert.deepEqual(allocate([tc("o9", "OWN_SALE", 9), tc("o8", "OWN_SALE", 8)], rule532, [tc("o1", "OWN_SALE", 1), tc("o2", "OWN_SALE", 2), tc("r1", "REFERENCE", 3), tc("r2", "REFERENCE", 4)]), ["o8"]);
+assert.equal(
+  allocate([tc("r9", "REFERENCE", 9)], rule532, [tc("o1", "OWN_SALE", 1), tc("o2", "OWN_SALE", 2), tc("r1", "REFERENCE", 3), tc("r2", "REFERENCE", 4)]),
+  null,
+  "a Reference cannot backfill a missing Own-Sale Credit, nor go past the Maximum"
+);
+// SSOT §56 — twelve months after qualification.
+assert.equal(creditExpiry(new Date("2026-03-15T10:00:00Z")).toISOString(), "2027-03-15T10:00:00.000Z");
 
 console.log("domain.check.ts OK");

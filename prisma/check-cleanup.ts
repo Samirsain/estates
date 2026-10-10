@@ -101,6 +101,12 @@ export async function purgeCheckData(
   };
   await db.royaltyCreditEvent.deleteMany({ where: { credit: creditScope } });
   await db.royaltyCredit.deleteMany({ where: creditScope });
+  // Trip: credits before buckets, buckets after their rewards.
+  const tripMembers = { memberProfile: { personId: { in: personIds } } };
+  await db.tripEvent.deleteMany({ where: { memberProfileId: { in: (await db.memberProfile.findMany({ where: { personId: { in: personIds } }, select: { id: true } })).map((m) => m.id) } } });
+  await db.tripCredit.deleteMany({ where: { OR: [{ sourceBookingId: { in: bookingIds } }, tripMembers] } });
+  await db.tripReward.deleteMany({ where: tripMembers });
+  await db.tripBucket.deleteMany({ where: tripMembers });
   await db.commissionEvent.deleteMany({ where: { recordId: { in: commissionIds } } });
   await db.commissionRecord.deleteMany({ where: { id: { in: commissionIds } } });
 

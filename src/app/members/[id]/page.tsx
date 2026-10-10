@@ -32,6 +32,8 @@ import { MemberActions } from "./member-actions";
 import { AddTaskButton } from "./add-task-button";
 import PortalAccess from "./portal-access";
 import RoyaltyCredits from "./royalty-credits";
+import TripSection from "./trip-section";
+import { tripProgrammes } from "@/lib/trip-view";
 import {
   ArrowLeft,
   Banknote,
@@ -163,6 +165,9 @@ export default async function MemberDetailPage({
     merges,
     tasks,
     royaltyCredits,
+    tripCredits,
+    tripBuckets,
+    referenceWins,
   ] = await Promise.all([
     db.commissionRecord.findMany({
       where: {
@@ -246,6 +251,18 @@ export default async function MemberDetailPage({
         programmeVersion: { select: { programmeRef: true } },
       },
       orderBy: { eligibleAt: "desc" },
+    }),
+    // SSOT §40, §47; CP §68 — the Trip credits and buckets this Member owns.
+    db.tripCredit.findMany({ where: { memberProfileId: id }, select: { projectId: true, programmeCode: true, creditType: true, state: true, bucketId: true, expiresAt: true } }),
+    db.tripBucket.findMany({
+      where: { memberProfileId: id },
+      include: { reward: true },
+      orderBy: { openedAt: "desc" },
+    }),
+    // SSOT §49 — the Booking that used each invited Member's Reference opportunity.
+    db.booking.findMany({
+      where: { id: { in: member.invitedMembers.map((m) => m.referenceWinningBookingId).filter((b): b is string => !!b) } },
+      select: { id: true, bookingNumber: true },
     }),
   ]);
 
@@ -623,6 +640,22 @@ export default async function MemberDetailPage({
           </Section>
         </div>
 
+        {/* SSOT §40, §65; CP §68 — the Sales & Reference Trip Reward. */}
+        <Section title="Sales & Reference Trip" icon={<Users className="h-3.5 w-3.5" />}>
+          <TripSection
+            role={actor.role}
+            memberProfileId={member.id}
+            inviterFrozenAt={member.inviterFrozenAt?.toISOString() ?? null}
+            programmes={await tripProgrammes(tripCredits, tripBuckets)}
+            references={member.invitedMembers.map((m) => ({
+              memberId: m.memberId,
+              name: m.person.fullName,
+              consumed: m.referenceOpportunityConsumedAt !== null,
+              winningBooking: referenceWins.find((b) => b.id === m.referenceWinningBookingId)?.bookingNumber ?? null,
+            }))}
+          />
+        </Section>
+
         {/* SSOT §75, §81; CP §68 — Royalty Credits: one Gift each, non-cash. */}
         <Section title={`Royalty Credits (${royaltyCredits.length})`} icon={<Users className="h-3.5 w-3.5" />}>
           <RoyaltyCredits
@@ -941,3 +974,4 @@ export default async function MemberDetailPage({
     </AppShell>
   );
 }
+

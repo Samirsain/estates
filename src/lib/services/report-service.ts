@@ -19,7 +19,9 @@ export type ReportName =
   | "INVENTORY"
   | "COMPLETIONS"
   | "LOYALTY"
-  | "ROYALTY";
+  | "ROYALTY"
+  | "TRIP"
+  | "REFERENCE";
 
 /** CP §73.5 — the two Loyalty routes, named the same on every report. */
 const ROUTE: Record<string, string> = {
@@ -219,6 +221,84 @@ export async function runReport(
             holdReason: credit?.holdReason ?? null,
             selectedGift: credit?.selectedRewardRef ?? null,
             deliveredOn: credit?.deliveredAt ?? null,
+          };
+        });
+    }
+
+    case "TRIP": {
+      // CP §73.2; UAT VIS-08 — one row per bucket: frozen version, target and
+      // composition, credit counts, expiry and reward. No rupee value.
+      const buckets = await db.tripBucket.findMany({
+        where: filters.projectId ? { projectId: filters.projectId } : {},
+        include: {
+          memberProfile: { select: { memberId: true, person: { select: { fullName: true } } } },
+          settingsVersion: { select: { version: true, project: { select: { name: true } } } },
+          reward: true,
+        },
+        orderBy: { openedAt: "desc" },
+      });
+      const credits = await db.tripCredit.findMany({
+        where: { memberProfileId: { in: buckets.map((b) => b.memberProfileId) } },
+        select: { memberProfileId: true, projectId: true, programmeCode: true, creditType: true, state: true, bucketId: true, expiresAt: true },
+      });
+      return buckets.map((b) => {
+        const inBucket = credits.filter((c) => c.bucketId === b.id);
+        const banked = credits.filter(
+          (c) => c.memberProfileId === b.memberProfileId && c.projectId === b.projectId && c.programmeCode === b.programmeCode && !c.bucketId
+        );
+        const expiries = banked.filter((c) => c.state === "QUALIFIED" && c.expiresAt).map((c) => c.expiresAt!.getTime());
+        return {
+          memberId: b.memberProfile.memberId,
+          member: b.memberProfile.person.fullName,
+          project: b.settingsVersion.project.name,
+          programme: `${b.programmeCode} · ${b.programmeVersionRef}`,
+          projectSettingsVersion: `V${b.settingsVersion.version}`,
+          bucketState: b.state,
+          target: b.totalTarget,
+          minOwn: b.minOwnCredits,
+          maxReference: b.maxReferenceCredits,
+          allocatedOwn: inBucket.filter((c) => c.creditType === "OWN_SALE").length,
+          allocatedReference: inBucket.filter((c) => c.creditType === "REFERENCE").length,
+          pendingOwn: b.state === "OPEN" ? banked.filter((c) => c.creditType === "OWN_SALE" && c.state === "PENDING").length : null,
+          qualifiedOwn: b.state === "OPEN" ? banked.filter((c) => c.creditType === "OWN_SALE" && c.state === "QUALIFIED").length : null,
+          qualifiedReference: b.state === "OPEN" ? banked.filter((c) => c.creditType === "REFERENCE" && c.state === "QUALIFIED").length : null,
+          nearestExpiry: b.state === "OPEN" && expiries.length ? new Date(Math.min(...expiries)) : null,
+          reward: b.reward?.state ?? null,
+          holdReason: b.reward?.holdReason ?? null,
+          earnedAt: b.reward?.earnedAt ?? null,
+          travelledAt: b.reward?.travelledAt ?? null,
+        };
+      });
+    }
+
+    case "REFERENCE": {
+      // CP §73.3; UAT VIS-09 — each directly introduced Member's one opportunity.
+      const introduced = await db.memberProfile.findMany({
+        where: { invitedByMemberId: { not: null }, person: NOT_MERGED_AWAY },
+        include: {
+          person: { select: { fullName: true } },
+          invitedByMember: { select: { memberId: true, person: { select: { fullName: true } } } },
+          referenceCreditsGiven: {
+            where: { state: { not: "REVERSED" } },
+            include: { sourceBooking: { select: { bookingNumber: true, projectId: true, project: { select: { name: true } } } } },
+            take: 1,
+          },
+        },
+        orderBy: { memberId: "asc" },
+      });
+      return introduced
+        .filter((m) => !filters.projectId || m.referenceCreditsGiven[0]?.sourceBooking.projectId === filters.projectId)
+        .map((m) => {
+          const credit = m.referenceCreditsGiven[0];
+          return {
+            introducedMember: `${m.memberId} · ${m.person.fullName}`,
+            inviter: `${m.invitedByMember!.memberId} · ${m.invitedByMember!.person.fullName}`,
+            opportunity: m.referenceOpportunityConsumedAt ? "Consumed" : "Unused",
+            winningBooking: credit?.sourceBooking.bookingNumber ?? null,
+            project: credit?.sourceBooking.project.name ?? null,
+            creditState: credit?.state ?? null,
+            qualifiedAt: credit?.qualifiedAt ?? null,
+            expiresAt: credit?.expiresAt ?? null,
           };
         });
     }

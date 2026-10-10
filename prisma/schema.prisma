@@ -232,6 +232,13 @@ model MemberProfile {
   /// rather than re-asked. A new version asks again and adds its own row.
   termsAcceptances MemberTermsAcceptance[]
 
+  /// SSOT §37, §38; CP §22 — the inviter freezes at activation (the CRM's
+  /// Membership application). The introduced Member's one lifetime Reference
+  /// opportunity, and the Booking that consumed it.
+  inviterFrozenAt                DateTime?
+  referenceOpportunityConsumedAt DateTime?
+  referenceWinningBookingId      String?
+
   /// PRD §14.11 — a Member-level hold affects every unpaid record.
   commissionHold       Boolean @default(false)
   commissionHoldReason String?
@@ -247,6 +254,10 @@ model MemberProfile {
   royaltyLinkedCustomers CustomerProfile[] @relation("RoyaltyLinkedCustomers")
   /// SSOT §75 — the Royalty Credits (Gift entitlements) this Member owns.
   royaltyCredits         RoyaltyCredit[]
+  tripCredits            TripCredit[]      @relation("TripCreditOwner")
+  referenceCreditsGiven  TripCredit[]      @relation("TripCreditIntroduced")
+  tripBuckets            TripBucket[]
+  tripRewards            TripReward[]
   sourcedEnquiries       Enquiry[]         @relation("MemberSourcedEnquiries")
   holdRequests           HoldRequest[]
 }
@@ -537,6 +548,23 @@ model ProjectCommissionVersion {
   /// v2.1 §13 — the MD exception's written commercial reason.
   loyaltyExceptionReason String?
 
+  /// SSOT §12.3, §40; CP §7.1 — the Project Trip Programme in this version.
+  /// Disabled carries nothing. The code is the programme's identity across
+  /// versions (CP §25.3); cut-off and wind-down are its closure (CP §36).
+  tripEnabled             Boolean             @default(false)
+  tripTotalTarget         Int?
+  tripMinOwnCredits       Int?
+  tripMaxReferenceCredits Int?
+  tripProgrammeCode       String?
+  tripProgrammeVersionRef String?
+  tripTermsVersionRef     String?
+  tripCutOffAt            DateTime?
+  tripWindDownAt          DateTime?
+  /// CP §7.4 — reviewed outside the CRM; only the fact, who and when.
+  economicsReviewedByRef  String?
+  economicsReviewedAt     DateTime?
+  tripInventoryRules      TripInventoryRule[]
+
   reason        String
   preparedByRef String
   preparedAt    DateTime  @default(now())
@@ -549,9 +577,26 @@ model ProjectCommissionVersion {
   effectiveFrom DateTime?
   effectiveTo   DateTime?
 
-  bookings Booking[]
+  bookings    Booking[]
+  tripCredits TripCredit[]
+  tripBuckets TripBucket[]
 
   @@unique([projectId, version])
+}
+
+/// CP §9; SSOT §44 — a Plot's place in a version's Trip Programme. Every Plot
+/// is eligible unless excluded here; a child Plot may share its parent's
+/// credit pool. Frozen with the version.
+model TripInventoryRule {
+  id                     String                   @id @default(uuid())
+  settingsVersionId      String
+  settingsVersion        ProjectCommissionVersion @relation(fields: [settingsVersionId], references: [id], onDelete: Cascade)
+  plotId                 String
+  eligible               Boolean
+  parentCreditPoolPlotId String?
+  reason                 String
+
+  @@unique([settingsVersionId, plotId])
 }
 
 /// PLC spec §3.1 — a version is Draft until it is published. Publishing
@@ -1075,6 +1120,7 @@ model Booking {
   royaltyProgrammeVersionId String?
   royaltyProgrammeVersion   RoyaltyProgrammeVersion? @relation(fields: [royaltyProgrammeVersionId], references: [id])
   royaltyCredit             RoyaltyCredit?
+  tripCredits               TripCredit[]
 
   /// Set when the request came from a Hold, so a rejection can restore the
   /// frozen remainder to the exact Hold it paused (PRD §10.5).
@@ -1674,6 +1720,148 @@ model RoyaltyCreditEvent {
   reason    String?
 
   @@index([creditId, at])
+}
+
+/// SSOT §41, §49; CP §24 — a Trip Credit is a unit-based Own-Sale Credit or the
+/// one lifetime Reference Credit an introduced Member gives their inviter.
+enum TripCreditType {
+  OWN_SALE
+  REFERENCE
+}
+
+/// CP §24, §62.2 — never "Paid": Trip is non-cash.
+enum TripCreditState {
+  PENDING
+  QUALIFIED
+  ALLOCATED
+  USED
+  HELD
+  REVERSED
+  EXPIRED
+}
+
+enum TripBucketState {
+  OPEN
+  EARNED
+  DEFICIENT
+  CLOSED
+  EXPIRED
+}
+
+enum TripRewardState {
+  EARNED
+  BOOKED
+  TRAVELLED
+  DEFICIENT
+  CANCELLED
+}
+
+model TripCredit {
+  id                 String                   @id @default(uuid())
+  memberProfileId    String
+  memberProfile      MemberProfile            @relation("TripCreditOwner", fields: [memberProfileId], references: [id])
+  projectId          String
+  /// CP §25.3 — the programme identity: Project + this code, across versions.
+  programmeCode      String
+  settingsVersionId  String
+  settingsVersion    ProjectCommissionVersion @relation(fields: [settingsVersionId], references: [id])
+  creditType         TripCreditType
+  sourceBookingId    String
+  sourceBooking      Booking                  @relation(fields: [sourceBookingId], references: [id])
+  /// The unit the credit stands on — the parent's pool for a subdivided child (SSOT §44).
+  creditPlotId       String
+  /// Reference only: the directly introduced Member whose first sale it is.
+  introducedMemberId String?
+  introducedMember   MemberProfile?           @relation("TripCreditIntroduced", fields: [introducedMemberId], references: [id])
+
+  state              TripCreditState
+  qualificationRoute RewardQualificationRoute?
+  pendingAt          DateTime?
+  qualifiedAt        DateTime?
+  expiresAt          DateTime?
+  bucketId           String?
+  bucket             TripBucket?               @relation(fields: [bucketId], references: [id])
+  usedAt             DateTime?
+  reversedAt         DateTime?
+  reversalReason     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([memberProfileId, projectId, programmeCode, state])
+  @@index([sourceBookingId])
+  @@index([state, expiresAt])
+}
+
+/// SSOT §47; CP §31, §32 — opens on the Member's first Pending credit in a
+/// programme and freezes the rules it will be judged by.
+model TripBucket {
+  id                  String                   @id @default(uuid())
+  memberProfileId     String
+  memberProfile       MemberProfile            @relation(fields: [memberProfileId], references: [id])
+  projectId           String
+  programmeCode       String
+  settingsVersionId   String
+  settingsVersion     ProjectCommissionVersion @relation(fields: [settingsVersionId], references: [id])
+  totalTarget         Int
+  minOwnCredits       Int
+  maxReferenceCredits Int
+  programmeVersionRef String
+  termsVersionRef     String
+  windDownAt          DateTime?
+  openingCreditId     String?
+  state               TripBucketState          @default(OPEN)
+  openedAt            DateTime                 @default(now())
+  earnedAt            DateTime?
+  closedAt            DateTime?
+
+  credits TripCredit[]
+  reward  TripReward?
+
+  @@index([memberProfileId, projectId, programmeCode, state])
+}
+
+/// CP §37 — an earned Trip and its fulfilment. No rupee value.
+model TripReward {
+  id              String            @id @default(uuid())
+  bucketId        String            @unique
+  bucket          TripBucket        @relation(fields: [bucketId], references: [id])
+  memberProfileId String
+  memberProfile   MemberProfile     @relation(fields: [memberProfileId], references: [id])
+  state           TripRewardState   @default(EARNED)
+  holdReason      RewardHoldReason?
+  earnedAt        DateTime          @default(now())
+  termsVersionRef String
+
+  recipient              RewardRecipient?
+  recipientName          String?
+  recipientApprovedByRef String?
+  recipientApprovedAt    DateTime?
+  bookingReference       String?
+  bookedAt               DateTime?
+  travelledAt            DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([memberProfileId, state])
+}
+
+/// Append-only Trip history — credits, buckets and rewards (CP §79).
+model TripEvent {
+  id              String   @id @default(uuid())
+  memberProfileId String
+  creditId        String?
+  bucketId        String?
+  rewardId        String?
+  at              DateTime @default(now())
+  actorRef        String
+  action          String
+  fromState       String?
+  toState         String?
+  reason          String?
+
+  @@index([memberProfileId, at])
 }
 
 /// Append-only commission history for the record timeline (DESIGN §14.3).

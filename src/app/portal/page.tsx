@@ -3,6 +3,7 @@
 // Member introduced, no Aadhaar/PAN/bank, no internal Accounts remarks.
 
 import { db } from "@/lib/db";
+import { tripOfMember } from "@/lib/trip-view";
 import { requireMember } from "@/lib/security/current-actor";
 import { maskMobile } from "@/lib/security/identity";
 import { experienceSince } from "@/lib/domain/commission";
@@ -77,6 +78,18 @@ export default async function PortalPage() {
     // relationships they hold and whether each is final, never the Customer.
     royaltyLinkedCustomers: profile.royaltyLinkedCustomers.map((c) => ({
       final: c.royaltyLinkFinalAt !== null,
+    })),
+    // SSOT §102; CP §70 — Trip progress per Project, privacy-safe.
+    trip: (await tripOfMember(member.memberProfileId)).map((p) => ({
+      project: p.project,
+      code: p.code,
+      open: p.open,
+      pendingOwn: p.pendingOwn,
+      qualifiedOwn: p.qualifiedOwn,
+      qualifiedReference: p.qualifiedReference,
+      held: p.held,
+      nearestExpiry: p.nearestExpiry,
+      rewards: p.rewards.map((r) => ({ state: r.state, held: r.holdReason !== null, travelledAt: r.travelledAt })),
     })),
     royaltyCredits: profile.royaltyCredits.map((c) => ({
       state: c.state,

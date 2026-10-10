@@ -14,7 +14,6 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireStaff } from "@/lib/security/current-actor";
 import { listProjects } from "@/lib/services/project-service";
-import { listCommissionVersions } from "@/lib/services/commission-settings-service";
 import CommissionSettings from "./commission-settings";
 import { db } from "@/lib/db";
 import { formatPercent } from "@/lib/tasks";
@@ -130,10 +129,16 @@ export default async function ProjectDetailPage({
   const actor = await requireStaff("REPORT_VIEW");
   const { id } = await params;
 
-  const [projects, byStatus, commissionVersions] = await Promise.all([
+  const [projects, byStatus, commissionVersions, plotOptions] = await Promise.all([
     listProjects(),
     db.plot.groupBy({ by: ["status"], where: { projectId: id }, _count: { _all: true } }),
-    listCommissionVersions(id),
+    // CP §9 — each version with its Trip inventory rules.
+    db.projectCommissionVersion.findMany({
+      where: { projectId: id },
+      orderBy: { version: "desc" },
+      include: { tripInventoryRules: true },
+    }),
+    db.plot.findMany({ where: { projectId: id }, select: { id: true, plotNumber: true }, orderBy: { plotNumber: "asc" } }),
   ]);
   const project = projects.find((p) => p.id === id);
   if (!project) notFound();
@@ -301,7 +306,25 @@ export default async function ProjectDetailPage({
               decisionNote: v.decisionNote,
               effectiveFrom: v.effectiveFrom?.toISOString() ?? null,
               effectiveTo: v.effectiveTo?.toISOString() ?? null,
+              trip: v.tripEnabled
+                ? {
+                    target: v.tripTotalTarget!,
+                    minOwn: v.tripMinOwnCredits!,
+                    maxRef: v.tripMaxReferenceCredits!,
+                    code: v.tripProgrammeCode!,
+                    versionRef: v.tripProgrammeVersionRef!,
+                    termsRef: v.tripTermsVersionRef!,
+                    cutOffAt: v.tripCutOffAt?.toISOString() ?? null,
+                    windDownAt: v.tripWindDownAt?.toISOString() ?? null,
+                    excludedPlotIds: v.tripInventoryRules.filter((r) => !r.eligible).map((r) => r.plotId),
+                    sharedPools: v.tripInventoryRules
+                      .filter((r) => r.parentCreditPoolPlotId)
+                      .map((r) => ({ plotId: r.plotId, parentPlotId: r.parentCreditPoolPlotId! })),
+                  }
+                : null,
+              economicsReviewedAt: v.economicsReviewedAt?.toISOString() ?? null,
             }))}
+            plots={plotOptions}
           />
         )}
 

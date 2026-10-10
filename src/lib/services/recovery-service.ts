@@ -21,6 +21,7 @@ import {
   RECOVERY_FOLLOW_UP_PURPOSE,
 } from "./commission-service";
 import { refreshCreditsOfMember } from "./royalty-service";
+import { refreshTripOfMember } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
 const RECOVERY_DAYS = 15;
@@ -108,6 +109,7 @@ export async function openRecovery(
       await reassessBenefitsOf(tx, record.beneficiaryPersonId, args.actorRef);
       // SSOT §66, §82 — non-cash fulfilment is held too.
       await refreshCreditsOfMember(tx, record.beneficiaryPersonId, args.actorRef);
+      await refreshTripOfMember(tx, record.beneficiaryPersonId, args.actorRef);
 
       return {
         result: { recoveryId: recovery.id, recoveryNo, dueOn },
@@ -209,6 +211,7 @@ async function clear(
   // CP §76.4 — what the Recovery held is released if nothing else holds it.
   await reassessBenefitsOf(tx, recovery.personId, actorRef);
   await refreshCreditsOfMember(tx, recovery.personId, actorRef);
+  await refreshTripOfMember(tx, recovery.personId, actorRef);
   await reassessSourceBooking(tx, recovery.commissionRecordId, actorRef);
   return recovery;
 }

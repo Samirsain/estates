@@ -83,6 +83,18 @@ export type PortalData = {
    * Customer's name and Customer ID are buyer-private and never reach the portal.
    */
   royaltyLinkedCustomers: Array<{ final: boolean }>;
+  /** CP §70 — Trip progress per Project programme. */
+  trip: Array<{
+    project: string;
+    code: string;
+    open: { target: number; minOwn: number; maxRef: number } | null;
+    pendingOwn: number;
+    qualifiedOwn: number;
+    qualifiedReference: number;
+    held: number;
+    nearestExpiry: string | null;
+    rewards: Array<{ state: string; held: boolean; travelledAt: string | null }>;
+  }>;
   /** CP §70 — each Gift's state, Programme and chosen Gift; never the Customer. */
   royaltyCredits: Array<{
     state: string;
@@ -415,6 +427,44 @@ export default function PortalClient({ data }: { data: PortalData }) {
                 {data.royaltyLinkedCustomers.filter((c) => !c.final).length} waiting for the first
                 purchase to be paid in full
               </p>
+            )}
+          </div>
+
+          <div className="border-t border-border/50 pt-4 space-y-3">
+            <h3 className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-emerald-700">
+              <Layers className="h-3 w-3" /> Sales &amp; Reference Trip Reward
+            </h3>
+            {data.trip.length === 0 ? (
+              <p className="text-muted-foreground">
+                Trip progress starts with a qualifying sale in a Project with a Trip Programme. Joining alone earns no credit.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {data.trip.map((t) => (
+                  <li key={`${t.project}-${t.code}`} className="space-y-0.5">
+                    <p className="font-medium">
+                      {t.project} · {t.code}
+                    </p>
+                    {t.open && (
+                      <p className="text-muted-foreground">
+                        Target {t.open.target} · at least {t.open.minOwn} own sales · at most {t.open.maxRef} Reference
+                      </p>
+                    )}
+                    <p>
+                      Own: {t.qualifiedOwn} qualified · {t.pendingOwn} pending · Reference: {t.qualifiedReference}
+                      {t.held > 0 ? ` · ${t.held} on hold` : ""}
+                      {t.nearestExpiry ? ` · next credit expires ${formatIst(t.nearestExpiry)}` : ""}
+                    </p>
+                    {t.rewards.map((r, i) => (
+                      <p key={i} className="text-muted-foreground">
+                        Trip {r.state.toLowerCase()}
+                        {r.held ? " · on hold" : ""}
+                        {r.travelledAt ? ` · ${formatIst(r.travelledAt)}` : ""}
+                      </p>
+                    ))}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
 

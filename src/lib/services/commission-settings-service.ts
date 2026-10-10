@@ -14,18 +14,57 @@ import {
   validateCommissionTerms,
   type CommissionTermsInput,
 } from "@/lib/domain/commission";
+import { validateTripSettings, type TripSettingsInput } from "@/lib/domain/trip";
 import { formatIst } from "@/lib/tasks";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { closeTasksFor, ensureTask } from "./task-service";
+
+/** CP §9; SSOT §44 — the version's Trip inventory: exclusions and shared pools. */
+export type TripInventoryInput = {
+  excludedPlotIds: string[];
+  /** A child Plot sharing its parent's credit pool. */
+  sharedPools: { plotId: string; parentPlotId: string }[];
+};
 
 export type CommissionVersionInput = CommissionTermsInput & {
   reason: string;
   /** CP §7.1 — optional, future only. Null takes effect at MD approval. */
   effectiveFrom?: Date | null;
+  /** SSOT §12.3; CP §7.1 — absent means the Trip Programme is Disabled. */
+  trip?: TripSettingsInput & TripInventoryInput;
 };
 
 /** CP §65 NT01 — Project Commercial Settings Approval, assigned to MD. */
 export const SETTINGS_APPROVAL_PURPOSE = "COMMISSION_VERSION_APPROVAL";
+/** CP §65 NT02 — Project Economics Review Confirmation, assigned to MD. */
+export const ECONOMICS_REVIEW_PURPOSE = "PROJECT_ECONOMICS_REVIEW";
+
+const TRIP_DISABLED: TripSettingsInput = {
+  tripEnabled: false,
+  tripTotalTarget: null,
+  tripMinOwnCredits: null,
+  tripMaxReferenceCredits: null,
+  tripProgrammeCode: null,
+  tripProgrammeVersionRef: null,
+  tripTermsVersionRef: null,
+  tripCutOffAt: null,
+  tripWindDownAt: null,
+};
+
+const tripData = (t: CommissionVersionInput) => {
+  const trip = t.trip?.tripEnabled ? t.trip : TRIP_DISABLED;
+  return {
+    tripEnabled: trip.tripEnabled,
+    tripTotalTarget: trip.tripTotalTarget,
+    tripMinOwnCredits: trip.tripMinOwnCredits,
+    tripMaxReferenceCredits: trip.tripMaxReferenceCredits,
+    tripProgrammeCode: trip.tripProgrammeCode?.trim() || null,
+    tripProgrammeVersionRef: trip.tripProgrammeVersionRef?.trim() || null,
+    tripTermsVersionRef: trip.tripTermsVersionRef?.trim() || null,
+    tripCutOffAt: trip.tripCutOffAt,
+    tripWindDownAt: trip.tripWindDownAt,
+  };
+};
 
 type Actor = { idempotencyKey: string; actorRef: string; actorRole: string };
 
@@ -37,6 +76,7 @@ const termsData = (t: CommissionVersionInput) => ({
   loyaltyExceptionReason: t.loyaltyExceptionReason?.trim() || null,
   reason: t.reason.trim(),
   effectiveFrom: t.effectiveFrom ?? null,
+  ...tripData(t),
 });
 
 /**
@@ -51,6 +91,42 @@ export function checkPreparable(actorRole: string, input: CommissionVersionInput
   if (input.effectiveFrom && input.effectiveFrom.getTime() <= Date.now()) {
     blocked("Effective from must be in the future, or left empty to take effect on MD approval.");
   }
+  if (input.trip?.tripEnabled) {
+    const trip = validateTripSettings(input.trip);
+    if (!trip.ok) blocked(trip.reason);
+  }
+}
+
+/**
+ * CP §9; SSOT §44 — the Draft's Trip inventory rules, replaced whole. Every
+ * Plot is eligible unless excluded; a child shares a parent's credit pool.
+ */
+async function writeInventory(tx: Tx, versionId: string, projectId: string, input: CommissionVersionInput) {
+  await tx.tripInventoryRule.deleteMany({ where: { settingsVersionId: versionId } });
+  if (!input.trip?.tripEnabled) return;
+  const { excludedPlotIds, sharedPools } = input.trip;
+  const plotIds = [...new Set([...excludedPlotIds, ...sharedPools.flatMap((p) => [p.plotId, p.parentPlotId])])];
+  const found = await tx.plot.count({ where: { id: { in: plotIds }, projectId } });
+  if (found !== plotIds.length) blocked("Every Trip inventory Plot must belong to this Project.");
+  for (const pool of sharedPools) {
+    if (pool.plotId === pool.parentPlotId) blocked("A Plot cannot share its own credit pool.");
+    if (sharedPools.some((p) => p.plotId === pool.parentPlotId)) blocked("A parent Plot cannot itself be a child in a shared pool.");
+    if (excludedPlotIds.includes(pool.parentPlotId) || excludedPlotIds.includes(pool.plotId)) {
+      blocked("An excluded Plot cannot share a credit pool.");
+    }
+  }
+  await tx.tripInventoryRule.createMany({
+    data: [
+      ...excludedPlotIds.map((plotId) => ({ settingsVersionId: versionId, plotId, eligible: false, reason: "Excluded from the Trip Programme" })),
+      ...sharedPools.map((p) => ({
+        settingsVersionId: versionId,
+        plotId: p.plotId,
+        eligible: true,
+        parentCreditPoolPlotId: p.parentPlotId,
+        reason: "Shares the parent unit's credit pool (SSOT §44)",
+      })),
+    ],
+  });
 }
 
 /** A new Draft, numbered after the Project's latest version. */
@@ -60,7 +136,7 @@ export async function insertDraft(tx: Tx, projectId: string, actorRef: string, i
     orderBy: { version: "desc" },
     select: { version: true },
   });
-  return tx.projectCommissionVersion.create({
+  const created = await tx.projectCommissionVersion.create({
     data: {
       projectId,
       version: (latest?.version ?? 0) + 1,
@@ -68,6 +144,8 @@ export async function insertDraft(tx: Tx, projectId: string, actorRef: string, i
       preparedByRef: actorRef,
     },
   });
+  await writeInventory(tx, created.id, projectId, input);
+  return created;
 }
 
 /** Serialises every write to one Project's versions. */
@@ -121,6 +199,7 @@ export async function prepareCommissionDraft(args: Actor & { projectId: string }
             data: { ...termsData(args), preparedByRef: args.actorRef, preparedAt: new Date() },
           })
         : await insertDraft(tx, args.projectId, args.actorRef, args);
+      if (open) await writeInventory(tx, saved.id, args.projectId, args);
 
       return {
         result: { versionId: saved.id, version: saved.version, projectId: args.projectId },
@@ -174,8 +253,27 @@ export async function sendCommissionVersion(args: Actor & { versionId: string })
           `Version ${version.version}: Direct ${rate(version.directEnabled, version.directPercent)}, ` +
           `Loyalty ${rate(version.loyaltyEnabled, version.loyaltyPercent)}` +
           (version.loyaltyExceptionReason ? `. MD exception: ${version.loyaltyExceptionReason}` : "") +
+          (version.tripEnabled
+            ? `. Trip ${version.tripProgrammeCode}: target ${version.tripTotalTarget}, min Own ` +
+              `${version.tripMinOwnCredits}, max Reference ${version.tripMaxReferenceCredits}`
+            : ". Trip Disabled") +
           (version.effectiveFrom ? `. Effective from ${formatIst(version.effectiveFrom)}` : ""),
       });
+      // CP §7.4, §65 NT02 — a Trip-enabled version waits for its economics review.
+      if (version.tripEnabled) {
+        await ensureTask(tx, {
+          recordKind: "Project",
+          recordId: version.projectId,
+          recordName: `${project.projectCode} · ${project.name}`,
+          purpose: ECONOMICS_REVIEW_PURPOSE,
+          title: "Project Economics Review Confirmation",
+          assigneeRole: "MD",
+          dueAt: new Date(),
+          latestResult:
+            `Version ${version.version}, Trip ${version.tripProgrammeCode}: confirm its economics (Trip ` +
+            `cost and Own + Reference exposure against margin) were reviewed outside the CRM.`,
+        });
+      }
       return {
         result: { versionId: version.id, version: version.version, projectId: version.projectId },
         audit: {
@@ -222,6 +320,13 @@ export async function decideCommissionVersion(args: Actor & { versionId: string;
       const now = new Date();
       const decision = { decidedByRef: args.actorRef, decidedAt: now, decisionNote: args.note.trim() };
       const ids = { versionId: version.id, version: version.version, projectId: version.projectId };
+      // CP §7.4; UAT SET-10 — a Trip Programme activates only after its economics review.
+      if (args.approve && version.tripEnabled && !version.economicsReviewedAt) {
+        blocked("Record the economics review for this Trip Programme first (Project Economics Review Confirmation).");
+      }
+      if (!args.approve) {
+        await closeTasksFor(tx, "Project", version.projectId, args.actorRef, "Version rejected.", ECONOMICS_REVIEW_PURPOSE);
+      }
 
       if (args.approve && version.effectiveFrom && version.effectiveFrom < now) {
         blocked(
@@ -291,6 +396,47 @@ export async function decideCommissionVersion(args: Actor & { versionId: string;
             effectiveFrom: (waits ? version.effectiveFrom! : now).toISOString(),
           },
           reason: args.note,
+        },
+      };
+    }
+  );
+}
+
+/**
+ * CP §7.4, §65 NT02; SSOT §101 — MD confirms a Trip-enabled version's economics
+ * were reviewed outside the CRM. Only the fact, who, when and the version are
+ * kept — never revenue, margin or Trip cost.
+ */
+export async function recordEconomicsReview(args: Actor & { versionId: string; note: string }) {
+  if (args.actorRole !== "MD") blocked("Only MD confirms the economics review.");
+  if (!args.note.trim()) blocked("A compulsory note is required.");
+  return runCommand<{ versionId: string; projectId: string }>(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "ECONOMICS_REVIEW_RECORD",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { versionId: args.versionId },
+    },
+    async (tx) => {
+      const version = await lockedVersion(tx, args.versionId);
+      if (version.status !== "PENDING_APPROVAL" || !version.tripEnabled) {
+        blocked("Only a Trip-enabled version waiting for MD needs an economics review.");
+      }
+      if (version.economicsReviewedAt) blocked("The economics review is already recorded.");
+      await tx.projectCommissionVersion.update({
+        where: { id: version.id },
+        data: { economicsReviewedByRef: args.actorRef, economicsReviewedAt: new Date() },
+      });
+      await closeTasksFor(tx, "Project", version.projectId, args.actorRef, `Reviewed — ${args.note.trim()}`, ECONOMICS_REVIEW_PURPOSE);
+      return {
+        result: { versionId: version.id, projectId: version.projectId },
+        audit: {
+          entity: "Project",
+          entityId: version.projectId,
+          action: "ECONOMICS_REVIEWED",
+          after: { version: version.version, tripProgrammeCode: version.tripProgrammeCode },
+          reason: args.note.trim(),
         },
       };
     }

@@ -43,6 +43,7 @@ import {
 } from "./commission-service";
 import { syncRoyaltyLink } from "./network-service";
 import { refreshCreditOfBooking } from "./royalty-service";
+import { refreshTripOfBooking, syncTripForBooking } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
 const D = Prisma.Decimal;
@@ -864,6 +865,7 @@ export async function decideAcquisition(args: {
         // the Royalty Linked Member of that first purchase final, without
         // waiting for 100% Payment Received.
         await syncRoyaltyLink(tx, acquisition.sourceBooking.primaryPersonId, args.actorRef);
+        await syncTripForBooking(tx, acquisition.sourceBooking.id, args.actorRef);
         // SSOT §59 — and the same Approved Buyback is the alternative milestone
         // for Customer Loyalty, once 25% is received. `cancelCommissionForBooking` above
         // deliberately leaves those records standing; this is what earns them.
@@ -1036,6 +1038,7 @@ async function unwindApprovedBuyback(
   // CR-002 — the Buyback was the alternative milestone that made the Royalty
   // link final. Recompute it from the Bookings now that the Buyback is gone.
   await syncRoyaltyLink(tx, booking.primaryPersonId, actorRef);
+  await syncTripForBooking(tx, acquisition.sourceBookingId, actorRef);
   await reassessCommission(tx, acquisition.sourceBookingId, actorRef);
 
   // The review the approval raised was about a Buyback that no longer exists.
@@ -1076,7 +1079,10 @@ export async function refreshStableCompletion(tx: Tx, acquisitionId: string, act
         : "Stable Buyback Completion no longer holds (SSOT §61).",
     },
   });
-  if (acquisition.sourceBookingId) await refreshCreditOfBooking(tx, acquisition.sourceBookingId, actorRef);
+  if (acquisition.sourceBookingId) {
+    await refreshCreditOfBooking(tx, acquisition.sourceBookingId, actorRef);
+    await refreshTripOfBooking(tx, acquisition.sourceBookingId, actorRef);
+  }
   return stable;
 }
 

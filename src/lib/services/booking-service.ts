@@ -31,6 +31,7 @@ import {
 } from "./commission-service";
 import { createScheduleVersion, syncPaymentFollowUp, type ScheduleInput } from "./payment-service";
 import { touchesDeliveredGift } from "./royalty-service";
+import { syncTripForBooking, touchesTravelledTrip } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 import { ensureCustomerProfile, linkOrCreatePerson } from "./enquiry-service";
 import { validateSoldBy } from "./sold-by";
@@ -756,6 +757,8 @@ export async function decideBookingRequest(args: {
       // Linked Member is stored (SSOT §68). Royalty is a non-cash relationship
       // reward; nothing here sets a rate.
       await syncRoyaltyLink(tx, booking.primaryPersonId, args.actorRef);
+      // SSOT §47; CP §26 — an approved request creates the Pending Own-Sale Credit.
+      await syncTripForBooking(tx, args.bookingId, args.actorRef);
       // prd-complete §11.5 — the payment and commission engines start on approval.
       await generateForBooking(tx, args.bookingId, args.actorRef);
       await reassessCommission(tx, args.bookingId, args.actorRef);
@@ -1449,8 +1452,12 @@ export async function decideSoldByCorrection(args: {
       }
       // CP §60; SSOT §98 — after a Gift was delivered on this attribution, only
       // MD may correct it, and no second Gift follows.
-      if (args.approve && args.actorRole !== "MD" && (await touchesDeliveredGift(tx, args.bookingId))) {
-        blocked("A Royalty Gift was already delivered on this attribution, so only MD may approve this correction.");
+      if (
+        args.approve &&
+        args.actorRole !== "MD" &&
+        ((await touchesDeliveredGift(tx, args.bookingId)) || (await touchesTravelledTrip(tx, args.bookingId)))
+      ) {
+        blocked("A Gift was delivered or a Trip travelled on this attribution, so only MD may approve this correction.");
       }
 
       const booking = await tx.booking.findUniqueOrThrow({
@@ -1518,6 +1525,8 @@ export async function decideSoldByCorrection(args: {
       // first purchase, final or not, and rechecks any Royalty Credit this
       // Booking triggered, using the frozen Programme Version.
       await relinkAfterSoldByCorrection(tx, args.bookingId, args.actorRef);
+      // CP §59 — and the Trip credits, under the Booking's frozen version.
+      await syncTripForBooking(tx, args.bookingId, args.actorRef);
 
       const regenerated = await generateForBooking(tx, args.bookingId, args.actorRef);
       await reassessCommission(tx, args.bookingId, args.actorRef);

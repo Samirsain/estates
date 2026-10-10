@@ -16,6 +16,7 @@ import {
   reverseUndeliveredCredit,
   syncRoyaltyReward,
 } from "./royalty-service";
+import { refreshTripOfMember } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
 /**
@@ -272,6 +273,7 @@ export async function activateMember(args: {
               activationDate,
               status: "ACTIVE",
               invitedByMemberId,
+              inviterFrozenAt: activationDate,
               reraStatus: rera,
               reraNumber: args.reraNumber?.trim() || null,
               reraExpiryDate: args.reraExpiryDate ?? null,
@@ -285,6 +287,8 @@ export async function activateMember(args: {
               activationDate,
               status: "ACTIVE",
               invitedByMemberId,
+              // SSOT §37 — activation is the Membership application in this CRM.
+              inviterFrozenAt: activationDate,
               reraStatus: rera,
               reraNumber: args.reraNumber?.trim() || null,
               reraExpiryDate: args.reraExpiryDate ?? null,
@@ -443,8 +447,9 @@ export async function setMemberStatus(args: {
         // Buying Commission hangs off an Acquisition rather than a Booking.
         if (bookingId) await reassessCommission(tx, bookingId, args.actorRef);
       }
-      // SSOT §82; CP §86 — the Member's Gift fulfilment holds or resumes too.
+      // SSOT §66, §82; CP §86 — the Member's Gift and Trip fulfilment hold or resume too.
       await refreshCreditsOfMember(tx, member.personId, args.actorRef);
+      await refreshTripOfMember(tx, member.personId, args.actorRef);
 
       return {
         result: { memberProfileId: member.id, status: next, reassessedBookings: affected.length },

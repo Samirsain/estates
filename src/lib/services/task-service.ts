@@ -164,6 +164,8 @@ export async function taskSubjects(
   const acquisitionIds = idsFor("Acquisition");
   const commissionIds = idsFor("Commission");
   const creditIds = idsFor("Royalty Credit");
+  const tripRewardIds = idsFor("Trip Reward");
+  const tripBucketIds = idsFor("Trip Bucket");
 
   /** A Person carries at most one of each id; the task is about the Person. */
   const party = (person: {
@@ -185,7 +187,7 @@ export async function taskSubjects(
     customerProfile: { select: { customerId: true } },
   } as const;
 
-  const [bookings, enquiries, members, customers, plots, acquisitions, commissions, credits] =
+  const [bookings, enquiries, members, customers, plots, acquisitions, commissions, credits, tripOwners] =
     await Promise.all([
       bookingIds.length
         ? db.booking.findMany({
@@ -278,6 +280,18 @@ export async function taskSubjects(
             },
           })
         : [],
+      // SSOT §65 — Trip work is about the Member who owns the reward or bucket.
+      tripRewardIds.length + tripBucketIds.length
+        ? db.tripBucket.findMany({
+            where: { OR: [{ id: { in: tripBucketIds } }, { reward: { id: { in: tripRewardIds } } }] },
+            select: {
+              id: true,
+              programmeCode: true,
+              reward: { select: { id: true } },
+              memberProfile: { select: { person: { select: personSelect } } },
+            },
+          })
+        : [],
     ]);
 
   const subjects = new Map<string, TaskSubject>();
@@ -358,6 +372,11 @@ export async function taskSubjects(
     });
   }
 
+  for (const b of tripOwners) {
+    const subject = { project: null, plot: null, plotId: null, reference: b.programmeCode, ...party(b.memberProfile.person) };
+    add(b.id, subject);
+    if (b.reward) add(b.reward.id, subject);
+  }
   for (const c of credits) {
     add(c.id, {
       project: c.triggerBooking.project.name,

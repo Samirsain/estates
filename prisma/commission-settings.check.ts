@@ -240,7 +240,7 @@ async function main() {
   });
   assert.equal(nt01Task.assigneeRole, "MD");
   assert.equal(nt01Task.recordKind, "Project");
-  assert.match(nt01Task.latestResult ?? "", /Version 4: Direct 2\.5%, Loyalty 1%\. Effective from/);
+  assert.match(nt01Task.latestResult ?? "", /Version 4: Direct 2\.5%, Loyalty 1%\. Trip Disabled\. Effective from/);
   const waiting = await decideCommissionVersion({
     idempotencyKey: key(),
     ...MD,

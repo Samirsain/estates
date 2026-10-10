@@ -17,6 +17,7 @@ import {
 import {
   decideCommissionVersion,
   prepareCommissionDraft,
+  recordEconomicsReview,
   sendCommissionVersion,
   type CommissionVersionInput,
 } from "@/lib/services/commission-settings-service";
@@ -268,21 +269,65 @@ function refreshProject(projectId: string) {
 
 export async function prepareCommissionDraftAction(
   projectId: string,
-  input: Omit<CommissionVersionInput, "effectiveFrom"> & { effectiveFrom?: string | null },
+  input: Omit<CommissionVersionInput, "effectiveFrom" | "trip"> & {
+    effectiveFrom?: string | null;
+    trip?: TripDraftInput | null;
+  },
   key: string
 ): Promise<ActionResult> {
   const actor = await requireStaff();
   try {
+    const { trip, ...terms } = input;
     const result = await prepareCommissionDraft({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
       projectId,
-      ...input,
+      ...terms,
       effectiveFrom: input.effectiveFrom ? new Date(input.effectiveFrom) : null,
+      trip: trip
+        ? {
+            ...trip,
+            tripEnabled: true,
+            tripCutOffAt: trip.tripCutOffAt ? new Date(trip.tripCutOffAt) : null,
+            tripWindDownAt: trip.tripWindDownAt ? new Date(trip.tripWindDownAt) : null,
+          }
+        : undefined,
     });
     refreshProject(projectId);
     return { ok: true, message: `Draft version ${result.version} saved. Send it to MD when it is ready.` };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** CP §7.1 — the Trip part of a Draft as the browser sends it (dates as ISO strings). */
+export type TripDraftInput = {
+  tripTotalTarget: number;
+  tripMinOwnCredits: number;
+  tripMaxReferenceCredits: number;
+  tripProgrammeCode: string;
+  tripProgrammeVersionRef: string;
+  tripTermsVersionRef: string;
+  tripCutOffAt: string | null;
+  tripWindDownAt: string | null;
+  excludedPlotIds: string[];
+  sharedPools: { plotId: string; parentPlotId: string }[];
+};
+
+/** CP §7.4, §65 NT02 — MD records the Trip Programme's economics review. */
+export async function recordEconomicsReviewAction(versionId: string, note: string, key: string): Promise<ActionResult> {
+  const actor = await requireStaff();
+  try {
+    const result = await recordEconomicsReview({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      versionId,
+      note,
+    });
+    refreshProject(result.projectId);
+    return { ok: true, message: "Economics review recorded. The version can now be approved." };
   } catch (error) {
     return toResult(error);
   }

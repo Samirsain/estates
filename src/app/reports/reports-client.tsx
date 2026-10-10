@@ -23,6 +23,8 @@ const REPORTS: Array<{ name: ReportName; label: string; note: string }> = [
   { name: "COMMISSION", label: "Commission", note: "Direct, Customer Loyalty and Buying Commission — current records with their frozen rate and Project settings version." },
   { name: "LOYALTY", label: "Customer Loyalty", note: "Customer-closing (of three for life) and repeat-purchase Loyalty, reported apart." },
   { name: "ROYALTY", label: "Royalty Relationship Reward", note: "Each Customer's Royalty relationship, its one opportunity, and the non-cash Gift it led to." },
+  { name: "TRIP", label: "Trip Reward", note: "Each Trip bucket: frozen target and composition, credits, expiry and the reward." },
+  { name: "REFERENCE", label: "Reference Credit", note: "Each directly introduced Member's one lifetime Reference opportunity and where it went." },
   { name: "INVENTORY", label: "Plot Inventory", note: "Every Plot with status, restriction and resale flag." },
   { name: "COMPLETIONS", label: "Allotment / Registry", note: "Delivered Bookings and the route that completed them." },
 ];

@@ -782,3 +782,55 @@ CREATE UNIQUE INDEX IF NOT EXISTS "one_active_royalty_programme"
   ON "RoyaltyProgrammeVersion" ((true)) WHERE "status" = 'ACTIVE';
 CREATE UNIQUE INDEX IF NOT EXISTS "one_open_royalty_programme"
   ON "RoyaltyProgrammeVersion" ((true)) WHERE "status" IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED');
+
+-- ------------------------------------ Business Model v2 part 3 — Trip Reward
+
+-- CP §7.2 — an Enabled Trip Programme has a target, a composition within it and
+-- its references; a Disabled one carries none of that (Disabled is not "0").
+ALTER TABLE "ProjectCommissionVersion" DROP CONSTRAINT IF EXISTS "trip_enabled_has_settings";
+ALTER TABLE "ProjectCommissionVersion" ADD CONSTRAINT "trip_enabled_has_settings"
+  CHECK (("tripEnabled"
+          AND "tripTotalTarget" > 0
+          AND "tripMinOwnCredits" BETWEEN 0 AND "tripTotalTarget"
+          AND "tripMaxReferenceCredits" BETWEEN 0 AND "tripTotalTarget"
+          AND length(btrim(coalesce("tripProgrammeCode", ''))) > 0
+          AND length(btrim(coalesce("tripProgrammeVersionRef", ''))) > 0
+          AND length(btrim(coalesce("tripTermsVersionRef", ''))) > 0
+          AND ("tripWindDownAt" IS NULL OR ("tripCutOffAt" IS NOT NULL AND "tripWindDownAt" >= "tripCutOffAt")))
+      OR (NOT "tripEnabled" AND "tripTotalTarget" IS NULL AND "tripMinOwnCredits" IS NULL
+          AND "tripMaxReferenceCredits" IS NULL));
+
+-- CP §7.4; UAT SET-10 — a Trip-enabled version is approved only after its economics review.
+ALTER TABLE "ProjectCommissionVersion" DROP CONSTRAINT IF EXISTS "trip_needs_economics_review";
+ALTER TABLE "ProjectCommissionVersion" ADD CONSTRAINT "trip_needs_economics_review"
+  CHECK (NOT "tripEnabled" OR "status" NOT IN ('APPROVED', 'ACTIVE', 'SUPERSEDED')
+      OR ("economicsReviewedAt" IS NOT NULL AND "economicsReviewedByRef" IS NOT NULL));
+
+-- SSOT §43; CP §25.3, §80 (9) — one Own-Sale Credit per Member + unit +
+-- programme across every sale type and version; one live per Booking.
+CREATE UNIQUE INDEX IF NOT EXISTS "one_own_sale_credit_per_member_unit_programme"
+  ON "TripCredit" ("memberProfileId", "projectId", "programmeCode", "creditPlotId")
+  WHERE "creditType" = 'OWN_SALE' AND "state" <> 'REVERSED';
+CREATE UNIQUE INDEX IF NOT EXISTS "one_live_own_sale_credit_per_booking"
+  ON "TripCredit" ("sourceBookingId") WHERE "creditType" = 'OWN_SALE' AND "state" <> 'REVERSED';
+-- SSOT §49; CP §80 (6) — one lifetime Reference Credit per introduced Member.
+CREATE UNIQUE INDEX IF NOT EXISTS "one_reference_credit_per_introduced_member"
+  ON "TripCredit" ("introducedMemberId") WHERE "creditType" = 'REFERENCE' AND "state" <> 'REVERSED';
+
+ALTER TABLE "TripCredit" DROP CONSTRAINT IF EXISTS "trip_credit_stamps";
+ALTER TABLE "TripCredit" ADD CONSTRAINT "trip_credit_stamps"
+  CHECK (("creditType" <> 'REFERENCE' OR "introducedMemberId" IS NOT NULL)
+     AND ("state" IN ('PENDING', 'REVERSED') OR ("qualifiedAt" IS NOT NULL AND "expiresAt" IS NOT NULL))
+     AND ("state" NOT IN ('ALLOCATED', 'USED') OR "bucketId" IS NOT NULL)
+     AND ("state" <> 'USED' OR "usedAt" IS NOT NULL)
+     AND ("state" <> 'REVERSED' OR ("reversedAt" IS NOT NULL AND length(btrim(coalesce("reversalReason", ''))) > 0)));
+
+-- CP §80 (10) — one open bucket per Member + programme.
+CREATE UNIQUE INDEX IF NOT EXISTS "one_open_trip_bucket"
+  ON "TripBucket" ("memberProfileId", "projectId", "programmeCode") WHERE "state" = 'OPEN';
+
+ALTER TABLE "TripReward" DROP CONSTRAINT IF EXISTS "trip_reward_stamps";
+ALTER TABLE "TripReward" ADD CONSTRAINT "trip_reward_stamps"
+  CHECK (("state" NOT IN ('BOOKED', 'TRAVELLED') OR ("bookingReference" IS NOT NULL AND "bookedAt" IS NOT NULL AND "recipient" IS NOT NULL))
+     AND ("state" <> 'TRAVELLED' OR "travelledAt" IS NOT NULL)
+     AND ("state" NOT IN ('BOOKED', 'TRAVELLED') OR "recipient" <> 'NON_FAMILY' OR "recipientApprovedAt" IS NOT NULL));
