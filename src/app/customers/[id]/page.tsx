@@ -115,7 +115,7 @@ export default async function CustomerDetailPage({
   const customer = await db.customerProfile.findUnique({
     where: { id },
     include: {
-      person: { include: { memberProfile: { select: { id: true, memberId: true } } } },
+      person: { include: { memberProfile: { select: { id: true, memberId: true, status: true } } } },
       royaltyLinkedMember: { include: { person: true } },
       royaltyLinkFirstBooking: { select: { id: true, bookingNumber: true, requestNo: true } },
       termsAcceptances: { orderBy: { acceptedOn: "desc" } },
@@ -222,6 +222,32 @@ export default async function CustomerDetailPage({
         c.payment !== "CANCELLED"
     )
     .sort((a, b) => a.qualifiedAt!.getTime() - b.qualifiedAt!.getTime());
+
+  // CP §69 — repeat-purchase Loyalty: counted, never capped (SSOT §28).
+  const repeatEarned = commissions.filter(
+    (c) =>
+      c.type === "LOYALTY" &&
+      c.beneficiaryRole === "REPEAT_PURCHASE_CUSTOMER" &&
+      c.qualifiedAt !== null &&
+      c.payment !== "CANCELLED"
+  ).length;
+
+  // CP §17, §69 — whether this Customer may be named Sold By Customer today,
+  // and if not, every reason — the same conditions the Booking Request checks.
+  const ownApprovedPurchases = await db.booking.count({
+    where: {
+      primaryPersonId: customer.personId,
+      bookingNumber: { not: null },
+      status: { notIn: ["CANCELLED", "REQUEST_REJECTED", "REQUEST_CANCELLED"] },
+    },
+  });
+  const closerBlockers = [
+    ownApprovedPurchases === 0 && "no own approved purchase",
+    customer.person.aadhaarStatus !== "VERIFIED" && "KYC not verified",
+    customer.termsAcceptances.length === 0 && "Customer Terms not accepted",
+    customer.person.memberProfile?.status === "ACTIVE" && "an Active Member closes as Sold By Member",
+    closingUsed.length >= CUSTOMER_CLOSING_LOYALTY_LIMIT && "three closing events used — Membership needed",
+  ].filter((r): r is string => typeof r === "string");
 
   const now = Date.now();
 
@@ -752,7 +778,7 @@ export default async function CustomerDetailPage({
               Royalty link, and where that link stands. They were two stacked
               lists in two columns, which is five lines of card for five short
               facts. `Stat` already draws exactly this, dividers included. */}
-          <dl className="grid grid-cols-2 gap-y-4 md:grid-cols-5 md:divide-x md:divide-border/60">
+          <dl className="grid grid-cols-2 gap-y-4 md:grid-cols-4 md:divide-x md:divide-border/60 lg:grid-cols-7">
             {/* v2.1 §21, §25 — the three Customer-closing events of a lifetime,
                 in the order they qualified. Repeat-purchase Loyalty is unlimited
                 and is not counted here. */}
@@ -776,6 +802,11 @@ export default async function CustomerDetailPage({
               );
             })}
 
+            <Stat
+              label="Repeat purchase"
+              value={`${repeatEarned} earned`}
+              hint="Own repeat purchases · unlimited"
+            />
             <Stat
               label="First purchase"
               value={
@@ -827,6 +858,17 @@ export default async function CustomerDetailPage({
               Loyalty is paid. Shown for every Customer: anyone may close a sale
               once they have bought. */}
           <div className="mt-4 grid gap-3 border-t border-border/60 pt-3 md:grid-cols-2">
+            {/* CP §17, §69 — the verdict first, then the two conditions staff can act on. */}
+            <div className="text-xs md:col-span-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Can close a sale (Sold By Customer)
+              </p>
+              <p className={`mt-0.5 font-medium ${closerBlockers.length ? "text-amber-700" : "text-emerald-700"}`}>
+                {closerBlockers.length
+                  ? `No — ${closerBlockers.join(" · ")}`
+                  : `Yes — ${CUSTOMER_CLOSING_LOYALTY_LIMIT - closingUsed.length} closing event(s) left`}
+              </p>
+            </div>
             <div className="flex items-start justify-between gap-3 text-xs">
               <div>
                 <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Closer KYC</p>

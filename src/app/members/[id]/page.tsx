@@ -196,7 +196,11 @@ export default async function MemberDetailPage({
     db.bankDetail.findMany({ where: { personId }, orderBy: { createdAt: "desc" } }),
     db.customerProfile.findMany({
       where: { royaltyLinkedMemberId: member.id },
-      include: { person: true },
+      include: {
+        person: true,
+        // CP §68 — the first purchase that made the relationship.
+        royaltyLinkFirstBooking: { select: { id: true, bookingNumber: true, requestNo: true, plot: { select: { plotNumber: true } } } },
+      },
       orderBy: { royaltyLinkFinalAt: "asc" },
     }),
     db.booking.findMany({
@@ -249,12 +253,29 @@ export default async function MemberDetailPage({
       include: {
         customerProfile: { select: { customerId: true, person: { select: { fullName: true } } } },
         triggerBooking: { select: { bookingNumber: true } },
-        programmeVersion: { select: { programmeRef: true } },
+        programmeVersion: { select: { programmeRef: true, version: true, catalogueVersion: true } },
       },
       orderBy: { eligibleAt: "desc" },
     }),
     // SSOT §40, §47; CP §68 — the Trip credits and buckets this Member owns.
-    db.tripCredit.findMany({ where: { memberProfileId: id }, select: { projectId: true, programmeCode: true, creditType: true, state: true, bucketId: true, expiresAt: true } }),
+    db.tripCredit.findMany({
+      where: { memberProfileId: id },
+      select: {
+        id: true,
+        projectId: true,
+        programmeCode: true,
+        creditType: true,
+        state: true,
+        bucketId: true,
+        expiresAt: true,
+        qualificationRoute: true,
+        qualifiedAt: true,
+        createdAt: true,
+        reversalReason: true,
+        sourceBooking: { select: { bookingNumber: true, plot: { select: { plotNumber: true } } } },
+        introducedMember: { select: { memberId: true } },
+      },
+    }),
     db.tripBucket.findMany({
       where: { memberProfileId: id },
       include: { reward: true },
@@ -629,21 +650,38 @@ export default async function MemberDetailPage({
             {royaltyLinkedCustomers.length === 0 ? (
               <p className="text-xs text-muted-foreground">None yet.</p>
             ) : (
-              <ul className="divide-y divide-border/40 text-xs">
-                {royaltyLinkedCustomers.map((c) => (
-                  <NetworkRow
-                    key={c.id}
-                    href={`/customers/${c.id}`}
-                    code={c.customerId}
-                    name={c.person.fullName}
-                    note={
-                      <Badge variant={c.royaltyLinkFinalAt ? "success" : "outline"}>
-                        {c.royaltyLinkFinalAt ? "Final" : "Provisional"}
-                      </Badge>
-                    }
-                  />
-                ))}
-              </ul>
+              <>
+                {/* CP §68 — the relationships and what each can still earn. */}
+                <p className="pb-1 text-[11px] text-muted-foreground">
+                  {royaltyLinkedCustomers.filter((c) => c.royaltyLinkFinalAt).length} final ·{" "}
+                  {royaltyLinkedCustomers.filter((c) => c.royaltyLinkFinalAt && !c.royaltyOpportunityConsumedAt).length} can still
+                  earn a Gift · {royaltyLinkedCustomers.filter((c) => !c.royaltyLinkFinalAt).length} waiting for full payment
+                </p>
+                <ul className="divide-y divide-border/40 text-xs">
+                  {royaltyLinkedCustomers.map((c) => (
+                    <NetworkRow
+                      key={c.id}
+                      href={`/customers/${c.id}`}
+                      code={c.customerId}
+                      name={`${c.person.fullName}${
+                        c.royaltyLinkFirstBooking
+                          ? ` · first purchase ${c.royaltyLinkFirstBooking.bookingNumber ?? c.royaltyLinkFirstBooking.requestNo} (${c.royaltyLinkFirstBooking.plot.plotNumber})`
+                          : ""
+                      }${c.royaltyLinkFinalAt ? ` · final ${formatIst(c.royaltyLinkFinalAt)}` : ""}`}
+                      note={
+                        <>
+                          <Badge variant={c.royaltyLinkFinalAt ? "success" : "outline"}>
+                            {c.royaltyLinkFinalAt ? "Final" : "Provisional"}
+                          </Badge>
+                          <Badge variant={c.royaltyOpportunityConsumedAt ? "outline" : "info"}>
+                            {c.royaltyOpportunityConsumedAt ? "Consumed" : "Unused"}
+                          </Badge>
+                        </>
+                      }
+                    />
+                  ))}
+                </ul>
+              </>
             )}
           </Section>
         </div>
@@ -676,6 +714,8 @@ export default async function MemberDetailPage({
               customerName: c.customerProfile.person.fullName,
               bookingNumber: c.triggerBooking.bookingNumber,
               programmeRef: c.programmeVersion.programmeRef,
+              programmeVersion: c.programmeVersion.version,
+              catalogueVersion: c.programmeVersion.catalogueVersion,
               route: c.qualificationRoute,
               eligibleAt: c.eligibleAt.toISOString(),
               selectedRewardRef: c.selectedRewardRef,
@@ -683,9 +723,12 @@ export default async function MemberDetailPage({
               recipientName: c.recipientName,
               recipientApproved: c.recipientApprovedAt !== null,
               orderReference: c.orderReference,
+              orderedAt: c.orderedAt?.toISOString() ?? null,
               deliveredAt: c.deliveredAt?.toISOString() ?? null,
+              deliveryReference: c.deliveryReference,
               reversalReason: c.reversalReason,
             }))}
+            openOpportunities={royaltyLinkedCustomers.filter((c) => c.royaltyLinkFinalAt && !c.royaltyOpportunityConsumedAt).length}
           />
         </Section>
 

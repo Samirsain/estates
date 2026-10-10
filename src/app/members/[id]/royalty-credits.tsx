@@ -27,6 +27,9 @@ export type RoyaltyCreditView = {
   customerName: string;
   bookingNumber: string | null;
   programmeRef: string;
+  /** CP §68 — the Programme Version and its catalogue. */
+  programmeVersion: number;
+  catalogueVersion: string;
   route: "PAYMENT_100" | "APPROVED_BUYBACK";
   eligibleAt: string;
   selectedRewardRef: string | null;
@@ -34,7 +37,9 @@ export type RoyaltyCreditView = {
   recipientName: string | null;
   recipientApproved: boolean;
   orderReference: string | null;
+  orderedAt: string | null;
   deliveredAt: string | null;
+  deliveryReference: string | null;
   reversalReason: string | null;
 };
 
@@ -74,7 +79,16 @@ type Dialog =
   | { kind: "ORDER"; credit: RoyaltyCreditView }
   | { kind: "DELIVER"; credit: RoyaltyCreditView };
 
-export default function RoyaltyCredits({ role, credits }: { role: string; credits: RoyaltyCreditView[] }) {
+export default function RoyaltyCredits({
+  role,
+  credits,
+  openOpportunities = 0,
+}: {
+  role: string;
+  credits: RoyaltyCreditView[];
+  /** CP §68 — final relationships whose one Gift is still unused. */
+  openOpportunities?: number;
+}) {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
@@ -92,7 +106,15 @@ export default function RoyaltyCredits({ role, credits }: { role: string; credit
     }
   }
 
-  if (credits.length === 0) return <p className="text-xs text-muted-foreground">No Royalty Credit yet.</p>;
+  if (credits.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        No Royalty Credit yet. A Gift is earned when a final linked Customer&apos;s first Club-direct purchase is paid in
+        full, or bought back on an approved Buyback after 25%.
+        {openOpportunities > 0 ? ` ${openOpportunities} relationship(s) can still earn one.` : ""}
+      </p>
+    );
+  }
 
   return (
     <div className="space-y-2">
@@ -111,7 +133,7 @@ export default function RoyaltyCredits({ role, credits }: { role: string; credit
                 </span>
               </div>
               <p className="text-muted-foreground">
-                {c.bookingNumber} · {c.programmeRef} ·{" "}
+                {c.bookingNumber} · {c.programmeRef} v{c.programmeVersion} ({c.catalogueVersion}) ·{" "}
                 {c.route === "PAYMENT_100" ? "100% Payment Received" : "Approved Buyback"} · {formatIst(c.eligibleAt)}
               </p>
               {c.selectedRewardRef && (
@@ -120,8 +142,18 @@ export default function RoyaltyCredits({ role, credits }: { role: string; credit
                   {c.recipient === "NON_FAMILY" && (c.recipientApproved ? " · MD approved" : " · waiting for MD")}
                 </p>
               )}
-              {c.orderReference && <p className="text-muted-foreground">Order {c.orderReference}</p>}
-              {c.deliveredAt && <p className="text-muted-foreground">Delivered {formatIst(c.deliveredAt)}</p>}
+              {c.orderReference && (
+                <p className="text-muted-foreground">
+                  Order {c.orderReference}
+                  {c.orderedAt ? ` · ${formatIst(c.orderedAt)}` : ""}
+                </p>
+              )}
+              {c.deliveredAt && (
+                <p className="text-muted-foreground">
+                  Delivered {formatIst(c.deliveredAt)}
+                  {c.deliveryReference ? ` · ${c.deliveryReference}` : ""}
+                </p>
+              )}
               {c.reversalReason && <p className="text-muted-foreground">{c.reversalReason}</p>}
             </div>
             <div className="flex flex-wrap gap-1">

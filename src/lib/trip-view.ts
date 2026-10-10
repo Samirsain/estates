@@ -14,14 +14,34 @@ export type TripProgrammeView = {
   pendingOwn: number;
   qualifiedOwn: number;
   qualifiedReference: number;
+  /** CP §68 — qualified Reference beyond Maximum Reference, kept for a later Trip. */
+  banked: number;
   held: number;
   expired: number;
   nearestExpiry: string | null;
+  /** CP §68 — every credit of the programme, oldest first (staff view; empty in the portal). */
+  credits: Array<{
+    id: string;
+    type: string;
+    state: string;
+    route: string | null;
+    qualifiedAt: string | null;
+    expiresAt: string | null;
+    bucketId: string | null;
+    booking: string | null;
+    plot: string | null;
+    via: string | null;
+    reversalReason: string | null;
+  }>;
   rewards: Array<{
     id: string;
+    bucketId: string;
+    /** CP §37 — the rules the Trip was judged by, frozen on its bucket. */
+    rules: { target: number; minOwn: number; maxRef: number; termsRef: string };
     state: "EARNED" | "BOOKED" | "TRAVELLED" | "DEFICIENT" | "CANCELLED";
     holdReason: string | null;
     earnedAt: string;
+    bookedAt: string | null;
     recipient: string | null;
     recipientName: string | null;
     recipientApproved: boolean;
@@ -44,7 +64,22 @@ export async function tripOfMember(memberProfileId: string) {
 
 /** CP §68 — the Member's Trip, grouped by Project programme. */
 export async function tripProgrammes(
-  credits: { projectId: string; programmeCode: string; creditType: string; state: string; bucketId: string | null; expiresAt: Date | null }[],
+  credits: {
+    projectId: string;
+    programmeCode: string;
+    creditType: string;
+    state: string;
+    bucketId: string | null;
+    expiresAt: Date | null;
+    // The staff view passes these for the credit list; the portal does not.
+    id?: string;
+    qualificationRoute?: string | null;
+    qualifiedAt?: Date | null;
+    createdAt?: Date;
+    reversalReason?: string | null;
+    sourceBooking?: { bookingNumber: string | null; plot: { plotNumber: string } };
+    introducedMember?: { memberId: string } | null;
+  }[],
   buckets: Array<{
     id: string;
     projectId: string;
@@ -64,6 +99,7 @@ export async function tripProgrammes(
       recipientName: string | null;
       recipientApprovedAt: Date | null;
       bookingReference: string | null;
+      bookedAt?: Date | null;
       travelledAt: Date | null;
     } | null;
   }>
@@ -100,6 +136,25 @@ export async function tripProgrammes(
       pendingOwn: own("PENDING"),
       qualifiedOwn: own("QUALIFIED"),
       qualifiedReference: mine.filter((c) => c.creditType === "REFERENCE" && c.state === "QUALIFIED" && !c.bucketId).length,
+      banked: latest
+        ? Math.max(0, mine.filter((c) => c.creditType === "REFERENCE" && c.state === "QUALIFIED" && !c.bucketId).length - latest.maxReferenceCredits)
+        : 0,
+      credits: mine
+        .filter((c) => c.id)
+        .sort((a, b) => (a.qualifiedAt ?? a.createdAt ?? new Date(0)).getTime() - (b.qualifiedAt ?? b.createdAt ?? new Date(0)).getTime())
+        .map((c) => ({
+          id: c.id!,
+          type: c.creditType,
+          state: c.state,
+          route: c.qualificationRoute ?? null,
+          qualifiedAt: c.qualifiedAt?.toISOString() ?? null,
+          expiresAt: c.expiresAt?.toISOString() ?? null,
+          bucketId: c.bucketId,
+          booking: c.sourceBooking?.bookingNumber ?? null,
+          plot: c.sourceBooking?.plot.plotNumber ?? null,
+          via: c.introducedMember?.memberId ?? null,
+          reversalReason: c.reversalReason ?? null,
+        })),
       held: mine.filter((c) => c.state === "HELD").length,
       expired: mine.filter((c) => c.state === "EXPIRED").length,
       nearestExpiry: expiries.length ? new Date(Math.min(...expiries)).toISOString() : null,
@@ -107,9 +162,12 @@ export async function tripProgrammes(
         .filter((b) => b.projectId === projectId && b.programmeCode === code && b.reward)
         .map((b) => ({
           id: b.reward!.id,
+          bucketId: b.id,
+          rules: { target: b.totalTarget, minOwn: b.minOwnCredits, maxRef: b.maxReferenceCredits, termsRef: b.termsVersionRef },
           state: b.reward!.state,
           holdReason: b.reward!.holdReason,
           earnedAt: b.reward!.earnedAt.toISOString(),
+          bookedAt: b.reward!.bookedAt?.toISOString() ?? null,
           recipient: b.reward!.recipient,
           recipientName: b.reward!.recipientName,
           recipientApproved: b.reward!.recipientApprovedAt !== null,

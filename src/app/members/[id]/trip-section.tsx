@@ -38,6 +38,20 @@ const RECIPIENTS = [
 
 const newKey = () => `trp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
+/** SSOT §47–§64 — a credit's life, in staff words. */
+const CREDIT_STATE: Record<string, string> = {
+  PENDING: "Pending — waiting for 100% payment",
+  QUALIFIED: "Qualified",
+  ALLOCATED: "In an earned Trip",
+  USED: "Used — travelled",
+  HELD: "Held — Member deactivated",
+  EXPIRED: "Expired",
+  REVERSED: "Reversed",
+};
+
+const TH = "py-1 pr-3 text-left font-medium text-muted-foreground";
+const TD = "py-1 pr-3";
+
 type Dialog =
   | { kind: "NOMINEE"; rewardId: string }
   | { kind: "DECIDE"; rewardId: string; approve: boolean }
@@ -82,25 +96,90 @@ export default function TripSection({
       {programmes.length === 0 ? (
         <p className="text-muted-foreground">No Trip progress yet.</p>
       ) : (
-        programmes.map((p) => (
-          <div key={p.key} className="space-y-1.5 rounded-lg border border-border/60 p-2.5">
-            <p className="font-medium">
-              {p.project} · {p.code}
-            </p>
-            {p.open ? (
-              <p className="text-muted-foreground">
-                Open bucket: target {p.open.target} · min Own {p.open.minOwn} · max Reference {p.open.maxRef} · Terms{" "}
-                {p.open.termsRef} · since {formatIst(p.open.openedAt)}
-              </p>
-            ) : (
-              <p className="text-muted-foreground">No open bucket.</p>
+        programmes.map((p) => {
+          // CP §68 — what counts toward the next Trip: Own, plus Reference up to its maximum.
+          const countedRef = p.rules ? Math.min(p.qualifiedReference, p.rules.maxRef) : p.qualifiedReference;
+          const counted = p.qualifiedOwn + countedRef;
+          const label = (id: string) => {
+            const c = p.credits.find((x) => x.id === id)!;
+            return `${c.plot ?? "?"}${c.via ? ` (Reference via ${c.via})` : ""}`;
+          };
+          return (
+          <div key={p.key} className="space-y-2 rounded-lg border border-border/60 p-2.5">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="font-medium">
+                  {p.project} · {p.code}
+                </p>
+                <p className="text-muted-foreground">
+                  {p.rules
+                    ? `Target ${p.rules.target} · min Own ${p.rules.minOwn} · max Reference ${p.rules.maxRef} · Terms ${p.rules.termsRef}`
+                    : "No bucket yet"}
+                  {p.open ? ` · bucket open since ${formatIst(p.open.openedAt)}` : " · no open bucket — the next qualifying sale opens one"}
+                </p>
+              </div>
+              {p.rules && (
+                <Badge variant="info">
+                  {p.rewards.length > 0 ? "Next Trip " : ""}
+                  {counted} / {p.rules.target}
+                </Badge>
+              )}
+            </div>
+            <dl className="grid grid-cols-[max-content_3rem] gap-x-3 gap-y-0.5 sm:grid-cols-[repeat(4,max-content_4rem)]">
+              <dt className="text-muted-foreground">Pending Own</dt>
+              <dd className="tabular-nums">{p.pendingOwn}</dd>
+              <dt className="text-muted-foreground">Qualified Own</dt>
+              <dd className="tabular-nums">{p.qualifiedOwn}</dd>
+              <dt className="text-muted-foreground">Qualified Reference</dt>
+              <dd className="tabular-nums">{countedRef}</dd>
+              <dt className="text-muted-foreground">Banked Reference</dt>
+              <dd className="tabular-nums">{p.banked}</dd>
+              <dt className="text-muted-foreground">Held</dt>
+              <dd className="tabular-nums">{p.held}</dd>
+              <dt className="text-muted-foreground">Expired</dt>
+              <dd className="tabular-nums">{p.expired}</dd>
+              <dt className="text-muted-foreground">Next expiry</dt>
+              <dd>{p.nearestExpiry ? formatIst(p.nearestExpiry) : "—"}</dd>
+            </dl>
+            {p.credits.length > 0 && (
+              <details>
+                <summary className="cursor-pointer text-muted-foreground">Credits ({p.credits.length})</summary>
+                <div className="mt-1 overflow-x-auto">
+                  <table className="w-full min-w-[40rem]">
+                    <thead className="border-b border-border/50">
+                      <tr>
+                        <th className={TH}>Type</th>
+                        <th className={TH}>Source</th>
+                        <th className={TH}>State</th>
+                        <th className={TH}>Qualified by</th>
+                        <th className={TH}>Qualified</th>
+                        <th className={TH}>Expires</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/30">
+                      {p.credits.map((c) => (
+                        <tr key={c.id}>
+                          <td className={TD}>{c.type === "REFERENCE" ? "Reference" : "Own sale"}</td>
+                          <td className={TD}>
+                            {c.booking ?? "—"} · {c.plot ?? "—"}
+                            {c.via && <span className="block text-[11px] text-muted-foreground">first sale of {c.via}</span>}
+                          </td>
+                          <td className={TD}>
+                            {CREDIT_STATE[c.state] ?? c.state}
+                            {c.reversalReason && <span className="block text-[11px] text-muted-foreground">{c.reversalReason}</span>}
+                          </td>
+                          <td className={TD}>
+                            {c.route === "APPROVED_BUYBACK" ? "Approved Buyback" : c.route === "PAYMENT_100" ? "100% Payment" : "—"}
+                          </td>
+                          <td className={TD}>{c.qualifiedAt ? formatIst(c.qualifiedAt) : "—"}</td>
+                          <td className={TD}>{c.expiresAt && !c.bucketId ? formatIst(c.expiresAt) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             )}
-            <p>
-              Own: {p.pendingOwn} pending · {p.qualifiedOwn} qualified · Reference: {p.qualifiedReference} banked
-              {p.held > 0 ? ` · ${p.held} held` : ""}
-              {p.expired > 0 ? ` · ${p.expired} expired` : ""}
-              {p.nearestExpiry ? ` · next expiry ${formatIst(p.nearestExpiry)}` : ""}
-            </p>
             {p.rewards.map((r) => (
               <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-border/40 pt-1.5">
                 <span className="flex flex-wrap items-center gap-2">
@@ -113,7 +192,15 @@ export default function TripSection({
                     {r.recipient ? ` · ${r.recipient === "SELF" ? "the Member" : r.recipientName}` : ""}
                     {r.recipient === "NON_FAMILY" ? (r.recipientApproved ? " (MD approved)" : " (waiting for MD)") : ""}
                     {r.bookingReference ? ` · ${r.bookingReference}` : ""}
+                    {r.bookedAt ? ` · booked ${formatIst(r.bookedAt)}` : ""}
                     {r.travelledAt ? ` · travelled ${formatIst(r.travelledAt)}` : ""}
+                  </span>
+                  <span className="basis-full text-[11px] text-muted-foreground">
+                    Judged by target {r.rules.target} · min Own {r.rules.minOwn} · max Reference {r.rules.maxRef} · Terms{" "}
+                    {r.rules.termsRef}
+                    {p.credits.some((c) => c.bucketId === r.bucketId)
+                      ? ` · credits: ${p.credits.filter((c) => c.bucketId === r.bucketId).map((c) => label(c.id)).join(", ")}`
+                      : ""}
                   </span>
                 </span>
                 <span className="flex gap-1">
@@ -146,7 +233,8 @@ export default function TripSection({
               </div>
             ))}
           </div>
-        ))
+          );
+        })
       )}
 
       <div className="space-y-1 border-t border-border/40 pt-2">
