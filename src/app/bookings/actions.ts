@@ -4,7 +4,13 @@
 // Every action re-checks permission on the server. Hiding a button is never the
 // control (DESIGN §1), and the domain services re-check state on top of this.
 
-import { clearRecovery, closeAdjustmentWithoutRecovery, openRecovery, setOffRecovery } from "@/lib/services/recovery-service";
+import {
+  approveBeforeOldRecovery,
+  clearRecovery,
+  closeAdjustmentWithoutRecovery,
+  openRecovery,
+  setOffRecovery,
+} from "@/lib/services/recovery-service";
 import { revalidatePath } from "next/cache";
 import type { SoldByType } from "@prisma/client";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -453,6 +459,24 @@ export async function openRecoveryAction(
       ok: true,
       message: `Recovery ${result.recoveryNo} opened. New cash payouts to this Person are held until it is repaid or set off.`,
     };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** CP §64 T23 — MD pays the corrected beneficiary before the old Recovery. */
+export async function approveBeforeOldRecoveryAction(input: { recordId: string; note: string }, key: string): Promise<ActionResult> {
+  const actor = await requireStaff("COMMISSION_PROCESS");
+  try {
+    await approveBeforeOldRecovery({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      recordId: input.recordId,
+      note: input.note,
+    });
+    refresh();
+    return { ok: true, message: "Approved. The corrected beneficiary may be paid before the old Recovery." };
   } catch (error) {
     return toResult(error);
   }

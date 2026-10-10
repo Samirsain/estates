@@ -168,6 +168,37 @@ export async function outstandingRecovery(tx: Tx, personId: string) {
   });
 }
 
+/** CP §64 T23 — Correct Beneficiary Before Old Recovery — MD Approval. */
+export const BEFORE_RECOVERY_PURPOSE = "BENEFICIARY_BEFORE_RECOVERY";
+
+/**
+ * CP §64 T23 — whether a corrected beneficiary must wait: the Booking carries a
+ * superseded, paid record of a different beneficiary that is now Adjustment
+ * Required and not yet resolved — a Recovery still outstanding, or the T21
+ * adjustment still unanswered. Resolved means cleared, or closed by Accounts
+ * with no Recovery needed.
+ */
+async function oldBeneficiaryRecoveryPending(tx: Tx, bookingId: string, personId: string): Promise<boolean> {
+  const old = await tx.commissionRecord.findMany({
+    where: {
+      bookingId,
+      isCurrent: false,
+      payment: "ACCOUNTS_ADJUSTMENT_REQUIRED",
+      beneficiaryPersonId: { not: personId },
+    },
+    select: { id: true },
+  });
+  if (old.length === 0) return false;
+  const ids = old.map((r) => r.id);
+  const [recoveries, adjustments] = await Promise.all([
+    tx.recovery.count({ where: { commissionRecordId: { in: ids }, status: "OUTSTANDING" } }),
+    tx.task.count({
+      where: { recordKind: "Commission", recordId: { in: ids }, purpose: ADJUSTMENT_PURPOSE, status: "PENDING" },
+    }),
+  ]);
+  return recoveries + adjustments > 0;
+}
+
 /** CP §64 T43 — renamed from "Membership Invitation — Loyalty Exhausted". */
 export const CLOSING_LIMIT_PURPOSE = "CUSTOMER_CLOSING_LIMIT";
 
@@ -607,6 +638,9 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
       bookingProcess: booking.activeProcess,
       acquisitionPaymentPending: false, // Phase 5 sets this from the acquisition.
       recoveryOutstanding: (await outstandingRecovery(tx, record.beneficiaryPersonId)) !== null,
+      oldRecoveryPending:
+        !record.beforeRecoveryApprovedAt &&
+        (await oldBeneficiaryRecoveryPending(tx, bookingId, record.beneficiaryPersonId)),
       // v2.1 §22, §77 — the closer's own KYC and Customer Terms.
       closer: isClosing
         ? {
@@ -630,6 +664,26 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
           toState: next.holdReason ? `${next.state}:${next.holdReason}` : next.state,
         },
       });
+    }
+
+    // CP §64 T23 — MD decides whether the corrected beneficiary is paid before
+    // the old beneficiary's Recovery is resolved; the task goes once it is.
+    if (next.holdReason === "OLD_RECOVERY_PENDING" && payment === "NOT_PAID") {
+      await ensureTask(tx, {
+        recordKind: "Commission",
+        recordId: record.id,
+        recordName: await commissionRecordName(tx, record.id),
+        purpose: BEFORE_RECOVERY_PURPOSE,
+        title: "Correct Beneficiary Before Old Recovery — MD Approval",
+        assigneeRole: "MD",
+        dueAt: new Date(),
+        decision: true,
+        latestResult:
+          "The corrected beneficiary has reached the milestone, but the old beneficiary's paid record on " +
+          "this Booking is still to be recovered. Approve to pay now, or wait for the Recovery.",
+      });
+    } else if (record.holdReason === "OLD_RECOVERY_PENDING") {
+      await closeTasksFor(tx, "Commission", record.id, actorRef, "The old beneficiary's Recovery is resolved.", BEFORE_RECOVERY_PURPOSE);
     }
 
     // PRD §6.11 — one payment task when Ready, and never a second one after an

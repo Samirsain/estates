@@ -18,6 +18,7 @@ import {
 import { confirmPaymentReceived, correctPaymentReceived } from "@/lib/services/payment-service";
 import { decideChangePlot, submitChangePlot } from "@/lib/services/change-plot-service";
 import {
+  approveBeforeOldRecovery,
   clearRecovery,
   closeAdjustmentWithoutRecovery,
   openRecovery,
@@ -1294,6 +1295,62 @@ async function main() {
   const directAfterMove = await recordOf(saleR3, "DIRECT");
   assert.equal(directAfterMove.payment, "PAID", "the paid record itself is unchanged");
   assert.equal((await tasksOn(directAfterMove.id, "ACCOUNTS_ADJUSTMENT")).length, 1, "Accounts checks the amount");
+
+  // UAT COR-02, CP §64 T23 — Sold By corrected after the old Direct was paid:
+  // the old one needs adjusting, and the corrected Member waits for MD.
+  const saleT = await memberSale("RECT", "9600000205");
+  await pay(saleT, "30", `${TAG} UTR RECT`);
+  const oldDirect = await recordOf(saleT, "DIRECT");
+  await payDirect(oldDirect.id, `${TAG} PAID RECT`);
+  await requestSoldByCorrection({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    bookingId: saleT,
+    toSoldByType: "MEMBER",
+    toSoldByPersonId: seller.id,
+    reason: "The other Member closed it.",
+    supportingNote: "Site visit register.",
+  });
+  await decideSoldByCorrection({
+    idempotencyKey: key(),
+    actorRef: ADMIN,
+    actorRole: "ADMIN",
+    bookingId: saleT,
+    approve: true,
+    note: "Register confirms it.",
+  });
+  const supersededOld = await db.commissionRecord.findUniqueOrThrow({ where: { id: oldDirect.id } });
+  assert.equal(`${supersededOld.isCurrent}|${supersededOld.payment}`, "false|ACCOUNTS_ADJUSTMENT_REQUIRED");
+  assert.equal((await tasksOn(oldDirect.id, "ACCOUNTS_ADJUSTMENT")).length, 1, "T21 for the old beneficiary");
+  const t23Direct = await recordOf(saleT, "DIRECT");
+  assert.equal(t23Direct.beneficiaryPersonId, seller.id);
+  assert.equal(`${t23Direct.eligibility}|${t23Direct.holdReason}`, "ON_HOLD|OLD_RECOVERY_PENDING");
+  const t23 = await tasksOn(t23Direct.id, "BENEFICIARY_BEFORE_RECOVERY");
+  assert.equal(t23.length, 1, "one T23");
+  assert.equal(`${t23[0].title}|${t23[0].assigneeRole}`, "Correct Beneficiary Before Old Recovery — MD Approval|MD");
+  await openRecovery({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    recordId: oldDirect.id,
+    noticeOn: today,
+    reference: `${TAG} ACC-REC-T`,
+    reason: "Paid to the wrong Member.",
+  });
+  assert.equal((await recordOf(saleT, "DIRECT")).holdReason, "OLD_RECOVERY_PENDING", "still waiting while outstanding");
+  await expectBlocked(/Only MD may approve paying/, () =>
+    approveBeforeOldRecovery({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", recordId: t23Direct.id, note: "x" })
+  );
+  await approveBeforeOldRecovery({
+    idempotencyKey: key(),
+    actorRef: MD,
+    actorRole: "MD",
+    recordId: t23Direct.id,
+    note: "Pay the right Member now; recover from the other in parallel.",
+  });
+  assert.equal((await recordOf(saleT, "DIRECT")).eligibility, "READY", "MD's approval releases it");
+  assert.equal((await tasksOn(t23Direct.id, "BENEFICIARY_BEFORE_RECOVERY")).length, 0, "T23 closes");
 
   await cleanup();
   console.log("commission.check.ts OK");

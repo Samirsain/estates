@@ -488,7 +488,8 @@ export type HoldReason =
   | "PAYMENT_PENDING"
   | "CLOSER_KYC_PENDING"
   | "CUSTOMER_TERMS_PENDING"
-  | "RECOVERY_OUTSTANDING";
+  | "RECOVERY_OUTSTANDING"
+  | "OLD_RECOVERY_PENDING";
 
 /**
  * v2.1 §20, §21, §41 — an Approved Buyback is the alternative milestone for
@@ -549,6 +550,12 @@ export type EligibilityInput = {
    * payout is released; the entitlement stays recorded.
    */
   recoveryOutstanding?: boolean;
+  /**
+   * CP §64 T23 — this record's beneficiary replaced one whose paid record on
+   * the same Booking is still to be recovered, and MD has not approved paying
+   * the corrected beneficiary first.
+   */
+  oldRecoveryPending?: boolean;
 };
 
 export type Eligibility = { state: EligibilityState; holdReason: HoldReason | null };
@@ -583,6 +590,7 @@ export function resolveEligibility(input: EligibilityInput): Eligibility {
 
   // CP §54 — reached, but held while the beneficiary owes a Recovery (UAT CTL-01).
   if (input.recoveryOutstanding) return hold("RECOVERY_OUTSTANDING");
+  if (input.oldRecoveryPending) return hold("OLD_RECOVERY_PENDING");
 
   // Conditions on the beneficiary. PAN never creates an automatic hold.
   if (!input.beneficiaryAadhaarAvailable) return hold("AADHAAR_PENDING");

@@ -1390,6 +1390,9 @@ enum CommissionHoldReason {
   CUSTOMER_TERMS_PENDING
   /// CP §54, §85 — the beneficiary has a Recovery Outstanding; new cash payout waits.
   RECOVERY_OUTSTANDING
+  /// CP §64 T23 — a corrected beneficiary waits while the old beneficiary's
+  /// paid record on the same Booking is still to be recovered, unless MD approves.
+  OLD_RECOVERY_PENDING
 }
 
 /// PRD §19.5 — Registered or Not Applicable satisfies the Member condition.
@@ -1455,15 +1458,20 @@ model CommissionRecord {
   /// AC-03 — Paid Early needs a recorded MD approval before Accounts may
   /// process it. Approver, timestamp and note are kept on the record itself so
   /// the approval can never be separated from the transaction it approved.
-  earlyApprovedByRef  String?
-  earlyApprovedAt     DateTime?
-  earlyApprovalNote   String?
+  earlyApprovedByRef          String?
+  earlyApprovedAt             DateTime?
+  earlyApprovalNote           String?
   /// CP §53 — Accounts initiates Paid Early with a compulsory reason; MD then
   /// approves or rejects. A rejection clears the request (history stays in the
   /// commission events and the audit trail).
-  earlyRequestedByRef String?
-  earlyRequestedAt    DateTime?
-  earlyRequestReason  String?
+  earlyRequestedByRef         String?
+  earlyRequestedAt            DateTime?
+  earlyRequestReason          String?
+  /// CP §64 T23 — MD let this corrected beneficiary be paid before the old
+  /// beneficiary's Recovery on the same Booking was resolved.
+  beforeRecoveryApprovedByRef String?
+  beforeRecoveryApprovedAt    DateTime?
+  beforeRecoveryNote          String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

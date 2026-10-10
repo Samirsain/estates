@@ -13,9 +13,11 @@ import { formatIst } from "@/lib/tasks";
 import { blocked, lockKey, nextReference, runCommand, type Tx } from "./command";
 import {
   ADJUSTMENT_PURPOSE,
+  BEFORE_RECOVERY_PURPOSE,
   COMMISSION_PAYMENT_PURPOSE,
   createCommissionReference,
   reassessBenefitsOf,
+  reassessCommission,
   RECOVERY_FOLLOW_UP_PURPOSE,
 } from "./commission-service";
 import { closeTasksFor, ensureTask } from "./task-service";
@@ -156,6 +158,7 @@ export async function closeAdjustmentWithoutRecovery(args: Actor & { recordId: s
       await tx.commissionEvent.create({
         data: { recordId: args.recordId, actorRef: args.actorRef, action: "ADJUSTMENT_CLOSED", reason },
       });
+      await reassessSourceBooking(tx, args.recordId, args.actorRef);
       return {
         result: { recordId: args.recordId },
         audit: { entity: "CommissionRecord", entityId: args.recordId, action: "ADJUSTMENT_CLOSED", reason },
@@ -202,7 +205,62 @@ async function clear(
   );
   // CP §76.4 — what the Recovery held is released if nothing else holds it.
   await reassessBenefitsOf(tx, recovery.personId, actorRef);
+  await reassessSourceBooking(tx, recovery.commissionRecordId, actorRef);
   return recovery;
+}
+
+/**
+ * CP §64 T23 — a corrected beneficiary on the same Booking may have been
+ * waiting for this adjustment; reassessing the Booking releases them.
+ */
+async function reassessSourceBooking(tx: Tx, recordId: string, actorRef: string) {
+  const source = await tx.commissionRecord.findUniqueOrThrow({ where: { id: recordId }, select: { bookingId: true } });
+  if (source.bookingId) await reassessCommission(tx, source.bookingId, actorRef);
+}
+
+/**
+ * CP §64 T23, §77 — MD lets the corrected beneficiary be paid before the old
+ * beneficiary's Recovery on the same Booking is resolved.
+ */
+export async function approveBeforeOldRecovery(args: Actor & { recordId: string; note: string }) {
+  if (args.actorRole !== "MD") blocked("Only MD may approve paying a corrected beneficiary before the old Recovery.");
+  if (!args.note.trim()) blocked("A compulsory note is required.");
+
+  return runCommand<{ recordId: string }>(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "BEFORE_OLD_RECOVERY_APPROVE",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { recordId: args.recordId },
+    },
+    async (tx) => {
+      const record = await tx.commissionRecord.findUniqueOrThrow({ where: { id: args.recordId } });
+      if (record.holdReason !== "OLD_RECOVERY_PENDING") {
+        blocked("This commission is not waiting for an old beneficiary's Recovery.");
+      }
+      const note = args.note.trim();
+      await tx.commissionRecord.update({
+        where: { id: record.id },
+        data: { beforeRecoveryApprovedByRef: args.actorRef, beforeRecoveryApprovedAt: new Date(), beforeRecoveryNote: note },
+      });
+      await tx.commissionEvent.create({
+        data: { recordId: record.id, actorRef: args.actorRef, action: "BEFORE_OLD_RECOVERY_APPROVED", reason: note },
+      });
+      await closeTasksFor(tx, "Commission", record.id, args.actorRef, `Approved — ${note}`, BEFORE_RECOVERY_PURPOSE);
+      if (record.bookingId) await reassessCommission(tx, record.bookingId, args.actorRef);
+      return {
+        result: { recordId: record.id },
+        audit: {
+          entity: "CommissionRecord",
+          entityId: record.id,
+          action: "BEFORE_OLD_RECOVERY_APPROVED",
+          after: { beneficiaryPersonId: record.beneficiaryPersonId, bookingId: record.bookingId },
+          reason: note,
+        },
+      };
+    }
+  );
 }
 
 async function lockedOutstanding(tx: Tx, recoveryId: string) {

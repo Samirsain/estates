@@ -22,7 +22,7 @@
 4. **Set-off (SSOT §91; CP §54).** Accounts may settle a Recovery against a later benefit of the same person once that benefit has reached its milestone. The benefit is marked Paid with the set-off reference. Accounts says whether that fully clears the Recovery; the CRM cannot tell, since amounts sit outside it.
 5. **Deadline.** Due = notice date + 15 calendar days (Asia/Kolkata). T22 "Recovery Outstanding Follow-up" goes to Accounts, due then. Deactivation after the deadline stays a manual MD/Admin decision ("may", SSOT §91).
 6. **Merge (CP §87).** An outstanding Recovery of an identity merged into a Person blocks that Person too.
-7. **Not built:** T23 "Correct Beneficiary Before Old Recovery — MD Approval" (CP §64 says "Keep", but neither the docss set nor this repo defines it — question raised with the Owner). Third-party payer capture (CP §15): conditional on the payment workflow already holding payer metadata, which it does not.
+7. **T23 "Correct Beneficiary Before Old Recovery — MD Approval"** (CP §64 "Keep"; built in Part 1d from its title, as the Owner directed on 10 Oct: "follow the docs"). When a Booking holds a superseded, paid record of a *different* beneficiary that is Adjustment Required and unresolved (Recovery outstanding, or T21 unanswered), the corrected beneficiary's record waits with hold "Old Recovery Pending" and T23 goes to MD. MD may approve paying first; otherwise clearing the Recovery, or closing T21 with no Recovery needed, releases it. Not built: third-party payer capture (CP §15), which is conditional on the payment workflow already holding payer metadata, and it does not.
 
 ## Tasks
 

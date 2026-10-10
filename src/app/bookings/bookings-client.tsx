@@ -45,6 +45,7 @@ import {
   decideScheduleRevisionAction,
   decideSoldByCorrectionAction,
   loadBookingDetail,
+  approveBeforeOldRecoveryAction,
   approveCommissionPaidEarlyAction,
   clearRecoveryAction,
   closeAdjustmentAction,
@@ -231,6 +232,7 @@ const HOLD_LABEL: Record<string, string> = {
   CLOSER_KYC_PENDING: "Closer KYC Pending",
   CUSTOMER_TERMS_PENDING: "Customer Terms Pending",
   RECOVERY_OUTSTANDING: "Recovery Outstanding",
+  OLD_RECOVERY_PENDING: "Waiting for the old beneficiary's Recovery",
 };
 
 /** v2.1 §9 — one line, the same everywhere a Booking states its terms. */
@@ -328,6 +330,7 @@ type Dialog =
   | { kind: "COMMISSION_EARLY_REQUEST"; row: BookingRowView; recordId: string; label: string }
   | { kind: "COMMISSION_EARLY_REJECT"; row: BookingRowView; recordId: string; label: string }
   | { kind: "RECOVERY_OPEN"; row: BookingRowView; recordId: string; label: string }
+  | { kind: "BEFORE_RECOVERY_APPROVE"; row: BookingRowView; recordId: string; label: string }
   | { kind: "ADJUSTMENT_CLOSE"; row: BookingRowView; recordId: string; label: string }
   | { kind: "RECOVERY_CLEAR"; row: BookingRowView; recoveryId: string; label: string }
   | { kind: "RECOVERY_SET_OFF"; row: BookingRowView; recoveryId: string; recordId: string; label: string }
@@ -1154,6 +1157,23 @@ export default function BookingsClient({
           }
         >
           <Field label="Approval note — compulsory">
+            <Input name="note" required minLength={3} />
+          </Field>
+        </ActionDialog>
+      )}
+
+      {dialog?.kind === "BEFORE_RECOVERY_APPROVE" && (
+        <ActionDialog
+          title="Pay before the old Recovery"
+          row={dialog.row}
+          consequence={`${dialog.label}. The old beneficiary's paid record on this Booking is still to be recovered. Approving lets this corrected beneficiary be paid now.`}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(f) =>
+            run(() => approveBeforeOldRecoveryAction({ recordId: dialog.recordId, note: String(f.get("note")) }, newKey()))
+          }
+        >
+          <Field label="Note — compulsory">
             <Input name="note" required minLength={3} />
           </Field>
         </ActionDialog>
@@ -1990,6 +2010,22 @@ function BookingDetailPanel({
                         ))}
                       </td>
                       <td className="whitespace-nowrap text-right">
+                        {permissions.approvePaidEarly && c.isCurrent && c.holdReason === "OLD_RECOVERY_PENDING" && (
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() =>
+                              onAction({
+                                kind: "BEFORE_RECOVERY_APPROVE",
+                                row,
+                                recordId: c.id,
+                                label: `${c.type} ${c.percent}% to ${c.beneficiary}`,
+                              })
+                            }
+                          >
+                            Approve Before Recovery
+                          </Button>
+                        )}
                         {/* CP §54, §64 — Accounts answers an adjustment, clears
                             or sets off a Recovery. */}
                         {permissions.handleRecovery && c.adjustmentWaiting && (
