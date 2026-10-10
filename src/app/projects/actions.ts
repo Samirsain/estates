@@ -54,8 +54,8 @@ export async function createProjectAction(
     projectCode: string;
     isExternalResaleGroup: boolean;
     components: PlcComponentInput[];
-    /** v2.1 §12 — optional; saved as Draft v1 for MD to approve. */
-    commission?: CommissionTermsInput | null;
+    /** SSOT §12–§14; CP §8 — the Commercial & Rewards settings, saved as Draft v1 for MD to approve. */
+    commission?: CommissionDraftInput | null;
   },
   key: string
 ): Promise<ActionResult> {
@@ -83,7 +83,7 @@ export async function createProjectAction(
       reraNumber: input.reraNumber || null,
       isExternalResaleGroup: input.isExternalResaleGroup,
       components: input.components,
-      commission: input.commission ?? null,
+      commission: input.commission ? toVersionInput(input.commission) : null,
     });
     refresh();
     return {
@@ -91,7 +91,7 @@ export async function createProjectAction(
       message:
         `${input.name} created as Unreleased (code ${result.projectCode}). Prepare inventory, then make it Active before anything is sold.` +
         (input.commission
-          ? " Its commission settings are saved as Draft v1 — send them to MD from the Project page."
+          ? " Its Commercial & Rewards settings are saved as Draft v1 — prepare the inventory, then send them to MD from the Project page."
           : ""),
     };
   } catch (error) {
@@ -267,38 +267,43 @@ function refreshProject(projectId: string) {
   revalidatePath(`/projects/${projectId}`);
 }
 
-export async function prepareCommissionDraftAction(
-  projectId: string,
-  input: Omit<CommissionVersionInput, "effectiveFrom" | "trip"> & {
-    effectiveFrom?: string | null;
-    trip?: TripDraftInput | null;
-  },
-  key: string
-): Promise<ActionResult> {
+export async function prepareCommissionDraftAction(projectId: string, input: CommissionDraftInput, key: string): Promise<ActionResult> {
   const actor = await requireStaff();
   try {
-    const { trip, ...terms } = input;
     const result = await prepareCommissionDraft({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
       projectId,
-      ...terms,
-      effectiveFrom: input.effectiveFrom ? new Date(input.effectiveFrom) : null,
-      trip: trip
-        ? {
-            ...trip,
-            tripEnabled: true,
-            tripCutOffAt: trip.tripCutOffAt ? new Date(trip.tripCutOffAt) : null,
-            tripWindDownAt: trip.tripWindDownAt ? new Date(trip.tripWindDownAt) : null,
-          }
-        : undefined,
+      ...toVersionInput(input),
     });
     refreshProject(projectId);
     return { ok: true, message: `Draft version ${result.version} saved. Send it to MD when it is ready.` };
   } catch (error) {
     return toResult(error);
   }
+}
+
+/** CP §8 — a Commercial & Rewards Draft as the browser sends it (dates as ISO strings). */
+export type CommissionDraftInput = Omit<CommissionVersionInput, "effectiveFrom" | "trip"> & {
+  effectiveFrom?: string | null;
+  trip?: TripDraftInput | null;
+};
+
+function toVersionInput(input: CommissionDraftInput): CommissionVersionInput {
+  const { trip, ...terms } = input;
+  return {
+    ...terms,
+    effectiveFrom: input.effectiveFrom ? new Date(input.effectiveFrom) : null,
+    trip: trip
+      ? {
+          ...trip,
+          tripEnabled: true,
+          tripCutOffAt: trip.tripCutOffAt ? new Date(trip.tripCutOffAt) : null,
+          tripWindDownAt: trip.tripWindDownAt ? new Date(trip.tripWindDownAt) : null,
+        }
+      : undefined,
+  };
 }
 
 /** CP §7.1 — the Trip part of a Draft as the browser sends it (dates as ISO strings). */

@@ -129,7 +129,7 @@ export default async function ProjectDetailPage({
   const actor = await requireStaff("REPORT_VIEW");
   const { id } = await params;
 
-  const [projects, byStatus, commissionVersions, plotOptions] = await Promise.all([
+  const [projects, byStatus, commissionVersions, plotOptions, royaltyProgramme] = await Promise.all([
     listProjects(),
     db.plot.groupBy({ by: ["status"], where: { projectId: id }, _count: { _all: true } }),
     // CP §9 — each version with its Trip inventory rules.
@@ -139,6 +139,11 @@ export default async function ProjectDetailPage({
       include: { tripInventoryRules: true },
     }),
     db.plot.findMany({ where: { projectId: id }, select: { id: true, plotNumber: true }, orderBy: { plotNumber: "asc" } }),
+    // CP §8 "Reward Programme References" — the company-wide Royalty Gift Programme in force.
+    db.royaltyProgrammeVersion.findFirst({
+      where: { status: "ACTIVE" },
+      select: { version: true, programmeRef: true, catalogueVersion: true, termsVersion: true },
+    }),
   ]);
   const project = projects.find((p) => p.id === id);
   if (!project) notFound();
@@ -304,6 +309,9 @@ export default async function ProjectDetailPage({
               loyaltyExceptionReason: v.loyaltyExceptionReason,
               reason: v.reason,
               decisionNote: v.decisionNote,
+              preparedByRef: v.preparedByRef,
+              decidedByRef: v.decidedByRef,
+              decidedAt: v.decidedAt?.toISOString() ?? null,
               effectiveFrom: v.effectiveFrom?.toISOString() ?? null,
               effectiveTo: v.effectiveTo?.toISOString() ?? null,
               trip: v.tripEnabled
@@ -323,8 +331,10 @@ export default async function ProjectDetailPage({
                   }
                 : null,
               economicsReviewedAt: v.economicsReviewedAt?.toISOString() ?? null,
+              economicsReviewedByRef: v.economicsReviewedByRef,
             }))}
             plots={plotOptions}
+            royaltyProgramme={royaltyProgramme}
           />
         )}
 

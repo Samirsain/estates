@@ -176,7 +176,9 @@ const titleWords = (value: string) =>
     .join(" ");
 
 /** A stored side is "25.0000" and is read as 25. */
-const sides = (value: string) => formatQuantity(value.replace(/\.?0+$/, ""));
+// Trailing zeros are trimmed only after a decimal point: "30.50" → "30.5",
+// "30.00" → "30", and a whole "30" stays 30 rather than losing its zero.
+const sides = (value: string) => formatQuantity(value.includes(".") ? value.replace(/\.?0+$/, "") : value);
 
 /**
  * One fact about the chosen Plot: the label asks, the value answers, and what
@@ -250,6 +252,8 @@ const HOLD_SENTENCE: Record<string, string> = {
   CUSTOMER_TERMS_PENDING: "Customer Terms Pending — the closer has not accepted Customer Terms",
   RECOVERY_OUTSTANDING: "Recovery Outstanding — new cash payouts wait until it is repaid or set off",
   OLD_RECOVERY_PENDING: "Waiting for the old beneficiary's Recovery on this Booking, unless MD approves",
+  STAFF_CONFLICT_REVIEW: "Staff conflict — staff or a declared close relative; waits for MD approval",
+  RECOVERY_CIRCUMVENTION_REVIEW: "Recovery circumvention review — shares bank, mobile or address with an unresolved Recovery",
 };
 
 export default function CalculatorClient({

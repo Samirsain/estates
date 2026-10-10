@@ -16,8 +16,7 @@ import {
 } from "@/lib/domain/inventory";
 import { blocked, runCommand, type Tx } from "./command";
 import { plcRules } from "./plc-service";
-import { checkPreparable, insertDraft } from "./commission-settings-service";
-import type { CommissionTermsInput } from "@/lib/domain/commission";
+import { checkPreparable, insertDraft, type CommissionVersionInput } from "./commission-settings-service";
 
 const D = Prisma.Decimal;
 
@@ -176,13 +175,13 @@ export async function createProject(args: {
    * Saved as Draft v1: Admin sends it and MD approves it on the Project page,
    * exactly as a version prepared there.
    */
-  commission?: CommissionTermsInput | null;
+  commission?: CommissionVersionInput | null;
 }) {
   if (!args.name.trim()) blocked("A Project Name is required.");
 
   validateComponents(args.components);
   const commission = args.commission
-    ? { ...args.commission, reason: "Entered when the Project was created" }
+    ? { ...args.commission, reason: args.commission.reason?.trim() || "Entered when the Project was created" }
     : null;
   if (commission) checkPreparable(args.actorRole, commission);
 

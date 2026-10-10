@@ -6,6 +6,7 @@
 # next.js
 /.next/
 /.next-check/
+/.next-claude/
 /out/
 
 # production

@@ -154,6 +154,7 @@ async function main() {
   const peopleBefore = await db.person.count();
   const dealerA = await create({
     receivedFrom: "ANOTHER_DEALER",
+    anotherDealerName: "Sharma Properties",
     anotherDealerMobile: "+91 98765-43210",
     district: `${TAG} Dausa`,
   });
@@ -169,6 +170,7 @@ async function main() {
   // §30.8 — the same dealer may offer several pieces of land.
   const dealerB = await create({
     receivedFrom: "ANOTHER_DEALER",
+    anotherDealerName: "Sharma Properties",
     anotherDealerMobile: "9876543210",
   });
   assert.notEqual(dealerB.id, dealerA.id, "the same dealer mobile may appear on another inquiry");
@@ -179,6 +181,7 @@ async function main() {
   });
   const lookalike = await create({
     receivedFrom: "ANOTHER_DEALER",
+    anotherDealerName: "Sharma Properties",
     anotherDealerMobile: "9876543210",
   });
   assert.equal(
@@ -200,7 +203,8 @@ async function main() {
     create({ receivedFrom: "CUSTOMER", sourcePersonId: plainPerson.id })
   );
   await expectBlocked(/Select the Member/, () => create({ receivedFrom: "MEMBER" }));
-  await expectBlocked(/mobile number/, () => create({ receivedFrom: "ANOTHER_DEALER" }));
+  await expectBlocked(/dealer's name/, () => create({ receivedFrom: "ANOTHER_DEALER" }));
+  await expectBlocked(/mobile number/, () => create({ receivedFrom: "ANOTHER_DEALER", anotherDealerName: "Sharma Properties" }));
   await expectBlocked(/names no source Person/, () =>
     create({ receivedFrom: "THREE_PERCENT_CLUB", sourcePersonId: plainPerson.id })
   );
