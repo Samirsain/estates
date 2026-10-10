@@ -1,6 +1,7 @@
-// Project commission settings — v2.1 §12–§15, against the real database and the
-// real commands. Admin prepares and sends; MD approves or rejects; an approved
-// version is Active at once and supersedes the previous one.
+// Project commission settings — SSOT §12–§16, Change Pack §7, §8, §65, against
+// the real database and the real commands. Admin prepares and sends; MD approves
+// or rejects; an approved version takes effect at its Effective from (now, if
+// none) and supersedes the previous one.
 // Run: npm run commission-settings:check   (requires a seeded database)
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
@@ -9,11 +10,14 @@ import { assertCheckDatabase } from "./check-guard.ts";
 assertCheckDatabase();
 import { purgeCheckData } from "./check-cleanup.ts";
 import {
+  activateDueVersions,
   decideCommissionVersion,
   listCommissionVersions,
   prepareCommissionDraft,
   sendCommissionVersion,
 } from "@/lib/services/commission-settings-service";
+import { freezeAtSubmission } from "@/lib/services/commission-service";
+import { runCommissionVersionActivation } from "@/lib/jobs";
 import { createProject } from "@/lib/services/project-service";
 
 const db = new PrismaClient();
@@ -193,6 +197,124 @@ async function main() {
     }),
     /one_active_commission_version_per_project|Unique constraint/
   );
+
+  /* ============ Change Pack §7.3, §8, §65 — exception audit, NT01, effective time ============ */
+
+  // CP §7.3 — MD's approval of version 3 was the commercial exception, audited as such.
+  const approvals = await db.auditEvent.findMany({
+    where: { entity: "Project", entityId: projectId, action: "COMMISSION_VERSION_APPROVED" },
+    orderBy: { at: "asc" },
+  });
+  assert.deepEqual(
+    approvals.map((a) => (a.afterMasked as { commercialExceptionApproved?: boolean }).commercialExceptionApproved),
+    [false, true],
+    "only the Loyalty-equals-Direct version records an approved exception"
+  );
+
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const inMs = (ms: number) => new Date(Date.now() + ms);
+  const nt01 = (status: "PENDING" | "COMPLETED") =>
+    db.task.count({ where: { recordId: projectId, purpose: "COMMISSION_VERSION_APPROVAL", status } });
+
+  // UAT SET-08 — a past Effective from is refused when prepared.
+  await assert.rejects(
+    prepareCommissionDraft({ idempotencyKey: key(), ...ADMIN, projectId, ...terms, effectiveFrom: inMs(-60_000) }),
+    /must be in the future/
+  );
+
+  // UAT SET-12, TSK-08 — a future version: NT01 to MD on send, closed on approval,
+  // and the version waits as Approved while version 3 stays Active.
+  const v4 = await prepareCommissionDraft({
+    idempotencyKey: key(),
+    ...ADMIN,
+    projectId,
+    ...terms,
+    directPercent: "2.5",
+    reason: "Next quarter",
+    effectiveFrom: inMs(6_000),
+  });
+  assert.equal(await nt01("PENDING"), 0, "no MD task for a Draft");
+  await sendCommissionVersion({ idempotencyKey: key(), ...ADMIN, versionId: v4.versionId });
+  const nt01Task = await db.task.findFirstOrThrow({
+    where: { recordId: projectId, purpose: "COMMISSION_VERSION_APPROVAL", status: "PENDING" },
+  });
+  assert.equal(nt01Task.assigneeRole, "MD");
+  assert.equal(nt01Task.recordKind, "Project");
+  assert.match(nt01Task.latestResult ?? "", /Version 4: Direct 2\.5%, Loyalty 1%\. Effective from/);
+  const waiting = await decideCommissionVersion({
+    idempotencyKey: key(),
+    ...MD,
+    versionId: v4.versionId,
+    approve: true,
+    note: "From next quarter",
+  });
+  assert.equal(waiting.status, "APPROVED");
+  assert.equal(waiting.supersededVersion, null);
+  assert.equal(await nt01("PENDING"), 0, "the decision closes NT01");
+  assert.equal(
+    (await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v3.versionId } })).status,
+    "ACTIVE",
+    "the current version stays in force until the approved one's time"
+  );
+  // One open version per Project: nothing new while version 4 waits.
+  await assert.rejects(
+    prepareCommissionDraft({ idempotencyKey: key(), ...ADMIN, projectId, ...terms }),
+    /approved and takes effect/
+  );
+  assert.equal(await db.$transaction((tx) => activateDueVersions(tx, projectId)), 0, "not due yet");
+
+  // The scheduled job activates it once its time has come — and only once.
+  await wait(6_500);
+  assert.ok((await runCommissionVersionActivation()).changed >= 1);
+  const v4Row = await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v4.versionId } });
+  const v3Row = await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v3.versionId } });
+  assert.equal(`${v3Row.status}|${v4Row.status}`, "SUPERSEDED|ACTIVE");
+  assert.equal(v3Row.effectiveTo?.getTime(), v4Row.effectiveFrom?.getTime(), "the hand-over is seamless");
+  assert.ok(v4Row.effectiveFrom! >= v4Row.decidedAt!, "never effective before its approval");
+  assert.equal(await db.$transaction((tx) => activateDueVersions(tx, projectId)), 0, "a re-run changes nothing");
+
+  // Review Focus 3 — a Booking Request between the time and the job freezes
+  // the new version: submission activates a due version itself.
+  const v5 = await prepareCommissionDraft({
+    idempotencyKey: key(),
+    ...ADMIN,
+    projectId,
+    ...terms,
+    directPercent: "2",
+    reason: "Later still",
+    effectiveFrom: inMs(6_000),
+  });
+  await sendCommissionVersion({ idempotencyKey: key(), ...ADMIN, versionId: v5.versionId });
+  await decideCommissionVersion({ idempotencyKey: key(), ...MD, versionId: v5.versionId, approve: true, note: "ok" });
+  await wait(6_500);
+  const frozen = await db.$transaction((tx) =>
+    freezeAtSubmission(tx, {
+      projectId,
+      soldByType: "THREE_PERCENT_CLUB",
+      soldByPersonId: null,
+      buyerPersonId: "00000000-0000-0000-0000-000000000000",
+    })
+  );
+  assert.equal(frozen.commissionVersionId, v5.versionId, "the due version is the one frozen");
+
+  // UAT SET-08, Review Focus 2 — MD cannot approve a time that passed while it waited.
+  const v6 = await prepareCommissionDraft({
+    idempotencyKey: key(),
+    ...ADMIN,
+    projectId,
+    ...terms,
+    reason: "Too slow",
+    effectiveFrom: inMs(4_000),
+  });
+  await sendCommissionVersion({ idempotencyKey: key(), ...ADMIN, versionId: v6.versionId });
+  await wait(4_500);
+  await assert.rejects(
+    decideCommissionVersion({ idempotencyKey: key(), ...MD, versionId: v6.versionId, approve: true, note: "ok" }),
+    /already passed/
+  );
+  assert.equal(await nt01("PENDING"), 1, "a refused approval leaves NT01 open");
+  await decideCommissionVersion({ idempotencyKey: key(), ...MD, versionId: v6.versionId, approve: false, note: "Re-time" });
+  assert.equal(await nt01("PENDING"), 0);
 
   /* The create form may carry the settings too: they are saved as Draft v1,
      which Admin sends and MD approves exactly as above. */

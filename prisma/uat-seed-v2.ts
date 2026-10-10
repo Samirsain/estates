@@ -23,7 +23,7 @@
 // spec rather than to a dataset.
 import { PrismaClient } from "@prisma/client";
 import { assertCheckDatabase } from "./check-guard.ts";
-import { ensureActiveCommissionVersion } from "./seed-commission.ts";
+import { ensureActiveCommissionVersion, ensureCustomerCloserReady } from "./seed-commission.ts";
 
 assertCheckDatabase();
 
@@ -762,6 +762,8 @@ async function main() {
   });
 
   // C306 — the first purchase is Sold By Customer, same answer (acceptance 5).
+  // CP §17 — the closer has verified KYC and accepted Customer Terms.
+  await ensureCustomerCloserReady(db, customers["C201"].id, CRM, "999900000031");
   const c306First = await bookApproved({
     plotId: prj1.plots["AG-019"],
     buyer: customers["C306"],

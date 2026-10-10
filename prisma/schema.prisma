@@ -499,12 +499,13 @@ model Project {
   externalAcquisitions Acquisition[]              @relation("ExternalResaleGroup")
 }
 
-/// v2.1 §12–§15 — a Project's Direct and Loyalty terms. Every change is a new
-/// version; Admin prepares, MD approves, and a version is never edited after it
-/// leaves Draft.
+/// SSOT §12–§16; CP §7, §92 — a Project's Direct and Loyalty terms. Every change
+/// is a new version; Admin prepares, MD approves, and a version is never edited
+/// after it leaves Draft. APPROVED waits for a later Effective from.
 enum CommissionVersionStatus {
   DRAFT
   PENDING_APPROVAL
+  APPROVED
   ACTIVE
   SUPERSEDED
   REJECTED
@@ -534,7 +535,8 @@ model ProjectCommissionVersion {
   decidedByRef  String?
   decidedAt     DateTime?
   decisionNote  String?
-  /// v2.1 §15 — set at MD approval; never earlier than the approval itself.
+  /// CP §7.1, §8 — Admin may propose a future time on the Draft; otherwise set
+  /// at MD approval. Never earlier than the approval itself (SSOT §16).
   effectiveFrom DateTime?
   effectiveTo   DateTime?
 
@@ -1453,6 +1455,12 @@ model CommissionRecord {
   earlyApprovedByRef String?
   earlyApprovedAt    DateTime?
   earlyApprovalNote  String?
+  /// CP §53 — Accounts initiates Paid Early with a compulsory reason; MD then
+  /// approves or rejects. A rejection clears the request (history stays in the
+  /// commission events and the audit trail).
+  earlyRequestedByRef String?
+  earlyRequestedAt    DateTime?
+  earlyRequestReason  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -1,9 +1,11 @@
 "use client";
 
-// Commission settings — Business Model v2.1 §9, §12–§15.
+// Commission settings — Business Model v2 SSOT §12–§16; Change Pack §7, §8.
 //
-// The Active version, any Draft or Pending one, and the history, on the Project
-// page. Admin prepares, edits and sends; MD approves or rejects with a note.
+// The Active version, any Draft, Pending or Approved-and-waiting one, and the
+// history, on the Project page. Admin prepares, edits and sends; MD approves or
+// rejects with a note. A version approved with a later Effective from waits as
+// Approved until that time (CP §8 "Activate at approved effective time").
 // Everyone else reads. The service is the control; the buttons only follow it.
 
 import React from "react";
@@ -30,7 +32,7 @@ import {
 export type CommissionVersionView = {
   id: string;
   version: number;
-  status: "DRAFT" | "PENDING_APPROVAL" | "ACTIVE" | "SUPERSEDED" | "REJECTED";
+  status: "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "ACTIVE" | "SUPERSEDED" | "REJECTED";
   directEnabled: boolean;
   directPercent: string | null;
   loyaltyEnabled: boolean;
@@ -45,6 +47,7 @@ export type CommissionVersionView = {
 const STATUS: Record<CommissionVersionView["status"], { label: string; variant: "success" | "warning" | "outline" | "destructive" | "info" }> = {
   DRAFT: { label: "Draft", variant: "outline" },
   PENDING_APPROVAL: { label: "Waiting for MD", variant: "warning" },
+  APPROVED: { label: "Approved", variant: "info" },
   ACTIVE: { label: "Active", variant: "success" },
   SUPERSEDED: { label: "Superseded", variant: "outline" },
   REJECTED: { label: "Rejected", variant: "destructive" },
@@ -82,6 +85,12 @@ function Terms({ v }: { v: CommissionVersionView }) {
           <dd className="text-right">{v.loyaltyExceptionReason}</dd>
         </div>
       )}
+      {v.status !== "ACTIVE" && v.status !== "SUPERSEDED" && (
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted-foreground">Effective from</dt>
+          <dd className="text-right">{v.effectiveFrom ? formatIst(v.effectiveFrom) : "On MD approval"}</dd>
+        </div>
+      )}
       <div className="flex justify-between gap-3">
         <dt className="text-muted-foreground">Reason</dt>
         <dd className="text-right">{v.reason}</dd>
@@ -106,7 +115,8 @@ export default function CommissionSettings({
   const [deciding, setDeciding] = React.useState<boolean | null>(null);
 
   const active = versions.find((v) => v.status === "ACTIVE") ?? null;
-  const open = versions.find((v) => v.status === "DRAFT" || v.status === "PENDING_APPROVAL") ?? null;
+  const open =
+    versions.find((v) => v.status === "DRAFT" || v.status === "PENDING_APPROVAL" || v.status === "APPROVED") ?? null;
   const history = versions.filter((v) => v !== active && v !== open);
   const isAdmin = role === "ADMIN";
   const isMd = role === "MD";
@@ -255,6 +265,7 @@ function VersionForm({
     loyaltyPercent: string | null;
     loyaltyExceptionReason: string | null;
     reason: string;
+    effectiveFrom: string | null;
   }) => void;
 }) {
   const [directEnabled, setDirectEnabled] = React.useState(start?.directEnabled ?? true);
@@ -267,6 +278,10 @@ function VersionForm({
   );
   const [exception, setException] = React.useState(start?.loyaltyExceptionReason ?? "");
   const [reason, setReason] = React.useState(start?.status === "DRAFT" ? start.reason : "");
+  // datetime-local wants "YYYY-MM-DDTHH:mm" in local time; empty means "on MD approval".
+  const [effectiveFrom, setEffectiveFrom] = React.useState(
+    start?.status === "DRAFT" && start.effectiveFrom ? toLocalInput(start.effectiveFrom) : ""
+  );
 
   const terms = {
     directEnabled,
@@ -277,7 +292,13 @@ function VersionForm({
   };
   const showException = needsLoyaltyException(terms);
   const check = validateCommissionTerms(terms);
-  const problem = !check.ok ? check.reason : !reason.trim() ? "Write the reason for this version." : null;
+  const problem = !check.ok
+    ? check.reason
+    : !reason.trim()
+      ? "Write the reason for this version."
+      : effectiveFrom && new Date(effectiveFrom) <= new Date()
+        ? "Effective from must be in the future, or left empty to take effect on MD approval."
+        : null;
 
   return (
     <Modal
@@ -311,6 +332,14 @@ function VersionForm({
             />
           </Field>
         )}
+        <Field label="Effective from — optional; empty takes effect on MD approval">
+          <input
+            type="datetime-local"
+            className={inputClass}
+            value={effectiveFrom}
+            onChange={(e) => setEffectiveFrom(e.target.value)}
+          />
+        </Field>
         <Field label="Reason for this version">
           <textarea className={`${inputClass} h-16 py-2`} value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
@@ -322,7 +351,14 @@ function VersionForm({
           <Button
             size="sm"
             disabled={busy || problem !== null}
-            onClick={() => onSubmit({ ...terms, loyaltyExceptionReason: showException ? terms.loyaltyExceptionReason : null, reason })}
+            onClick={() =>
+              onSubmit({
+                ...terms,
+                loyaltyExceptionReason: showException ? terms.loyaltyExceptionReason : null,
+                reason,
+                effectiveFrom: effectiveFrom ? new Date(effectiveFrom).toISOString() : null,
+              })
+            }
           >
             Save Draft
           </Button>
@@ -386,7 +422,7 @@ function DecisionForm({
       title={approve ? `Approve version ${version}` : `Reject version ${version}`}
       description={
         approve
-          ? "It becomes Active now. New Booking Requests freeze it; existing ones keep theirs."
+          ? "It becomes Active at its Effective from — now, if none was set. New Booking Requests freeze it from then; existing ones keep theirs."
           : "The Active version stays in force."
       }
       onClose={onClose}
@@ -409,4 +445,10 @@ function DecisionForm({
       </div>
     </Modal>
   );
+}
+
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

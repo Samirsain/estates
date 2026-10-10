@@ -255,7 +255,7 @@ export async function updateProjectAction(
   }
 }
 
-/* ------------------------------------------- commission settings (v2.1 §14) */
+/* ------------------------------------------- commission settings (SSOT §14) */
 
 // No Action argument on requireStaff: the service itself decides who may act —
 // Admin prepares and sends, MD decides — so PC's PROJECT_SETUP grant does not
@@ -268,7 +268,7 @@ function refreshProject(projectId: string) {
 
 export async function prepareCommissionDraftAction(
   projectId: string,
-  input: CommissionVersionInput,
+  input: Omit<CommissionVersionInput, "effectiveFrom"> & { effectiveFrom?: string | null },
   key: string
 ): Promise<ActionResult> {
   const actor = await requireStaff();
@@ -279,6 +279,7 @@ export async function prepareCommissionDraftAction(
       actorRole: actor.role,
       projectId,
       ...input,
+      effectiveFrom: input.effectiveFrom ? new Date(input.effectiveFrom) : null,
     });
     refreshProject(projectId);
     return { ok: true, message: `Draft version ${result.version} saved. Send it to MD when it is ready.` };
@@ -327,7 +328,9 @@ export async function decideCommissionVersionAction(
           ? `Version ${result.version} is now Active` +
             (result.supersededVersion ? `, superseding version ${result.supersededVersion}` : "") +
             ". New Booking Requests freeze it; existing ones keep theirs."
-          : `Version ${result.version} rejected.`,
+          : result.status === "APPROVED"
+            ? `Version ${result.version} approved. It becomes Active at its Effective from.`
+            : `Version ${result.version} rejected.`,
     };
   } catch (error) {
     return toResult(error);

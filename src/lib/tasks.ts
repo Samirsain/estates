@@ -12,7 +12,8 @@ export type RecordKind =
   | "Booking Request"
   | "Customer"
   | "Member"
-  | "Acquisition";
+  | "Acquisition"
+  | "Project";
 
 export type TaskView =
   | "TODAY"
@@ -359,6 +360,9 @@ export function recordHref(
       return `/members/${record.id}`;
     case "Customer":
       return `/customers/${record.id}`;
+    // CP §65 NT01 — the settings are approved on the Project page.
+    case "Project":
+      return `/projects/${record.id}`;
     // Acquisitions have no per-record route yet, so the link lands on the list.
     case "Acquisition":
       return "/acquisitions";

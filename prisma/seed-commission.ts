@@ -34,3 +34,41 @@ export async function ensureActiveCommissionVersion(
     },
   });
 }
+
+/**
+ * CP §17; SSOT §26 — a Sold By Customer must have verified KYC and accepted
+ * Customer Terms before they can be selected. Seeds call this for every closer
+ * they use. A closer with no Aadhaar on file gets a mock one first.
+ */
+export async function ensureCustomerCloserReady(
+  db: PrismaClient,
+  personId: string,
+  actorRef: string,
+  mockAadhaar: string
+): Promise<void> {
+  const { blindIndex, encryptSensitive } = await import("../src/lib/security/identity.ts");
+  const person = await db.person.findUniqueOrThrow({
+    where: { id: personId },
+    include: { customerProfile: { include: { termsAcceptances: { take: 1 } } } },
+  });
+  if (person.aadhaarStatus !== "VERIFIED") {
+    await db.person.update({
+      where: { id: personId },
+      data:
+        person.aadhaarStatus === "PENDING"
+          ? {
+              aadhaarCipher: encryptSensitive(mockAadhaar),
+              aadhaarLastFour: mockAadhaar.slice(-4),
+              aadhaarBlindIndex: blindIndex(mockAadhaar),
+              aadhaarStatus: "VERIFIED",
+            }
+          : { aadhaarStatus: "VERIFIED" },
+    });
+  }
+  const profile = person.customerProfile;
+  if (profile && profile.termsAcceptances.length === 0) {
+    await db.customerTermsAcceptance.create({
+      data: { customerProfileId: profile.id, termsVersion: "CT-2026-10", acceptedOn: new Date(), recordedByRef: actorRef },
+    });
+  }
+}

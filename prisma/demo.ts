@@ -13,7 +13,7 @@
 // Re-runnable: it clears its own Project first and rebuilds. It touches nothing
 // outside the SRG Project, so the seeded staff, Members and Green Acres stay.
 import { PrismaClient } from "@prisma/client";
-import { ensureActiveCommissionVersion } from "./seed-commission.ts";
+import { ensureActiveCommissionVersion, ensureCustomerCloserReady } from "./seed-commission.ts";
 import {
   aadhaarLastFour,
   blindIndex,
@@ -505,6 +505,8 @@ async function main() {
   });
 
   // S-04 — the whole way through: paid, buyers recorded, Allotment given.
+  // CP §17 — the Customer closer has verified KYC and accepted Customer Terms.
+  await ensureCustomerCloserReady(db, buyers[0].id, CRM, "999900000004");
   const four = await submitBookingRequest({
     idempotencyKey: key(),
     actorRef: CRM,

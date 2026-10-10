@@ -46,6 +46,8 @@ import {
   decideSoldByCorrectionAction,
   loadBookingDetail,
   approveCommissionPaidEarlyAction,
+  rejectCommissionPaidEarlyAction,
+  requestCommissionPaidEarlyAction,
   markCommissionPaidAction,
   requestPrimaryCustomerChangeAction,
   recordCompletionAction,
@@ -152,6 +154,7 @@ type Permissions = {
   approveCustomerChange: boolean;
   processCommission: boolean;
   approvePaidEarly: boolean;
+  requestPaidEarly: boolean;
   raiseSoldBy: boolean;
   approveSoldBy: boolean;
   recordFinalBuyers: boolean;
@@ -316,6 +319,8 @@ type Dialog =
   | { kind: "CUSTOMER_CHANGE_DECIDE"; row: BookingRowView; approve: boolean }
   | { kind: "COMMISSION_PAY"; row: BookingRowView; recordId: string; label: string; early: boolean }
   | { kind: "COMMISSION_EARLY_APPROVE"; row: BookingRowView; recordId: string; label: string }
+  | { kind: "COMMISSION_EARLY_REQUEST"; row: BookingRowView; recordId: string; label: string }
+  | { kind: "COMMISSION_EARLY_REJECT"; row: BookingRowView; recordId: string; label: string }
   | { kind: "SOLD_BY"; row: BookingRowView }
   | { kind: "SOLD_BY_DECIDE"; row: BookingRowView; approve: boolean }
   | { kind: "FINAL_BUYERS"; row: BookingRowView }
@@ -1144,6 +1149,47 @@ export default function BookingsClient({
         </ActionDialog>
       )}
 
+      {dialog?.kind === "COMMISSION_EARLY_REQUEST" && (
+        <ActionDialog
+          title="Request Paid Early"
+          row={dialog.row}
+          consequence={`${dialog.label}. MD receives a Paid Early Approval task. Nothing can be paid early until MD approves.`}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(f) =>
+            run(() =>
+              requestCommissionPaidEarlyAction(
+                { recordId: dialog.recordId, reason: String(f.get("reason")) },
+                newKey()
+              )
+            )
+          }
+        >
+          <Field label="Reason — compulsory">
+            <Input name="reason" required minLength={3} />
+          </Field>
+        </ActionDialog>
+      )}
+
+      {dialog?.kind === "COMMISSION_EARLY_REJECT" && (
+        <ActionDialog
+          title="Reject Paid Early"
+          row={dialog.row}
+          consequence={`${dialog.label}. The request is cleared; the commission waits for its normal eligibility, and Accounts may ask again.`}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(f) =>
+            run(() =>
+              rejectCommissionPaidEarlyAction({ recordId: dialog.recordId, note: String(f.get("note")) }, newKey())
+            )
+          }
+        >
+          <Field label="Note — compulsory">
+            <Input name="note" required minLength={3} />
+          </Field>
+        </ActionDialog>
+      )}
+
       {dialog?.kind === "CUSTOMER_CHANGE_DECIDE" && (
         <ActionDialog
           title={dialog.approve ? "Approve Primary Customer change" : "Reject Primary Customer change"}
@@ -1799,6 +1845,11 @@ function BookingDetailPanel({
                             Paid Early — {c.paymentRemarks}
                           </span>
                         )}
+                        {c.earlyRequestedAt && !c.earlyApprovedAt && (
+                          <span className="block text-[11px] text-muted-foreground">
+                            Paid Early requested by {c.earlyRequestedByRef} — {c.earlyRequestReason}
+                          </span>
+                        )}
                         {c.earlyApprovedAt && (
                           <span className="block text-[11px] text-muted-foreground">
                             Early approved by {c.earlyApprovedByRef} · {formatIst(c.earlyApprovedAt)}
@@ -1815,28 +1866,64 @@ function BookingDetailPanel({
                         )}
                       </td>
                       <td className="whitespace-nowrap text-right">
-                        {/* AC-03 — an unready record needs MD's approval before
-                            Accounts sees a Paid Early button at all. */}
+                        {/* CP §53 — Accounts requests Paid Early for an unready
+                            record; MD approves or rejects it; only then does
+                            Accounts see a Paid Early button. */}
                         {c.isCurrent &&
                           c.payment === "NOT_PAID" &&
                           c.eligibility !== "READY" &&
-                          !c.earlyApprovedAt &&
-                          permissions.approvePaidEarly && (
+                          !c.earlyRequestedAt &&
+                          permissions.requestPaidEarly && (
                             <Button
                               size="xs"
                               className="w-24"
                               variant="outline"
                               onClick={() =>
                                 onAction({
-                                  kind: "COMMISSION_EARLY_APPROVE",
+                                  kind: "COMMISSION_EARLY_REQUEST",
                                   row,
                                   recordId: c.id,
                                   label: `${c.type} ${c.percent}% to ${c.beneficiary}`,
                                 })
                               }
                             >
-                              Approve Early
+                              Request Early
                             </Button>
+                          )}
+                        {c.isCurrent &&
+                          c.payment === "NOT_PAID" &&
+                          c.earlyRequestedAt &&
+                          !c.earlyApprovedAt &&
+                          permissions.approvePaidEarly && (
+                            <span className="inline-flex gap-1">
+                              <Button
+                                size="xs"
+                                variant="outline"
+                                onClick={() =>
+                                  onAction({
+                                    kind: "COMMISSION_EARLY_REJECT",
+                                    row,
+                                    recordId: c.id,
+                                    label: `${c.type} ${c.percent}% to ${c.beneficiary}`,
+                                  })
+                                }
+                              >
+                                Reject
+                              </Button>
+                              <Button
+                                size="xs"
+                                onClick={() =>
+                                  onAction({
+                                    kind: "COMMISSION_EARLY_APPROVE",
+                                    row,
+                                    recordId: c.id,
+                                    label: `${c.type} ${c.percent}% to ${c.beneficiary}`,
+                                  })
+                                }
+                              >
+                                Approve Early
+                              </Button>
+                            </span>
                           )}
                         {c.isCurrent &&
                           permissions.processCommission &&
@@ -1861,11 +1948,11 @@ function BookingDetailPanel({
                           )}
                         {c.isCurrent &&
                           c.payment === "NOT_PAID" &&
-                          c.eligibility !== "READY" &&
+                          c.earlyRequestedAt &&
                           !c.earlyApprovedAt &&
                           !permissions.approvePaidEarly && (
                             <span className="text-[11px] text-muted-foreground">
-                              Awaiting MD approval
+                              Paid Early awaiting MD
                             </span>
                           )}
                       </td>

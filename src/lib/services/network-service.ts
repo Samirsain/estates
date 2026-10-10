@@ -8,7 +8,7 @@
 import { BUYBACK_MIN_SOURCE_PAYMENT } from "@/lib/domain/commission";
 import { INITIAL_PORTAL_PASSWORD, hashPassword } from "@/lib/security/auth";
 import { blocked, nextReference, runCommand, type Tx } from "./command";
-import { reassessCommission } from "./commission-service";
+import { CLOSING_LIMIT_PURPOSE, reassessCommission } from "./commission-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
 /**
@@ -166,7 +166,7 @@ export async function activateMember(args: {
     async (tx) => {
       const person = await tx.person.findUniqueOrThrow({
         where: { id: args.personId },
-        include: { memberProfile: true },
+        include: { memberProfile: true, customerProfile: { select: { id: true } } },
       });
       if (person.memberProfile?.activationDate) {
         blocked(`${person.fullName} is already an activated Member.`);
@@ -223,6 +223,18 @@ export async function activateMember(args: {
               reraNotApplicableReason: args.reraNotApplicableReason?.trim() || null,
             },
           });
+
+      // CP §64 T43 — the Membership the Customer-closing limit asked for.
+      if (person.customerProfile) {
+        await closeTasksFor(
+          tx,
+          "Customer",
+          person.customerProfile.id,
+          args.actorRef,
+          `Activated as Member ${member.memberId}.`,
+          CLOSING_LIMIT_PURPOSE
+        );
+      }
 
       // Ensure PortalAccount exists so the Member can log into the Member Portal (PRD §17.1).
       const existingPortal = await tx.portalAccount.findUnique({

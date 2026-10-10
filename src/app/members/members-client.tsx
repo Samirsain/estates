@@ -482,14 +482,12 @@ function MemberDetailPanel({
         <div className="space-y-4 text-xs">
           <p className="text-muted-foreground">
             Activated {row.activationDate ? formatIst(row.activationDate) : "—"}
-            {row.experience ? ` · ${row.experience} as a Member` : ""}. Positions are
-            assigned once and never renumbered; at each anniversary only newly introduced Members or
-            Customers enter the new annual counter.
+            {row.experience ? ` · ${row.experience} as a Member` : ""}.
           </p>
 
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Invited Members — annual Invited Member Counter
+              Members invited
             </h3>
             {detail.invitedMembers.length === 0 ? (
               <p className="mt-2 text-muted-foreground">None yet.</p>

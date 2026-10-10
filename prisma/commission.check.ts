@@ -21,6 +21,8 @@ import {
   applyMemberCommissionHold,
   approveCommissionPaidEarly,
   generateForBooking,
+  rejectCommissionPaidEarly,
+  requestCommissionPaidEarly,
   markCommissionPaid,
   memberCommissionView,
   reassessCommission,
@@ -345,6 +347,51 @@ async function main() {
       approveCommissionPaidEarly({ idempotencyKey: key(), actorRef, actorRole, recordId: bRecords[0].id, note: "x" })
     );
   }
+  // CP §53, UAT BUY-07 — Accounts asks first; MD decides on the T20 task.
+  await expectBlocked(/has not requested Paid Early/, () =>
+    approveCommissionPaidEarly({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", recordId: bRecords[0].id, note: "x" })
+  );
+  await expectBlocked(/Only Accounts may request/, () =>
+    requestCommissionPaidEarly({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", recordId: bRecords[0].id, reason: "x" })
+  );
+  await expectBlocked(/compulsory reason/, () =>
+    requestCommissionPaidEarly({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", recordId: bRecords[0].id, reason: " " })
+  );
+  const t20 = () =>
+    db.task.findMany({ where: { recordId: bRecords[0].id, purpose: "PAID_EARLY_APPROVAL" }, orderBy: { createdAt: "asc" } });
+  await requestCommissionPaidEarly({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    recordId: bRecords[0].id,
+    reason: "Member needs the advance before quarter close.",
+  });
+  let t20s = await t20();
+  assert.equal(t20s.length, 1, "one T20 task");
+  assert.equal(`${t20s[0].assigneeRole}|${t20s[0].status}`, "MD|PENDING");
+  await expectBlocked(/already requested/, () =>
+    requestCommissionPaidEarly({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", recordId: bRecords[0].id, reason: "again" })
+  );
+  await rejectCommissionPaidEarly({
+    idempotencyKey: key(),
+    actorRef: MD,
+    actorRole: "MD",
+    recordId: bRecords[0].id,
+    note: "Wait for the 25% milestone.",
+  });
+  const rejectedEarly = await db.commissionRecord.findUniqueOrThrow({ where: { id: bRecords[0].id } });
+  assert.equal(rejectedEarly.earlyRequestedAt, null, "a rejection clears the request");
+  assert.equal((await t20())[0].status, "COMPLETED", "and closes T20");
+  await expectBlocked(/has not requested Paid Early/, () =>
+    approveCommissionPaidEarly({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", recordId: bRecords[0].id, note: "x" })
+  );
+  await requestCommissionPaidEarly({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    recordId: bRecords[0].id,
+    reason: "Asked again with the Member's undertaking.",
+  });
   await approveCommissionPaidEarly({
     idempotencyKey: key(),
     actorRef: MD,
@@ -365,6 +412,9 @@ async function main() {
   const early = await db.commissionRecord.findUniqueOrThrow({ where: { id: bRecords[0].id } });
   assert.equal(early.payment, "PAID_EARLY");
   assert.equal(early.earlyApprovedByRef, MD, "the approver is stored on the record");
+  assert.equal(early.earlyRequestedByRef, ACC, "and so is who asked");
+  t20s = await t20();
+  assert.deepEqual(t20s.map((t) => t.status), ["COMPLETED", "COMPLETED"], "the approval closes the second T20");
   assert.ok(early.externalReferenceId, "Paid Early records its reference");
   await expectBlocked(/cannot be marked Paid again/, () =>
     markCommissionPaid({
@@ -726,6 +776,9 @@ async function main() {
   );
 
   const closer = await makeCloser(project.id, "Closer", "9600000090");
+  // CP §17 — the limit is checked when the closer is selected, so all five
+  // requests are sent while none has qualified yet (UAT LOY-08: a request sent
+  // before the third event qualifies may continue; its Loyalty does not).
   const closings: string[] = [];
   for (let i = 1; i <= 5; i++) {
     const plot = await makePlot(project.id, `L${i}`);
@@ -737,8 +790,10 @@ async function main() {
       soldByPersonId: closer.id,
     });
     closings.push(bookingId);
-    const generated = await recordOf(bookingId, "LOYALTY");
-    assert.equal(generated.ruleVersion, `LOYALTY/INTRODUCED_BUYER/${V}/1%@100`);
+    assert.equal((await recordOf(bookingId, "LOYALTY")).ruleVersion, `LOYALTY/INTRODUCED_BUYER/${V}/1%@100`);
+  }
+  for (const [index, bookingId] of closings.entries()) {
+    const i = index + 1;
     await pay(bookingId, "100", `${TAG}-LOY-${i}`);
     const after = await recordOf(bookingId, "LOYALTY");
     if (i <= 3) {
@@ -753,6 +808,27 @@ async function main() {
       );
     }
   }
+  // UAT LOY-07, TSK-05 — one T43 task, raised on the third event only.
+  const closerProfile = await db.customerProfile.findUniqueOrThrow({ where: { personId: closer.id } });
+  const limitTasks = await db.task.findMany({
+    where: { recordId: closerProfile.id, purpose: "CUSTOMER_CLOSING_LIMIT" },
+  });
+  assert.equal(limitTasks.length, 1, "one Customer-closing limit task");
+  assert.equal(limitTasks[0].assigneeRole, "CRM");
+  assert.match(limitTasks[0].latestResult ?? "", /Repeat-purchase Loyalty remains separately eligible/);
+  // UAT LOY-08 — with three consumed, the closer can no longer be selected.
+  const plotSixth = await makePlot(project.id, "L6");
+  const sixthBuyer = await makeEligiblePerson("LoyaltyBuyer6", "9600000160");
+  await expectBlocked(/three Customer-closing Loyalty events/, () =>
+    submit({ plotId: plotSixth.id, buyerPersonId: sixthBuyer.id, soldByType: "CUSTOMER", soldByPersonId: closer.id })
+  );
+  // Becoming a Member is what the task asked for, so activation closes it.
+  await activateMember({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", personId: closer.id });
+  assert.equal(
+    (await db.task.findUniqueOrThrow({ where: { id: limitTasks[0].id } })).status,
+    "COMPLETED",
+    "Member activation closes the Customer-closing limit task"
+  );
   // At most one current Loyalty per Booking — the database refuses a second.
   await assert.rejects(
     db.commissionRecord.create({
@@ -769,27 +845,19 @@ async function main() {
     /one_current_loyalty_per_booking|Unique constraint/
   );
 
-  // The closer's own KYC and Customer Terms hold the Loyalty until recorded.
+  // UAT LOY-02, LOY-03 — no verified KYC, or no accepted Customer Terms, and
+  // the Customer cannot be selected as the closer at all (CP §17).
   const newCloser = await makeCloser(project.id, "NewCloser", "9600000091", false);
   const plotHold = await makePlot(project.id, "HOLD");
   const holdBuyer = await makeEligiblePerson("HoldBuyer", "9600000092");
-  const heldClose = await bookAndApprove({
-    plotId: plotHold.id,
-    buyerPersonId: holdBuyer.id,
-    soldByType: "CUSTOMER",
-    soldByPersonId: newCloser.id,
-  });
-  await pay(heldClose, "100", `${TAG}-HOLD`);
-  assert.equal((await recordOf(heldClose, "LOYALTY")).holdReason, "CLOSER_KYC_PENDING", "Aadhaar not Verified yet");
+  const closeFor = () =>
+    submit({ plotId: plotHold.id, buyerPersonId: holdBuyer.id, soldByType: "CUSTOMER", soldByPersonId: newCloser.id });
+  await expectBlocked(/needs verified KYC/, closeFor);
   await expectBlocked(/Only Accounts, Admin or MD/, () =>
     verifyAadhaar({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", personId: newCloser.id })
   );
   await verifyAadhaar({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", personId: newCloser.id });
-  assert.equal(
-    (await recordOf(heldClose, "LOYALTY")).holdReason,
-    "CUSTOMER_TERMS_PENDING",
-    "verifying the Aadhaar reassesses at once"
-  );
+  await expectBlocked(/accepted Customer Terms/, closeFor);
   const newCloserProfile = await db.customerProfile.findUniqueOrThrow({ where: { personId: newCloser.id } });
   await expectBlocked(/future date/, () =>
     recordCustomerTermsAcceptance({
@@ -809,7 +877,10 @@ async function main() {
     termsVersion: "CT-TEST",
     acceptedOn: today,
   });
-  assert.equal((await recordOf(heldClose, "LOYALTY")).eligibility, "READY", "and so does recording the Terms");
+  const heldClose = await closeFor();
+  await approve(heldClose);
+  await pay(heldClose, "100", `${TAG}-HOLD`);
+  assert.equal((await recordOf(heldClose, "LOYALTY")).eligibility, "READY", "with both recorded the closer earns");
 
   /* ============ v2.1 §21, §23 — repeat-purchase Loyalty is unlimited ============ */
 

@@ -13,7 +13,7 @@
 // (mobiles beginning 94) and rebuilds. The v1 (97), v2 (96) and demo data stay.
 import { PrismaClient } from "@prisma/client";
 import { assertCheckDatabase } from "./check-guard.ts";
-import { ensureActiveCommissionVersion } from "./seed-commission.ts";
+import { ensureActiveCommissionVersion, ensureCustomerCloserReady } from "./seed-commission.ts";
 
 assertCheckDatabase();
 
@@ -594,7 +594,7 @@ async function main() {
   await deliverByRegistry(k1, kiran);
   await payout(k1, "DIRECT");
 
-  step("Kiran: repeat purchase through 3% Club — Loyalty slot 1, share change, details due");
+  step("Kiran: repeat purchase through 3% Club — repeat-purchase Loyalty, share change, details due");
   const k2 = await bookApproved({ plotId: plot(2), buyer: kiran, customerType: "INVESTOR" });
   await changeOwnershipShares({
     idempotencyKey: key(),
@@ -611,7 +611,9 @@ async function main() {
   await payout(k2, "LOYALTY");
   // Paid in full, final buyer details deliberately not recorded: the alert.
 
-  step("Kiran closes a sale for Neelam — Loyalty slot 2; Primary Customer then changes to Farhan");
+  step("Kiran closes a sale for Neelam — Customer-closing event 1; Primary Customer then changes to Farhan");
+  // CP §17 — a Customer closer needs verified KYC and accepted Customer Terms.
+  await ensureCustomerCloserReady(db, kiran.id, CRM, "999900000011");
   const k3 = await bookApproved({
     plotId: plot(3),
     buyer: neelam,
@@ -670,20 +672,15 @@ async function main() {
     closeReason: "Chose SHW-002 instead.",
   });
 
-  /* ---------------------- Rohit Bhandari: Loyalty held for a missing Aadhaar */
+  /* ------------- Rohit Bhandari: no verified KYC, so he cannot close a sale */
 
-  step("Rohit (no Aadhaar) closes a sale for Gita — Loyalty on hold; Gita Delivered");
+  step("Rohit (no Aadhaar) brings Gita, but cannot be Sold By Customer — Gita bought direct; Delivered");
   await enquiry(rohit, { plotRequirement: "Any 30 × 50 in a corner", source: "ONLINE" });
   await briefHold(rohit, plot(16), "Looked at it for a friend, not for himself.");
-  // v2.1 §22 — a Sold By Customer is a real existing Customer, so Rohit's own
-  // purchase comes first.
   await bookApproved({ plotId: plot(18), buyer: rohit });
-  const g1 = await bookApproved({
-    plotId: plot(5),
-    buyer: gita,
-    soldByType: "CUSTOMER",
-    soldByPersonId: rohit.id,
-  });
+  // CP §17; SSOT §26 — a Customer closer needs verified KYC and accepted
+  // Customer Terms before they can be selected, so Gita's sale is 3% Club direct.
+  const g1 = await bookApproved({ plotId: plot(5), buyer: gita });
   await pay(g1, "30", "40", "30");
   await deliverByRegistry(g1, gita);
 

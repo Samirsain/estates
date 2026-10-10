@@ -700,20 +700,29 @@ ALTER TABLE "ProjectCommissionVersion" ADD CONSTRAINT "loyalty_exception_has_rea
       OR ("directEnabled" AND "loyaltyPercent" < "directPercent")
       OR length(trim(coalesce("loyaltyExceptionReason", ''))) > 0);
 
--- v2.1 §14, §15 — an approved version carries its approver and an effective
--- time no earlier than the approval; a sent one carries when it was sent.
+-- SSOT §14, §16; CP §80 (2) — an approved version carries its approver and an
+-- effective time no earlier than the approval; a sent one carries when it was
+-- sent. APPROVED (waiting for a later Effective from) is held to the same.
 ALTER TABLE "ProjectCommissionVersion" DROP CONSTRAINT IF EXISTS "commission_version_stamps";
 ALTER TABLE "ProjectCommissionVersion" ADD CONSTRAINT "commission_version_stamps"
-  CHECK (("status" NOT IN ('ACTIVE', 'SUPERSEDED')
+  CHECK (("status" NOT IN ('APPROVED', 'ACTIVE', 'SUPERSEDED')
           OR ("decidedByRef" IS NOT NULL AND "decidedAt" IS NOT NULL
               AND "effectiveFrom" IS NOT NULL AND "effectiveFrom" >= "decidedAt"))
      AND ("status" = 'DRAFT' OR "submittedAt" IS NOT NULL));
 
--- v2.1 §14 — at most one Active, and at most one Draft-or-Pending, per Project.
+-- SSOT §14 — at most one Active, and at most one open version (Draft, Pending
+-- or Approved-and-waiting) per Project. Dropped first so a re-run picks up the
+-- widened predicate.
 CREATE UNIQUE INDEX IF NOT EXISTS "one_active_commission_version_per_project"
   ON "ProjectCommissionVersion" ("projectId") WHERE "status" = 'ACTIVE';
-CREATE UNIQUE INDEX IF NOT EXISTS "one_open_commission_version_per_project"
-  ON "ProjectCommissionVersion" ("projectId") WHERE "status" IN ('DRAFT', 'PENDING_APPROVAL');
+DROP INDEX IF EXISTS "one_open_commission_version_per_project";
+CREATE UNIQUE INDEX "one_open_commission_version_per_project"
+  ON "ProjectCommissionVersion" ("projectId") WHERE "status" IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED');
+
+-- CP §53 — MD approves a Paid Early only after Accounts asked for it.
+ALTER TABLE "CommissionRecord" DROP CONSTRAINT IF EXISTS "paid_early_approval_follows_request";
+ALTER TABLE "CommissionRecord" ADD CONSTRAINT "paid_early_approval_follows_request"
+  CHECK ("earlyApprovedAt" IS NULL OR "earlyRequestedAt" IS NOT NULL);
 
 -- v2.1 §21 — one Booking earns at most one Customer Loyalty.
 CREATE UNIQUE INDEX IF NOT EXISTS "one_current_loyalty_per_booking"

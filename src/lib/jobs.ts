@@ -5,6 +5,7 @@
 import { db } from "@/lib/db";
 import { istDay } from "@/lib/tasks";
 import { settleConstraints } from "@/lib/services/command";
+import { activateDueVersions } from "@/lib/services/commission-settings-service";
 import { releaseHold } from "@/lib/services/hold-service";
 import { syncPaymentFollowUp } from "@/lib/services/payment-service";
 import { ensureTask, reviseTask } from "@/lib/services/task-service";
@@ -239,6 +240,18 @@ export async function runPreSalesJobs(now: Date = new Date()): Promise<JobResult
 }
 
 /**
+ * CP §8, §76 — an Approved Project settings version becomes Active at its
+ * Effective from. Booking Request submission also activates a due version on
+ * its own Project, so this job only keeps the screens current between Bookings.
+ */
+export function runCommissionVersionActivation(_now: Date = new Date()): Promise<JobResult> {
+  return withRun("COMMISSION_VERSION_ACTIVATION", async () => {
+    const changed = await db.$transaction((tx) => activateDueVersions(tx));
+    return { processed: changed, changed };
+  });
+}
+
+/**
  * PRD §18 — the full daily run. Every job records its own start, finish, counts
  * and error, so one failure is visible per job and never stops the rest.
  */
@@ -256,6 +269,7 @@ export const JOBS = {
   PAYMENT_GIVEN_REMINDER: runPaymentGivenReminder,
   BOOKING_DECISION_ALERT: runBookingDecisionAlert,
   RERA_EXPIRY_REMINDER: runReraExpiryReminder,
+  COMMISSION_VERSION_ACTIVATION: runCommissionVersionActivation,
 } as const;
 
 export type JobName = keyof typeof JOBS;

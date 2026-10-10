@@ -29,6 +29,8 @@ import { plcSnapshotHistory } from "@/lib/services/project-service";
 import { decideChangePlot, submitChangePlot } from "@/lib/services/change-plot-service";
 import {
   approveCommissionPaidEarly,
+  rejectCommissionPaidEarly,
+  requestCommissionPaidEarly,
   listCommissionForBooking,
   markCommissionPaid,
 } from "@/lib/services/commission-service";
@@ -427,6 +429,48 @@ export async function decidePrimaryCustomerChangeAction(
   }
 }
 
+/** CP §53 — Accounts asks MD to allow a Paid Early payment, with a reason. */
+export async function requestCommissionPaidEarlyAction(
+  input: { recordId: string; reason: string },
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("COMMISSION_PROCESS");
+  try {
+    await requestCommissionPaidEarly({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      recordId: input.recordId,
+      reason: input.reason,
+    });
+    refresh();
+    return { ok: true, message: "Paid Early requested. MD decides it on the Dashboard task." };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** CP §53 — MD refuses a Paid Early request; Accounts may ask again later. */
+export async function rejectCommissionPaidEarlyAction(
+  input: { recordId: string; note: string },
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("COMMISSION_PROCESS");
+  try {
+    await rejectCommissionPaidEarly({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      recordId: input.recordId,
+      note: input.note,
+    });
+    refresh();
+    return { ok: true, message: "Paid Early request rejected." };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
 /**
  * AC-03 — MD approves a Paid Early payment before Accounts may process it. The
  * approver and the time are stored on the commission record itself.
@@ -818,6 +862,10 @@ export async function loadBookingDetail(bookingId: string) {
       earlyApprovedByRef: c.earlyApprovedByRef,
       earlyApprovedAt: c.earlyApprovedAt?.toISOString() ?? null,
       earlyApprovalNote: c.earlyApprovalNote,
+      // CP §53 — what Accounts asked for, while it waits for MD.
+      earlyRequestedByRef: c.earlyRequestedByRef,
+      earlyRequestedAt: c.earlyRequestedAt?.toISOString() ?? null,
+      earlyRequestReason: c.earlyRequestReason,
     })),
     soldByCorrections: booking.soldByCorrections.map((c) => ({
       status: c.status,

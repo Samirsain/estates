@@ -185,6 +185,8 @@ export async function loadBookingsProps() {
       // AC-03 — MD alone, not Admin. Paid Early bypasses the eligibility
       // conditions, so the approval is deliberately narrower than full access.
       approvePaidEarly: actor.role === "MD",
+      // CP §53 — Accounts initiates; the service refuses anyone else.
+      requestPaidEarly: actor.role === "ACCOUNTS",
       raiseSoldBy: can(actor.role, "SOLD_BY_CORRECTION_RAISE"),
       approveSoldBy: can(actor.role, "SOLD_BY_CORRECTION_APPROVE"),
       recordFinalBuyers: can(actor.role, "FINAL_BUYER_RECORD"),

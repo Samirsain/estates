@@ -6,7 +6,9 @@
 // one (booking-service already imports hold-service).
 
 import type { SoldByType } from "@prisma/client";
+import { CUSTOMER_CLOSING_LOYALTY_LIMIT } from "@/lib/domain/commission";
 import { blocked, type Tx } from "./command";
+import { consumedClosingEvents } from "./commission-service";
 
 /**
  * PRD §6.7 — when a Person holds an Active Member capability the closing action
@@ -16,7 +18,7 @@ export async function validateSoldBy(
   tx: Tx,
   soldByType: SoldByType,
   soldByPersonId: string | null,
-  /** A sale's Sold By, rather than a Hold's Sourced By (v2.1 §22). */
+  /** A sale's Sold By, rather than a Hold's Sourced By (SSOT §26). */
   options: { sale?: boolean } = {}
 ) {
   if (soldByType === "THREE_PERCENT_CLUB") {
@@ -46,9 +48,9 @@ export async function validateSoldBy(
     );
   }
 
-  // v2.1 §22 — a Sold By Customer is a real existing Customer: their own
+  // SSOT §26 — a Sold By Customer is a real existing Customer: their own
   // approved, uncancelled personal purchase must exist. Being related to the
-  // buyer, or a co-buyer on this Booking, does not disqualify them (§83.2).
+  // buyer, or a co-buyer on this Booking, does not disqualify them (SSOT §31).
   if (options.sale) {
     const ownPurchase = await tx.booking.count({
       where: {
@@ -59,6 +61,27 @@ export async function validateSoldBy(
     });
     if (ownPurchase === 0) {
       blocked("A Sold By Customer must be an existing Customer with their own approved purchase.");
+    }
+
+    // CP §17, §56.2; SSOT §26, §93 — the stricter closer rule: verified KYC and
+    // accepted Customer Terms before they can be selected at all (UAT LOY-02,
+    // LOY-03), and fewer than three consumed closing events (SSOT §27). A
+    // request already sent when the third event qualifies is not blocked here;
+    // its Loyalty is cancelled at qualification instead (UAT LOY-08).
+    if (person.aadhaarStatus !== "VERIFIED") {
+      blocked("A Sold By Customer needs verified KYC. Verify their Aadhaar on their Customer page first.");
+    }
+    const terms = await tx.customerTermsAcceptance.count({
+      where: { customerProfile: { personId: soldByPersonId } },
+    });
+    if (terms === 0) {
+      blocked("A Sold By Customer must have accepted Customer Terms. Record the acceptance on their Customer page first.");
+    }
+    if ((await consumedClosingEvents(tx, soldByPersonId)) >= CUSTOMER_CLOSING_LOYALTY_LIMIT) {
+      blocked(
+        "This Customer has already earned three Customer-closing Loyalty events, the lifetime limit. " +
+          "Membership is required to earn from further third-party sales."
+      );
     }
   }
 }

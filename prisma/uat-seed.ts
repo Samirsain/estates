@@ -22,7 +22,7 @@
 // Project created.
 import { PrismaClient } from "@prisma/client";
 import { assertCheckDatabase } from "./check-guard.ts";
-import { ensureActiveCommissionVersion } from "./seed-commission.ts";
+import { ensureActiveCommissionVersion, ensureCustomerCloserReady } from "./seed-commission.ts";
 
 assertCheckDatabase();
 
@@ -797,6 +797,8 @@ async function main() {
   await pay(customerSelf, "30");
 
   /* (d) A Loyalty path: a Customer closing a sale for a different buyer. */
+  // CP §17 — the closer has verified KYC and accepted Customer Terms.
+  await ensureCustomerCloserReady(db, customers[4].id, CRM, "999900000021");
 
   const loyaltyClose = remember(
     await bookApproved({

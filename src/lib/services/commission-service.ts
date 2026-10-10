@@ -15,6 +15,7 @@ import {
   buybackMilestoneMet,
   canMarkPaid,
   closingLoyaltyQualifies,
+  CUSTOMER_CLOSING_LOYALTY_LIMIT,
   generateCommission,
   needsPaymentTask,
   resolveEligibility,
@@ -27,6 +28,7 @@ import {
 import { normaliseReference, notFutureDated } from "@/lib/domain/booking";
 import { hasVerifiedBank } from "./bank-service";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
+import { activateDueVersions } from "./commission-settings-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
 const D = Prisma.Decimal;
@@ -71,6 +73,9 @@ export async function freezeAtSubmission(
   tx: Tx,
   args: { projectId: string; soldByType: SoldByType; soldByPersonId: string | null; buyerPersonId: string }
 ) {
+  // CP §8 — an Approved version whose time has come is Active before anything
+  // freezes, whether or not the scheduled job has run yet.
+  await activateDueVersions(tx, args.projectId);
   const version = await tx.projectCommissionVersion.findFirst({
     where: { projectId: args.projectId, status: "ACTIVE" },
   });
@@ -85,6 +90,59 @@ export async function freezeAtSubmission(
     loyaltySubjectDeactivated: await loyaltySubjectDeactivated(tx, args),
     terms: { versionId: version.id, ...termsOf(version) },
   };
+}
+
+/**
+ * CP §17, §18.3 — the Customer-closing Loyalty events a Person has consumed:
+ * current, uncancelled, qualified CLOSING_CUSTOMER records on Bookings that
+ * still stand. Derived from the events, never an editable counter, and read
+ * across identities merged into this one (SSOT §100).
+ */
+export async function consumedClosingEvents(tx: Tx, personId: string, excludeRecordId?: string): Promise<number> {
+  const mergedIds = (
+    await tx.person.findMany({ where: { survivingPersonId: personId }, select: { id: true } })
+  ).map((p) => p.id);
+  return tx.commissionRecord.count({
+    where: {
+      ...(excludeRecordId ? { id: { not: excludeRecordId } } : {}),
+      beneficiaryPersonId: { in: [personId, ...mergedIds] },
+      type: "LOYALTY",
+      beneficiaryRole: "CLOSING_CUSTOMER",
+      isCurrent: true,
+      payment: { not: "CANCELLED" },
+      qualifiedAt: { not: null },
+      booking: { status: { not: "CANCELLED" } },
+    },
+  });
+}
+
+/** CP §64 T43 — renamed from "Membership Invitation — Loyalty Exhausted". */
+export const CLOSING_LIMIT_PURPOSE = "CUSTOMER_CLOSING_LIMIT";
+
+/**
+ * CP §18.4, §64 T43; Removal Audit OL-20, OL-42 — the third Customer-closing
+ * event is consumed, so Membership is required for future third-party selling.
+ * Only the closing route is limited; the text says so (UAT TSK-05). Closed when
+ * the Person is activated as a Member.
+ */
+async function raiseClosingLimitTask(tx: Tx, personId: string) {
+  const customer = await tx.customerProfile.findUnique({
+    where: { personId },
+    include: { person: { select: { fullName: true } } },
+  });
+  if (!customer) return;
+  await ensureTask(tx, {
+    recordKind: "Customer",
+    recordId: customer.id,
+    recordName: `${customer.customerId} · ${customer.person.fullName}`,
+    purpose: CLOSING_LIMIT_PURPOSE,
+    title: "Customer-Closing Limit Reached — Membership Required for Future Selling",
+    assigneeRole: "CRM",
+    dueAt: new Date(),
+    latestResult:
+      "Third Customer-closing Loyalty event earned. Membership is required for future third-party selling. " +
+      "Repeat-purchase Loyalty remains separately eligible.",
+  });
 }
 
 /* ------------------------------------------------------------ engine input */
@@ -403,26 +461,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
         // Serialise the closer's events, so two Bookings reaching 100% at the
         // same instant cannot both be the third.
         await lockKey(tx, `customer-closing-loyalty:${record.beneficiaryPersonId}`);
-        // v2.1 §77 — one real person, one history: identities merged into this
-        // closer count towards the same three.
-        const mergedIds = (
-          await tx.person.findMany({
-            where: { survivingPersonId: record.beneficiaryPersonId },
-            select: { id: true },
-          })
-        ).map((p) => p.id);
-        const alreadyQualified = await tx.commissionRecord.count({
-          where: {
-            id: { not: record.id },
-            beneficiaryPersonId: { in: [record.beneficiaryPersonId, ...mergedIds] },
-            type: "LOYALTY",
-            beneficiaryRole: "CLOSING_CUSTOMER",
-            isCurrent: true,
-            payment: { not: "CANCELLED" },
-            qualifiedAt: { not: null },
-            booking: { status: { not: "CANCELLED" } },
-          },
-        });
+        const alreadyQualified = await consumedClosingEvents(tx, record.beneficiaryPersonId, record.id);
         if (!closingLoyaltyQualifies(alreadyQualified)) {
           const reason =
             "Three Customer-closing Loyalty events have already been earned. Membership activation " +
@@ -444,6 +483,10 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
           });
           await closeTasksFor(tx, "Commission", record.id, actorRef, reason, COMMISSION_PAYMENT_PURPOSE);
           continue;
+        }
+        // CP §18.4, §64 T43 — this is the third: CRM follows up on Membership.
+        if (alreadyQualified + 1 === CUSTOMER_CLOSING_LOYALTY_LIMIT) {
+          await raiseClosingLimitTask(tx, record.beneficiaryPersonId);
         }
       }
       await tx.commissionRecord.update({ where: { id: record.id }, data: { qualifiedAt: new Date() } });
@@ -550,8 +593,138 @@ export async function reassessLoyaltyOf(tx: Tx, personId: string, actorRef: stri
 
 /* -------------------------------------------------------- payment processing */
 
+/** CP §64 T20 — Paid Early Approval, assigned to MD. */
+export const PAID_EARLY_PURPOSE = "PAID_EARLY_APPROVAL";
+
+/** A one-line name for a commission record on a task row. */
+async function commissionRecordName(tx: Tx, recordId: string) {
+  const record = await tx.commissionRecord.findUniqueOrThrow({
+    where: { id: recordId },
+    include: { booking: true, acquisition: true, beneficiaryPerson: { select: { fullName: true } } },
+  });
+  const source = record.booking
+    ? (record.booking.bookingNumber ?? record.booking.requestNo)
+    : (record.acquisition?.acquisitionNo ?? "—");
+  return `${source} · ${record.type} ${record.percent.toFixed(2)}% · ${record.beneficiaryPerson.fullName}`;
+}
+
+/**
+ * CP §53; SSOT §90 — Accounts initiates Paid Early, with a compulsory reason,
+ * for an unpaid record that is not Ready yet. It raises T20 for MD; nothing is
+ * paid until MD approves (UAT BUY-07).
+ */
+export async function requestCommissionPaidEarly(args: {
+  idempotencyKey: string;
+  actorRef: string;
+  actorRole: string;
+  recordId: string;
+  reason: string;
+}) {
+  if (args.actorRole !== "ACCOUNTS") blocked("Only Accounts may request a Paid Early payment.");
+  if (!args.reason.trim()) blocked("A compulsory reason is required to request Paid Early.");
+
+  return runCommand(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "COMMISSION_PAID_EARLY_REQUEST",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { recordId: args.recordId },
+    },
+    async (tx) => {
+      const record = await tx.commissionRecord.findUniqueOrThrow({ where: { id: args.recordId } });
+      if (!record.isCurrent) blocked("This commission record has been superseded.");
+      if (record.payment !== "NOT_PAID") blocked("Only an unpaid commission can be requested for Paid Early.");
+      if (record.eligibility === "READY") blocked("This commission is Ready, so it is paid normally, not early.");
+      if (record.earlyApprovedAt) blocked("Paid Early is already approved for this commission.");
+      if (record.earlyRequestedAt) blocked("Paid Early is already requested and waiting for MD.");
+
+      const reason = args.reason.trim();
+      await tx.commissionRecord.update({
+        where: { id: record.id },
+        data: { earlyRequestedByRef: args.actorRef, earlyRequestedAt: new Date(), earlyRequestReason: reason },
+      });
+      await tx.commissionEvent.create({
+        data: { recordId: record.id, actorRef: args.actorRef, action: "PAID_EARLY_REQUESTED", reason },
+      });
+      await ensureTask(tx, {
+        recordKind: "Commission",
+        recordId: record.id,
+        recordName: await commissionRecordName(tx, record.id),
+        purpose: PAID_EARLY_PURPOSE,
+        title: "Paid Early Approval — MD",
+        assigneeRole: "MD",
+        dueAt: new Date(),
+        decision: true,
+        latestResult: reason,
+      });
+
+      return {
+        result: { recordId: record.id },
+        audit: {
+          entity: "CommissionRecord",
+          entityId: record.id,
+          action: "PAID_EARLY_REQUESTED",
+          after: { beneficiaryPersonId: record.beneficiaryPersonId, type: record.type, percent: record.percent.toFixed(4) },
+          reason,
+        },
+      };
+    }
+  );
+}
+
+/**
+ * CP §53 — MD rejects a Paid Early request with a note. The request is cleared,
+ * so Accounts may ask again later; the commission event and the audit row keep
+ * what was asked and refused.
+ */
+export async function rejectCommissionPaidEarly(args: {
+  idempotencyKey: string;
+  actorRef: string;
+  actorRole: string;
+  recordId: string;
+  note: string;
+}) {
+  if (args.actorRole !== "MD") blocked("Only MD may reject a Paid Early request.");
+  if (!args.note.trim()) blocked("A compulsory note is required to reject Paid Early.");
+
+  return runCommand(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "COMMISSION_PAID_EARLY_REJECT",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { recordId: args.recordId },
+    },
+    async (tx) => {
+      const record = await tx.commissionRecord.findUniqueOrThrow({ where: { id: args.recordId } });
+      if (!record.earlyRequestedAt || record.earlyApprovedAt) blocked("No Paid Early request is waiting for MD.");
+      const note = args.note.trim();
+      await tx.commissionRecord.update({
+        where: { id: record.id },
+        data: { earlyRequestedByRef: null, earlyRequestedAt: null, earlyRequestReason: null },
+      });
+      await tx.commissionEvent.create({
+        data: { recordId: record.id, actorRef: args.actorRef, action: "PAID_EARLY_REJECTED", reason: note },
+      });
+      await closeTasksFor(tx, "Commission", record.id, args.actorRef, `Rejected — ${note}`, PAID_EARLY_PURPOSE);
+      return {
+        result: { recordId: record.id },
+        audit: {
+          entity: "CommissionRecord",
+          entityId: record.id,
+          action: "PAID_EARLY_REJECTED",
+          before: { requestedBy: record.earlyRequestedByRef, reason: record.earlyRequestReason },
+          reason: note,
+        },
+      };
+    }
+  );
+}
+
 /**
  * AC-03 — MD approval for processing one commission before eligibility is Ready.
+ * CP §53 — only on a record Accounts has requested.
  *
  * The approval lives on the commission record itself rather than in a separate
  * approvals table, because the pack requires the approver, the date/time and the
@@ -587,6 +760,7 @@ export async function approveCommissionPaidEarly(args: {
       }
       if (record.payment === "CANCELLED") blocked("A cancelled commission cannot be approved.");
       if (record.earlyApprovedAt) blocked("Paid Early is already approved for this commission.");
+      if (!record.earlyRequestedAt) blocked("Accounts has not requested Paid Early for this commission.");
 
       const approvedAt = new Date();
       await tx.commissionRecord.update({
@@ -606,6 +780,7 @@ export async function approveCommissionPaidEarly(args: {
           reason: args.note.trim(),
         },
       });
+      await closeTasksFor(tx, "Commission", record.id, args.actorRef, `Approved — ${args.note.trim()}`, PAID_EARLY_PURPOSE);
 
       return {
         result: { recordId: record.id, approvedAt },
