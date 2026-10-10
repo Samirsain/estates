@@ -3,7 +3,7 @@
 // closed, all four Plots Delivered, and her three Loyalty Bonuses actually Paid.
 //
 // seed-loyalty-demo.ts stopped at 100% Payment Received, which is where the
-// Loyalty slots are taken. That left four "Complete Customer Details" alerts
+// Loyalty qualifies. That left four "Complete Customer Details" alerts
 // standing on her profile, an empty Completion column, and three commissions
 // sitting Ready but Not Paid. This finishes the job, in the order the office
 // would: the final buyer details first (prd-complete §18.2), the completion

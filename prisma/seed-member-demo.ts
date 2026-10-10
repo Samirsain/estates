@@ -10,7 +10,7 @@
 //
 //  1. The inviting Member exists first, or there is nobody to be invited by.
 //  2. Vikram buys FOUR plots as an ordinary Customer, BEFORE activation. This
-//     is the only way a Member can hold Loyalty slots — PRD §14.2 sends an
+//     is the only way a Member can hold Customer Loyalty — PRD §14.2 sends an
 //     Active Member's own purchase down the self-purchase row, which earns
 //     Direct and nothing else. AC-01 freezes the classification at approval, so
 //     activating him afterwards leaves those four Bookings as Customer
@@ -203,9 +203,9 @@ async function main() {
     soldByPersonId: sanjayPerson.id,
   });
 
-  /* 4 — three repeat purchases, Sold By 3% Club. Each takes one of his three
-         lifetime Loyalty slots (PRD §6.5), and the first also pays Sanjay his
-         Royalty. This has to happen before activation. */
+  /* 4 — three repeat purchases, Sold By 3% Club. Each earns repeat-purchase
+         Loyalty, which has no lifetime limit (SSOT §29). This has to happen
+         before activation. */
   for (const label of ["OWN2", "OWN3", "OWN4"]) {
     await sell({ label, buyerPersonId: vikramPerson.id, soldByType: "THREE_PERCENT_CLUB" });
   }
@@ -214,7 +214,7 @@ async function main() {
   const vikram = await activate(vikramPerson.id, sanjay.memberProfileId, "RAJ/A/2026/2002");
   console.log(`Showcase Member  ${vikram.memberId} · Vikram Deshpande`);
 
-  /* 6 — three Members under him, so his own Invite cycle has positions in it. */
+  /* 6 — three Members he invited (Membership inviter only — no Invite money, SSOT §49). */
   for (const [i, name] of ["Rupal Chandani", "Devendra Rathi", "Ayesha Qureshi"].entries()) {
     const p = await makePerson(name, { city: "Jaipur" });
     const m = await activate(p.id, vikram.memberProfileId, `RAJ/A/2026/21${i + 1}0`);
@@ -238,8 +238,8 @@ async function main() {
          introduced is what pays him Royalty (prd-complete §14.5, §25). */
   await sell({ label: "ROY1", buyerPersonId: meera.id, soldByType: "THREE_PERCENT_CLUB" });
 
-  /* 9 — a sale closed by one of the Members he invited. Under v2.1 that earns
-         the seller Direct and the inviter nothing monetary (Invite bands are gone). */
+  /* 9 — a sale closed by one of the Members he invited. That earns the seller
+         Direct and the inviter nothing monetary (Removal Audit OL-02). */
   const rupal = await db.memberProfile.findFirstOrThrow({
     where: { invitedByMemberId: vikram.memberProfileId },
     orderBy: { activationDate: "asc" },

@@ -20,7 +20,8 @@ const REPORTS: Array<{ name: ReportName; label: string; note: string }> = [
   { name: "BOOKINGS", label: "Bookings", note: "Every Booking with its Plot, Customer and payment progress." },
   { name: "PAYMENTS_RECEIVED", label: "Payment Received", note: "Sale-side receipts. Its own dataset." },
   { name: "PAYMENTS_GIVEN", label: "Payment Given", note: "Money we pay out on Buyback and Resale. Never merged with the sale side." },
-  { name: "COMMISSION", label: "Commission", note: "Current records only — superseded rows are excluded." },
+  { name: "COMMISSION", label: "Commission", note: "Direct, Customer Loyalty and Buying Commission — current records with their frozen rate and Project settings version." },
+  { name: "LOYALTY", label: "Customer Loyalty", note: "Customer-closing (of three for life) and repeat-purchase Loyalty, reported apart." },
   { name: "INVENTORY", label: "Plot Inventory", note: "Every Plot with status, restriction and resale flag." },
   { name: "COMPLETIONS", label: "Allotment / Registry", note: "Delivered Bookings and the route that completed them." },
 ];

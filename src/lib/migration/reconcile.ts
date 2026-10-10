@@ -264,8 +264,8 @@ async function paymentDatasets(): Promise<RuleResult> {
 
 /**
  * PRD §6.9, §21; ARCHITECTURE §13.6, §13.7 — eligibility and payment states are
- * separate, supersession links are intact, and current sale commission per
- * Booking stays within the 4% cap (RD-03).
+ * separate, supersession links are intact, and one sale never carries both
+ * Direct and Customer Loyalty (SSOT §11 — there is no combined cap).
  */
 async function commissionIntegrity(): Promise<RuleResult> {
   const records = await db.commissionRecord.findMany({

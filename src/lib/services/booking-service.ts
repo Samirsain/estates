@@ -745,8 +745,8 @@ export async function decideBookingRequest(args: {
       await syncPaymentFollowUp(tx, args.bookingId, args.actorRef);
       // CR-002 — the earliest approved Booking is the Customer's first
       // qualifying purchase, so approval is where the provisional Royalty
-      // Linked Member is stored. It runs before generation because it is what
-      // decides whether this buyer has a Royalty band at all.
+      // Linked Member is stored (SSOT §68). Royalty is a non-cash relationship
+      // reward; nothing here sets a rate.
       await syncRoyaltyLink(tx, booking.primaryPersonId, args.actorRef);
       // prd-complete §11.5 — the payment and commission engines start on approval.
       await generateForBooking(tx, args.bookingId, args.actorRef);

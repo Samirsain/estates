@@ -12,6 +12,7 @@ import type { SoldByType } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
   afterAffectingChange,
+  BUYBACK_MIN_SOURCE_PAYMENT,
   buybackMilestoneMet,
   canMarkPaid,
   closingLoyaltyQualifies,
@@ -917,8 +918,47 @@ export async function markCommissionPaid(args: {
 
 /* ------------------------------------------------- cancellation and holds */
 
-/** The Accounts review a Buyback's commission impact needs (prd-complete §14.12). */
+/** CP §64 T24 — Reward Review — Approved Buyback (prd-complete §14.12). */
 export const BUYBACK_COMMISSION_PURPOSE = "BUYBACK_COMMISSION_REVIEW";
+/** CP §64 T25 — Reward Review — Buyback Unwind. */
+export const BUYBACK_UNWIND_PURPOSE = "BUYBACK_UNWIND_REVIEW";
+
+async function bookingRecordName(tx: Tx, bookingId: string) {
+  const booking = await tx.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    include: { project: true, plot: true },
+  });
+  return `${booking.bookingNumber ?? booking.requestNo} · ${booking.project.name} ${booking.plot.plotNumber}`;
+}
+
+/**
+ * CP §64 T25, §84 — after an approved Buyback unwinds, Accounts reviews what the
+ * Buyback alone had qualified. The reassessment has already stepped such
+ * records back; the review is the human check, with monetary adjustment where
+ * a stepped-back record was paid.
+ */
+export async function raiseBuybackUnwindReview(tx: Tx, bookingId: string, reason: string) {
+  const booking = await tx.booking.findUniqueOrThrow({ where: { id: bookingId } });
+  const adjustments = await tx.commissionRecord.count({
+    where: { bookingId, isCurrent: true, payment: "ACCOUNTS_ADJUSTMENT_REQUIRED" },
+  });
+  await ensureTask(tx, {
+    recordKind: "Booking",
+    recordId: bookingId,
+    recordName: await bookingRecordName(tx, bookingId),
+    purpose: BUYBACK_UNWIND_PURPOSE,
+    title: "Reward Review — Buyback Unwind",
+    assigneeRole: "ACCOUNTS",
+    dueAt: new Date(),
+    decision: true,
+    latestResult:
+      `Buyback unwound — ${reason}. Source Payment Received ` +
+      `${booking.paymentReceivedPercent.toFixed(2)}%; anything the Buyback alone qualified is stepped back. ` +
+      (adjustments > 0
+        ? `${adjustments} paid record${adjustments === 1 ? "" : "s"} need${adjustments === 1 ? "s" : ""} an Accounts adjustment.`
+        : "No paid record needs adjustment."),
+  });
+}
 
 /**
  * AC-05 — the commission side of an unwind, following prd-complete §14.12, which
@@ -956,7 +996,7 @@ export async function cancelCommissionForBooking(
   // prd-complete §14.12 — the only case where the commission is left standing.
   const remainsEarned = isBuyback && args.legallyCompleted;
 
-  // CR-015 — the Direct rule below needs what was actually received.
+  // CR-015 — the Direct rule below, and the reward gate, need what was actually received.
   const sourceBooking = isBuyback
     ? await tx.booking.findUniqueOrThrow({ where: { id: bookingId } })
     : null;
@@ -1042,34 +1082,26 @@ export async function cancelCommissionForBooking(
     await closeTasksFor(tx, "Commission", record.id, actorRef, args.reason, COMMISSION_PAYMENT_PURPOSE);
   }
 
-  // prd-complete §14.12 — a Buyback's commission impact is decided by
-  // CRM/management and approved by Accounts on both sides of legal completion.
-  // The system does not make that call; it makes sure it is asked for.
-  if (isBuyback && records.length > 0) {
-    const booking = await tx.booking.findUniqueOrThrow({
-      where: { id: bookingId },
-      include: { project: true, plot: true },
-    });
+  // CP §64 T24, §83 step 11 — every approved Buyback of a sale gets the
+  // reward review, whether or not the sale carried commission (UAT BB-01).
+  if (isBuyback && sourceBooking) {
+    const received = new D(sourceBooking.paymentReceivedPercent);
+    const gateMet = received.gte(new D(BUYBACK_MIN_SOURCE_PAYMENT));
+    const n = `${records.length} commission record${records.length === 1 ? "" : "s"}`;
     await ensureTask(tx, {
       recordKind: "Booking",
       recordId: bookingId,
-      recordName: `${booking.bookingNumber ?? booking.requestNo} · ${booking.project.name} ${booking.plot.plotNumber}`,
+      recordName: await bookingRecordName(tx, bookingId),
       purpose: BUYBACK_COMMISSION_PURPOSE,
-      title: remainsEarned
-        ? "Accounts Verification — commission after a Buyback on a completed sale"
-        : "Accounts Verification — commission after a Buyback before completion",
+      title: "Reward Review — Approved Buyback",
       assigneeRole: "ACCOUNTS",
       dueAt: new Date(),
       decision: true,
-      latestResult: (() => {
-        // One line on a task row, so it says what happened and who has to look
-        // at it. The clause naming the spec section and the one spelling out
-        // both ways to respond were paragraph, not row.
-        const n = `${records.length} commission record${records.length === 1 ? "" : "s"}`;
-        return remainsEarned
-          ? `${n} still earned. Check against the written arrangement.`
-          : `${n} stepped back. Confirm the decision on the unpaid old sale.`;
-      })(),
+      latestResult:
+        `Source Payment Received ${received.toFixed(2)}% — 25% reward gate ` +
+        (gateMet ? "met: Loyalty may qualify by the Buyback." : "not met: no reward qualifies by the Buyback.") +
+        ` Direct stays on its normal milestone. ` +
+        (remainsEarned ? `${n} still earned; check the written arrangement.` : `${n} reviewed.`),
     });
   }
 

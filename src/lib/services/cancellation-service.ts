@@ -230,10 +230,10 @@ export async function decideCancellation(args: {
         reason: `Booking cancelled — ${args.note}`,
       });
 
-      // CR-002 — a first Booking cancelled before 100% Payment Received or an
-      // Approved Buyback consumes no Royalty position. The provisional link
-      // goes with it, and the buyer's next approved Booking may establish a new
-      // one.
+      // SSOT §70 — a first Booking cancelled before 100% Payment Received or a
+      // qualifying Approved Buyback consumes no Royalty opportunity. The
+      // provisional link goes with it, and a later genuine first qualifying
+      // purchase may establish the relationship.
       await syncRoyaltyLink(tx, booking.primaryPersonId, args.actorRef);
 
       await closeTasksFor(

@@ -7,7 +7,7 @@
 // confirmPaymentReceived, recordFinalBuyers, recordCompletion. Writing the rows
 // directly would be shorter and would produce a database the application itself
 // could never have produced — no PLC snapshot frozen against the Booking, no
-// review version, no commission, no loyalty slot, no audit trail. The point of
+// review version, no commission, no Loyalty, no audit trail. The point of
 // demo data is that it behaves like real data.
 //
 // Re-runnable: it clears its own Project first and rebuilds. It touches nothing
@@ -369,8 +369,8 @@ async function main() {
 
   /**
    * Activation cannot be repeated, and this script can be. So an already
-   * activated Member is left alone rather than re-activated — the Network
-   * position, the loyalty slots and the activation date are all history by
+   * activated Member is left alone rather than re-activated — the inviter,
+   * the Loyalty earned and the activation date are all history by
    * then, and history is not something a demo rebuild should rewrite.
    */
   async function member(

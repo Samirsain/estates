@@ -39,7 +39,7 @@ import {
   createAcquisition,
   decideAcquisition,
 } from "@/lib/services/acquisition-service";
-import { businessState } from "@/lib/services/report-service";
+import { businessState, runReport } from "@/lib/services/report-service";
 import { enterBankDetails } from "@/lib/services/bank-service";
 import { activateMember } from "@/lib/services/network-service";
 import { encryptSensitive } from "@/lib/security/identity";
@@ -898,6 +898,20 @@ async function main() {
     assert.equal((await recordOf(bookingId, "LOYALTY")).eligibility, "READY", `repeat ${i} is paid — no lifetime cap`);
   }
 
+  // CP §73.5, UAT VIS-07 — the Loyalty report keeps the two routes apart.
+  const loyaltyRows = await runReport("LOYALTY");
+  const closerRows = loyaltyRows.filter((r) => r.customer === closer.fullName);
+  assert.ok(
+    closerRows.every((r) => r.route === "Customer-closing Loyalty" && r.customerClosingUsed === "3 of 3"),
+    "the closer's rows read 3 of 3, closing route only"
+  );
+  const repeaterRows = loyaltyRows.filter((r) => r.customer === repeater.fullName);
+  assert.equal(repeaterRows.length, 4);
+  assert.ok(
+    repeaterRows.every((r) => r.route === "Repeat-purchase Loyalty" && r.repeatPurchaseEvents === 4 && r.customerClosingUsed === null),
+    "the repeat buyer counts four, with no closing count"
+  );
+
   // v2.1 §23 — a Member-closed repeat purchase earns Direct and no Loyalty.
   const plotMemberRepeat = await makePlot(project.id, "RPM");
   const memberRepeat = await bookAndApprove({
@@ -1063,7 +1077,7 @@ async function main() {
   // Loyalty below the 25% source-payment minimum: the Buyback does not qualify it.
   const plotBB4a = await makePlot(project.id, "BB4A");
   const bbLowBuyer = await makeEligiblePerson("BBLow", "9600000088");
-  await bookAndApprove({ plotId: plotBB4a.id, buyerPersonId: bbLowBuyer.id, soldByType: "THREE_PERCENT_CLUB" });
+  const firstLow = await bookAndApprove({ plotId: plotBB4a.id, buyerPersonId: bbLowBuyer.id, soldByType: "THREE_PERCENT_CLUB" });
   const plotBB4b = await makePlot(project.id, "BB4B");
   const bookingLow = await bookAndApprove({ plotId: plotBB4b.id, buyerPersonId: bbLowBuyer.id, soldByType: "THREE_PERCENT_CLUB" });
   await pay(bookingLow, "20", `${TAG} UTR BB4`);
@@ -1071,6 +1085,17 @@ async function main() {
   const lowLoyalty = await recordOf(bookingLow, "LOYALTY");
   assert.equal(lowLoyalty.payment, "CANCELLED", "at 20% received the Buyback is not a Loyalty milestone (v2.1 §41)");
   assert.equal(lowLoyalty.qualifiedAt, null);
+
+  // CP §64 T24 — the reward review is raised and stays open, with the gate result.
+  const reviewOf = (bookingId: string, purpose: string) =>
+    db.task.findMany({ where: { recordKind: "Booking", recordId: bookingId, purpose } });
+  const lowReview = await reviewOf(bookingLow, "BUYBACK_COMMISSION_REVIEW");
+  assert.equal(lowReview.length, 1, "one T24");
+  assert.equal(`${lowReview[0].title}|${lowReview[0].status}`, "Reward Review — Approved Buyback|PENDING");
+  assert.match(lowReview[0].latestResult ?? "", /20\.00% — 25% reward gate not met/);
+  // Review Focus 5 — a first purchase carrying no commission still gets the review (UAT BB-01).
+  await approveBuybackOn(firstLow, bbLowBuyer.id, "BB4F");
+  assert.equal((await reviewOf(firstLow, "BUYBACK_COMMISSION_REVIEW")).length, 1, "T24 with no commission records");
 
   // At 30% received it is — and unwinding the Buyback takes the qualification back.
   const plotBB5a = await makePlot(project.id, "BB5A");
@@ -1091,6 +1116,11 @@ async function main() {
   const unwound = await recordOf(bookingHigh, "LOYALTY");
   assert.equal(unwound.eligibility, "MILESTONE_PENDING", "the unwind reverses the Buyback-created qualification (v2.1 §44)");
   assert.equal(unwound.qualifiedAt, null);
+  // CP §64 T25 — the approval's review closes and the unwind review opens.
+  assert.match((await reviewOf(bookingHigh, "BUYBACK_COMMISSION_REVIEW"))[0].latestResult ?? "", /Buyback unwound/);
+  const unwindReview = await reviewOf(bookingHigh, "BUYBACK_UNWIND_REVIEW");
+  assert.equal(unwindReview.length, 1, "one T25");
+  assert.equal(`${unwindReview[0].title}|${unwindReview[0].status}`, "Reward Review — Buyback Unwind|PENDING");
 
   await cleanup();
   console.log("commission.check.ts OK");

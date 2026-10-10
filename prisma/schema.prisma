@@ -1452,9 +1452,9 @@ model CommissionRecord {
   /// AC-03 — Paid Early needs a recorded MD approval before Accounts may
   /// process it. Approver, timestamp and note are kept on the record itself so
   /// the approval can never be separated from the transaction it approved.
-  earlyApprovedByRef String?
-  earlyApprovedAt    DateTime?
-  earlyApprovalNote  String?
+  earlyApprovedByRef  String?
+  earlyApprovedAt     DateTime?
+  earlyApprovalNote   String?
   /// CP §53 — Accounts initiates Paid Early with a compulsory reason; MD then
   /// approves or rejects. A rejection clears the request (history stays in the
   /// commission events and the audit trail).
@@ -1821,7 +1821,8 @@ model PersonMergeRequest {
   decidedAt      DateTime?
   decisionNote   String?
 
-  /// Rebuilt consumed Loyalty slots, capped at three (PRD §22).
+  /// CP §87 — the Customer-closing events rebuilt from unique valid events,
+  /// capped at three. Repeat-purchase Loyalty is not counted here (unlimited).
   loyaltyRebuiltTo Int?
 
   @@index([status])

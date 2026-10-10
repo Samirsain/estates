@@ -238,8 +238,9 @@ export function resolvePaymentGivenCorrection(args: {
 /**
  * PRD §11.7 — one beneficiary per acquisition, and neither the seller nor a
  * Customer of that Buyback may earn Buying Commission for arranging the return
- * of their own property. It sits outside the 4% sale cap, carries its own 5% cap
- * (AC-04) and settles at 100% Payment Given.
+ * of their own property. It is separate from the sale-side benefits, carries its
+ * own 5% cap (AC-04; SSOT §84) and settles at 100% Payment Given. A person from
+ * the original sale is not barred (SSOT §86).
  */
 export function validateBuyingCommission(args: {
   beneficiaryPersonId: string;

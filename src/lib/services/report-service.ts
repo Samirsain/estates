@@ -17,7 +17,16 @@ export type ReportName =
   | "PAYMENTS_GIVEN"
   | "COMMISSION"
   | "INVENTORY"
-  | "COMPLETIONS";
+  | "COMPLETIONS"
+  | "LOYALTY";
+
+/** CP §73.5 — the two Loyalty routes, named the same on every report. */
+const ROUTE: Record<string, string> = {
+  SELLING_MEMBER: "Direct",
+  CLOSING_CUSTOMER: "Customer-closing Loyalty",
+  REPEAT_PURCHASE_CUSTOMER: "Repeat-purchase Loyalty",
+  ACQUISITION_ARRANGER: "Buying Commission",
+};
 
 export type ReportFilters = {
   projectId?: string;
@@ -100,16 +109,24 @@ export async function runReport(
     }
 
     case "COMMISSION": {
-      // PRD §21 — superseded records are excluded from every total.
+      // PRD §21 — superseded records are excluded from every total. CP §73.1 —
+      // Direct, Customer Loyalty and Buying Commission only, each with the
+      // frozen rate and the Project settings version it came from.
       const rows = await db.commissionRecord.findMany({
         where: { isCurrent: true, beneficiaryPerson: NOT_MERGED_AWAY },
-        include: { beneficiaryPerson: true, booking: { include: { project: true, plot: true } } },
+        include: {
+          beneficiaryPerson: true,
+          booking: { include: { project: true, plot: true, commissionVersion: { select: { version: true } } } },
+        },
         orderBy: { createdAt: "desc" },
       });
       return rows.map((c) => ({
         beneficiary: c.beneficiaryPerson.fullName,
         beneficiaryRole: c.beneficiaryRole,
+        route: ROUTE[c.beneficiaryRole] ?? c.beneficiaryRole,
         type: c.type,
+        projectSettingsVersion: c.booking?.commissionVersion ? `V${c.booking.commissionVersion.version}` : null,
+        frozenRule: c.ruleVersion,
         percent: c.percent.toFixed(2),
         milestonePercent: c.milestonePercent.toFixed(2),
         eligibility: c.eligibility,
@@ -118,6 +135,47 @@ export async function runReport(
         project: c.booking?.project.name ?? null,
         plotNumber: c.booking?.plot.plotNumber ?? null,
       }));
+    }
+
+    case "LOYALTY": {
+      // CP §73.5; Removal Audit OL-54 — Customer-closing and repeat-purchase
+      // Loyalty are reported apart: the closing count is of the lifetime three,
+      // the repeat count is unlimited. Never one combined "3/3".
+      const rows = await db.commissionRecord.findMany({
+        where: { isCurrent: true, type: "LOYALTY", beneficiaryPerson: NOT_MERGED_AWAY },
+        include: {
+          beneficiaryPerson: { include: { customerProfile: { select: { customerId: true } } } },
+          booking: { include: { project: true, plot: true, commissionVersion: { select: { version: true } } } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      const consumed = new Map<string, number>();
+      const repeats = new Map<string, number>();
+      for (const r of rows) {
+        if (!r.qualifiedAt || r.payment === "CANCELLED" || r.booking?.status === "CANCELLED") continue;
+        const counts = r.beneficiaryRole === "CLOSING_CUSTOMER" ? consumed : repeats;
+        counts.set(r.beneficiaryPersonId, (counts.get(r.beneficiaryPersonId) ?? 0) + 1);
+      }
+      return rows
+        .filter((r) => !filters.projectId || r.booking?.projectId === filters.projectId)
+        .map((r) => ({
+          customerId: r.beneficiaryPerson.customerProfile?.customerId ?? null,
+          customer: r.beneficiaryPerson.fullName,
+          route: ROUTE[r.beneficiaryRole] ?? r.beneficiaryRole,
+          bookingNumber: r.booking?.bookingNumber ?? null,
+          project: r.booking?.project.name ?? null,
+          plotNumber: r.booking?.plot.plotNumber ?? null,
+          projectSettingsVersion: r.booking?.commissionVersion ? `V${r.booking.commissionVersion.version}` : null,
+          percent: r.percent.toFixed(2),
+          qualified: r.qualifiedAt !== null,
+          eligibility: r.eligibility,
+          holdReason: r.holdReason,
+          paymentState: r.payment,
+          customerClosingUsed:
+            r.beneficiaryRole === "CLOSING_CUSTOMER" ? `${consumed.get(r.beneficiaryPersonId) ?? 0} of 3` : null,
+          repeatPurchaseEvents:
+            r.beneficiaryRole === "REPEAT_PURCHASE_CUSTOMER" ? (repeats.get(r.beneficiaryPersonId) ?? 0) : null,
+        }));
     }
 
     case "INVENTORY": {

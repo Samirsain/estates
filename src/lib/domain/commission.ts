@@ -4,7 +4,7 @@
 // Each Project sets its own Direct and Loyalty in an MD-approved version, and a
 // Booking carries the version frozen on the Booking Request Accounts approved
 // (v2.1 §16). Direct and Loyalty never apply to the same sale, and there is no
-// combined cap (v2.1 §11). Exact decimal arithmetic only (ARCHITECTURE §3.4).
+// combined cap (SSOT §11). Exact decimal arithmetic only (ARCHITECTURE §3.4).
 //
 // Where the documents are silent this module refuses rather than guesses
 // (PRD §1.1) — an undocumented combination comes back as a Commission Conflict
@@ -125,9 +125,9 @@ export function anniversaryDay(activationDay: string, year: number): string {
  * Derived on every read and never stored: a stored "3 years" is wrong the day
  * the fourth anniversary passes, and nothing would be there to correct it.
  *
- * It shares `anniversaryDay` with the annual counters on purpose. A Member
- * activated on 29 February must gain a year on the same day their counter
- * rolls — 28 February in a non-leap year — rather than a day later.
+ * A Member activated on 29 February gains a year on 28 February in a non-leap
+ * year. (The old annual Invite/Royalty counters that also used this are gone —
+ * Removal Audit OL-04, OL-11; only the relationship length still does.)
  *
  * Null means there is nothing to show yet: an unactivated Member, or an
  * activation dated in the future.

@@ -246,7 +246,11 @@ export async function runPreSalesJobs(now: Date = new Date()): Promise<JobResult
  */
 export function runCommissionVersionActivation(_now: Date = new Date()): Promise<JobResult> {
   return withRun("COMMISSION_VERSION_ACTIVATION", async () => {
-    const changed = await db.$transaction((tx) => activateDueVersions(tx));
+    const changed = await db.$transaction(async (tx) => {
+      const activated = await activateDueVersions(tx);
+      await settleConstraints(tx);
+      return activated;
+    });
     return { processed: changed, changed };
   });
 }

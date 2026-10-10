@@ -14,10 +14,11 @@
 //
 // WHAT THIS DOES NOT SEED, and why. §14 onward describes bookings, cycles,
 // Buyback acceleration and Recovery whose rules are items 2 – 8 of the second
-// Approved Changes pack and are not built yet: position 10+ visible at 0%, the
-// two independent performance cycles, an Approved Buyback as an alternative
-// milestone, self-purchase by Primary Customer only, Loyalty exhaustion and the
-// two conversion routes, and Recovery Outstanding. Seeding those now would
+// Approved Changes pack and were not built when this seed was written: an
+// Approved Buyback as an alternative milestone, self-purchase by Primary
+// Customer only, the Customer-closing limit and the two conversion routes, and
+// Recovery Outstanding. (Its positions, bands and cycles no longer exist at all
+// — Removal Audit OL-03 to OL-13.) Seeding those now would
 // record outcomes the engine cannot yet produce. §5's North Facing PLC has no
 // category in the PLC vocabulary either, and adding one is a change to the PLC
 // spec rather than to a dataset.
@@ -233,7 +234,7 @@ const MEMBERS = [
   { id: "M107", name: "Aman Chawla", town: "Hanumangarh", inviter: "M001" },
   { id: "M108", name: "Ritesh Beniwal", town: "Hanumangarh", inviter: "M001" },
   { id: "M109", name: "Vikas Dhingra", town: "Hanumangarh", inviter: "M001" },
-  // §8 — position 10 lands past the ninth, where the band is 0%.
+  // §8 — the tenth Member M001 invited; under v2 the count changes nothing.
   { id: "M110", name: "Gaurav Nanda", town: "Hanumangarh", inviter: "M001" },
   { id: "M111", name: "Yash Khatri", town: "Hanumangarh", inviter: "M001" },
   { id: "M112", name: "Pranav Khanna", town: "Bikaner", inviter: null },
@@ -652,7 +653,7 @@ async function main() {
     ["E011", "C207", "M107", "follow-up case"],
     ["E012", "C208", null, "online"],
     ["E013", "C209", "M109", "follow-up case"],
-    ["E014", "C210", "M110", "position 10 Customer"],
+    ["E014", "C210", "M110", "tenth invitee's Customer"],
     ["E015", "C211", "M001", "next cycle Customer"],
     ["E016", "C303", null, "Loyalty exhaustion subject"],
     ["E017", "C304", "M112", "repeat direct Loyalty subject"],
@@ -821,11 +822,11 @@ async function main() {
     soldByPersonId: people["M102"].id,
   });
 
-  /* -------------------- §8 — the position-10 Invite, visible and consuming
+  /* -------------------- §8 — the tenth invited Member sells
 
-     M110 is the tenth Member activated under M001, so their Invite band is 0%.
-     A sale they close records that 0% line against M001 rather than dropping it,
-     and reaching 100% consumes M110's one-time Invite opportunity (CR-013). */
+     M110 is the tenth Member M001 invited. How many Members someone invited
+     changes nothing under v2: the sale earns M110 Direct and M001 no money
+     (Removal Audit OL-03, OL-08). */
 
   const tenthSale = await bookApproved({
     plotId: prj1.plots["AG-026"],
@@ -834,7 +835,7 @@ async function main() {
     soldByPersonId: people["M110"].id,
   });
   await pay(tenthSale, "100");
-  count("positionTenSales");
+  count("tenthInviteeSales");
 
   /* ------------------------------------------------ §4 — PRJ-004 is Sold Out */
 

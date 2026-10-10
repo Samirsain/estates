@@ -1604,7 +1604,7 @@ const buying = {
 };
 assert.deepEqual(validateBuyingCommission(buying), { ok: true });
 
-// PRD §11.7 — outside the 4% sale cap, so it may sit above 4%.
+// SSOT §84 — Buying Commission is separate from sale-side benefits; 4.5% is fine.
 assert.deepEqual(validateBuyingCommission({ ...buying, percent: "4.5" }), { ok: true });
 assert.equal(validateBuyingCommission({ ...buying, percent: "0" }).ok, false);
 
@@ -1856,8 +1856,7 @@ assert.equal(
   "a day short of the second month still reads as one"
 );
 
-// RD-02 — a 29 February Member gains the year on 28 February in a non-leap
-// year, the same day their annual counter rolls. Not a day later.
+// A 29 February Member gains the year on 28 February in a non-leap year.
 assert.equal(experienceSince(new Date("2024-02-29"), new Date("2025-02-28"))?.years, 1);
 assert.equal(experienceSince(new Date("2024-02-29"), new Date("2025-02-27"))?.years, 0);
 

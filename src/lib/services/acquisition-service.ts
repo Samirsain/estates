@@ -37,6 +37,7 @@ import {
 import {
   BUYBACK_COMMISSION_PURPOSE,
   cancelCommissionForBooking,
+  raiseBuybackUnwindReview,
   reassessCommission,
 } from "./commission-service";
 import { syncRoyaltyLink } from "./network-service";
@@ -836,6 +837,15 @@ export async function decideAcquisition(args: {
             closeReason: `Buyback approved — ${args.note}`,
           },
         });
+        // The sale is closed, so its open work closes with it — before the
+        // reward review below is raised, so that review stays open.
+        await closeTasksFor(
+          tx,
+          "Booking",
+          acquisition.sourceBooking.id,
+          args.actorRef,
+          "Buyback approved."
+        );
         // AC-05 — prd-complete §14.12 treats a Buyback differently from a plain
         // cancellation, and differently again either side of legal completion.
         await cancelCommissionForBooking(tx, acquisition.sourceBooking.id, args.actorRef, {
@@ -847,19 +857,12 @@ export async function decideAcquisition(args: {
         // the Royalty Linked Member of that first purchase final, without
         // waiting for 100% Payment Received.
         await syncRoyaltyLink(tx, acquisition.sourceBooking.primaryPersonId, args.actorRef);
-        // CR-015 — and the same Approved Buyback is the alternative milestone
-        // for Invite, Royalty and Loyalty. `cancelCommissionForBooking` above
+        // SSOT §59 — and the same Approved Buyback is the alternative milestone
+        // for Customer Loyalty, once 25% is received. `cancelCommissionForBooking` above
         // deliberately leaves those records standing; this is what earns them.
         // It also lifts the Buyback Pending hold the raised Buyback put on the
         // whole Booking, which nothing else on this path would have cleared.
         await reassessCommission(tx, acquisition.sourceBooking.id, args.actorRef);
-        await closeTasksFor(
-          tx,
-          "Booking",
-          acquisition.sourceBooking.id,
-          args.actorRef,
-          "Buyback approved."
-        );
         await tx.bookingEvent.create({
           data: {
             bookingId: acquisition.sourceBooking.id,
@@ -953,18 +956,14 @@ type BuybackRestore = {
 };
 
 /**
- * CR-016 — the reversal of an approved Buyback.
+ * CR-016; CP §84 — the reversal of an approved Buyback.
  *
  * The old sale goes back exactly as it stood and the commission is then simply
- * reassessed. That really is the whole rule: with the Buyback no longer
- * Approved the alternative milestone is gone, so `reassessCommission` re-reads
- * every record against actual Payment Received and all four of CR-016's clauses
- * fall out of it — a benefit that independently reached 100% keeps standing; an
- * unpaid one that did not returns to Milestone Pending; a paid one becomes
- * Accounts Adjustment Required; and reopening the one-time opportunity is what
- * takes the position back out of its performance cycle. The opportunity ledger
- * is also what stops a duplicate payout later, since the slot must be consumed
- * again before anything can be earned a second time.
+ * reassessed. With the Buyback no longer Approved the alternative milestone is
+ * gone, so `reassessCommission` re-reads every record against actual Payment
+ * Received: a benefit that independently reached 100% keeps standing; an unpaid
+ * one that did not returns to Milestone Pending; a paid one becomes Accounts
+ * Adjustment Required. Accounts then gets the T25 Buyback Unwind review.
  *
  * A Buyback still awaiting approval accelerated nothing, so it has nothing to
  * reverse and never reaches here.
@@ -1040,6 +1039,7 @@ async function unwindApprovedBuyback(
     `Buyback unwound — ${reason}`,
     BUYBACK_COMMISSION_PURPOSE
   );
+  await raiseBuybackUnwindReview(tx, acquisition.sourceBookingId, reason);
 }
 
 /** PRD §11.4 — Deal Cancelled, only while no new buyer process is active. */
@@ -1138,8 +1138,8 @@ export async function cancelAcquisitionDeal(args: {
 /* -------------------------------------------------- Buying Commission */
 
 /**
- * PRD §11.7 — one Buying Commission per acquisition, outside the 4% sale cap,
- * eligible at 100% Payment Given. Raised when the arranger is a Member or
+ * PRD §11.7; SSOT §84 — one Buying Commission per acquisition, separate from the
+ * sale-side benefits, eligible at 100% Payment Given. Raised when the arranger is a Member or
  * Customer; a 3% Club acquisition earns none.
  */
 export async function recordBuyingCommission(args: {
