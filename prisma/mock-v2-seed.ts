@@ -18,6 +18,7 @@
 import { writeFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { assertCheckDatabase } from "./check-guard.ts";
+import { MEMBER_TERMS_VERSION } from "@/lib/terms";
 import { purgeScope } from "./check-cleanup.ts";
 import { aadhaarLastFour, blindIndex, encryptSensitive, normaliseAadhaar } from "@/lib/security/identity";
 import { makeAvailable, prepareInventory, setRestriction } from "@/lib/services/inventory-service";
@@ -257,8 +258,9 @@ async function member(label: string, name: string, note: string, inviter: string
     reraNumber: `RAJ/A/${label}/2026`,
     reraExpiryDate: day(400),
   });
-  // UAT §6.7 — Member Terms MT-2026-10.
-  await db.memberTermsAcceptance.create({ data: { memberProfileId: activated.memberProfileId, version: "MT-2026-10" } });
+  // UAT §6.7 — the Member has accepted the Member Terms the portal publishes,
+  // so the mock Members sign in without a Terms stop.
+  await db.memberTermsAcceptance.create({ data: { memberProfileId: activated.memberProfileId, version: MEMBER_TERMS_VERSION } });
   members[label] = { profileId: activated.memberProfileId, person: p };
   return p;
 }
@@ -649,7 +651,7 @@ async function writeKey() {
     "| Desert Square (D-01…D-10) | PSV-D1 Direct 2% = Loyalty 2% (MD exception) | TRIP-D 3 / 2 / 1 |",
     "| Everest Park (E-01…E-10) | PSV-E1 Direct 3% / Loyalty Disabled | TRIP-E 4 / 3 / 1 |",
     "",
-    "Royalty Gift Programme RGP-01 is live. Terms: Customer CT-2026-10, Member MT-2026-10.",
+    "Royalty Gift Programme RGP-01 is live. Terms: Customer CT-2026-10; Members have accepted the published Member Terms.",
     "",
     "## People",
     "",

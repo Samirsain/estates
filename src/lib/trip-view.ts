@@ -9,6 +9,8 @@ export type TripProgrammeView = {
   project: string;
   code: string;
   open: { target: number; minOwn: number; maxRef: number; termsRef: string; openedAt: string } | null;
+  /** The rules the next Trip is judged by: the open bucket's, else the latest bucket's. */
+  rules: { target: number; minOwn: number; maxRef: number; termsRef: string } | null;
   pendingOwn: number;
   qualifiedOwn: number;
   qualifiedReference: number;
@@ -76,6 +78,8 @@ export async function tripProgrammes(
     const mine = credits.filter((c) => c.projectId === projectId && c.programmeCode === code);
     const own = (state: string) => mine.filter((c) => c.creditType === "OWN_SALE" && c.state === state && !c.bucketId).length;
     const open = buckets.find((b) => b.projectId === projectId && b.programmeCode === code && b.state === "OPEN");
+    // Buckets arrive newest first, so after a Trip is earned its rules still show.
+    const latest = open ?? buckets.find((b) => b.projectId === projectId && b.programmeCode === code);
     const expiries = mine.filter((c) => c.state === "QUALIFIED" && !c.bucketId && c.expiresAt).map((c) => c.expiresAt!.getTime());
     return {
       key,
@@ -89,6 +93,9 @@ export async function tripProgrammes(
             termsRef: open.termsVersionRef,
             openedAt: open.openedAt.toISOString(),
           }
+        : null,
+      rules: latest
+        ? { target: latest.totalTarget, minOwn: latest.minOwnCredits, maxRef: latest.maxReferenceCredits, termsRef: latest.termsVersionRef }
         : null,
       pendingOwn: own("PENDING"),
       qualifiedOwn: own("QUALIFIED"),

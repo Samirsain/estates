@@ -90,12 +90,13 @@ export type PortalData = {
     project: string;
     code: string;
     open: { target: number; minOwn: number; maxRef: number } | null;
+    rules: { target: number; minOwn: number; maxRef: number; termsRef: string } | null;
     pendingOwn: number;
     qualifiedOwn: number;
     qualifiedReference: number;
     held: number;
     nearestExpiry: string | null;
-    rewards: Array<{ state: string; held: boolean; travelledAt: string | null }>;
+    rewards: Array<{ state: string; holdReason: string | null; earnedAt: string; travelledAt: string | null }>;
   }>;
   /** CP §70 — each Gift's state, Programme and chosen Gift; never the Customer. */
   royaltyCredits: Array<{
@@ -141,7 +142,28 @@ export type PortalData = {
   }>;
 };
 
-const TABS = ["Available Plots", "Hold Requests", "Enquiries", "Network", "Profile"] as const;
+// CP §70 — Rewards is the Member's Commission / Rewards view.
+const TABS = ["Available Plots", "Rewards", "Hold Requests", "Enquiries", "Network", "Profile"] as const;
+
+/** CP §70 — Member-safe wording for a Trip's fulfilment hold. */
+const TRIP_HOLD_LABEL: Record<string, string> = {
+  RECOVERY_OUTSTANDING: "On Hold — Recovery",
+  MEMBER_DEACTIVATED: "On Hold — Membership inactive",
+  BUYBACK_STABLE_COMPLETION_PENDING: "Waiting for the Buyback to complete",
+  REWARD_DEFICIENT: "Under Review",
+  NOMINEE_APPROVAL_PENDING: "Waiting for traveller approval",
+  PROGRAMME_TERMS_ACTION_REQUIRED: "Terms action required",
+  STAFF_CONFLICT_REVIEW: "Under Review",
+  RECOVERY_CIRCUMVENTION_REVIEW: "Under Review",
+};
+
+const TRIP_STATE_LABEL: Record<string, string> = {
+  EARNED: "Trip earned — the team will contact you to book it",
+  BOOKED: "Trip booked",
+  TRAVELLED: "Travelled",
+  DEFICIENT: "Under Review",
+  CANCELLED: "Cancelled",
+};
 
 const inputClass =
   "h-10 w-full rounded-xl border border-border bg-muted px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
@@ -432,41 +454,113 @@ export default function PortalClient({ data }: { data: PortalData }) {
             )}
           </div>
 
-          <div className="border-t border-border/50 pt-4 space-y-3">
+          <p className="pt-2 text-[11px] leading-relaxed text-muted-foreground">
+            Royalty Linked Customers are shown as a count only. The portal never shows a
+            Customer&apos;s name, Customer ID or contact details.
+          </p>
+        </div>
+      )}
+
+      {/* CP §70 — Commission / Rewards view: own data only, no buyer identity, no value. */}
+      {tab === "Rewards" && (
+        <div className="rounded-2xl border border-border bg-card p-4 space-y-5 text-xs">
+          <div className="space-y-3">
             <h3 className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-emerald-700">
-              <Layers className="h-3 w-3" /> Sales &amp; Reference Trip Reward
+              <Layers className="h-3 w-3" /> Sales &amp; Reference Trip
             </h3>
             {data.trip.length === 0 ? (
               <p className="text-muted-foreground">
                 Trip progress starts with a qualifying sale in a Project with a Trip Programme. Joining alone earns no credit.
               </p>
             ) : (
-              <ul className="space-y-2">
-                {data.trip.map((t) => (
-                  <li key={`${t.project}-${t.code}`} className="space-y-0.5">
-                    <p className="font-medium">
-                      {t.project} · {t.code}
-                    </p>
-                    {t.open && (
-                      <p className="text-muted-foreground">
-                        Target {t.open.target} · at least {t.open.minOwn} own sales · at most {t.open.maxRef} Reference
-                      </p>
-                    )}
-                    <p>
-                      Own: {t.qualifiedOwn} qualified · {t.pendingOwn} pending · Reference: {t.qualifiedReference}
-                      {t.held > 0 ? ` · ${t.held} on hold` : ""}
-                      {t.nearestExpiry ? ` · next credit expires ${formatIst(t.nearestExpiry)}` : ""}
-                    </p>
-                    {t.rewards.map((r, i) => (
-                      <p key={i} className="text-muted-foreground">
-                        Trip {r.state.toLowerCase()}
-                        {r.held ? " · on hold" : ""}
-                        {r.travelledAt ? ` · ${formatIst(r.travelledAt)}` : ""}
-                      </p>
-                    ))}
-                  </li>
-                ))}
-              </ul>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {data.trip.map((t) => {
+                  const rules = t.rules;
+                  const counted = rules ? t.qualifiedOwn + Math.min(t.qualifiedReference, rules.maxRef) : 0;
+                  const banked = rules ? Math.max(0, t.qualifiedReference - rules.maxRef) : 0;
+                  const pct = rules ? Math.min(100, Math.round((counted / rules.target) * 100)) : 0;
+                  return (
+                    <div key={`${t.project}-${t.code}`} className="space-y-2.5 rounded-xl border border-border/70 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-semibold text-foreground">{t.project}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {t.code}
+                            {rules ? ` · Terms ${rules.termsRef}` : ""}
+                          </p>
+                        </div>
+                        {rules && (
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary">
+                            {t.rewards.length > 0 ? "Next Trip " : ""}
+                            {counted} / {rules.target}
+                          </span>
+                        )}
+                      </div>
+                      {rules && (
+                        <>
+                          <div
+                            className="h-2 overflow-hidden rounded-full bg-muted"
+                            role="progressbar"
+                            aria-label={`${t.project} Trip progress`}
+                            aria-valuemin={0}
+                            aria-valuemax={rules.target}
+                            aria-valuenow={counted}
+                          >
+                            <div className="h-full rounded-full bg-emerald-600" style={{ width: `${pct}%` }} />
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            Target {rules.target} · at least {rules.minOwn} own sales · at most {rules.maxRef} Reference
+                          </p>
+                        </>
+                      )}
+                      <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
+                        <dt className="text-muted-foreground">Own sales qualified</dt>
+                        <dd className="text-right tabular-nums font-medium">
+                          {t.qualifiedOwn}
+                          {rules ? ` of ${rules.minOwn}+` : ""}
+                        </dd>
+                        <dt className="text-muted-foreground">Reference qualified</dt>
+                        <dd className="text-right tabular-nums font-medium">
+                          {rules ? Math.min(t.qualifiedReference, rules.maxRef) : t.qualifiedReference}
+                          {rules ? ` of ${rules.maxRef} max` : ""}
+                        </dd>
+                        <dt className="text-muted-foreground">Pending (waiting for payment)</dt>
+                        <dd className="text-right tabular-nums">{t.pendingOwn}</dd>
+                        {banked > 0 && (
+                          <>
+                            <dt className="text-muted-foreground">Banked Reference</dt>
+                            <dd className="text-right tabular-nums">{banked}</dd>
+                          </>
+                        )}
+                        {t.held > 0 && (
+                          <>
+                            <dt className="text-muted-foreground">On hold</dt>
+                            <dd className="text-right tabular-nums text-amber-700">{t.held}</dd>
+                          </>
+                        )}
+                        {t.nearestExpiry && (
+                          <>
+                            <dt className="text-muted-foreground">Next credit expires</dt>
+                            <dd className="text-right">{formatIst(t.nearestExpiry)}</dd>
+                          </>
+                        )}
+                      </dl>
+                      {t.rewards.map((r, i) => (
+                        <div key={i} className="rounded-lg bg-emerald-50 px-2.5 py-2 text-emerald-800">
+                          <p className="font-semibold">{TRIP_STATE_LABEL[r.state] ?? r.state}</p>
+                          <p className="text-[11px]">
+                            Earned {formatIst(r.earnedAt)}
+                            {r.travelledAt ? ` · travelled ${formatIst(r.travelledAt)}` : ""}
+                          </p>
+                          {r.holdReason && (
+                            <p className="text-[11px] font-medium text-amber-700">{TRIP_HOLD_LABEL[r.holdReason] ?? "Under Review"}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
 
@@ -500,9 +594,60 @@ export default function PortalClient({ data }: { data: PortalData }) {
             )}
           </div>
 
-          <p className="pt-2 text-[11px] leading-relaxed text-muted-foreground">
-            Royalty Linked Customers are shown as a count only. The portal never shows a
-            Customer&apos;s name, Customer ID or contact details.
+          <div className="border-t border-border/50 pt-4">
+          <div className="space-y-3">
+            <h3 className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-primary">
+              <ShieldCheck className="h-3 w-3" /> Direct Commission &amp; Loyalty
+            </h3>
+            {data.commissions.length === 0 ? (
+              <p className="text-muted-foreground">No commission has been generated for you yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[38rem] text-xs">
+                  <thead className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border/50">
+                    <tr>
+                      <th className="pb-2">Project</th>
+                      <th className="pb-2">Plot</th>
+                      <th className="pb-2">Type</th>
+                      <th className="pb-2 text-right">%</th>
+                      <th className="pb-2 text-right">Milestone</th>
+                      <th className="pb-2 pl-4">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {data.commissions.map((c, index) => (
+                      <tr key={index}>
+                        <td className="py-2.5 font-semibold text-foreground">{c.project}</td>
+                        <td className="whitespace-nowrap py-2.5 font-medium text-primary">
+                          {c.plot}
+                        </td>
+                        <td className="py-2.5 text-foreground">{COMMISSION_LABEL[c.type] ?? c.type}</td>
+                        <td className="py-2.5 text-right tabular-nums font-semibold text-primary">{c.percent}</td>
+                        <td className="py-2.5 text-right tabular-nums text-foreground">{c.milestonePercent}%</td>
+                        <td className="py-2.5 pl-4">
+                          <span className="block font-medium text-foreground">
+                            {eligibilityLabel(c.eligibility)}
+                          </span>
+                          <span className="block text-[11px] text-muted-foreground">
+                            {PAYMENT_LABEL[c.payment] ?? c.payment}
+                            {c.paidOn ? ` · ${formatIst(c.paidOn)}` : ""}
+                          </span>
+                          {c.holdReason && (
+                            <span className="block text-[11px] font-medium text-amber-700">
+                              {HOLD_LABEL[c.holdReason] ?? c.holdReason}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          </div>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Only your own benefits are shown — never a buyer&apos;s name, Customer ID or contact details, and no Project economics.
           </p>
         </div>
       )}
@@ -524,56 +669,6 @@ export default function PortalClient({ data }: { data: PortalData }) {
             remarks.
           </p>
 
-          <div className="border-t border-border/50 pt-4 space-y-3">
-            <h3 className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-primary">
-              <ShieldCheck className="h-3 w-3" /> Commission Breakdown
-            </h3>
-            {data.commissions.length === 0 ? (
-              <p className="text-muted-foreground">No commission has been generated for you yet.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[38rem] text-xs">
-                  <thead className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border/50">
-                    <tr>
-                      <th className="pb-2">Project</th>
-                      <th className="pb-2">Plot</th>
-                      <th className="pb-2">Type</th>
-                      <th className="pb-2 text-right">%</th>
-                      <th className="pb-2 text-right">Milestone</th>
-                      <th className="pb-2">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/50">
-                    {data.commissions.map((c, index) => (
-                      <tr key={index}>
-                        <td className="py-2.5 font-semibold text-foreground">{c.project}</td>
-                        <td className="whitespace-nowrap py-2.5 font-medium text-primary">
-                          {c.plot}
-                        </td>
-                        <td className="py-2.5 text-foreground">{COMMISSION_LABEL[c.type] ?? c.type}</td>
-                        <td className="py-2.5 text-right tabular-nums font-semibold text-primary">{c.percent}</td>
-                        <td className="py-2.5 text-right tabular-nums text-foreground">{c.milestonePercent}%</td>
-                        <td className="py-2.5">
-                          <span className="block font-medium text-foreground">
-                            {eligibilityLabel(c.eligibility)}
-                          </span>
-                          <span className="block text-[11px] text-muted-foreground">
-                            {PAYMENT_LABEL[c.payment] ?? c.payment}
-                            {c.paidOn ? ` · ${formatIst(c.paidOn)}` : ""}
-                          </span>
-                          {c.holdReason && (
-                            <span className="block text-[11px] font-medium text-amber-700">
-                              {HOLD_LABEL[c.holdReason] ?? c.holdReason}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
         </div>
       )}
 
