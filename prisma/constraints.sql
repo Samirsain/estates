@@ -834,3 +834,32 @@ ALTER TABLE "TripReward" ADD CONSTRAINT "trip_reward_stamps"
   CHECK (("state" NOT IN ('BOOKED', 'TRAVELLED') OR ("bookingReference" IS NOT NULL AND "bookedAt" IS NOT NULL AND "recipient" IS NOT NULL))
      AND ("state" <> 'TRAVELLED' OR "travelledAt" IS NOT NULL)
      AND ("state" NOT IN ('BOOKED', 'TRAVELLED') OR "recipient" <> 'NON_FAMILY' OR "recipientApprovedAt" IS NOT NULL));
+
+-- ---------------------------------------------------------------- Part 4 controls
+
+-- CP §58 — one live declaration per staff Person + relative; nobody is their own relative.
+CREATE UNIQUE INDEX IF NOT EXISTS "one_live_staff_relative"
+  ON "StaffRelative" ("staffPersonId", "relativePersonId") WHERE "endedAt" IS NULL;
+ALTER TABLE "StaffRelative" DROP CONSTRAINT IF EXISTS "staff_relative_stamps";
+ALTER TABLE "StaffRelative" ADD CONSTRAINT "staff_relative_stamps"
+  CHECK ("staffPersonId" <> "relativePersonId"
+     AND ("endedAt" IS NULL OR ("endedByRef" IS NOT NULL AND length(btrim(coalesce("endReason", ''))) > 0)));
+
+-- CP §58, §78, §79 — a decided conflict review names who decided, when and why.
+ALTER TABLE "StaffConflictReview" DROP CONSTRAINT IF EXISTS "staff_conflict_stamps";
+ALTER TABLE "StaffConflictReview" ADD CONSTRAINT "staff_conflict_stamps"
+  CHECK ("status" IN ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED')
+     AND ("status" = 'PENDING' OR ("decidedByRef" IS NOT NULL AND "decidedAt" IS NOT NULL
+          AND length(btrim(coalesce("decisionNote", ''))) > 0)));
+
+-- CP §55, §78 — a circumvention decision is audited with its reason.
+ALTER TABLE "CircumventionReview" DROP CONSTRAINT IF EXISTS "circumvention_stamps";
+ALTER TABLE "CircumventionReview" ADD CONSTRAINT "circumvention_stamps"
+  CHECK (cardinality("indicators") > 0
+     AND ("status" = 'PENDING_REVIEW' OR ("decidedByRef" IS NOT NULL AND "decidedAt" IS NOT NULL
+          AND length(btrim(coalesce("reason", ''))) > 0)));
+
+-- SSOT §22 — a payer reference belongs to a named third-party payer.
+ALTER TABLE "PaymentReceivedEntry" DROP CONSTRAINT IF EXISTS "third_party_payer_named";
+ALTER TABLE "PaymentReceivedEntry" ADD CONSTRAINT "third_party_payer_named"
+  CHECK ("payerReference" IS NULL OR length(btrim(coalesce("payerName", ''))) > 0);

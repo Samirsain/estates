@@ -27,6 +27,9 @@ async function main() {
   const keepPersonIds = staff.map((s) => s.personId);
 
   // Leaves of the commission tree first.
+  await db.staffConflictReview.deleteMany({});
+  await db.circumventionReview.deleteMany({});
+  await db.staffRelative.deleteMany({});
   await db.recovery.deleteMany({});
   await db.royaltyCreditEvent.deleteMany({});
   await db.royaltyCredit.deleteMany({});
@@ -109,7 +112,7 @@ async function main() {
   // The Phase 1 seed owns a baseline the check suites rely on — one Person with
   // a known Aadhaar to collide against, and the demo Project. It is upsert-based
   // and safe to re-run, so it is the first thing to do after a reset.
-  console.log("Next: npm run db:seed, then npm run uat:seed and npm run uat:seed:v2.");
+  console.log("Next: npm run db:seed, then npm run seed:mock-v2 (the Business Model v2 UAT dataset).");
   await db.$disconnect();
 }
 

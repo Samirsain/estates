@@ -73,13 +73,17 @@ await db.$transaction(
       if (confirmed) await tx.person.update({ where: { id: person.id }, data });
     }
 
-    const banks = await tx.bankDetail.findMany({ select: { id: true, accountCipher: true } });
+    const banks = await tx.bankDetail.findMany({ select: { id: true, accountCipher: true, ifsc: true } });
     for (const bank of banks) {
       counts.bank++;
+      const plain = decryptSensitive(bank.accountCipher, oldKey);
+      // CP §57 — the account identity index follows the blind-index key.
+      const index = newBlindKey ? { accountBlindIndex: blindIndex(`${bank.ifsc.slice(0, 4)}:${plain}`, newBlindKey) } : {};
+      if (newBlindKey) counts.blindIndexes++;
       if (confirmed) {
         await tx.bankDetail.update({
           where: { id: bank.id },
-          data: { accountCipher: move(bank.accountCipher) },
+          data: { accountCipher: encryptSensitive(plain, newKey), ...index },
         });
       }
     }

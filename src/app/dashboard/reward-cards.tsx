@@ -16,9 +16,10 @@ export function RewardCards({ counts }: { counts: RewardCounts }) {
     { label: "Gifts ordered, awaiting delivery", value: String(counts.giftsAwaitingDelivery), href: "/rewards?tab=royalty" },
     { label: "Project settings awaiting MD", value: String(counts.settingsAwaitingMd), href: "/projects" },
     { label: "Reward reviews after Buyback", value: String(counts.buybackReviews), href: "/dashboard" },
+    { label: "Conflict / circumvention reviews", value: String(counts.controlReviews), href: "/rewards?tab=reviews", warn: counts.controlReviews > 0 },
   ];
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10">
       {cards.map((c) => (
         <Link
           key={c.label}

@@ -12,9 +12,11 @@
 import type { Prisma, RewardHoldReason, RewardRecipient } from "@prisma/client";
 import { notFutureDated } from "@/lib/domain/booking";
 import { BUYBACK_MIN_SOURCE_PAYMENT } from "@/lib/domain/commission";
+import { db } from "@/lib/db";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { outstandingRecovery } from "./commission-service";
 import { closeTasksFor, ensureTask } from "./task-service";
+import { assertIndependent, controlHoldReason } from "./benefit-control-service";
 
 /** CP §65 NT06 — Royalty Gift Selection / Fulfilment. */
 export const GIFT_FULFILMENT_PURPOSE = "ROYALTY_GIFT_FULFILMENT";
@@ -157,8 +159,16 @@ export async function syncRoyaltyReward(tx: Tx, customerPersonId: string, actorR
   }
 
   // 2. With the opportunity unused, the first qualifying Club-direct purchase earns it.
+  // SSOT §100 — one real person, one opportunity: a merged-away identity earns
+  // nothing, and one consumed under a merged identity is consumed here too.
+  const identity = await tx.person.findUniqueOrThrow({
+    where: { id: customerPersonId },
+    select: { mergeStatus: true, mergedPersons: { select: { customerProfile: { select: { royaltyOpportunityConsumedAt: true } } } } },
+  });
+  const consumedByMerge =
+    identity.mergeStatus === "MERGED_AWAY" || identity.mergedPersons.some((p) => p.customerProfile?.royaltyOpportunityConsumedAt);
   const fresh = await tx.customerProfile.findUniqueOrThrow({ where: { id: customer.id } });
-  if (!live && !fresh.royaltyOpportunityConsumedAt && fresh.royaltyLinkFinalAt && fresh.royaltyLinkedMemberId) {
+  if (!live && !consumedByMerge && !fresh.royaltyOpportunityConsumedAt && fresh.royaltyLinkFinalAt && fresh.royaltyLinkedMemberId) {
     const candidates = (await originalPurchasesOf(tx, customerPersonId))
       .filter((b) => b.id !== fresh.royaltyLinkFirstBookingId && b.royaltyProgrammeVersionId)
       .sort((a, b) => (a.bookingNumber! < b.bookingNumber! ? -1 : 1));
@@ -208,7 +218,7 @@ export async function syncRoyaltyReward(tx: Tx, customerPersonId: string, actorR
 }
 
 /** Recomputes a live Credit's hold and its fulfilment task. */
-async function refreshCredit(tx: Tx, creditId: string, actorRef: string) {
+export async function refreshCredit(tx: Tx, creditId: string, actorRef: string) {
   const credit = await tx.royaltyCredit.findUniqueOrThrow({
     where: { id: creditId },
     include: {
@@ -217,7 +227,14 @@ async function refreshCredit(tx: Tx, creditId: string, actorRef: string) {
     },
   });
   if (!LIVE_STATES.includes(credit.state as (typeof LIVE_STATES)[number])) return;
-  const hold = await holdFor(tx, credit, credit.memberProfile);
+  // CP §55, §58 — the release controls raise their reviews even behind another hold.
+  const control = await controlHoldReason(tx, {
+    recordKind: CREDIT_RECORD_KIND,
+    recordId: credit.id,
+    personId: credit.memberProfile.personId,
+    recordName: `${credit.memberProfile.memberId} · ${credit.memberProfile.person.fullName} · ${credit.customerProfile.customerId}`,
+  });
+  const hold = (await holdFor(tx, credit, credit.memberProfile)) ?? control;
   if (hold !== credit.holdReason) {
     await tx.royaltyCredit.update({ where: { id: credit.id }, data: { holdReason: hold } });
     await event(tx, credit.id, actorRef, hold ? "HELD" : "RELEASED", credit.holdReason ?? undefined, hold ?? undefined);
@@ -384,8 +401,16 @@ export async function decideRoyaltyRecipient(args: Actor & { creditId: string; a
 }
 
 /** Terms 6.2 §18, §33 — ordered from the supplier; the choice locks. */
+/** CP §58, §78 — the Gift's owner, for the independent-processor check. */
+async function giftOwner(creditId: string) {
+  const credit = await db.royaltyCredit.findUnique({ where: { id: creditId }, select: { memberProfile: { select: { personId: true } } } });
+  if (!credit) blocked("That Royalty Credit no longer exists.");
+  return credit.memberProfile.personId;
+}
+
 export async function orderRoyaltyGift(args: Actor & { creditId: string; orderReference: string; orderedOn: Date }) {
   fulfilmentRole(args.actorRole);
+  await assertIndependent({ ...args, beneficiaryPersonId: await giftOwner(args.creditId), action: "ROYALTY_GIFT_ORDER" });
   if (!args.orderReference.trim()) blocked("Enter the order reference.");
   const dated = notFutureDated("Order date", args.orderedOn);
   if (!dated.ok) blocked(dated.reason);
@@ -425,6 +450,7 @@ export async function deliverRoyaltyGift(
   args: Actor & { creditId: string; deliveredOn: Date; deliveryReference: string }
 ) {
   fulfilmentRole(args.actorRole);
+  await assertIndependent({ ...args, beneficiaryPersonId: await giftOwner(args.creditId), action: "ROYALTY_GIFT_DELIVER" });
   const dated = notFutureDated("Delivery date", args.deliveredOn);
   if (!dated.ok) blocked(dated.reason);
 

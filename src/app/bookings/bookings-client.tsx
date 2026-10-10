@@ -234,6 +234,8 @@ const HOLD_LABEL: Record<string, string> = {
   CUSTOMER_TERMS_PENDING: "Customer Terms Pending",
   RECOVERY_OUTSTANDING: "Recovery Outstanding",
   OLD_RECOVERY_PENDING: "Waiting for the old beneficiary's Recovery",
+  STAFF_CONFLICT_REVIEW: "Staff conflict — awaiting MD",
+  RECOVERY_CIRCUMVENTION_REVIEW: "Recovery circumvention review",
 };
 
 /** v2.1 §9 — one line, the same everywhere a Booking states its terms. */
@@ -912,6 +914,8 @@ export default function BookingsClient({
                   paidOn: String(f.get("paidOn")),
                   reference: String(f.get("reference")),
                   remark: String(f.get("remark") ?? ""),
+                  payerName: String(f.get("payerName") ?? ""),
+                  payerReference: String(f.get("payerReference") ?? ""),
                 },
                 newKey()
               )
@@ -932,6 +936,18 @@ export default function BookingsClient({
           <Field label="Remark">
             <Input name="remark" />
           </Field>
+          {/* SSOT §22; CP §15 — recorded for Accounts review when the money did not come from the buyer. */}
+          <details className="rounded-md border border-border/60 px-3 py-2 text-sm">
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground">Paid by someone other than the buyer?</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field label="Third-party payer name">
+                <Input name="payerName" />
+              </Field>
+              <Field label="Payer reference (account / UTR)">
+                <Input name="payerReference" />
+              </Field>
+            </div>
+          </details>
         </ActionDialog>
       )}
 
@@ -1861,6 +1877,12 @@ function BookingDetailPanel({
                       <span className="ml-2 text-[11px] text-muted-foreground">
                         paid {formatIst(e.paidOn)} · entered {formatIst(e.recordedAt)} · {e.confirmedByRef}
                       </span>
+                      {e.payerName && (
+                        <span className="ml-2 text-[11px] text-amber-800">
+                          paid by {e.payerName}
+                          {e.payerReference ? ` (${e.payerReference})` : ""}
+                        </span>
+                      )}
                     </span>
                     <span className="flex items-center gap-2">
                       <Badge variant={e.status === "SUPERSEDED" ? "outline" : "success"}>

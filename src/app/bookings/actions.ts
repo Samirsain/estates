@@ -254,7 +254,15 @@ export async function cancelBookingAction(
 }
 
 export async function confirmPaymentReceivedAction(
-  input: { bookingId: string; percent: string; paidOn: string; reference: string; remark: string },
+  input: {
+    bookingId: string;
+    percent: string;
+    paidOn: string;
+    reference: string;
+    remark: string;
+    payerName?: string;
+    payerReference?: string;
+  },
   key: string
 ): Promise<ActionResult> {
   const actor = await requireStaff("PAYMENT_RECEIVED_CONFIRM");
@@ -268,6 +276,8 @@ export async function confirmPaymentReceivedAction(
       paidOn: new Date(input.paidOn),
       reference: input.reference,
       remark: input.remark || undefined,
+      payerName: input.payerName,
+      payerReference: input.payerReference,
     });
     refresh();
     return {
@@ -967,6 +977,8 @@ export async function loadBookingDetail(bookingId: string) {
       confirmedByRef: e.confirmedByRef,
       reason: e.reason,
       remark: e.remark,
+      payerName: e.payerName,
+      payerReference: e.payerReference,
       correctsEntryId: e.correctsEntryId,
     })),
     // DESIGN §14.1 — eligibility and payment are shown as two separate fields.

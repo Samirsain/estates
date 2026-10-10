@@ -32,6 +32,8 @@ import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { activateDueVersions } from "./commission-settings-service";
 import { liveRoyaltyProgramme } from "./royalty-programme-service";
 import { closeTasksFor, ensureTask } from "./task-service";
+import { assertIndependent, controlHolds } from "./benefit-control-service";
+import { buyingCommissionMilestoneReached } from "@/lib/domain/acquisition";
 
 const D = Prisma.Decimal;
 
@@ -629,6 +631,16 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
       );
     }
 
+    // CP §55, §58 — only an unpaid benefit is still to be released.
+    const controls =
+      payment === "NOT_PAID"
+        ? await controlHolds(tx, {
+            recordKind: "Commission",
+            recordId: record.id,
+            personId: record.beneficiaryPersonId,
+            recordName: `${booking.bookingNumber ?? booking.requestNo} · ${record.type} ${record.percent.toFixed(2)}%`,
+          })
+        : null;
     const next = resolveEligibility({
       type: record.type as "DIRECT" | "LOYALTY",
       progressPercent: received.toString(),
@@ -645,6 +657,8 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
       oldRecoveryPending:
         !record.beforeRecoveryApprovedAt &&
         (await oldBeneficiaryRecoveryPending(tx, bookingId, record.beneficiaryPersonId)),
+      staffConflictPending: controls?.staffConflict,
+      circumventionPending: controls?.circumvention,
       // v2.1 §22, §77 — the closer's own KYC and Customer Terms.
       closer: isClosing
         ? {
@@ -721,13 +735,51 @@ export async function reassessBenefitsOf(tx: Tx, personId: string, actorRef: str
       isCurrent: true,
       payment: { in: ["NOT_PAID", "ACCOUNTS_ADJUSTMENT_REQUIRED"] },
     },
-    select: { bookingId: true },
-    distinct: ["bookingId"],
+    select: { bookingId: true, acquisitionId: true },
+    distinct: ["bookingId", "acquisitionId"],
   });
-  for (const { bookingId } of affected) {
+  for (const { bookingId, acquisitionId } of affected) {
     if (bookingId) await reassessCommission(tx, bookingId, actorRef);
+    if (acquisitionId) await refreshBuyingCommission(tx, acquisitionId, actorRef);
   }
   return affected.length;
+}
+
+/**
+ * PRD §11.7 — 100% Payment Given makes the unpaid Buying Commission Ready,
+ * unless a release control holds it (CP §55; §58 "Buying Commission should
+ * follow the same conflict-of-interest principle").
+ */
+export async function refreshBuyingCommission(tx: Tx, acquisitionId: string, actorRef: string) {
+  const record = await tx.commissionRecord.findFirst({
+    where: { acquisitionId, isCurrent: true, payment: "NOT_PAID" },
+    include: { acquisition: { select: { acquisitionNo: true, paymentGivenPercent: true } } },
+  });
+  if (!record?.acquisition || !buyingCommissionMilestoneReached(record.acquisition.paymentGivenPercent.toString())) return;
+  const controls = await controlHolds(tx, {
+    recordKind: "Commission",
+    recordId: record.id,
+    personId: record.beneficiaryPersonId,
+    recordName: `${record.acquisition.acquisitionNo} · BUYING ${record.percent.toFixed(2)}%`,
+  });
+  const holdReason = controls.staffConflict
+    ? ("STAFF_CONFLICT_REVIEW" as const)
+    : controls.circumvention
+      ? ("RECOVERY_CIRCUMVENTION_REVIEW" as const)
+      : null;
+  const eligibility = holdReason ? ("ON_HOLD" as const) : ("READY" as const);
+  if (eligibility === record.eligibility && holdReason === record.holdReason) return;
+  await tx.commissionRecord.update({ where: { id: record.id }, data: { eligibility, holdReason } });
+  await tx.commissionEvent.create({
+    data: {
+      recordId: record.id,
+      actorRef,
+      action: record.eligibility === "MILESTONE_PENDING" ? "MILESTONE_REACHED" : "ELIGIBILITY_CHANGED",
+      fromState: record.eligibility,
+      toState: holdReason ? `${eligibility}:${holdReason}` : eligibility,
+      reason: record.eligibility === "MILESTONE_PENDING" ? "Payment Given reached 100%." : undefined,
+    },
+  });
 }
 
 /* -------------------------------------------------------- payment processing */
@@ -873,6 +925,13 @@ export async function rejectCommissionPaidEarly(args: {
  * Only MD may approve. Admin cannot, and Accounts — who processes the payment —
  * certainly cannot approve their own early payment.
  */
+/** CP §58, §78 — the record's beneficiary, for the independent-processor check. */
+async function beneficiaryOf(recordId: string) {
+  const record = await db.commissionRecord.findUnique({ where: { id: recordId }, select: { beneficiaryPersonId: true } });
+  if (!record) blocked("That commission record no longer exists.");
+  return record.beneficiaryPersonId;
+}
+
 export async function approveCommissionPaidEarly(args: {
   idempotencyKey: string;
   actorRef: string;
@@ -882,6 +941,7 @@ export async function approveCommissionPaidEarly(args: {
 }) {
   if (args.actorRole !== "MD") blocked("Only MD may approve a Paid Early commission payment.");
   if (!args.note.trim()) blocked("A compulsory approval note is required for Paid Early.");
+  await assertIndependent({ ...args, beneficiaryPersonId: await beneficiaryOf(args.recordId), action: "COMMISSION_PAID_EARLY_APPROVE" });
 
   return runCommand(
     {
@@ -956,6 +1016,7 @@ export async function markCommissionPaid(args: {
   reference: string;
   remarks: string;
 }) {
+  await assertIndependent({ ...args, beneficiaryPersonId: await beneficiaryOf(args.recordId), action: "COMMISSION_MARK_PAID" });
   if (args.early && !args.remarks.trim()) {
     blocked("Paid Early requires compulsory remarks.");
   }

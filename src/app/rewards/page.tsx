@@ -5,7 +5,8 @@
 
 import Link from "next/link";
 import { requireStaff } from "@/lib/security/current-actor";
-import { rewardLists } from "@/lib/rewards-overview";
+import { rewardLists, reviewRows } from "@/lib/rewards-overview";
+import { Reviews } from "./reviews";
 import { eligibilityLabel } from "@/lib/domain/commission";
 import { formatIst } from "@/lib/tasks";
 import { AppShell } from "@/components/app-shell";
@@ -20,6 +21,7 @@ const TABS = [
   ["trip", "Trip Rewards"],
   ["royalty", "Royalty Gifts"],
   ["recovery", "Recovery"],
+  ["reviews", "Reviews"],
 ] as const;
 
 const TH = "px-2 py-1.5 text-left font-medium text-muted-foreground";
@@ -29,7 +31,7 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
   const actor = await requireStaff("REPORT_VIEW");
   const { tab: requested } = await searchParams;
   const tab = TABS.some(([t]) => t === requested) ? requested! : "monetary";
-  const lists = await rewardLists();
+  const [lists, reviews] = await Promise.all([rewardLists(), tab === "reviews" ? reviewRows() : Promise.resolve([])]);
   const member = (personId: string) => `/people/${personId}?as=member`;
 
   return (
@@ -168,6 +170,8 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
               </tbody>
             </table>
           )}
+
+          {tab === "reviews" && <Reviews rows={reviews} role={actor.role} />}
 
           {tab === "recovery" && (
             <table className="w-full min-w-[40rem] text-xs">

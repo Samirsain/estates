@@ -5,7 +5,79 @@
 // survivor's legacy list.
 
 import { validateMergeRequest } from "@/lib/domain/completion";
+import type { CustomerProfile, MemberProfile, TripCredit } from "@prisma/client";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
+import { consumedClosingEvents } from "./commission-service";
+import { refreshBenefitsOfPerson } from "./recovery-service";
+import { reverseUndeliveredCredit } from "./royalty-service";
+import { evaluateBuckets, invalidate } from "./trip-service";
+
+const MERGE_REASON = "Person merge — one real person keeps one entitlement history (SSOT §100).";
+
+/**
+ * CP §87; SSOT §100; UAT COR-08 — after a merge nothing the two identities
+ * earned separately is counted twice. The Customer-closing count already reads
+ * both identities and Recovery follows the survivor; this removes the rest:
+ * of two consumed Royalty or Reference opportunities the later unfulfilled one
+ * is reversed, and an Own-Sale Credit for the same unit and programme is kept
+ * once. Fulfilled rewards are final and never touched.
+ */
+async function dedupeAfterMerge(
+  tx: Tx,
+  survivor: { id: string; customerProfile: CustomerProfile | null; memberProfile: MemberProfile | null },
+  merged: { id: string; customerProfile: CustomerProfile | null; memberProfile: MemberProfile | null },
+  actorRef: string
+) {
+  const [sc, mc] = [survivor.customerProfile, merged.customerProfile];
+  if (sc?.royaltyOpportunityConsumedAt && mc?.royaltyOpportunityConsumedAt) {
+    const later = sc.royaltyOpportunityConsumedAt > mc.royaltyOpportunityConsumedAt ? sc : mc;
+    await reverseUndeliveredCredit(tx, later.id, actorRef, MERGE_REASON);
+  }
+
+  const [sm, mm] = [survivor.memberProfile, merged.memberProfile];
+  if (!sm || !mm) return;
+  const reversed: TripCredit[] = [];
+  const reverse = async (credit: TripCredit) => {
+    await invalidate(tx, credit, actorRef, MERGE_REASON);
+    reversed.push(credit);
+  };
+
+  const live = { state: { notIn: ["REVERSED" as const, "EXPIRED" as const] } };
+  const [kept, theirs] = await Promise.all([
+    tx.tripCredit.findMany({ where: { memberProfileId: sm.id, creditType: "OWN_SALE", ...live } }),
+    tx.tripCredit.findMany({ where: { memberProfileId: mm.id, creditType: "OWN_SALE", ...live } }),
+  ]);
+  for (const credit of theirs) {
+    const twin = kept.find(
+      (k) => k.projectId === credit.projectId && k.programmeCode === credit.programmeCode && k.creditPlotId === credit.creditPlotId
+    );
+    if (!twin) continue;
+    if (credit.state !== "USED") await reverse(credit);
+    else if (twin.state !== "USED") await reverse(twin);
+  }
+
+  if (sm.referenceOpportunityConsumedAt && mm.referenceOpportunityConsumedAt) {
+    const later = sm.referenceOpportunityConsumedAt > mm.referenceOpportunityConsumedAt ? sm : mm;
+    const earlier = later === sm ? mm : sm;
+    const credit = await tx.tripCredit.findFirst({
+      where: { introducedMemberId: later.id, creditType: "REFERENCE", state: { notIn: ["REVERSED", "EXPIRED", "USED"] } },
+    });
+    if (credit) await reverse(credit);
+    // The survivor carries the one opportunity that stands.
+    await tx.memberProfile.update({
+      where: { id: sm.id },
+      data: {
+        referenceOpportunityConsumedAt: earlier.referenceOpportunityConsumedAt,
+        referenceWinningBookingId: earlier.referenceWinningBookingId,
+      },
+    });
+  }
+
+  for (const key of new Set(reversed.map((c) => `${c.memberProfileId}|${c.projectId}|${c.programmeCode}`))) {
+    const [memberProfileId, projectId, programmeCode] = key.split("|");
+    await evaluateBuckets(tx, memberProfileId, projectId, programmeCode, actorRef);
+  }
+}
 
 /** PRD §22 — MD approval is required, so a request is raised first. */
 export async function requestPersonMerge(args: {
@@ -190,9 +262,19 @@ export async function decidePersonMerge(args: {
         data: { mergeStatus: "SURVIVOR" },
       });
 
+      await dedupeAfterMerge(tx, survivor, merged, args.actorRef);
+      // Holds, Recovery and the release controls now read the one identity.
+      await refreshBenefitsOfPerson(tx, survivor.id, args.actorRef);
+      await refreshBenefitsOfPerson(tx, merged.id, args.actorRef);
+
       await tx.personMergeRequest.update({
         where: { id: request.id },
-        data: { status: "APPROVED", ...decision },
+        data: {
+          status: "APPROVED",
+          ...decision,
+          // CP §87 — rebuilt from unique valid events, capped at three.
+          loyaltyRebuiltTo: Math.min(3, await consumedClosingEvents(tx, survivor.id)),
+        },
       });
 
       return {

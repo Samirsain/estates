@@ -40,6 +40,7 @@ import {
   raiseAdjustmentTask,
   raiseBuybackUnwindReview,
   reassessCommission,
+  refreshBuyingCommission,
 } from "./commission-service";
 import { syncRoyaltyLink } from "./network-service";
 import { refreshCreditOfBooking } from "./royalty-service";
@@ -409,7 +410,7 @@ export async function confirmPaymentGiven(args: {
 
       // PRD §11.7 — the Buying Commission milestone is 100% Payment Given.
       if (buyingCommissionMilestoneReached(progress)) {
-        await settleBuyingCommission(tx, args.acquisitionId, args.actorRef);
+        await refreshBuyingCommission(tx, args.acquisitionId, args.actorRef);
       }
       await syncGivenFollowUp(tx, args.acquisitionId, args.actorRef);
       await refreshStableCompletion(tx, args.acquisitionId, args.actorRef);
@@ -1303,9 +1304,12 @@ export async function recordBuyingCommission(args: {
           toState: record.eligibility,
         },
       });
+      // CP §55, §58 — a Ready record may still wait for a release control.
+      await refreshBuyingCommission(tx, args.acquisitionId, args.actorRef);
+      const settled = await tx.commissionRecord.findUniqueOrThrow({ where: { id: record.id } });
 
       return {
-        result: { recordId: record.id, eligibility: record.eligibility },
+        result: { recordId: record.id, eligibility: settled.eligibility },
         audit: {
           entity: "Acquisition",
           entityId: args.acquisitionId,
@@ -1315,26 +1319,6 @@ export async function recordBuyingCommission(args: {
       };
     }
   );
-}
-
-/** 100% Payment Given makes the Buying Commission Ready (PRD §11.7). */
-async function settleBuyingCommission(tx: Tx, acquisitionId: string, actorRef: string) {
-  const record = await tx.commissionRecord.findFirst({
-    where: { acquisitionId, isCurrent: true, eligibility: "MILESTONE_PENDING" },
-  });
-  if (!record) return;
-
-  await tx.commissionRecord.update({ where: { id: record.id }, data: { eligibility: "READY" } });
-  await tx.commissionEvent.create({
-    data: {
-      recordId: record.id,
-      actorRef,
-      action: "MILESTONE_REACHED",
-      fromState: "MILESTONE_PENDING",
-      toState: "READY",
-      reason: "Payment Given reached 100%.",
-    },
-  });
 }
 
 /**
@@ -1355,6 +1339,7 @@ async function stepBackBuyingCommission(tx: Tx, acquisitionId: string, actorRef:
     where: { id: record.id },
     data: {
       eligibility: "MILESTONE_PENDING",
+      holdReason: null,
       payment: paid ? "ACCOUNTS_ADJUSTMENT_REQUIRED" : record.payment,
     },
   });

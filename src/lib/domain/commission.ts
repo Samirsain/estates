@@ -489,7 +489,9 @@ export type HoldReason =
   | "CLOSER_KYC_PENDING"
   | "CUSTOMER_TERMS_PENDING"
   | "RECOVERY_OUTSTANDING"
-  | "OLD_RECOVERY_PENDING";
+  | "OLD_RECOVERY_PENDING"
+  | "STAFF_CONFLICT_REVIEW"
+  | "RECOVERY_CIRCUMVENTION_REVIEW";
 
 /**
  * v2.1 §20, §21, §41 — an Approved Buyback is the alternative milestone for
@@ -556,6 +558,10 @@ export type EligibilityInput = {
    * the corrected beneficiary first.
    */
   oldRecoveryPending?: boolean;
+  /** CP §58 NT09 — staff or a declared close relative, not yet approved by MD. */
+  staffConflictPending?: boolean;
+  /** CP §55 NT08 — shares an indicator with an unresolved Recovery, not yet cleared. */
+  circumventionPending?: boolean;
 };
 
 export type Eligibility = { state: EligibilityState; holdReason: HoldReason | null };
@@ -591,6 +597,9 @@ export function resolveEligibility(input: EligibilityInput): Eligibility {
   // CP §54 — reached, but held while the beneficiary owes a Recovery (UAT CTL-01).
   if (input.recoveryOutstanding) return hold("RECOVERY_OUTSTANDING");
   if (input.oldRecoveryPending) return hold("OLD_RECOVERY_PENDING");
+  // CP §55, §58 — release controls: held for review, never denied automatically.
+  if (input.staffConflictPending) return hold("STAFF_CONFLICT_REVIEW");
+  if (input.circumventionPending) return hold("RECOVERY_CIRCUMVENTION_REVIEW");
 
   // Conditions on the beneficiary. PAN never creates an automatic hold.
   if (!input.beneficiaryAadhaarAvailable) return hold("AADHAAR_PENDING");

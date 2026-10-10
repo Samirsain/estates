@@ -358,7 +358,7 @@ export default function MembersClient({
       {dialog?.kind === "BANK_ENTER" && (
         <Modal
           title={`Bank Details — ${dialog.row.memberId}`}
-          description="CRM enters, Accounts verifies. Any existing verified account stays active until this replacement is approved."
+          description="Saved and verified on entry. One verified bank account = one Person: an account already verified for someone else needs proof of a genuine joint account and a separate Accounts/MD approval."
           onClose={() => setDialog(null)}
         >
           <form
@@ -375,6 +375,7 @@ export default function MembersClient({
                     branchName: String(f.get("branchName") ?? ""),
                     accountNumber: String(f.get("accountNumber")),
                     ifsc: String(f.get("ifsc")),
+                    jointAccountProof: String(f.get("jointAccountProof") ?? ""),
                   },
                   newKey()
                 )
@@ -398,6 +399,9 @@ export default function MembersClient({
                 <Input name="ifsc" required placeholder="HDFC0001234" />
               </Field>
             </div>
+            <Field label="Joint account? Proof of the holders (only if this account is shared with another Person)">
+              <Input name="jointAccountProof" placeholder="e.g. Passbook page naming both holders, verified at branch" />
+            </Field>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setDialog(null)}>
                 Back
@@ -626,6 +630,11 @@ function MemberDetailPanel({
                       >
                         {b.status.charAt(0) + b.status.slice(1).toLowerCase()}
                       </Badge>
+                      {b.jointAccountProof && (
+                        <Badge variant="info" title={b.jointAccountProof}>
+                          Joint account
+                        </Badge>
+                      )}
                       {permissions.viewFullBank && !revealed[b.id] && (
                         <Button
                           size="sm"

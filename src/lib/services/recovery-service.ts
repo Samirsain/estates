@@ -208,12 +208,23 @@ async function clear(
     `${recovery.recoveryNo} cleared — ${how === "REPAID" ? "repaid" : "set off"}.`,
     RECOVERY_FOLLOW_UP_PURPOSE
   );
-  // CP §76.4 — what the Recovery held is released if nothing else holds it.
-  await reassessBenefitsOf(tx, recovery.personId, actorRef);
-  await refreshCreditsOfMember(tx, recovery.personId, actorRef);
-  await refreshTripOfMember(tx, recovery.personId, actorRef);
+  // CP §76.4 — what the Recovery held is released if nothing else holds it,
+  // including the benefits of anyone under a circumvention review for it (CP §55).
+  await refreshBenefitsOfPerson(tx, recovery.personId, actorRef);
+  const subjects = await tx.circumventionReview.findMany({ where: { recoveryId: recovery.id }, select: { subjectPersonId: true } });
+  for (const { subjectPersonId } of subjects) await refreshBenefitsOfPerson(tx, subjectPersonId, actorRef);
   await reassessSourceBooking(tx, recovery.commissionRecordId, actorRef);
   return recovery;
+}
+
+/**
+ * Every unreleased benefit of one Person rechecked — monetary, Royalty and
+ * Trip — after something that holds or releases them changed (CP §55, §58, §76.4).
+ */
+export async function refreshBenefitsOfPerson(tx: Tx, personId: string, actorRef: string) {
+  await reassessBenefitsOf(tx, personId, actorRef);
+  await refreshCreditsOfMember(tx, personId, actorRef);
+  await refreshTripOfMember(tx, personId, actorRef);
 }
 
 /**

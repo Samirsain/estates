@@ -222,6 +222,7 @@ export async function enterBankDetailsAction(
     branchName: string;
     accountNumber: string;
     ifsc: string;
+    jointAccountProof?: string;
   },
   key: string
 ): Promise<ActionResult> {
@@ -237,13 +238,15 @@ export async function enterBankDetailsAction(
       branchName: input.branchName,
       accountNumber: input.accountNumber,
       ifsc: input.ifsc,
+      jointAccountProof: input.jointAccountProof,
     });
     refresh();
     return {
       ok: true,
-      message:
-        `Bank details ending ${result.accountLastFour} submitted for Accounts verification. ` +
-        `Any existing verified bank stays active until this is approved.`,
+      message: result.jointExceptionPending
+        ? `Joint account ending ${result.accountLastFour} sent for a separate Accounts/MD approval. ` +
+          `Any existing verified bank stays active until it is decided.`
+        : `Bank details ending ${result.accountLastFour} saved and verified.`,
     };
   } catch (error) {
     return toResult(error);
@@ -329,6 +332,7 @@ export async function loadBankDetails(personId: string) {
     verifiedByRef: r.verifiedByRef,
     verifiedAt: r.verifiedAt?.toISOString() ?? null,
     reason: r.reason,
+    jointAccountProof: r.jointAccountProof,
     createdAt: r.createdAt.toISOString(),
   }));
 }

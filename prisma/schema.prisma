@@ -118,6 +118,12 @@ model Person {
   mergeRequestsAsMerged   PersonMergeRequest[] @relation("MergeMerged")
   landInquiriesSourced    LandInquiry[]        @relation("LandInquirySource")
 
+  /// CP §58 — close relatives declared for this staff Person, and the staff this Person is a relative of.
+  declaredRelatives    StaffRelative[]       @relation("StaffRelativeStaff")
+  relativeOfStaff      StaffRelative[]       @relation("StaffRelativeRelative")
+  staffConflictReviews StaffConflictReview[]
+  circumventionReviews CircumventionReview[]
+
   @@index([primaryMobile])
   @@index([fullName])
 }
@@ -1293,6 +1299,11 @@ model PaymentReceivedEntry {
   reason         String?
   remark         String?
 
+  /// SSOT §22; CP §15 — recorded when someone other than the named buyer paid:
+  /// who paid, and their reference. Optional; kept for Accounts review only.
+  payerName      String?
+  payerReference String?
+
   @@index([bookingId, status])
 }
 
@@ -1453,6 +1464,10 @@ enum CommissionHoldReason {
   /// CP §64 T23 — a corrected beneficiary waits while the old beneficiary's
   /// paid record on the same Booking is still to be recovered, unless MD approves.
   OLD_RECOVERY_PENDING
+  /// CP §58 NT09 — staff or a declared close relative; waits for MD approval.
+  STAFF_CONFLICT_REVIEW
+  /// CP §55 NT08 — shares an indicator with an unresolved Recovery; waits for Accounts/MD.
+  RECOVERY_CIRCUMVENTION_REVIEW
 }
 
 /// PRD §19.5 — Registered or Not Applicable satisfies the Member condition.
@@ -1590,6 +1605,8 @@ model Recovery {
   /// The later benefit it was set off against, when cleared by set-off.
   setOffRecordId String?
   setOffRecord   CommissionRecord?  @relation("RecoverySetOff", fields: [setOffRecordId], references: [id])
+
+  circumventionReviews CircumventionReview[]
 
   @@index([personId, status])
   @@index([commissionRecordId])
@@ -1887,16 +1904,22 @@ model BankDetail {
   personId String
   person   Person @relation(fields: [personId], references: [id])
 
-  accountHolder   String
-  bankName        String
+  accountHolder     String
+  bankName          String
   /// Which branch the account sits at — compulsory on every new entry. The
   /// column is nullable only because the rows written before it existed have
   /// no branch and nothing may invent one for them.
-  branchName      String?
+  branchName        String?
   /// Full account number is protected at rest; lists show the last four only.
-  accountCipher   String
-  accountLastFour String
-  ifsc            String
+  accountCipher     String
+  accountLastFour   String
+  ifsc              String
+  /// CP §57; SSOT §94 — keyed blind index of the normalised account identity
+  /// (bank code + account digits): one verified bank account = one Person.
+  accountBlindIndex String?
+  /// CP §57 — the proof of the joint holders, when a genuine joint account is
+  /// shared with another Person. Verified only by a separate Accounts/MD decision.
+  jointAccountProof String?
 
   status BankStatus @default(PENDING)
 
@@ -1909,6 +1932,88 @@ model BankDetail {
   updatedAt DateTime @updatedAt
 
   @@index([personId, status])
+  @@index([accountBlindIndex])
+}
+
+/// CP §58; SSOT §95 — a defined close relative of staff (Terms 6.1 §202
+/// "immediate family"): spouse, parent, child or sibling.
+enum CloseRelation {
+  SPOUSE
+  PARENT
+  CHILD
+  SIBLING
+}
+
+/// CP §58 — the conflict disclosure: a staff Person's declared close relative.
+/// Ended, never deleted.
+model StaffRelative {
+  id               String        @id @default(uuid())
+  staffPersonId    String
+  staffPerson      Person        @relation("StaffRelativeStaff", fields: [staffPersonId], references: [id])
+  relativePersonId String
+  relativePerson   Person        @relation("StaffRelativeRelative", fields: [relativePersonId], references: [id])
+  relation         CloseRelation
+  declaredByRef    String
+  declaredAt       DateTime      @default(now())
+  endedAt          DateTime?
+  endedByRef       String?
+  endReason        String?
+
+  @@index([staffPersonId])
+  @@index([relativePersonId])
+}
+
+/// CP §58, §65 NT09 — MD's decision on one benefit that a staff Person or a
+/// declared close relative would receive. Until Approved the benefit is held.
+model StaffConflictReview {
+  id             String         @id @default(uuid())
+  /// "Commission" | "Trip Reward" | "Royalty Credit" — the task record kinds.
+  recordKind     String
+  recordId       String
+  personId       String
+  person         Person         @relation(fields: [personId], references: [id])
+  /// The staff Persons the conflict is with (the beneficiary themself, or whose relative they are).
+  staffPersonIds String[]
+  status         ReviewDecision @default(PENDING)
+  raisedAt       DateTime       @default(now())
+  decidedByRef   String?
+  decidedAt      DateTime?
+  decisionNote   String?
+
+  @@unique([recordKind, recordId])
+  @@index([personId, status])
+}
+
+/// CP §55 — which shared indicator links the subject to a Recovery Person.
+enum CircumventionIndicator {
+  BANK_ACCOUNT
+  MOBILE
+  ADDRESS
+}
+
+enum CircumventionStatus {
+  PENDING_REVIEW
+  CLEARED
+  RESTRICTED
+}
+
+/// CP §55, §65 NT08; SSOT §92 — Recovery Circumvention Review. The subject is
+/// never denied automatically; Accounts/MD clears or restricts with a reason.
+model CircumventionReview {
+  id              String                   @id @default(uuid())
+  subjectPersonId String
+  subjectPerson   Person                   @relation(fields: [subjectPersonId], references: [id])
+  recoveryId      String
+  recovery        Recovery                 @relation(fields: [recoveryId], references: [id])
+  indicators      CircumventionIndicator[]
+  status          CircumventionStatus      @default(PENDING_REVIEW)
+  raisedAt        DateTime                 @default(now())
+  decidedByRef    String?
+  decidedAt       DateTime?
+  reason          String?
+
+  @@unique([subjectPersonId, recoveryId])
+  @@index([status])
 }
 
 // ===========================================================================

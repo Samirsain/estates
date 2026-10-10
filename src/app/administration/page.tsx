@@ -47,74 +47,73 @@ export default async function AdministrationPage() {
   ]);
 
   return (
-    <div className="space-y-4">
-      <AdministrationClient
-        role={actor.role}
-        actorName={actor.name}
-        staffAccountId={actor.staffAccountId}
-        canEmergencyDisable={can(actor.role, "STAFF_EMERGENCY_DISABLE", actor.extraPermissions)}
-        canReassign={can(actor.role, "WORK_REASSIGN", actor.extraPermissions)}
-        canMerge={can(actor.role, "PERSON_MERGE", actor.extraPermissions)}
-        canManagePermissions={can(actor.role, "ROLE_PERMISSION_MANAGE", actor.extraPermissions)}
-        canRevealIdentity={canViewField(actor.role, "AADHAAR_FULL")}
-        staff={staff.map((account) => ({
-          id: account.id,
-          staffAccountId: account.staffAccountId,
-          name: account.person.fullName,
-          mobileMasked: canSeeStaffContact
-            ? account.person.primaryMobile
-            : maskMobile(account.person.primaryMobile),
-          city: account.person.city,
-          createdAt: account.createdAt.toISOString(),
-          role: account.role,
-          extraPermissions: account.extraPermissions,
-          status: account.status,
-          emergencyDisabled: account.emergencyDisabled,
-          disabledAt: account.disabledAt?.toISOString() ?? null,
-          disabledReason: account.disabledReason,
-          lastLoginAt: account.lastLoginAt?.toISOString() ?? null,
-          openTasks: account._count.assignedTasks,
-          openEnquiries: account._count.assignedEnquiries,
-        }))}
-        queuedTasks={queuedTasks.map((task) => ({
-          id: task.id,
-          taskNo: task.taskNo,
-          title: task.title,
-          recordName: task.recordName,
-          dueAt: task.dueAt.toISOString(),
-        }))}
-        queuedEnquiries={queuedEnquiries.map((enquiry) => ({
-          id: enquiry.id,
-          enquiryNo: enquiry.enquiryNo,
-          person: enquiry.person.fullName,
-          project: enquiry.project.name,
-        }))}
-        merges={merges.map((merge) => ({
-          id: merge.id,
-          status: merge.status,
-          survivor: merge.survivingPerson.fullName,
-          survivorMobile: maskMobile(merge.survivingPerson.primaryMobile),
-          survivorCity: merge.survivingPerson.city ?? "—",
-          merged: merge.mergedPerson.fullName,
-          mergedMobile: maskMobile(merge.mergedPerson.primaryMobile),
-          mergedCity: merge.mergedPerson.city ?? "—",
-          reason: merge.reason,
-          requestedByRef: merge.requestedByRef,
-          requestedAt: merge.requestedAt.toISOString(),
-          decidedByRef: merge.decidedByRef,
-          loyaltyRebuiltTo: merge.loyaltyRebuiltTo,
-        }))}
-        audit={recentAudit.map((event) => ({
-          id: event.id,
-          at: event.at.toISOString(),
-          actorRef: event.actorRef,
-          actorRole: event.actorRole,
-          entity: event.entity,
-          entityId: event.entityId,
-          action: event.action,
-          reason: event.reason,
-        }))}
-      />
+    <AdministrationClient
+      role={actor.role}
+      actorName={actor.name}
+      staffAccountId={actor.staffAccountId}
+      canEmergencyDisable={can(actor.role, "STAFF_EMERGENCY_DISABLE", actor.extraPermissions)}
+      canReassign={can(actor.role, "WORK_REASSIGN", actor.extraPermissions)}
+      canMerge={can(actor.role, "PERSON_MERGE", actor.extraPermissions)}
+      canManagePermissions={can(actor.role, "ROLE_PERMISSION_MANAGE", actor.extraPermissions)}
+      canRevealIdentity={canViewField(actor.role, "AADHAAR_FULL")}
+      staff={staff.map((account) => ({
+        id: account.id,
+        staffAccountId: account.staffAccountId,
+        name: account.person.fullName,
+        mobileMasked: canSeeStaffContact
+          ? account.person.primaryMobile
+          : maskMobile(account.person.primaryMobile),
+        city: account.person.city,
+        createdAt: account.createdAt.toISOString(),
+        role: account.role,
+        extraPermissions: account.extraPermissions,
+        status: account.status,
+        emergencyDisabled: account.emergencyDisabled,
+        disabledAt: account.disabledAt?.toISOString() ?? null,
+        disabledReason: account.disabledReason,
+        lastLoginAt: account.lastLoginAt?.toISOString() ?? null,
+        openTasks: account._count.assignedTasks,
+        openEnquiries: account._count.assignedEnquiries,
+      }))}
+      queuedTasks={queuedTasks.map((task) => ({
+        id: task.id,
+        taskNo: task.taskNo,
+        title: task.title,
+        recordName: task.recordName,
+        dueAt: task.dueAt.toISOString(),
+      }))}
+      queuedEnquiries={queuedEnquiries.map((enquiry) => ({
+        id: enquiry.id,
+        enquiryNo: enquiry.enquiryNo,
+        person: enquiry.person.fullName,
+        project: enquiry.project.name,
+      }))}
+      merges={merges.map((merge) => ({
+        id: merge.id,
+        status: merge.status,
+        survivor: merge.survivingPerson.fullName,
+        survivorMobile: maskMobile(merge.survivingPerson.primaryMobile),
+        survivorCity: merge.survivingPerson.city ?? "—",
+        merged: merge.mergedPerson.fullName,
+        mergedMobile: maskMobile(merge.mergedPerson.primaryMobile),
+        mergedCity: merge.mergedPerson.city ?? "—",
+        reason: merge.reason,
+        requestedByRef: merge.requestedByRef,
+        requestedAt: merge.requestedAt.toISOString(),
+        decidedByRef: merge.decidedByRef,
+        loyaltyRebuiltTo: merge.loyaltyRebuiltTo,
+      }))}
+      audit={recentAudit.map((event) => ({
+        id: event.id,
+        at: event.at.toISOString(),
+        actorRef: event.actorRef,
+        actorRole: event.actorRole,
+        entity: event.entity,
+        entityId: event.entityId,
+        action: event.action,
+        reason: event.reason,
+      }))}
+    >
       {(actor.role === "ADMIN" || actor.role === "MD") && (
         <RoyaltyProgrammes
           role={actor.role}
@@ -132,6 +131,6 @@ export default async function AdministrationPage() {
           }))}
         />
       )}
-    </div>
+    </AdministrationClient>
   );
 }

@@ -354,6 +354,8 @@ export function recordHref(
   }
   // CP §65 NT07 — Royalty Gift Programme Versions are approved in Administration.
   if (record.kind === "Royalty Programme") return "/administration";
+  // CP §65 NT08, NT09 — release-control reviews are decided on the Rewards page.
+  if (record.kind === "Staff Conflict" || record.kind === "Circumvention Review") return "/rewards?tab=reviews";
   if (!INTERNAL_ID.test(record.id)) return null;
   switch (record.kind) {
     case "Booking":

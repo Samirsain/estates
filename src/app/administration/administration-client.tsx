@@ -126,6 +126,8 @@ export default function AdministrationClient(props: {
   queuedEnquiries: QueuedEnquiryView[];
   merges: MergeView[];
   audit: AuditView[];
+  /** Sections rendered by the page itself, inside the shell's content column. */
+  children?: React.ReactNode;
 }) {
   const router = useRouter();
   const [tab, setTab] = React.useState("staff");
@@ -201,6 +203,7 @@ export default function AdministrationClient(props: {
         )}
         {tab === "identity" && <IdentityTab canReveal={props.canRevealIdentity} />}
         {tab === "audit" && <AuditTab rows={props.audit} />}
+        {props.children}
       </div>
     </AppShell>
   );

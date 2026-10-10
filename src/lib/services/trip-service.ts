@@ -16,6 +16,7 @@ import { recordAudit } from "@/lib/security/audit";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { outstandingRecovery } from "./commission-service";
 import { closeTasksFor, ensureTask } from "./task-service";
+import { assertIndependent, controlHoldReason } from "./benefit-control-service";
 
 /** CP §65 NT03. */
 export const TRIP_FULFILMENT_PURPOSE = "TRIP_REWARD_FULFILMENT";
@@ -65,7 +66,7 @@ async function qualification(
  * are final and never touched (SSOT §64). An allocated one leaves its bucket,
  * whose reward is then backfilled or becomes Deficient.
  */
-async function invalidate(tx: Tx, credit: TripCredit, actorRef: string, reason: string) {
+export async function invalidate(tx: Tx, credit: TripCredit, actorRef: string, reason: string) {
   if (credit.state === "USED" || credit.state === "REVERSED" || credit.state === "EXPIRED") return;
   await tx.tripCredit.update({
     where: { id: credit.id },
@@ -403,7 +404,14 @@ export async function refreshTripReward(tx: Tx, rewardId: string, actorRef: stri
     include: { memberProfile: { include: { person: { select: { fullName: true } } } } },
   });
   if (reward.state !== "EARNED" && reward.state !== "BOOKED") return;
-  const hold = await rewardHold(tx, reward.id);
+  // CP §55, §58 — the release controls raise their reviews even behind another hold.
+  const control = await controlHoldReason(tx, {
+    recordKind: TRIP_REWARD_KIND,
+    recordId: reward.id,
+    personId: reward.memberProfile.personId,
+    recordName: `${reward.memberProfile.memberId} · ${reward.memberProfile.person.fullName}`,
+  });
+  const hold = (await rewardHold(tx, reward.id)) ?? control;
   if (hold !== reward.holdReason) {
     await tx.tripReward.update({ where: { id: reward.id }, data: { holdReason: hold } });
     await event(tx, reward.memberProfileId, { rewardId: reward.id }, actorRef, hold ? "REWARD_HELD" : "REWARD_RELEASED", reward.holdReason, hold);
@@ -528,9 +536,17 @@ export async function decideTripNominee(args: Actor & { rewardId: string; approv
   );
 }
 
+/** CP §58, §78 — the Trip's owner, for the independent-processor check. */
+async function tripOwner(rewardId: string) {
+  const reward = await db.tripReward.findUnique({ where: { id: rewardId }, select: { memberProfile: { select: { personId: true } } } });
+  if (!reward) blocked("That Trip Reward no longer exists.");
+  return reward.memberProfile.personId;
+}
+
 /** CP §37 — the Trip is booked with the travel provider. */
 export async function bookTripReward(args: Actor & { rewardId: string; bookingReference: string; bookedOn: Date }) {
   fulfilmentRole(args.actorRole);
+  await assertIndependent({ ...args, beneficiaryPersonId: await tripOwner(args.rewardId), action: "TRIP_BOOK" });
   if (!args.bookingReference.trim()) blocked("Enter the travel booking reference.");
   const dated = notFutureDated("Booking date", args.bookedOn);
   if (!dated.ok) blocked(dated.reason);
@@ -556,6 +572,7 @@ export async function bookTripReward(args: Actor & { rewardId: string; bookingRe
 /** SSOT §64 — travelled: the credits it used stay consumed forever. */
 export async function markTripTravelled(args: Actor & { rewardId: string; travelledOn: Date }) {
   fulfilmentRole(args.actorRole);
+  await assertIndependent({ ...args, beneficiaryPersonId: await tripOwner(args.rewardId), action: "TRIP_TRAVELLED" });
   const dated = notFutureDated("Travel date", args.travelledOn);
   if (!dated.ok) blocked(dated.reason);
   return runCommand<{ rewardId: string }>(

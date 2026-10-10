@@ -20,6 +20,7 @@ export async function rewardCounts() {
     giftsAwaitingDelivery,
     settingsAwaitingMd,
     buybackReviews,
+    controlReviews,
   ] = await Promise.all([
     monetary("DIRECT", "READY"),
     monetary("DIRECT", "ON_HOLD"),
@@ -32,6 +33,11 @@ export async function rewardCounts() {
     db.royaltyCredit.count({ where: { state: "ORDERED" } }),
     db.projectCommissionVersion.count({ where: { status: "PENDING_APPROVAL" } }),
     db.task.count({ where: { status: "PENDING", purpose: { in: ["BUYBACK_COMMISSION_REVIEW", "BUYBACK_UNWIND_REVIEW"] } } }),
+    // CP §65 NT08, NT09 — release-control reviews waiting for a decision.
+    Promise.all([
+      db.staffConflictReview.count({ where: { status: "PENDING" } }),
+      db.circumventionReview.count({ where: { status: "PENDING_REVIEW" } }),
+    ]).then(([a, b]) => a + b),
   ]);
   return {
     directReady,
@@ -45,6 +51,7 @@ export async function rewardCounts() {
     giftsAwaitingDelivery,
     settingsAwaitingMd,
     buybackReviews,
+    controlReviews,
   };
 }
 
@@ -91,4 +98,63 @@ export async function rewardLists() {
     }),
   ]);
   return { monetary, recoveries, trips, gifts };
+}
+
+/** CP §55, §58 — staff-conflict and circumvention reviews, open first, for the Reviews tab. */
+export async function reviewRows() {
+  const [conflicts, circumventions] = await Promise.all([
+    db.staffConflictReview.findMany({
+      include: { person: { select: { id: true, fullName: true } } },
+      orderBy: [{ status: "asc" }, { raisedAt: "desc" }],
+      take: 200,
+    }),
+    db.circumventionReview.findMany({
+      include: {
+        subjectPerson: { select: { id: true, fullName: true } },
+        recovery: { select: { recoveryNo: true, status: true, person: { select: { fullName: true } } } },
+      },
+      orderBy: [{ status: "asc" }, { raisedAt: "desc" }],
+      take: 200,
+    }),
+  ]);
+  const staffNames = new Map(
+    (
+      await db.person.findMany({
+        where: { id: { in: [...new Set(conflicts.flatMap((c) => c.staffPersonIds))] } },
+        select: { id: true, fullName: true },
+      })
+    ).map((p) => [p.id, p.fullName])
+  );
+  // The NT09 task carries the benefit's one-line name.
+  const names = new Map(
+    (
+      await db.task.findMany({
+        where: { recordKind: "Staff Conflict", recordId: { in: conflicts.map((c) => c.id) } },
+        select: { recordId: true, recordName: true },
+      })
+    ).map((t) => [t.recordId, t.recordName])
+  );
+  const decided = (by: string | null, at: Date | null, why: string | null) => (by && at ? `${by} · ${at.toISOString().slice(0, 10)} · ${why ?? ""}` : null);
+  return [
+    ...conflicts.map((c) => ({
+      id: c.id,
+      kind: "CONFLICT" as const,
+      person: c.person.fullName,
+      personId: c.person.id,
+      benefit: names.get(c.id) ?? `${c.recordKind}`,
+      detail: `Conflict with staff: ${c.staffPersonIds.map((id) => staffNames.get(id) ?? id).join(", ")}`,
+      status: c.status,
+      decided: decided(c.decidedByRef, c.decidedAt, c.decisionNote),
+    })),
+    ...circumventions.map((c) => ({
+      id: c.id,
+      kind: "CIRCUMVENTION" as const,
+      person: c.subjectPerson.fullName,
+      personId: c.subjectPerson.id,
+      benefit: `${c.recovery.recoveryNo} · owed by ${c.recovery.person.fullName} (${c.recovery.status.toLowerCase()})`,
+      detail: `Shared ${c.indicators.map((i) => i.replace("_", " ").toLowerCase()).join(", ")}`,
+      status: c.status,
+      decided: decided(c.decidedByRef, c.decidedAt, c.reason),
+    })),
+  ];
 }

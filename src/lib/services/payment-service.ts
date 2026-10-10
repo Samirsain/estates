@@ -249,7 +249,14 @@ export async function confirmPaymentReceived(args: {
   paidOn: Date;
   reference: string;
   remark?: string;
+  /** SSOT §22; CP §15 — when someone other than the named buyer paid. Optional. */
+  payerName?: string;
+  payerReference?: string;
 }) {
+  const payerName = args.payerName?.trim() || null;
+  const payerReference = args.payerReference?.trim() || null;
+  if (payerReference && !payerName) blocked("Name the third-party payer whose reference this is.");
+
   return runCommand(
     {
       idempotencyKey: args.idempotencyKey,
@@ -306,6 +313,8 @@ export async function confirmPaymentReceived(args: {
           allocations: allocations as never,
           confirmedByRef: args.actorRef,
           remark: args.remark ?? null,
+          payerName,
+          payerReference,
         },
       });
 
@@ -454,6 +463,9 @@ export async function correctPaymentReceived(args: {
           confirmedByRef: args.actorRef,
           reason: args.reason,
           correctsEntryId: original.id,
+          // The payer is a fact about the money, not the figures being corrected.
+          payerName: original.payerName,
+          payerReference: original.payerReference,
         },
       });
       await tx.paymentReceivedEntry.update({

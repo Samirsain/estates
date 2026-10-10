@@ -410,6 +410,170 @@ async function personMerges(): Promise<RuleResult> {
 }
 
 /**
+ * UAT plan §28 — the standing v2 integrity queries that the database does not
+ * already refuse. One-current-record, one Reference / Royalty / Own-Sale credit,
+ * rate caps on a version and one credit per reward are database constraints
+ * (CP §80) and cannot occur; the old Invite/Royalty cash types no longer exist
+ * in the schema at all (items 23–24).
+ */
+async function businessModelV2(): Promise<RuleResult> {
+  const exceptions: Exception[] = [];
+  const add = (record: string, detail: string) => exceptions.push({ record, detail });
+
+  // 1. Approved Booking without its frozen Project Settings Version.
+  const unfrozen = await db.booking.findMany({
+    where: {
+      status: { in: ["BOOKED", "PAYMENT_COMPLETED", "DELIVERED"] },
+      commissionVersionId: null,
+      project: { isExternalResaleGroup: false },
+    },
+    select: { bookingNumber: true, requestNo: true },
+  });
+  for (const b of unfrozen) add(b.bookingNumber ?? b.requestNo, "Approved Booking without a frozen Project Settings Version (§28.1)");
+
+  // 2, 3. A decided version effective before its approval, or above the rate caps.
+  const versions = await db.projectCommissionVersion.findMany({
+    where: { status: { in: ["APPROVED", "ACTIVE", "SUPERSEDED"] } },
+    select: { version: true, effectiveFrom: true, decidedAt: true, directPercent: true, loyaltyPercent: true, project: { select: { name: true } } },
+  });
+  for (const v of versions) {
+    const name = `${v.project.name} v${v.version}`;
+    if (v.effectiveFrom && v.decidedAt && v.effectiveFrom < v.decidedAt) add(name, "Effective before its MD approval (§28.2)");
+    if (v.directPercent?.gt(5) || v.loyaltyPercent?.gt(3)) add(name, "Direct above 5% or Loyalty above 3% (§28.3)");
+  }
+
+  // 12. A Buyback-qualified non-cash reward fulfilled before Stable Buyback Completion.
+  const stable = async (bookingId: string) =>
+    (await db.acquisition.count({ where: { sourceBookingId: bookingId, type: "BUYBACK", stableCompletedAt: { not: null } } })) > 0;
+  const gifts = await db.royaltyCredit.findMany({
+    where: { state: "DELIVERED", qualificationRoute: "APPROVED_BUYBACK" },
+    select: { id: true, triggerBookingId: true, triggerBooking: { select: { bookingNumber: true, paymentReceivedPercent: true } } },
+  });
+  for (const g of gifts) {
+    if (g.triggerBooking.paymentReceivedPercent.lt(100) && !(await stable(g.triggerBookingId))) {
+      add(g.triggerBooking.bookingNumber ?? g.id, "Buyback-qualified Gift delivered before Stable Completion (§28.12)");
+    }
+  }
+  const travelledOnBuyback = await db.tripCredit.findMany({
+    where: { state: "USED", qualificationRoute: "APPROVED_BUYBACK" },
+    select: { id: true, sourceBookingId: true, sourceBooking: { select: { bookingNumber: true, paymentReceivedPercent: true } } },
+  });
+  for (const c of travelledOnBuyback) {
+    if (c.sourceBooking.paymentReceivedPercent.lt(100) && !(await stable(c.sourceBookingId))) {
+      add(c.sourceBooking.bookingNumber ?? c.id, "Buyback-qualified Trip credit used before Stable Completion (§28.12)");
+    }
+  }
+
+  // 13, 14. A fulfilled reward whose opportunity was reopened.
+  const reopenedGifts = await db.royaltyCredit.findMany({
+    where: { state: "DELIVERED", customerProfile: { royaltyOpportunityConsumedAt: null } },
+    select: { customerProfile: { select: { customerId: true } } },
+  });
+  for (const g of reopenedGifts) add(g.customerProfile.customerId, "Delivered Gift with the Royalty opportunity reopened (§28.13)");
+  const reopenedRefs = await db.tripCredit.findMany({
+    where: { state: "USED", creditType: "REFERENCE", introducedMember: { referenceOpportunityConsumedAt: null } },
+    select: { introducedMember: { select: { memberId: true } } },
+  });
+  for (const c of reopenedRefs) add(c.introducedMember?.memberId ?? "?", "Travelled Trip's Reference opportunity reopened (§28.14)");
+
+  // 17. An Active Member recorded as Sold By Customer.
+  const customerSales = await db.booking.findMany({
+    where: { soldByType: "CUSTOMER", status: { in: ["BOOKED", "PAYMENT_COMPLETED", "DELIVERED", "REQUEST_PENDING"] } },
+    select: { bookingNumber: true, requestNo: true, createdAt: true, soldByPerson: { select: { memberProfile: { select: { activationDate: true } } } } },
+  });
+  for (const b of customerSales) {
+    const activated = b.soldByPerson?.memberProfile?.activationDate;
+    if (activated && activated <= b.createdAt) add(b.bookingNumber ?? b.requestNo, "Active Member recorded as Sold By Customer (§28.17)");
+  }
+
+  // 18. A Customer closer's benefit released without KYC or Terms.
+  const closings = await db.commissionRecord.findMany({
+    where: { type: "LOYALTY", beneficiaryRole: "CLOSING_CUSTOMER", isCurrent: true, OR: [{ eligibility: "READY" }, { payment: "PAID" }] },
+    select: {
+      id: true,
+      beneficiaryPerson: { select: { fullName: true, aadhaarStatus: true, customerProfile: { select: { _count: { select: { termsAcceptances: true } } } } } },
+    },
+  });
+  for (const c of closings) {
+    const p = c.beneficiaryPerson;
+    if (p.aadhaarStatus !== "VERIFIED" || !p.customerProfile?._count.termsAcceptances) {
+      add(p.fullName, "Customer-closing Loyalty released without verified KYC and accepted Terms (§28.18)");
+    }
+  }
+
+  // 19. A non-family nominee fulfilled without MD approval.
+  const nominees = await Promise.all([
+    db.tripReward.count({ where: { state: { in: ["BOOKED", "TRAVELLED"] }, recipient: "NON_FAMILY", recipientApprovedAt: null } }),
+    db.royaltyCredit.count({ where: { state: { in: ["ORDERED", "DELIVERED"] }, recipient: "NON_FAMILY", recipientApprovedAt: null } }),
+  ]);
+  if (nominees[0] + nominees[1] > 0) add("Rewards", `${nominees[0] + nominees[1]} non-family nominee(s) fulfilled without MD approval (§28.19)`);
+
+  // 20. A staff or declared-relative benefit paid or fulfilled without MD approval.
+  const [staff, relatives, approved] = await Promise.all([
+    db.staffAccount.findMany({ select: { personId: true } }),
+    db.staffRelative.findMany({ where: { endedAt: null }, select: { relativePersonId: true } }),
+    db.staffConflictReview.findMany({ where: { status: "APPROVED" }, select: { recordId: true } }),
+  ]);
+  const conflicted = [...new Set([...staff.map((s) => s.personId), ...relatives.map((r) => r.relativePersonId)])];
+  const cleared = new Set(approved.map((a) => a.recordId));
+  const [paidToConflicted, giftsToConflicted, tripsToConflicted] = await Promise.all([
+    db.commissionRecord.findMany({
+      where: { beneficiaryPersonId: { in: conflicted }, payment: { in: ["PAID", "PAID_EARLY"] } },
+      select: { id: true, beneficiaryPerson: { select: { fullName: true } } },
+    }),
+    db.royaltyCredit.findMany({
+      where: { memberProfile: { personId: { in: conflicted } }, state: { in: ["ORDERED", "DELIVERED"] } },
+      select: { id: true, memberProfile: { select: { memberId: true } } },
+    }),
+    db.tripReward.findMany({
+      where: { memberProfile: { personId: { in: conflicted } }, state: { in: ["BOOKED", "TRAVELLED"] } },
+      select: { id: true, memberProfile: { select: { memberId: true } } },
+    }),
+  ]);
+  for (const r of paidToConflicted) if (!cleared.has(r.id)) add(r.beneficiaryPerson.fullName, "Staff/relative benefit paid without conflict approval (§28.20)");
+  for (const r of [...giftsToConflicted, ...tripsToConflicted]) {
+    if (!cleared.has(r.id)) add(r.memberProfile.memberId, "Staff/relative reward fulfilled without conflict approval (§28.20)");
+  }
+
+  // 21. One verified bank account shared by unrelated Persons without a joint-account exception.
+  const banks = await db.bankDetail.findMany({
+    where: { status: "VERIFIED", accountBlindIndex: { not: null } },
+    select: { accountBlindIndex: true, accountLastFour: true, jointAccountProof: true, person: { select: { id: true, survivingPersonId: true } } },
+  });
+  const byAccount = new Map<string, typeof banks>();
+  for (const b of banks) byAccount.set(b.accountBlindIndex!, [...(byAccount.get(b.accountBlindIndex!) ?? []), b]);
+  for (const rows of byAccount.values()) {
+    const people = new Set(rows.map((r) => r.person.survivingPersonId ?? r.person.id));
+    if (people.size > 1 && rows.filter((r) => !r.jointAccountProof).length > 1) {
+      add(`Bank ••${rows[0].accountLastFour}`, `Verified for ${people.size} Persons without a joint-account exception (§28.21)`);
+    }
+  }
+
+  // 22. A benefit released while its circumvention review is undecided or restricted.
+  const reviews = await db.circumventionReview.findMany({
+    where: { status: { in: ["PENDING_REVIEW", "RESTRICTED"] }, recovery: { status: "OUTSTANDING" } },
+    select: { subjectPersonId: true, raisedAt: true, subjectPerson: { select: { fullName: true } } },
+  });
+  for (const r of reviews) {
+    const released = await db.commissionRecord.count({
+      where: { beneficiaryPersonId: r.subjectPersonId, payment: { in: ["PAID", "PAID_EARLY"] }, paidOn: { gt: r.raisedAt } },
+    });
+    if (released > 0) add(r.subjectPerson.fullName, "Paid while a Recovery Circumvention Review holds (§28.22)");
+  }
+
+  // 25. The removed "Commission Conflict — Above 4%" task.
+  const above4 = await db.task.count({ where: { title: { contains: "Above 4%" }, status: "PENDING" } });
+  if (above4 > 0) add("Task", `${above4} open "Commission Conflict — Above 4%" task(s) (§28.25)`);
+
+  return {
+    rule: "business_model_v2_integrity",
+    source: "UAT plan §28 — standing v2 integrity queries must return zero exceptions",
+    checked: unfrozen.length + versions.length + banks.length + reviews.length + closings.length + customerSales.length,
+    exceptions,
+  };
+}
+
+/**
  * PRD §17.1; ARCHITECTURE §13.10 — a Member logs in with the Member ID, and the
  * old Customer portal is disabled rather than deleted. The approved model has no
  * Customer portal account at all, so any portal account must belong to a Member.
@@ -500,6 +664,7 @@ const RULES = [
   personMerges,
   portalLogins,
   deliveredCompletions,
+  businessModelV2,
 ];
 
 export async function reconcile(): Promise<ReconciliationReport> {
