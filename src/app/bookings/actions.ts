@@ -4,6 +4,7 @@
 // Every action re-checks permission on the server. Hiding a button is never the
 // control (DESIGN §1), and the domain services re-check state on top of this.
 
+import { clearRecovery, closeAdjustmentWithoutRecovery, openRecovery, setOffRecovery } from "@/lib/services/recovery-service";
 import { revalidatePath } from "next/cache";
 import type { SoldByType } from "@prisma/client";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -31,6 +32,7 @@ import {
   approveCommissionPaidEarly,
   rejectCommissionPaidEarly,
   requestCommissionPaidEarly,
+  ADJUSTMENT_PURPOSE,
   listCommissionForBooking,
   markCommissionPaid,
 } from "@/lib/services/commission-service";
@@ -429,6 +431,96 @@ export async function decidePrimaryCustomerChangeAction(
   }
 }
 
+/* ------------------------------------------- Recovery (SSOT §91; CP §54, §64) */
+
+export async function openRecoveryAction(
+  input: { recordId: string; noticeOn: string; reference: string; reason: string },
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("COMMISSION_PROCESS");
+  try {
+    const result = await openRecovery({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      recordId: input.recordId,
+      noticeOn: new Date(input.noticeOn),
+      reference: input.reference,
+      reason: input.reason,
+    });
+    refresh();
+    return {
+      ok: true,
+      message: `Recovery ${result.recoveryNo} opened. New cash payouts to this Person are held until it is repaid or set off.`,
+    };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+export async function closeAdjustmentAction(input: { recordId: string; reason: string }, key: string): Promise<ActionResult> {
+  const actor = await requireStaff("COMMISSION_PROCESS");
+  try {
+    await closeAdjustmentWithoutRecovery({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      recordId: input.recordId,
+      reason: input.reason,
+    });
+    refresh();
+    return { ok: true, message: "Adjustment closed without a Recovery." };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+export async function clearRecoveryAction(input: { recoveryId: string; note: string }, key: string): Promise<ActionResult> {
+  const actor = await requireStaff("COMMISSION_PROCESS");
+  try {
+    await clearRecovery({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      recoveryId: input.recoveryId,
+      note: input.note,
+    });
+    refresh();
+    return { ok: true, message: "Recovery cleared as repaid. Held payouts are released if nothing else holds them." };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+export async function setOffRecoveryAction(
+  input: { recoveryId: string; recordId: string; reference: string; setOffOn: string; note: string; clearsRecovery: boolean },
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("COMMISSION_PROCESS");
+  try {
+    const result = await setOffRecovery({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      recoveryId: input.recoveryId,
+      recordId: input.recordId,
+      reference: input.reference,
+      setOffOn: new Date(input.setOffOn),
+      note: input.note,
+      clearsRecovery: input.clearsRecovery,
+    });
+    refresh();
+    return {
+      ok: true,
+      message: result.cleared
+        ? "Set off — the benefit is Paid against the Recovery, and the Recovery is cleared."
+        : "Set off — the benefit is Paid against the Recovery, which stays outstanding for the rest.",
+    };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
 /** CP §53 — Accounts asks MD to allow a Paid Early payment, with a reason. */
 export async function requestCommissionPaidEarlyAction(
   input: { recordId: string; reason: string },
@@ -725,6 +817,20 @@ export async function loadBookingDetail(bookingId: string) {
   const booking = await getBooking(bookingId);
   if (!booking) return null;
   const commissions = await listCommissionForBooking(bookingId);
+  // CP §64 T21 — which records have an Accounts adjustment waiting.
+  const adjustmentsWaiting = new Set(
+    (
+      await db.task.findMany({
+        where: {
+          recordKind: "Commission",
+          recordId: { in: commissions.map((c) => c.id) },
+          purpose: ADJUSTMENT_PURPOSE,
+          status: "PENDING",
+        },
+        select: { recordId: true },
+      })
+    ).map((t) => t.recordId)
+  );
 
   // PLC spec §15.3 — the panel shows the frozen snapshot. The correction chain
   // is only fetched when this snapshot actually replaced an earlier one.
@@ -866,6 +972,19 @@ export async function loadBookingDetail(bookingId: string) {
       earlyRequestedByRef: c.earlyRequestedByRef,
       earlyRequestedAt: c.earlyRequestedAt?.toISOString() ?? null,
       earlyRequestReason: c.earlyRequestReason,
+      // CP §54, §64 — the adjustment and Recovery state Accounts acts on.
+      adjustmentWaiting: adjustmentsWaiting.has(c.id),
+      recoveries: c.recoveries.map((r) => ({
+        id: r.id,
+        recoveryNo: r.recoveryNo,
+        status: r.status,
+        reference: r.reference,
+        dueOn: r.dueOn.toISOString(),
+        clearedHow: r.clearedHow,
+      })),
+      beneficiaryRecovery: c.beneficiaryPerson.recoveries[0]
+        ? { id: c.beneficiaryPerson.recoveries[0].id, recoveryNo: c.beneficiaryPerson.recoveries[0].recoveryNo }
+        : null,
     })),
     soldByCorrections: booking.soldByCorrections.map((c) => ({
       status: c.status,

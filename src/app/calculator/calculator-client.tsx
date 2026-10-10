@@ -246,6 +246,7 @@ const HOLD_SENTENCE: Record<string, string> = {
   PAYMENT_PENDING: "Payment Pending on the acquisition",
   CLOSER_KYC_PENDING: "Closer KYC Pending — a Customer closer's Aadhaar must be Verified",
   CUSTOMER_TERMS_PENDING: "Customer Terms Pending — the closer has not accepted Customer Terms",
+  RECOVERY_OUTSTANDING: "Recovery Outstanding — new cash payouts wait until it is repaid or set off",
 };
 
 export default function CalculatorClient({

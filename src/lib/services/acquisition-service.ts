@@ -37,6 +37,7 @@ import {
 import {
   BUYBACK_COMMISSION_PURPOSE,
   cancelCommissionForBooking,
+  raiseAdjustmentTask,
   raiseBuybackUnwindReview,
   reassessCommission,
 } from "./commission-service";
@@ -1239,15 +1240,20 @@ async function settleBuyingCommission(tx: Tx, acquisitionId: string, actorRef: s
   });
 }
 
-/** A correction below 100% steps the milestone back (PRD §11.3). */
+/**
+ * A correction below 100%, or a cancelled deal, steps the milestone back
+ * (PRD §11.3). A paid record — Paid Early included, which was paid before the
+ * milestone — becomes Accounts Adjustment Required with a T21 task (CP §53,
+ * §64; UAT BUY-08).
+ */
 async function stepBackBuyingCommission(tx: Tx, acquisitionId: string, actorRef: string, reason: string) {
   const record = await tx.commissionRecord.findFirst({
     where: { acquisitionId, isCurrent: true },
   });
-  if (!record || record.eligibility === "MILESTONE_PENDING") return;
-
   // A record already paid cannot be un-paid silently; Accounts must adjust it.
-  const paid = record.payment === "PAID" || record.payment === "PAID_EARLY";
+  const paid = record?.payment === "PAID" || record?.payment === "PAID_EARLY";
+  if (!record || (record.eligibility === "MILESTONE_PENDING" && !paid)) return;
+  if (paid) await raiseAdjustmentTask(tx, record.id, reason);
   await tx.commissionRecord.update({
     where: { id: record.id },
     data: {

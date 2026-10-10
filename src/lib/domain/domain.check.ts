@@ -1228,6 +1228,13 @@ assert.equal(
   "the ordinary beneficiary conditions come first"
 );
 
+/* CP §54 — a Recovery Outstanding holds a reached benefit, and only a reached one. */
+assert.deepEqual(resolveEligibility({ ...closing, recoveryOutstanding: true }), {
+  state: "ON_HOLD",
+  holdReason: "RECOVERY_OUTSTANDING",
+});
+assert.equal(resolveEligibility({ ...loyaltyAt40, recoveryOutstanding: true }).state, "MILESTONE_PENDING");
+
 // The milestone decides only once the deal-level holds are clear.
 assert.equal(
   resolveEligibility({ ...eligibilityBase, progressPercent: "24" }).state,

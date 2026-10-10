@@ -92,6 +92,9 @@ export async function purgeCheckData(
   await db.taskEvent.deleteMany({ where: { taskId: { in: taskIds } } });
   await db.task.deleteMany({ where: { id: { in: taskIds } } });
 
+  await db.recovery.deleteMany({
+    where: { OR: [{ commissionRecordId: { in: commissionIds } }, { setOffRecordId: { in: commissionIds } }] },
+  });
   await db.commissionEvent.deleteMany({ where: { recordId: { in: commissionIds } } });
   await db.commissionRecord.deleteMany({ where: { id: { in: commissionIds } } });
 

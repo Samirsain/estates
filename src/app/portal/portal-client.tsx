@@ -60,6 +60,8 @@ const HOLD_LABEL: Record<string, string> = {
   PAYMENT_PENDING: "Payment Pending",
   CLOSER_KYC_PENDING: "KYC Pending",
   CUSTOMER_TERMS_PENDING: "Terms Pending",
+  // CP §68, §70 — a safe hold indicator; Accounts notes stay internal.
+  RECOVERY_OUTSTANDING: "On Hold — Recovery",
 };
 
 export type PortalData = {

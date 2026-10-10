@@ -15,7 +15,14 @@ import {
   reviseBookingRequest,
   submitBookingRequest,
 } from "@/lib/services/booking-service";
-import { confirmPaymentReceived } from "@/lib/services/payment-service";
+import { confirmPaymentReceived, correctPaymentReceived } from "@/lib/services/payment-service";
+import { decideChangePlot, submitChangePlot } from "@/lib/services/change-plot-service";
+import {
+  clearRecovery,
+  closeAdjustmentWithoutRecovery,
+  openRecovery,
+  setOffRecovery,
+} from "@/lib/services/recovery-service";
 import { decideCancellation } from "@/lib/services/cancellation-service";
 import {
   applyMemberCommissionHold,
@@ -1121,6 +1128,172 @@ async function main() {
   const unwindReview = await reviewOf(bookingHigh, "BUYBACK_UNWIND_REVIEW");
   assert.equal(unwindReview.length, 1, "one T25");
   assert.equal(`${unwindReview[0].title}|${unwindReview[0].status}`, "Reward Review — Buyback Unwind|PENDING");
+
+
+  /* ====== SSOT §22, §91; CP §54, §61, §64 — Accounts adjustment and Recovery ====== */
+
+  const recSeller = await makeEligiblePerson("RecSeller", "9600000201");
+  await makeMember("REC", recSeller.id, 100);
+  const memberSale = async (suffix: string, mobile: string) => {
+    const plot = await makePlot(project.id, suffix);
+    const buyerPerson = await makeEligiblePerson(`RecBuyer${suffix}`, mobile);
+    return bookAndApprove({ plotId: plot.id, buyerPersonId: buyerPerson.id, soldByType: "MEMBER", soldByPersonId: recSeller.id });
+  };
+  const payDirect = (recordId: string, reference: string) =>
+    markCommissionPaid({
+      idempotencyKey: key(),
+      actorRef: ACC,
+      actorRole: "ACCOUNTS",
+      recordId,
+      early: false,
+      paidOn: today,
+      reference,
+      remarks: "",
+    });
+  const tasksOn = (recordId: string, purpose: string, status: "PENDING" | "COMPLETED" = "PENDING") =>
+    db.task.findMany({ where: { recordKind: "Commission", recordId, purpose, status } });
+
+  // UAT DIR-08 — Direct paid at 25%, then the payment is corrected below it.
+  const saleR1 = await memberSale("REC1", "9600000202");
+  const r1Entry = await pay(saleR1, "30", `${TAG} UTR R1`);
+  const directR1 = await recordOf(saleR1, "DIRECT");
+  await payDirect(directR1.id, `${TAG} PAID R1`);
+  await correctPaymentReceived({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    entryId: r1Entry.entryId,
+    percent: "20",
+    paidOn: today,
+    reference: `${TAG} UTR R1C`,
+    reason: "Cheque bounced in part.",
+  });
+  assert.equal((await recordOf(saleR1, "DIRECT")).payment, "ACCOUNTS_ADJUSTMENT_REQUIRED", "paid Direct below 25%");
+  const t21 = await tasksOn(directR1.id, "ACCOUNTS_ADJUSTMENT");
+  assert.equal(t21.length, 1, "one T21");
+  assert.equal(`${t21[0].title}|${t21[0].assigneeRole}`, "Accounts Adjustment Required|ACCOUNTS");
+
+  // Only Accounts opens a Recovery; it answers T21 and raises T22, due in 15 days.
+  await expectBlocked(/Only Accounts handles Recovery/, () =>
+    openRecovery({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", recordId: directR1.id, noticeOn: today, reference: "x", reason: "x" })
+  );
+  await expectBlocked(/future date/, () =>
+    openRecovery({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", recordId: directR1.id, noticeOn: day(2), reference: "x", reason: "x" })
+  );
+  const opened = await openRecovery({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    recordId: directR1.id,
+    noticeOn: today,
+    reference: `${TAG} ACC-REC-1`,
+    reason: "Direct paid on a sale that fell below 25%.",
+  });
+  assert.equal(opened.dueOn.getTime() - today.getTime(), 15 * 86_400_000, "due 15 calendar days after notice");
+  assert.equal((await tasksOn(directR1.id, "ACCOUNTS_ADJUSTMENT")).length, 0, "T21 answered");
+  const t22 = await tasksOn(directR1.id, "RECOVERY_FOLLOW_UP");
+  assert.equal(t22.length, 1, "one T22");
+  assert.equal(t22[0].dueAt.getTime(), opened.dueOn.getTime());
+  await expectBlocked(/already outstanding/, () =>
+    openRecovery({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", recordId: directR1.id, noticeOn: today, reference: "y", reason: "y" })
+  );
+
+  // UAT CTL-01 — a new Direct is recorded and reaches its milestone, but waits.
+  const saleR2 = await memberSale("REC2", "9600000203");
+  const r2Entry = await pay(saleR2, "30", `${TAG} UTR R2`);
+  const directR2 = await recordOf(saleR2, "DIRECT");
+  assert.equal(`${directR2.eligibility}|${directR2.holdReason}`, "ON_HOLD|RECOVERY_OUTSTANDING");
+  await expectBlocked(/Recovery REC-\d+ outstanding/, () => payDirect(directR2.id, `${TAG} PAID R2`));
+
+  // Set off in part: R2's Direct settles some of it; the Recovery stays open.
+  await setOffRecovery({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    recoveryId: opened.recoveryId,
+    recordId: directR2.id,
+    reference: `${TAG} SETOFF R2`,
+    setOffOn: today,
+    note: "R2 Direct withheld against the R1 overpayment.",
+    clearsRecovery: false,
+  });
+  const setOff = await db.commissionRecord.findUniqueOrThrow({ where: { id: directR2.id } });
+  assert.equal(setOff.payment, "PAID", "the set-off benefit is Paid");
+  assert.match(setOff.paymentRemarks ?? "", /Set off against Recovery REC-/);
+  assert.equal((await db.recovery.findUniqueOrThrow({ where: { id: opened.recoveryId } })).status, "OUTSTANDING");
+
+  // UAT CTL-03 — cleared as repaid: what it held is released, T22 closes.
+  const saleR3 = await memberSale("REC3", "9600000204");
+  await pay(saleR3, "30", `${TAG} UTR R3`);
+  assert.equal((await recordOf(saleR3, "DIRECT")).holdReason, "RECOVERY_OUTSTANDING");
+  await clearRecovery({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    recoveryId: opened.recoveryId,
+    note: "Member repaid the balance.",
+  });
+  const cleared = await db.recovery.findUniqueOrThrow({ where: { id: opened.recoveryId } });
+  assert.equal(`${cleared.status}|${cleared.clearedHow}`, "CLEARED|REPAID");
+  assert.equal((await recordOf(saleR3, "DIRECT")).eligibility, "READY", "the hold lifts at once");
+  assert.equal((await tasksOn(directR1.id, "RECOVERY_FOLLOW_UP")).length, 0, "T22 closes");
+  await expectBlocked(/already cleared/, () =>
+    clearRecovery({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", recoveryId: opened.recoveryId, note: "x" })
+  );
+
+  // SSOT §99 — the set-off R2 sale is corrected below 25%; Accounts decides no
+  // Recovery is needed and says why.
+  await correctPaymentReceived({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    entryId: r2Entry.entryId,
+    percent: "10",
+    paidOn: today,
+    reference: `${TAG} UTR R2C`,
+    reason: "Wrong amount keyed.",
+  });
+  assert.equal((await tasksOn(directR2.id, "ACCOUNTS_ADJUSTMENT")).length, 1);
+  await closeAdjustmentWithoutRecovery({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    recordId: directR2.id,
+    reason: "The balance is being received this week; nothing to recover.",
+  });
+  assert.equal((await tasksOn(directR2.id, "ACCOUNTS_ADJUSTMENT")).length, 0, "T21 closed without a Recovery");
+  await expectBlocked(/No Accounts adjustment is waiting/, () =>
+    closeAdjustmentWithoutRecovery({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", recordId: directR2.id, reason: "x" })
+  );
+
+  // UAT DIR-11, COR-07 — a paid Direct moves to another Plot: T21 for Accounts.
+  const directR3 = await recordOf(saleR3, "DIRECT");
+  await payDirect(directR3.id, `${TAG} PAID R3`);
+  const plotMove = await makePlot(project.id, "RMOVE");
+  await submitChangePlot({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    bookingId: saleR3,
+    toPlotId: plotMove.id,
+    remark: "Buyer moved to a smaller plot.",
+  });
+  await decideChangePlot({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    bookingId: saleR3,
+    approve: true,
+    appliedPercent: "30",
+    note: "Verified.",
+    schedule: [
+      { seq: 1, percent: "30", dueDate: today },
+      { seq: 2, percent: "70", dueDate: day(30) },
+    ],
+  });
+  const directAfterMove = await recordOf(saleR3, "DIRECT");
+  assert.equal(directAfterMove.payment, "PAID", "the paid record itself is unchanged");
+  assert.equal((await tasksOn(directAfterMove.id, "ACCOUNTS_ADJUSTMENT")).length, 1, "Accounts checks the amount");
 
   await cleanup();
   console.log("commission.check.ts OK");

@@ -17,12 +17,18 @@ import {
 } from "@/lib/services/acquisition-service";
 import { decideBookingRequest, submitBookingRequest } from "@/lib/services/booking-service";
 import { confirmPaymentReceived } from "@/lib/services/payment-service";
+import {
+  approveCommissionPaidEarly,
+  markCommissionPaid,
+  requestCommissionPaidEarly,
+} from "@/lib/services/commission-service";
 
 const db = new PrismaClient();
 const TAG = "ZZ-ACQ";
 const CRM = `${TAG}-CRM`;
 const ACC = `${TAG}-ACC`;
 const ACC2 = `${TAG}-ACC2`;
+const MD = `${TAG}-MD`;
 
 let seq = 0;
 const key = () => `${TAG}-${Date.now()}-${seq++}`;
@@ -297,6 +303,33 @@ async function main() {
     "the original entry is superseded, never deleted"
   );
 
+  /* ===== UAT BUY-08 — a Buying Commission paid early, then the deal falls away ===== */
+
+  await requestCommissionPaidEarly({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    recordId: commission.recordId,
+    reason: "Arranger paid ahead of the final Payment Given.",
+  });
+  await approveCommissionPaidEarly({
+    idempotencyKey: key(),
+    actorRef: MD,
+    actorRole: "MD",
+    recordId: commission.recordId,
+    note: "Approved for the quarter.",
+  });
+  await markCommissionPaid({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    recordId: commission.recordId,
+    early: true,
+    paidOn: today,
+    reference: `${TAG} UTR BUY EARLY`,
+    remarks: "Paid early with MD approval.",
+  });
+
   /* ======================== a deal cannot be cancelled under a buyer ======= */
 
   await db.hold.create({
@@ -332,6 +365,19 @@ async function main() {
     (await db.booking.findUniqueOrThrow({ where: { id: bookingA.bookingId } })).activeProcess,
     "NONE",
     "the Booking is released from Buyback Pending"
+  );
+  // UAT BUY-08 — the early payment now needs an Accounts adjustment (CP §53, §64 T21).
+  assert.equal(
+    (await db.commissionRecord.findUniqueOrThrow({ where: { id: commission.recordId } })).payment,
+    "ACCOUNTS_ADJUSTMENT_REQUIRED",
+    "a Paid Early Buying Commission on a cancelled deal needs adjusting"
+  );
+  assert.equal(
+    await db.task.count({
+      where: { recordId: commission.recordId, purpose: "ACCOUNTS_ADJUSTMENT", status: "PENDING", assigneeRole: "ACCOUNTS" },
+    }),
+    1,
+    "and raises one T21"
   );
 
   /* ============================ Purchase for Resale duplicate detection === */

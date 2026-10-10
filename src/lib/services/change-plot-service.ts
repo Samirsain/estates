@@ -14,7 +14,7 @@ import {
 import { assertProcessFree, isPaymentComplete, validateSchedule } from "@/lib/domain/booking";
 import { blocked, lockBooking, lockPlot, runCommand, type Tx } from "./command";
 import { freezePlcSnapshot } from "./plc-service";
-import { generateForBooking, reassessCommission } from "./commission-service";
+import { generateForBooking, raiseAdjustmentTask, reassessCommission } from "./commission-service";
 import { createScheduleVersion, syncPaymentFollowUp, type ScheduleInput } from "./payment-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
@@ -427,6 +427,22 @@ export async function decideChangePlot(args: {
       // Commission is rechecked against the new Plot and the verified progress.
       await generateForBooking(tx, args.bookingId, args.actorRef);
       await reassessCommission(tx, args.bookingId, args.actorRef);
+      // SSOT §96; CP §61 — the frozen rate stays, but the amount follows the
+      // final unit's Commissionable Sale Value, which lives outside the CRM. A
+      // benefit already paid goes to Accounts to check for over- or
+      // under-payment (UAT DIR-11, COR-07).
+      const paid = await tx.commissionRecord.findMany({
+        where: { bookingId: args.bookingId, isCurrent: true, payment: { in: ["PAID", "PAID_EARLY"] } },
+        select: { id: true },
+      });
+      for (const { id } of paid) {
+        await raiseAdjustmentTask(
+          tx,
+          id,
+          `Change Plot approved — the paid amount now follows the final unit's Commissionable Sale Value. ` +
+            `Open a Recovery if it was overpaid, or close this if not.`
+        );
+      }
       await syncPaymentFollowUp(tx, args.bookingId, args.actorRef);
       await closeTasksFor(
         tx,

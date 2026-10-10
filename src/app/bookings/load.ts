@@ -187,6 +187,8 @@ export async function loadBookingsProps() {
       approvePaidEarly: actor.role === "MD",
       // CP §53 — Accounts initiates; the service refuses anyone else.
       requestPaidEarly: actor.role === "ACCOUNTS",
+      // CP §77 — Accounts creates and handles Recovery.
+      handleRecovery: actor.role === "ACCOUNTS",
       raiseSoldBy: can(actor.role, "SOLD_BY_CORRECTION_RAISE"),
       approveSoldBy: can(actor.role, "SOLD_BY_CORRECTION_APPROVE"),
       recordFinalBuyers: can(actor.role, "FINAL_BUYER_RECORD"),

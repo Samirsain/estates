@@ -117,6 +117,57 @@ export async function consumedClosingEvents(tx: Tx, personId: string, excludeRec
   });
 }
 
+/* ------------------------------------------------ adjustment and Recovery */
+
+/** CP §64 T21 — Accounts Adjustment Required. */
+export const ADJUSTMENT_PURPOSE = "ACCOUNTS_ADJUSTMENT";
+/** CP §64 T22 — Recovery Outstanding Follow-up. */
+export const RECOVERY_FOLLOW_UP_PURPOSE = "RECOVERY_FOLLOW_UP";
+
+/**
+ * CP §64 T21 — a paid benefit needs Accounts to look again: it became
+ * Adjustment Required, or (Change Plot) its amount basis moved. Accounts opens
+ * a Recovery or records why none is needed (recovery-service).
+ */
+export async function raiseAdjustmentTask(tx: Tx, recordId: string, cause: string) {
+  await ensureTask(tx, {
+    recordKind: "Commission",
+    recordId,
+    recordName: await commissionRecordName(tx, recordId),
+    purpose: ADJUSTMENT_PURPOSE,
+    title: "Accounts Adjustment Required",
+    assigneeRole: "ACCOUNTS",
+    dueAt: new Date(),
+    decision: true,
+    latestResult: cause,
+  });
+}
+
+/** Raises T21 when a change has just moved a paid record into Adjustment Required. */
+async function adjustmentIfNewlyRequired(
+  tx: Tx,
+  recordId: string,
+  from: PaymentState,
+  to: PaymentState,
+  cause: string
+) {
+  if (to === "ACCOUNTS_ADJUSTMENT_REQUIRED" && from !== to) await raiseAdjustmentTask(tx, recordId, cause);
+}
+
+/**
+ * CP §54, §87 — the Person's open Recovery, if any, counting identities merged
+ * into them. While one is open no new cash payout is released to them.
+ */
+export async function outstandingRecovery(tx: Tx, personId: string) {
+  const mergedIds = (
+    await tx.person.findMany({ where: { survivingPersonId: personId }, select: { id: true } })
+  ).map((p) => p.id);
+  return tx.recovery.findFirst({
+    where: { personId: { in: [personId, ...mergedIds] }, status: "OUTSTANDING" },
+    orderBy: { openedAt: "asc" },
+  });
+}
+
 /** CP §64 T43 — renamed from "Membership Invitation — Loyalty Exhausted". */
 export const CLOSING_LIMIT_PURPOSE = "CUSTOMER_CLOSING_LIMIT";
 
@@ -372,6 +423,7 @@ async function supersedeRecord(tx: Tx, recordId: string, actorRef: string, reaso
 
   // An externally processed record needs an Accounts adjustment, not a silent close.
   const payment = afterAffectingChange(record.payment, "BENEFICIARY_CORRECTED");
+  await adjustmentIfNewlyRequired(tx, recordId, record.payment, payment, `Superseded — ${reason}`);
 
   await tx.commissionRecord.update({
     where: { id: recordId },
@@ -472,6 +524,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
             where: { id: record.id },
             data: { payment, closedReason: reason },
           });
+          await adjustmentIfNewlyRequired(tx, record.id, record.payment, payment, reason);
           await tx.commissionEvent.create({
             data: {
               recordId: record.id,
@@ -504,6 +557,13 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
         where: { id: record.id },
         data: { qualifiedAt: null, payment },
       });
+      await adjustmentIfNewlyRequired(
+        tx,
+        record.id,
+        record.payment,
+        payment,
+        "The milestone this paid benefit relied on was lost (payment correction or Buyback unwind)."
+      );
       await tx.commissionEvent.create({
         data: {
           recordId: record.id,
@@ -513,6 +573,25 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
           toState: payment,
         },
       });
+    }
+
+    // CP §14.4, UAT DIR-08 — a Direct paid as Ready whose sale has since fallen
+    // below its milestone needs an Accounts adjustment. A Paid Early record was
+    // paid before its milestone on MD approval, so falling progress alone does
+    // not invalidate it; a cancellation does, on its own path.
+    if (record.type !== "LOYALTY" && !milestoneReached && record.payment === "PAID") {
+      payment = afterAffectingChange(record.payment, "MILESTONE_LOST");
+      await tx.commissionRecord.update({ where: { id: record.id }, data: { payment } });
+      await tx.commissionEvent.create({
+        data: { recordId: record.id, actorRef, action: "MILESTONE_LOST", fromState: record.payment, toState: payment },
+      });
+      await adjustmentIfNewlyRequired(
+        tx,
+        record.id,
+        record.payment,
+        payment,
+        "This Direct was paid, and the sale has since fallen below its Payment Received milestone."
+      );
     }
 
     const next = resolveEligibility({
@@ -527,6 +606,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
       reraStatus: member?.reraStatus ?? null,
       bookingProcess: booking.activeProcess,
       acquisitionPaymentPending: false, // Phase 5 sets this from the acquisition.
+      recoveryOutstanding: (await outstandingRecovery(tx, record.beneficiaryPersonId)) !== null,
       // v2.1 §22, §77 — the closer's own KYC and Customer Terms.
       closer: isClosing
         ? {
@@ -572,14 +652,14 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
 }
 
 /**
- * v2.1 §22 — reassess every unpaid Customer Loyalty a Person would earn, after
- * one of the closer's own conditions changed (KYC verified, Terms accepted).
+ * Reassess every unpaid sale-side benefit a Person would earn, after one of
+ * their own conditions changed: a closer's KYC or Terms (SSOT §26), or a
+ * Recovery opened or cleared (CP §54, §76.4).
  */
-export async function reassessLoyaltyOf(tx: Tx, personId: string, actorRef: string) {
+export async function reassessBenefitsOf(tx: Tx, personId: string, actorRef: string) {
   const affected = await tx.commissionRecord.findMany({
     where: {
       beneficiaryPersonId: personId,
-      type: "LOYALTY",
       isCurrent: true,
       payment: { in: ["NOT_PAID", "ACCOUNTS_ADJUSTMENT_REQUIRED"] },
     },
@@ -834,6 +914,16 @@ export async function markCommissionPaid(args: {
       const record = await tx.commissionRecord.findUniqueOrThrow({ where: { id: args.recordId } });
       if (!record.isCurrent) blocked("This commission record has been superseded.");
 
+      // CP §54 — no new cash payout while the beneficiary owes a Recovery; it may
+      // be set off against it instead (recovery-service).
+      const owed = await outstandingRecovery(tx, record.beneficiaryPersonId);
+      if (owed) {
+        blocked(
+          `This beneficiary has Recovery ${owed.recoveryNo} outstanding. Set this commission off against it, ` +
+            `or clear the Recovery first.`
+        );
+      }
+
       // AC-03 — the stored approval is the only thing that unlocks Paid Early.
       const allowed = canMarkPaid(
         record.payment,
@@ -846,25 +936,7 @@ export async function markCommissionPaid(args: {
       const dated = notFutureDated("Commission Paid Date", args.paidOn);
       if (!dated.ok) blocked(dated.reason);
 
-      const normalisedKey = normaliseReference(args.reference);
-      const clash = await tx.externalReference.findFirst({
-        where: { normalisedKey, status: "ACTIVE" },
-      });
-      if (clash) {
-        blocked(
-          `Payment Reference No. "${args.reference.trim()}" is already recorded against another ` +
-            `entry. References are unique across every approved external reference.`
-        );
-      }
-      const reference = await tx.externalReference.create({
-        data: {
-          rawValue: args.reference.trim(),
-          normalisedKey,
-          purpose: "COMMISSION",
-          actionDate: args.paidOn,
-          actorRef: args.actorRef,
-        },
-      });
+      const reference = await createCommissionReference(tx, args.reference, args.paidOn, args.actorRef);
 
       const payment = args.early ? "PAID_EARLY" : "PAID";
       await tx.commissionRecord.update({
@@ -914,6 +986,21 @@ export async function markCommissionPaid(args: {
       };
     }
   );
+}
+
+/** PRD §24 — one active reference value is unique across every external reference. */
+export async function createCommissionReference(tx: Tx, raw: string, actionDate: Date, actorRef: string) {
+  const normalisedKey = normaliseReference(raw);
+  const clash = await tx.externalReference.findFirst({ where: { normalisedKey, status: "ACTIVE" } });
+  if (clash) {
+    blocked(
+      `Payment Reference No. "${raw.trim()}" is already recorded against another ` +
+        `entry. References are unique across every approved external reference.`
+    );
+  }
+  return tx.externalReference.create({
+    data: { rawValue: raw.trim(), normalisedKey, purpose: "COMMISSION", actionDate, actorRef },
+  });
 }
 
 /* ------------------------------------------------- cancellation and holds */
@@ -1068,6 +1155,7 @@ export async function cancelCommissionForBooking(
       where: { id: record.id },
       data: { payment, closedReason: args.reason },
     });
+    await adjustmentIfNewlyRequired(tx, record.id, record.payment, payment, args.reason);
     await tx.commissionEvent.create({
       data: {
         recordId: record.id,
@@ -1217,7 +1305,12 @@ export async function closingLoyaltyUsed(personIds: readonly string[]): Promise<
 export function listCommissionForBooking(bookingId: string) {
   return db.commissionRecord.findMany({
     where: { bookingId },
-    include: { beneficiaryPerson: true, externalReference: true },
+    include: {
+      // CP §54 — the beneficiary's open Recovery, which a Ready benefit may be set off against.
+      beneficiaryPerson: { include: { recoveries: { where: { status: "OUTSTANDING" }, take: 1 } } },
+      externalReference: true,
+      recoveries: { orderBy: { openedAt: "asc" } },
+    },
     orderBy: [{ isCurrent: "desc" }, { createdAt: "asc" }],
   });
 }

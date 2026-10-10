@@ -110,6 +110,7 @@ model Person {
   bookingParties  BookingParty[]
 
   commissions             CommissionRecord[]   @relation("CommissionBeneficiary")
+  recoveries              Recovery[]
   acquisitionsAsSeller    Acquisition[]        @relation("AcquisitionSeller")
   acquisitionsArranged    Acquisition[]        @relation("AcquisitionArranger")
   bankDetails             BankDetail[]
@@ -1387,6 +1388,8 @@ enum CommissionHoldReason {
   CLOSER_KYC_PENDING
   /// v2.1 §22 — the Customer closer has not accepted Customer Terms yet.
   CUSTOMER_TERMS_PENDING
+  /// CP §54, §85 — the beneficiary has a Recovery Outstanding; new cash payout waits.
+  RECOVERY_OUTSTANDING
 }
 
 /// PRD §19.5 — Registered or Not Applicable satisfies the Member condition.
@@ -1465,11 +1468,63 @@ model CommissionRecord {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  events CommissionEvent[]
+  events     CommissionEvent[]
+  recoveries Recovery[]        @relation("RecoverySource")
+  setOffs    Recovery[]        @relation("RecoverySetOff")
 
   @@index([bookingId, isCurrent])
   @@index([beneficiaryPersonId, payment])
   @@index([eligibility, payment])
+}
+
+/// SSOT §22, §91; CP §54 — a paid monetary benefit that became invalid. The
+/// amount stays outside the CRM; the CRM keeps the Accounts Recovery Reference,
+/// the 15-day deadline and how it was cleared. While one is OUTSTANDING the
+/// Person's new cash payouts are blocked.
+enum RecoveryStatus {
+  OUTSTANDING
+  CLEARED
+}
+
+enum RecoveryClearance {
+  /// The Person paid it back outside the CRM.
+  REPAID
+  /// Settled against a later monetary benefit of the same Person.
+  SET_OFF
+}
+
+model Recovery {
+  id                 String           @id @default(uuid())
+  /// Display identity, e.g. REC-000012.
+  recoveryNo         String           @unique
+  personId           String
+  person             Person           @relation(fields: [personId], references: [id])
+  /// The paid benefit that became invalid.
+  commissionRecordId String
+  commissionRecord   CommissionRecord @relation("RecoverySource", fields: [commissionRecordId], references: [id])
+
+  status    RecoveryStatus @default(OUTSTANDING)
+  /// The day the Person was notified. Never in the future.
+  noticeOn  DateTime
+  /// noticeOn + 15 calendar days (SSOT §91).
+  dueOn     DateTime
+  /// The external Accounts Recovery Reference.
+  reference String
+  reason    String
+
+  openedByRef String
+  openedAt    DateTime @default(now())
+
+  clearedHow     RecoveryClearance?
+  clearedByRef   String?
+  clearedAt      DateTime?
+  clearNote      String?
+  /// The later benefit it was set off against, when cleared by set-off.
+  setOffRecordId String?
+  setOffRecord   CommissionRecord?  @relation("RecoverySetOff", fields: [setOffRecordId], references: [id])
+
+  @@index([personId, status])
+  @@index([commissionRecordId])
 }
 
 /// Append-only commission history for the record timeline (DESIGN §14.3).

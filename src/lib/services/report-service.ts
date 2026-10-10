@@ -115,7 +115,7 @@ export async function runReport(
       const rows = await db.commissionRecord.findMany({
         where: { isCurrent: true, beneficiaryPerson: NOT_MERGED_AWAY },
         include: {
-          beneficiaryPerson: true,
+          beneficiaryPerson: { include: { recoveries: { where: { status: "OUTSTANDING" }, select: { recoveryNo: true } } } },
           booking: { include: { project: true, plot: true, commissionVersion: { select: { version: true } } } },
         },
         orderBy: { createdAt: "desc" },
@@ -132,6 +132,8 @@ export async function runReport(
         eligibility: c.eligibility,
         holdReason: c.holdReason,
         paymentState: c.payment,
+        // CP §73.1 — the beneficiary's open Recovery, if any.
+        recoveryOutstanding: c.beneficiaryPerson.recoveries.map((r) => r.recoveryNo).join(", ") || null,
         project: c.booking?.project.name ?? null,
         plotNumber: c.booking?.plot.plotNumber ?? null,
       }));

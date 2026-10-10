@@ -46,7 +46,11 @@ import {
   decideSoldByCorrectionAction,
   loadBookingDetail,
   approveCommissionPaidEarlyAction,
+  clearRecoveryAction,
+  closeAdjustmentAction,
+  openRecoveryAction,
   rejectCommissionPaidEarlyAction,
+  setOffRecoveryAction,
   requestCommissionPaidEarlyAction,
   markCommissionPaidAction,
   requestPrimaryCustomerChangeAction,
@@ -155,6 +159,7 @@ type Permissions = {
   processCommission: boolean;
   approvePaidEarly: boolean;
   requestPaidEarly: boolean;
+  handleRecovery: boolean;
   raiseSoldBy: boolean;
   approveSoldBy: boolean;
   recordFinalBuyers: boolean;
@@ -225,6 +230,7 @@ const HOLD_LABEL: Record<string, string> = {
   PAYMENT_PENDING: "Payment Pending",
   CLOSER_KYC_PENDING: "Closer KYC Pending",
   CUSTOMER_TERMS_PENDING: "Customer Terms Pending",
+  RECOVERY_OUTSTANDING: "Recovery Outstanding",
 };
 
 /** v2.1 §9 — one line, the same everywhere a Booking states its terms. */
@@ -321,6 +327,10 @@ type Dialog =
   | { kind: "COMMISSION_EARLY_APPROVE"; row: BookingRowView; recordId: string; label: string }
   | { kind: "COMMISSION_EARLY_REQUEST"; row: BookingRowView; recordId: string; label: string }
   | { kind: "COMMISSION_EARLY_REJECT"; row: BookingRowView; recordId: string; label: string }
+  | { kind: "RECOVERY_OPEN"; row: BookingRowView; recordId: string; label: string }
+  | { kind: "ADJUSTMENT_CLOSE"; row: BookingRowView; recordId: string; label: string }
+  | { kind: "RECOVERY_CLEAR"; row: BookingRowView; recoveryId: string; label: string }
+  | { kind: "RECOVERY_SET_OFF"; row: BookingRowView; recoveryId: string; recordId: string; label: string }
   | { kind: "SOLD_BY"; row: BookingRowView }
   | { kind: "SOLD_BY_DECIDE"; row: BookingRowView; approve: boolean }
   | { kind: "FINAL_BUYERS"; row: BookingRowView }
@@ -1149,6 +1159,112 @@ export default function BookingsClient({
         </ActionDialog>
       )}
 
+      {dialog?.kind === "RECOVERY_OPEN" && (
+        <ActionDialog
+          title="Open Recovery"
+          row={dialog.row}
+          consequence={`${dialog.label}. A Recovery Outstanding is opened, due 15 calendar days after the notice date. New cash payouts to this Person are held until it is repaid or set off. No amount is recorded in the CRM.`}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(f) =>
+            run(() =>
+              openRecoveryAction(
+                {
+                  recordId: dialog.recordId,
+                  noticeOn: String(f.get("noticeOn")),
+                  reference: String(f.get("reference")),
+                  reason: String(f.get("reason")),
+                },
+                newKey()
+              )
+            )
+          }
+        >
+          <Field label="Notice date">
+            <Input name="noticeOn" type="date" defaultValue={istDay(new Date())} max={istDay(new Date())} required />
+          </Field>
+          <Field label="Accounts Recovery Reference">
+            <Input name="reference" required />
+          </Field>
+          <Field label="Reason — compulsory">
+            <Input name="reason" required minLength={3} />
+          </Field>
+        </ActionDialog>
+      )}
+
+      {dialog?.kind === "ADJUSTMENT_CLOSE" && (
+        <ActionDialog
+          title="Close adjustment without Recovery"
+          row={dialog.row}
+          consequence={`${dialog.label}. Nothing is to be recovered — for example the milestone was restored, or the new Plot did not lower the amount. The reason is kept.`}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(f) =>
+            run(() => closeAdjustmentAction({ recordId: dialog.recordId, reason: String(f.get("reason")) }, newKey()))
+          }
+        >
+          <Field label="Reason — compulsory">
+            <Input name="reason" required minLength={3} />
+          </Field>
+        </ActionDialog>
+      )}
+
+      {dialog?.kind === "RECOVERY_CLEAR" && (
+        <ActionDialog
+          title="Recovery repaid"
+          row={dialog.row}
+          consequence={`${dialog.label}. The Recovery is cleared as repaid, and payouts it was holding are released if nothing else holds them.`}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(f) =>
+            run(() => clearRecoveryAction({ recoveryId: dialog.recoveryId, note: String(f.get("note")) }, newKey()))
+          }
+        >
+          <Field label="Note — compulsory">
+            <Input name="note" required minLength={3} />
+          </Field>
+        </ActionDialog>
+      )}
+
+      {dialog?.kind === "RECOVERY_SET_OFF" && (
+        <ActionDialog
+          title="Set off against Recovery"
+          row={dialog.row}
+          consequence={`${dialog.label}. This benefit is recorded as Paid by set-off instead of a cash payout. Say whether it settles the Recovery in full; the amounts are checked outside the CRM.`}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(f) =>
+            run(() =>
+              setOffRecoveryAction(
+                {
+                  recoveryId: dialog.recoveryId,
+                  recordId: dialog.recordId,
+                  reference: String(f.get("reference")),
+                  setOffOn: String(f.get("setOffOn")),
+                  note: String(f.get("note")),
+                  clearsRecovery: f.get("clears") === "on",
+                },
+                newKey()
+              )
+            )
+          }
+        >
+          <Field label="Set-off date">
+            <Input name="setOffOn" type="date" defaultValue={istDay(new Date())} max={istDay(new Date())} required />
+          </Field>
+          <Field label="Set-off reference">
+            <Input name="reference" required />
+          </Field>
+          <Field label="Note — compulsory">
+            <Input name="note" required minLength={3} />
+          </Field>
+          <label className="flex items-center gap-2 text-xs">
+            <input type="checkbox" name="clears" defaultChecked />
+            This settles the Recovery in full
+          </label>
+        </ActionDialog>
+      )}
+
       {dialog?.kind === "COMMISSION_EARLY_REQUEST" && (
         <ActionDialog
           title="Request Paid Early"
@@ -1864,8 +1980,92 @@ function BookingDetailPanel({
                         {!c.isCurrent && c.closedReason && (
                           <span className="block text-[11px]">{c.closedReason}</span>
                         )}
+                        {c.recoveries.map((rec) => (
+                          <span key={rec.id} className="block text-[11px] text-amber-800">
+                            {rec.recoveryNo} · {rec.reference} ·{" "}
+                            {rec.status === "OUTSTANDING"
+                              ? `Outstanding, due ${formatIst(rec.dueOn)}`
+                              : `Cleared — ${rec.clearedHow === "SET_OFF" ? "set off" : "repaid"}`}
+                          </span>
+                        ))}
                       </td>
                       <td className="whitespace-nowrap text-right">
+                        {/* CP §54, §64 — Accounts answers an adjustment, clears
+                            or sets off a Recovery. */}
+                        {permissions.handleRecovery && c.adjustmentWaiting && (
+                          <span className="inline-flex gap-1">
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              onClick={() =>
+                                onAction({
+                                  kind: "ADJUSTMENT_CLOSE",
+                                  row,
+                                  recordId: c.id,
+                                  label: `${c.type} ${c.percent}% to ${c.beneficiary}`,
+                                })
+                              }
+                            >
+                              No Recovery
+                            </Button>
+                            <Button
+                              size="xs"
+                              onClick={() =>
+                                onAction({
+                                  kind: "RECOVERY_OPEN",
+                                  row,
+                                  recordId: c.id,
+                                  label: `${c.type} ${c.percent}% to ${c.beneficiary}`,
+                                })
+                              }
+                            >
+                              Open Recovery
+                            </Button>
+                          </span>
+                        )}
+                        {permissions.handleRecovery &&
+                          c.recoveries
+                            .filter((rec) => rec.status === "OUTSTANDING")
+                            .map((rec) => (
+                              <Button
+                                key={rec.id}
+                                size="xs"
+                                variant="outline"
+                                onClick={() =>
+                                  onAction({
+                                    kind: "RECOVERY_CLEAR",
+                                    row,
+                                    recoveryId: rec.id,
+                                    label: `${rec.recoveryNo} from ${c.beneficiary}`,
+                                  })
+                                }
+                              >
+                                Mark Repaid
+                              </Button>
+                            ))}
+                        {permissions.handleRecovery &&
+                          c.isCurrent &&
+                          c.payment === "NOT_PAID" &&
+                          c.beneficiaryRecovery &&
+                          (c.eligibility === "READY" || c.holdReason === "RECOVERY_OUTSTANDING") && (
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              onClick={() => {
+                                const owed = c.beneficiaryRecovery;
+                                if (!owed) return;
+                                onAction({
+                                  kind: "RECOVERY_SET_OFF",
+                                  row,
+                                  recoveryId: owed.id,
+                                  recordId: c.id,
+                                  label: `${c.type} ${c.percent}% to ${c.beneficiary} against ${owed.recoveryNo}`,
+                                });
+                              }}
+                            >
+                              Set Off
+                            </Button>
+                          )}
                         {/* CP §53 — Accounts requests Paid Early for an unready
                             record; MD approves or rejects it; only then does
                             Accounts see a Paid Early button. */}

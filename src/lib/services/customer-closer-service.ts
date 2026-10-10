@@ -6,7 +6,7 @@
 
 import { notFutureDated } from "@/lib/domain/booking";
 import { blocked, runCommand } from "./command";
-import { reassessLoyaltyOf } from "./commission-service";
+import { reassessBenefitsOf } from "./commission-service";
 
 /**
  * v2.1 §22 — CRM records which Customer Terms version the Customer accepted,
@@ -46,7 +46,7 @@ export async function recordCustomerTermsAcceptance(args: {
           recordedByRef: args.actorRef,
         },
       });
-      const reassessed = await reassessLoyaltyOf(tx, customer.personId, args.actorRef);
+      const reassessed = await reassessBenefitsOf(tx, customer.personId, args.actorRef);
       return {
         result: { acceptanceId: acceptance.id, reassessed },
         audit: {
@@ -93,7 +93,7 @@ export async function verifyAadhaar(args: {
       if (person.aadhaarStatus === "VERIFIED") blocked("This Aadhaar is already verified.");
 
       await tx.person.update({ where: { id: person.id }, data: { aadhaarStatus: "VERIFIED" } });
-      const reassessed = await reassessLoyaltyOf(tx, person.id, args.actorRef);
+      const reassessed = await reassessBenefitsOf(tx, person.id, args.actorRef);
       return {
         result: { personId: person.id, reassessed },
         audit: {

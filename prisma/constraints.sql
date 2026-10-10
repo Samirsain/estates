@@ -727,3 +727,24 @@ ALTER TABLE "CommissionRecord" ADD CONSTRAINT "paid_early_approval_follows_reque
 -- v2.1 §21 — one Booking earns at most one Customer Loyalty.
 CREATE UNIQUE INDEX IF NOT EXISTS "one_current_loyalty_per_booking"
   ON "CommissionRecord" ("bookingId") WHERE "type" = 'LOYALTY' AND "isCurrent" = true;
+
+-- ------------------------------------------- Business Model v2 part 1c — Recovery
+
+-- SSOT §91; CP §54 — a Recovery names its Accounts reference and falls due 15
+-- calendar days after notice; a cleared one says how, by whom and when.
+ALTER TABLE "Recovery" DROP CONSTRAINT IF EXISTS "recovery_has_reference";
+ALTER TABLE "Recovery" ADD CONSTRAINT "recovery_has_reference"
+  CHECK (length(btrim("reference")) > 0 AND length(btrim("reason")) > 0);
+ALTER TABLE "Recovery" DROP CONSTRAINT IF EXISTS "recovery_due_fifteen_days";
+ALTER TABLE "Recovery" ADD CONSTRAINT "recovery_due_fifteen_days"
+  CHECK ("dueOn" = "noticeOn" + interval '15 days');
+ALTER TABLE "Recovery" DROP CONSTRAINT IF EXISTS "recovery_cleared_stamps";
+ALTER TABLE "Recovery" ADD CONSTRAINT "recovery_cleared_stamps"
+  CHECK (("status" = 'OUTSTANDING' AND "clearedAt" IS NULL AND "clearedHow" IS NULL)
+      OR ("status" = 'CLEARED' AND "clearedAt" IS NOT NULL AND "clearedByRef" IS NOT NULL
+          AND "clearedHow" IS NOT NULL
+          AND ("clearedHow" <> 'SET_OFF' OR "setOffRecordId" IS NOT NULL)));
+
+-- One open Recovery per invalid benefit.
+CREATE UNIQUE INDEX IF NOT EXISTS "one_outstanding_recovery_per_record"
+  ON "Recovery" ("commissionRecordId") WHERE "status" = 'OUTSTANDING';

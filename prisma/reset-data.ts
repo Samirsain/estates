@@ -27,6 +27,7 @@ async function main() {
   const keepPersonIds = staff.map((s) => s.personId);
 
   // Leaves of the commission tree first.
+  await db.recovery.deleteMany({});
   await db.commissionEvent.deleteMany({});
   await db.commissionRecord.deleteMany({});
   // CR-014 — a position points at its cycle, and the cycle points at the Member,
