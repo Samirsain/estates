@@ -30,7 +30,7 @@ import {
   reassessCommission,
 } from "./commission-service";
 import { createScheduleVersion, syncPaymentFollowUp, type ScheduleInput } from "./payment-service";
-import { touchesDeliveredGift } from "./royalty-service";
+import { touchesConsumedAward } from "./royalty-service";
 import { syncTripForBooking, touchesTravelledTrip } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 import { ensureCustomerProfile, linkOrCreatePerson } from "./enquiry-service";
@@ -155,8 +155,8 @@ function reviewSnapshot(input: {
     directPercent: string | null;
     loyaltyPercent: string | null;
   };
-  /** SSOT §76 — the Royalty Gift Programme Version live at this submission, if any. */
-  royaltyProgrammeVersionId: string | null;
+  /** docss/11 §1 — the Royalty token rate this request version froze. */
+  royaltyTokensPerAward: number;
 }) {
   return canonicalSnapshot({
     projectId: input.projectId,
@@ -180,7 +180,7 @@ function reviewSnapshot(input: {
     })),
     remark: input.remark,
     commissionTerms: input.commissionTerms,
-    royaltyProgrammeVersionId: input.royaltyProgrammeVersionId,
+    royaltyTokensPerAward: input.royaltyTokensPerAward,
   });
 }
 
@@ -299,7 +299,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
           holdId: hold?.id ?? null,
           plcSnapshotId: snapshot.id,
           commissionVersionId: frozen.commissionVersionId,
-          royaltyProgrammeVersionId: frozen.royaltyProgrammeVersionId,
+          royaltyTokensPerAward: frozen.royaltyTokensPerAward,
           originalClassification: frozen.originalClassification,
           loyaltySubjectDeactivated: frozen.loyaltySubjectDeactivated,
           submittedByRef: input.actorRef,
@@ -349,7 +349,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
             schedule: schedule.instalments,
             remark: input.remark ?? null,
             commissionTerms: frozen.terms,
-            royaltyProgrammeVersionId: frozen.royaltyProgrammeVersionId,
+            royaltyTokensPerAward: frozen.royaltyTokensPerAward,
           }) as never,
           submittedByRef: input.actorRef,
         },
@@ -512,7 +512,7 @@ export async function reviseBookingRequest(args: {
           customerType: args.customerType ?? null,
           remark: args.remark ?? null,
           commissionVersionId: frozen.commissionVersionId,
-          royaltyProgrammeVersionId: frozen.royaltyProgrammeVersionId,
+          royaltyTokensPerAward: frozen.royaltyTokensPerAward,
           originalClassification: frozen.originalClassification,
           loyaltySubjectDeactivated: frozen.loyaltySubjectDeactivated,
         },
@@ -548,7 +548,7 @@ export async function reviseBookingRequest(args: {
             schedule: schedule.instalments,
             remark: args.remark ?? null,
             commissionTerms: frozen.terms,
-            royaltyProgrammeVersionId: frozen.royaltyProgrammeVersionId,
+            royaltyTokensPerAward: frozen.royaltyTokensPerAward,
           }) as never,
           submittedByRef: args.actorRef,
         },
@@ -1455,7 +1455,7 @@ export async function decideSoldByCorrection(args: {
       if (
         args.approve &&
         args.actorRole !== "MD" &&
-        ((await touchesDeliveredGift(tx, args.bookingId)) || (await touchesTravelledTrip(tx, args.bookingId)))
+        ((await touchesConsumedAward(tx, args.bookingId)) || (await touchesTravelledTrip(tx, args.bookingId)))
       ) {
         blocked("A Gift was delivered or a Trip travelled on this attribution, so only MD may approve this correction.");
       }
@@ -1604,7 +1604,6 @@ export function listBookings(where?: Prisma.BookingWhereInput) {
       },
       reviewVersions: { where: { status: "PENDING" }, take: 1 },
       // v2.1 §15 — the exact version frozen on the request, shown with it.
-      royaltyProgrammeVersion: { select: { programmeRef: true } },
       commissionVersion: {
         select: { version: true, directEnabled: true, directPercent: true, loyaltyEnabled: true, loyaltyPercent: true },
       },

@@ -33,6 +33,7 @@ const terms = {
   loyaltyPercent: "1" as string | null,
   loyaltyExceptionReason: null as string | null,
   reason: "Launch terms",
+  royaltyTokensPerAward: 10,
 };
 
 async function main() {
@@ -61,8 +62,22 @@ async function main() {
     /reason/
   );
 
+  // docss/11 §1 — the Royalty token rate is a whole number, above 0, on every version.
+  for (const bad of [0, -5, 2.5, 1_000_001, null as unknown as number]) {
+    await assert.rejects(
+      prepareCommissionDraft({ idempotencyKey: key(), ...ADMIN, projectId, ...terms, royaltyTokensPerAward: bad }),
+      /Royalty tokens/,
+      `refuses a rate of ${String(bad)}`
+    );
+  }
+
   const v1 = await prepareCommissionDraft({ idempotencyKey: key(), ...ADMIN, projectId, ...terms });
   assert.equal(v1.version, 1);
+  assert.equal(
+    (await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v1.versionId } })).royaltyTokensPerAward,
+    10,
+    "the rate is stored with the version"
+  );
 
   // Editing the Draft keeps the same version.
   const edited = await prepareCommissionDraft({
@@ -240,7 +255,7 @@ async function main() {
   });
   assert.equal(nt01Task.assigneeRole, "MD");
   assert.equal(nt01Task.recordKind, "Project");
-  assert.match(nt01Task.latestResult ?? "", /Version 4: Direct 2\.5%, Loyalty 1%\. Trip Disabled\. Effective from/);
+  assert.match(nt01Task.latestResult ?? "", /Version 4: Direct 2\.5%, Loyalty 1%, Royalty 10 tokens\. Trip Disabled\. Effective from/);
   const waiting = await decideCommissionVersion({
     idempotencyKey: key(),
     ...MD,
@@ -296,6 +311,38 @@ async function main() {
     })
   );
   assert.equal(frozen.commissionVersionId, v5.versionId, "the due version is the one frozen");
+  assert.equal(frozen.royaltyTokensPerAward, 10, "docss/11 — the token rate freezes with the request");
+
+  // docss/11 §1; Review Focus 5 — an Active version without a token rate (one
+  // prepared before tokens) is never frozen as "0 tokens": the request is refused.
+  const legacy = await db.project.create({ data: { projectCode: `${TAG}L`, name: `${TAG} Legacy`, type: "RESIDENTIAL" } });
+  await db.projectCommissionVersion.create({
+    data: {
+      projectId: legacy.id,
+      version: 1,
+      status: "ACTIVE",
+      directEnabled: true,
+      directPercent: "3",
+      loyaltyEnabled: false,
+      reason: "Before tokens",
+      preparedByRef: ADMIN.actorRef,
+      submittedAt: new Date(),
+      decidedByRef: MD.actorRef,
+      decidedAt: new Date(),
+      effectiveFrom: new Date(),
+    },
+  });
+  await assert.rejects(
+    db.$transaction((tx) =>
+      freezeAtSubmission(tx, {
+        projectId: legacy.id,
+        soldByType: "THREE_PERCENT_CLUB",
+        soldByPersonId: null,
+        buyerPersonId: "00000000-0000-0000-0000-000000000000",
+      })
+    ),
+    /no Royalty token rate/
+  );
 
   // UAT SET-08, Review Focus 2 — MD cannot approve a time that passed while it waited.
   const v6 = await prepareCommissionDraft({
@@ -329,6 +376,7 @@ async function main() {
   const draft = await db.projectCommissionVersion.findFirstOrThrow({ where: { projectId: created.projectId } });
   assert.equal(`${draft.version}:${draft.status}`, "1:DRAFT", "the create form saves Draft v1, not an Active version");
   assert.equal(draft.directPercent?.toString(), "4");
+  assert.equal(draft.royaltyTokensPerAward, 10, "docss/11 — the create form carries the token rate");
   assert.equal(draft.preparedByRef, ADMIN.actorRef);
 
   // Only Admin prepares, on the create form too; PC can still create without settings.

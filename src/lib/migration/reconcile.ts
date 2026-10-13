@@ -445,13 +445,14 @@ async function businessModelV2(): Promise<RuleResult> {
   // 12. A Buyback-qualified non-cash reward fulfilled before Stable Buyback Completion.
   const stable = async (bookingId: string) =>
     (await db.acquisition.count({ where: { sourceBookingId: bookingId, type: "BUYBACK", stableCompletedAt: { not: null } } })) > 0;
-  const gifts = await db.royaltyCredit.findMany({
-    where: { state: "DELIVERED", qualificationRoute: "APPROVED_BUYBACK" },
+  // docss/11 — a Buyback-qualified award may not be released and usable before then.
+  const awardsOnBuyback = await db.royaltyAward.findMany({
+    where: { state: "RELEASED", holdReason: null, qualificationRoute: "APPROVED_BUYBACK" },
     select: { id: true, triggerBookingId: true, triggerBooking: { select: { bookingNumber: true, paymentReceivedPercent: true } } },
   });
-  for (const g of gifts) {
-    if (g.triggerBooking.paymentReceivedPercent.lt(100) && !(await stable(g.triggerBookingId))) {
-      add(g.triggerBooking.bookingNumber ?? g.id, "Buyback-qualified Gift delivered before Stable Completion (§28.12)");
+  for (const a of awardsOnBuyback) {
+    if (a.triggerBooking.paymentReceivedPercent.lt(100) && !(await stable(a.triggerBookingId))) {
+      add(a.triggerBooking.bookingNumber ?? a.id, "Buyback-qualified Royalty tokens usable before Stable Completion (§28.12)");
     }
   }
   const travelledOnBuyback = await db.tripCredit.findMany({
@@ -465,16 +466,45 @@ async function businessModelV2(): Promise<RuleResult> {
   }
 
   // 13, 14. A fulfilled reward whose opportunity was reopened.
-  const reopenedGifts = await db.royaltyCredit.findMany({
-    where: { state: "DELIVERED", customerProfile: { royaltyOpportunityConsumedAt: null } },
+  const reopenedAwards = await db.royaltyAward.findMany({
+    where: { consumedAt: { not: null }, customerProfile: { royaltyOpportunityConsumedAt: null } },
     select: { customerProfile: { select: { customerId: true } } },
   });
-  for (const g of reopenedGifts) add(g.customerProfile.customerId, "Delivered Gift with the Royalty opportunity reopened (§28.13)");
+  for (const a of reopenedAwards) add(a.customerProfile.customerId, "Consumed Royalty award with the opportunity reopened (§28.13)");
   const reopenedRefs = await db.tripCredit.findMany({
     where: { state: "USED", creditType: "REFERENCE", introducedMember: { referenceOpportunityConsumedAt: null } },
     select: { introducedMember: { select: { memberId: true } } },
   });
   for (const c of reopenedRefs) add(c.introducedMember?.memberId ?? "?", "Travelled Trip's Reference opportunity reopened (§28.14)");
+
+  // docss/11 §2 — the token ledger and its allocations agree: no award funds more
+  // than it holds, no redemption is over-funded, every posting reverses at most
+  // once, and no free tokens sit beside a deficit.
+  const sumOf = (rows: { tokens: number }[]) => rows.reduce((n, r) => n + r.tokens, 0);
+  const awards = await db.royaltyAward.findMany({
+    include: { allocations: { where: { voidedAt: null }, select: { tokens: true } }, ledger: { select: { kind: true } }, memberProfile: { select: { memberId: true } } },
+  });
+  const freeBy = new Map<string, number>();
+  for (const a of awards) {
+    const used = sumOf(a.allocations);
+    const posted = a.ledger.filter((e) => e.kind === "AWARD_POSTED").length;
+    const reversed = a.ledger.filter((e) => e.kind === "AWARD_REVERSED").length;
+    if (used > a.tokens || (a.state !== "RELEASED" && used > 0)) add(a.memberProfile.memberId, "A Royalty award funds more than it holds (docss/11)");
+    if (posted !== a.postings || reversed !== posted - (a.state === "RELEASED" ? 1 : 0)) {
+      add(a.memberProfile.memberId, "A Royalty award's ledger postings and reversals disagree (docss/11)");
+    }
+    if (a.state === "RELEASED" && a.holdReason === null) freeBy.set(a.memberProfileId, (freeBy.get(a.memberProfileId) ?? 0) + a.tokens - used);
+  }
+  const redemptions = await db.tokenRedemption.findMany({
+    include: { allocations: { where: { voidedAt: null }, select: { tokens: true } }, memberProfile: { select: { memberId: true } } },
+  });
+  for (const r of redemptions) {
+    const funded = sumOf(r.allocations);
+    if (funded > r.tokens || (r.state !== "RECORDED" && funded > 0)) add(r.memberProfile.memberId, "A token redemption is over-funded (docss/11)");
+    if (r.state === "RECORDED" && funded < r.tokens && (freeBy.get(r.memberProfileId) ?? 0) > 0) {
+      add(r.memberProfile.memberId, "Free tokens sit beside an unfunded deficit (docss/11)");
+    }
+  }
 
   // 17. An Active Member recorded as Sold By Customer.
   const customerSales = await db.booking.findMany({
@@ -504,7 +534,7 @@ async function businessModelV2(): Promise<RuleResult> {
   // 19. A non-family nominee fulfilled without MD approval.
   const nominees = await Promise.all([
     db.tripReward.count({ where: { state: { in: ["BOOKED", "TRAVELLED"] }, recipient: "NON_FAMILY", recipientApprovedAt: null } }),
-    db.royaltyCredit.count({ where: { state: { in: ["ORDERED", "DELIVERED"] }, recipient: "NON_FAMILY", recipientApprovedAt: null } }),
+    db.tokenRedemption.count({ where: { state: { in: ["RECORDED", "CORRECTED"] }, recipient: "NON_FAMILY", decidedAt: null } }),
   ]);
   if (nominees[0] + nominees[1] > 0) add("Rewards", `${nominees[0] + nominees[1]} non-family nominee(s) fulfilled without MD approval (§28.19)`);
 
@@ -516,13 +546,13 @@ async function businessModelV2(): Promise<RuleResult> {
   ]);
   const conflicted = [...new Set([...staff.map((s) => s.personId), ...relatives.map((r) => r.relativePersonId)])];
   const cleared = new Set(approved.map((a) => a.recordId));
-  const [paidToConflicted, giftsToConflicted, tripsToConflicted] = await Promise.all([
+  const [paidToConflicted, awardsToConflicted, tripsToConflicted] = await Promise.all([
     db.commissionRecord.findMany({
       where: { beneficiaryPersonId: { in: conflicted }, payment: { in: ["PAID", "PAID_EARLY"] } },
       select: { id: true, beneficiaryPerson: { select: { fullName: true } } },
     }),
-    db.royaltyCredit.findMany({
-      where: { memberProfile: { personId: { in: conflicted } }, state: { in: ["ORDERED", "DELIVERED"] } },
+    db.royaltyAward.findMany({
+      where: { memberProfile: { personId: { in: conflicted } }, postings: { gt: 0 } },
       select: { id: true, memberProfile: { select: { memberId: true } } },
     }),
     db.tripReward.findMany({
@@ -531,7 +561,7 @@ async function businessModelV2(): Promise<RuleResult> {
     }),
   ]);
   for (const r of paidToConflicted) if (!cleared.has(r.id)) add(r.beneficiaryPerson.fullName, "Staff/relative benefit paid without conflict approval (§28.20)");
-  for (const r of [...giftsToConflicted, ...tripsToConflicted]) {
+  for (const r of [...awardsToConflicted, ...tripsToConflicted]) {
     if (!cleared.has(r.id)) add(r.memberProfile.memberId, "Staff/relative reward fulfilled without conflict approval (§28.20)");
   }
 

@@ -335,6 +335,15 @@ async function main() {
     schedule: SCHEDULE,
   });
 
+  // docss/11 §1 — the Project's token rate freezes on the Booking and in the
+  // version Accounts reviews.
+  const sharedRow = await db.booking.findUniqueOrThrow({ where: { id: shared.bookingId }, include: { commissionVersion: true } });
+  assert.ok(sharedRow.royaltyTokensPerAward && sharedRow.royaltyTokensPerAward > 0, "a token rate is frozen");
+  assert.equal(sharedRow.royaltyTokensPerAward, sharedRow.commissionVersion!.royaltyTokensPerAward);
+  const sharedSnapshot = (await db.bookingReviewVersion.findFirstOrThrow({ where: { bookingId: shared.bookingId, status: "PENDING" } }))
+    .snapshot as { royaltyTokensPerAward?: number };
+  assert.equal(sharedSnapshot.royaltyTokensPerAward, sharedRow.royaltyTokensPerAward, "and in the reviewed snapshot");
+
   /* -------------- the pending review snapshot cannot be silently edited */
 
   const pendingBefore = await db.bookingReviewVersion.findFirstOrThrow({

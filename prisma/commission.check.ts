@@ -216,6 +216,7 @@ async function approveVersion(
     loyaltyPercent: "1",
     loyaltyExceptionReason: null,
     reason: `${TAG} settings`,
+    royaltyTokensPerAward: 10,
     ...o,
   });
   await sendCommissionVersion({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", versionId: draft.versionId });

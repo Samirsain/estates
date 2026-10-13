@@ -19,7 +19,7 @@ export const STAFF_CONFLICT_PURPOSE = "STAFF_CONFLICT_REVIEW";
 export const CIRCUMVENTION_PURPOSE = "RECOVERY_CIRCUMVENTION_REVIEW";
 
 export type BenefitRef = {
-  recordKind: "Commission" | "Trip Reward" | "Royalty Credit";
+  recordKind: "Commission" | "Trip Reward" | "Royalty Award";
   recordId: string;
   personId: string;
   recordName: string;

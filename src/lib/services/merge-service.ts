@@ -9,7 +9,7 @@ import type { CustomerProfile, MemberProfile, TripCredit } from "@prisma/client"
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { consumedClosingEvents } from "./commission-service";
 import { refreshBenefitsOfPerson } from "./recovery-service";
-import { reverseUndeliveredCredit } from "./royalty-service";
+import { reverseLiveAward } from "./royalty-service";
 import { evaluateBuckets, invalidate } from "./trip-service";
 
 const MERGE_REASON = "Person merge — one real person keeps one entitlement history (SSOT §100).";
@@ -18,9 +18,11 @@ const MERGE_REASON = "Person merge — one real person keeps one entitlement his
  * CP §87; SSOT §100; UAT COR-08 — after a merge nothing the two identities
  * earned separately is counted twice. The Customer-closing count already reads
  * both identities and Recovery follows the survivor; this removes the rest:
- * of two consumed Royalty or Reference opportunities the later unfulfilled one
- * is reversed, and an Own-Sale Credit for the same unit and programme is kept
- * once. Fulfilled rewards are final and never touched.
+ * of two consumed Royalty opportunities the later award is reversed even if its
+ * tokens were spent (docss/11 §1 — the gap is a non-cash deficit), of two
+ * Reference opportunities the later unfulfilled one is reversed, and an
+ * Own-Sale Credit for the same unit and programme is kept once. A travelled
+ * Trip is final and never touched.
  */
 async function dedupeAfterMerge(
   tx: Tx,
@@ -31,7 +33,7 @@ async function dedupeAfterMerge(
   const [sc, mc] = [survivor.customerProfile, merged.customerProfile];
   if (sc?.royaltyOpportunityConsumedAt && mc?.royaltyOpportunityConsumedAt) {
     const later = sc.royaltyOpportunityConsumedAt > mc.royaltyOpportunityConsumedAt ? sc : mc;
-    await reverseUndeliveredCredit(tx, later.id, actorRef, MERGE_REASON);
+    await reverseLiveAward(tx, later.id, actorRef, MERGE_REASON);
   }
 
   const [sm, mm] = [survivor.memberProfile, merged.memberProfile];

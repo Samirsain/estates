@@ -20,7 +20,7 @@ import {
   reassessCommission,
   RECOVERY_FOLLOW_UP_PURPOSE,
 } from "./commission-service";
-import { refreshCreditsOfMember } from "./royalty-service";
+import { refreshAwardsOfMember } from "./royalty-service";
 import { refreshTripOfMember } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
@@ -108,7 +108,7 @@ export async function openRecovery(
       });
       await reassessBenefitsOf(tx, record.beneficiaryPersonId, args.actorRef);
       // SSOT §66, §82 — non-cash fulfilment is held too.
-      await refreshCreditsOfMember(tx, record.beneficiaryPersonId, args.actorRef);
+      await refreshAwardsOfMember(tx, record.beneficiaryPersonId, args.actorRef);
       await refreshTripOfMember(tx, record.beneficiaryPersonId, args.actorRef);
 
       return {
@@ -223,7 +223,7 @@ async function clear(
  */
 export async function refreshBenefitsOfPerson(tx: Tx, personId: string, actorRef: string) {
   await reassessBenefitsOf(tx, personId, actorRef);
-  await refreshCreditsOfMember(tx, personId, actorRef);
+  await refreshAwardsOfMember(tx, personId, actorRef);
   await refreshTripOfMember(tx, personId, actorRef);
 }
 

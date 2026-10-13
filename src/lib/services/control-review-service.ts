@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { reassessCommission, refreshBuyingCommission } from "./commission-service";
 import { refreshBenefitsOfPerson } from "./recovery-service";
-import { CREDIT_RECORD_KIND, refreshCredit } from "./royalty-service";
+import { AWARD_RECORD_KIND, refreshAward } from "./royalty-service";
 import { refreshTripReward, TRIP_REWARD_KIND } from "./trip-service";
 import { closeTasksFor } from "./task-service";
 import {
@@ -75,7 +75,7 @@ export async function endStaffRelative(args: Actor & { declarationId: string; re
 
 /** Re-runs the one benefit a staff-conflict review holds. */
 async function refreshBenefit(tx: Tx, recordKind: string, recordId: string, actorRef: string) {
-  if (recordKind === CREDIT_RECORD_KIND) return refreshCredit(tx, recordId, actorRef);
+  if (recordKind === AWARD_RECORD_KIND) return refreshAward(tx, recordId, actorRef);
   if (recordKind === TRIP_REWARD_KIND) return refreshTripReward(tx, recordId, actorRef);
   const record = await tx.commissionRecord.findUniqueOrThrow({ where: { id: recordId }, select: { bookingId: true, acquisitionId: true } });
   if (record.bookingId) await reassessCommission(tx, record.bookingId, actorRef);

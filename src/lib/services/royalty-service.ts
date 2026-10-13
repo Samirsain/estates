@@ -1,30 +1,40 @@
-// Royalty Relationship Reward — SSOT §64, §72–§83, §98; Change Pack §43–§49,
-// §60, §65 (NT06, NT10), §85; Terms 6.2 and doc 5 Part III–IV.
+// Royalty Tokens — docss/11 (owner-approved handoff, 12 Oct 2026), built on the
+// Royalty relationship (SSOT §67–§74, §98–§100; Change Pack §40–§49).
 //
-// One qualifying event = one Royalty Credit = one catalogue Gift. A Final
-// Royalty Linked Member earns it when their Customer's first qualifying
-// Club-direct personal purchase reaches 100% Payment Received, or an Approved
-// Buyback once 25% was received. The Gift Programme Version is the one frozen
-// on that Booking. Fulfilment (select → order → deliver) is held while a
-// Recovery, a deactivation, an unstable Buyback or an unapproved non-family
-// recipient stands. A delivered Gift is final. No rate, amount or cash anywhere.
+// A final linked Customer's first qualifying Club-direct purchase creates one
+// RoyaltyAward for the Royalty Linked Member, at the token rate frozen on that
+// purchase's Booking Request version. The award posts to the append-only token
+// ledger only once its release conditions hold: a hold before release keeps it
+// PENDING, a hold after release restricts it from funding anything. A Member
+// spends from one pooled balance across every Project; spending arranged
+// outside the CRM is recorded here and funded oldest-released-first. A deficit
+// is a recorded redemption not yet fully funded, which later earnings clear
+// through the same allocation. Nothing is overwritten: reversals and
+// corrections are linked entries. No cash, no rate in rupees, no expiry.
+//
+// Locks: the Customer (`royalty:<customerProfileId>`) is always taken before the
+// Member (`royalty-tokens:<memberProfileId>`); nothing takes a Customer lock
+// while holding a Member lock.
 
 import type { Prisma, RewardHoldReason, RewardRecipient } from "@prisma/client";
-import { notFutureDated } from "@/lib/domain/booking";
 import { BUYBACK_MIN_SOURCE_PAYMENT } from "@/lib/domain/commission";
+import { allocate, tokenFigures, validateBusinessDay, validateTokenQuantity } from "@/lib/domain/tokens";
 import { db } from "@/lib/db";
+import { istDay } from "@/lib/tasks";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { outstandingRecovery } from "./commission-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 import { assertIndependent, controlHoldReason } from "./benefit-control-service";
 
-/** CP §65 NT06 — Royalty Gift Selection / Fulfilment. */
-export const GIFT_FULFILMENT_PURPOSE = "ROYALTY_GIFT_FULFILMENT";
-/** CP §65 NT10 — Non-Family Reward Nominee Approval. */
+export const AWARD_RECORD_KIND = "Royalty Award";
+export const REDEMPTION_RECORD_KIND = "Token Redemption";
+/** CP §65 NT10 — Non-Family Reward Nominee Approval, the same task Trip uses. */
 export const NOMINEE_APPROVAL_PURPOSE = "REWARD_NOMINEE_APPROVAL";
-export const CREDIT_RECORD_KIND = "Royalty Credit";
 
-const LIVE_STATES = ["ELIGIBLE", "SELECTED", "ORDERED"] as const;
+const LIVE = ["PENDING", "RELEASED"] as const;
+const RECIPIENTS: readonly RewardRecipient[] = ["SELF", "SPOUSE", "PARENT", "CHILD", "SIBLING", "NON_FAMILY"];
+
+const lockMember = (tx: Tx, memberProfileId: string) => lockKey(tx, `royalty-tokens:${memberProfileId}`);
 
 /**
  * SSOT §36; CP §21 — a Primary Customer Change "changes ownership/customer
@@ -71,84 +81,188 @@ async function triggerRoute(
   return buyback > 0 ? "APPROVED_BUYBACK" : null;
 }
 
-async function event(tx: Tx, creditId: string, actorRef: string, action: string, from?: string, to?: string, reason?: string) {
-  await tx.royaltyCreditEvent.create({
-    data: { creditId, actorRef, action, fromState: from ?? null, toState: to ?? null, reason: reason ?? null },
+async function awardEvent(tx: Tx, awardId: string, actorRef: string, action: string, from?: string, to?: string, reason?: string) {
+  await tx.royaltyAwardEvent.create({
+    data: { awardId, actorRef, action, fromState: from ?? null, toState: to ?? null, reason: reason ?? null },
   });
 }
 
+const sum = (rows: readonly { tokens: number }[]) => rows.reduce((n, r) => n + r.tokens, 0);
+
+/* --------------------------------------------------------------- allocation */
+
 /**
- * SSOT §62, §99; CP §47, §84 — an unfulfilled Credit whose basis is gone is
- * reversed and the opportunity reopens. No replacement is created on that
- * event. A delivered Gift is never reversed (SSOT §64).
+ * docss/11 §1 — funds every recorded redemption not yet fully funded from the
+ * released, unrestricted awards with tokens left: oldest released first, then
+ * id. A redemption left part-funded is the deficit later earnings clear. Any
+ * award used is consumed for good. The caller holds the Member lock.
  */
-export async function reverseUndeliveredCredit(tx: Tx, customerProfileId: string, actorRef: string, reason: string) {
-  const live = await tx.royaltyCredit.findFirst({
-    where: { customerProfileId, state: { in: [...LIVE_STATES] } },
+async function settleMember(tx: Tx, memberProfileId: string) {
+  const live = { where: { voidedAt: null }, select: { tokens: true } } as const;
+  const awards = await tx.royaltyAward.findMany({
+    where: { memberProfileId, state: "RELEASED", holdReason: null },
+    include: { allocations: live },
+    orderBy: [{ releasedAt: "asc" }, { id: "asc" }],
   });
-  if (!live) return null;
-  await tx.royaltyCredit.update({
-    where: { id: live.id },
+  const redemptions = await tx.tokenRedemption.findMany({
+    where: { memberProfileId, state: "RECORDED" },
+    include: { allocations: live },
+    orderBy: [{ recordedAt: "asc" }, { id: "asc" }],
+  });
+  const plan = allocate(
+    awards.map((a) => ({ awardId: a.id, free: a.tokens - sum(a.allocations) })),
+    redemptions.map((r) => ({ redemptionId: r.id, unfunded: r.tokens - sum(r.allocations) }))
+  );
+  if (plan.length === 0) return;
+  await tx.tokenAllocation.createMany({ data: plan.map((p) => ({ memberProfileId, ...p })) });
+  await tx.royaltyAward.updateMany({
+    where: { id: { in: [...new Set(plan.map((p) => p.awardId))] }, consumedAt: null },
+    data: { consumedAt: new Date() },
+  });
+}
+
+/* ------------------------------------------------------------ the award */
+
+/**
+ * docss/11 §1 — an award whose basis is gone. A posted one is reversed exactly
+ * once, spent or not: its allocations are voided (spending stays recorded) and
+ * the gap is a deficit. An unconsumed award gives the Customer's opportunity
+ * back; a consumed one keeps it consumed.
+ */
+async function reverseAward(tx: Tx, awardId: string, actorRef: string, reason: string) {
+  const found = await tx.royaltyAward.findUniqueOrThrow({ where: { id: awardId }, select: { memberProfileId: true } });
+  await lockMember(tx, found.memberProfileId);
+  const award = await tx.royaltyAward.findUniqueOrThrow({ where: { id: awardId } });
+  if (award.state === "REVERSED") return;
+
+  if (award.state === "RELEASED") {
+    const posted = await tx.tokenLedgerEntry.findFirstOrThrow({
+      where: { awardId, kind: "AWARD_POSTED", cycle: award.postings },
+    });
+    await tx.tokenLedgerEntry.create({
+      data: {
+        memberProfileId: award.memberProfileId,
+        kind: "AWARD_REVERSED",
+        tokens: -award.tokens,
+        awardId,
+        cycle: award.postings,
+        reversesEntryId: posted.id,
+        actorRef,
+        reason,
+      },
+    });
+    await tx.tokenAllocation.updateMany({
+      where: { awardId, voidedAt: null },
+      data: { voidedAt: new Date(), voidReason: `Award reversed — ${reason}` },
+    });
+  }
+  await tx.royaltyAward.update({
+    where: { id: awardId },
     data: { state: "REVERSED", reversedAt: new Date(), reversalReason: reason, holdReason: null },
   });
-  await tx.customerProfile.update({ where: { id: customerProfileId }, data: { royaltyOpportunityConsumedAt: null } });
-  await event(tx, live.id, actorRef, "REVERSED", live.state, "REVERSED", reason);
-  await closeTasksFor(tx, CREDIT_RECORD_KIND, live.id, actorRef, `Reversed — ${reason}`);
-  return live;
+  if (!award.consumedAt) {
+    await tx.customerProfile.update({ where: { id: award.customerProfileId }, data: { royaltyOpportunityConsumedAt: null } });
+  }
+  await awardEvent(tx, awardId, actorRef, "REVERSED", award.state, "REVERSED", reason);
+  await closeTasksFor(tx, AWARD_RECORD_KIND, awardId, actorRef, `Reversed — ${reason}`);
+  // The voided allocations left a gap; other free tokens fill it first.
+  if (award.state === "RELEASED") await settleMember(tx, award.memberProfileId);
 }
 
-/**
- * CP §85; doc 5 §8, §9, §88 — the first hold that stops fulfilment, or null.
- * SSOT §80 — Buyback-based eligibility waits for Stable Buyback Completion
- * unless the purchase itself has reached 100% since.
- */
+/** CP §85; SSOT §80 — the first condition that stops release, after the control reviews. */
 async function holdFor(
   tx: Tx,
-  credit: { triggerBookingId: string; recipient: RewardRecipient | null; recipientApprovedAt: Date | null },
+  award: { triggerBookingId: string },
   member: { personId: string; status: string }
 ): Promise<RewardHoldReason | null> {
   if (await outstandingRecovery(tx, member.personId)) return "RECOVERY_OUTSTANDING";
   if (member.status === "DEACTIVATED") return "MEMBER_DEACTIVATED";
   const trigger = await tx.booking.findUniqueOrThrow({
-    where: { id: credit.triggerBookingId },
+    where: { id: award.triggerBookingId },
     select: { paymentReceivedPercent: true },
   });
+  // docss/11 §1 — Buyback eligibility posts nothing until Stable Buyback
+  // Completion, unless the purchase itself has since reached 100%.
   if (trigger.paymentReceivedPercent.lt(100)) {
     const stable = await tx.acquisition.count({
-      where: {
-        sourceBookingId: credit.triggerBookingId,
-        type: "BUYBACK",
-        status: "APPROVED",
-        stableCompletedAt: { not: null },
-      },
+      where: { sourceBookingId: award.triggerBookingId, type: "BUYBACK", status: "APPROVED", stableCompletedAt: { not: null } },
     });
     if (stable === 0) return "BUYBACK_STABLE_COMPLETION_PENDING";
   }
-  if (credit.recipient === "NON_FAMILY" && !credit.recipientApprovedAt) return "NOMINEE_APPROVAL_PENDING";
   return null;
 }
 
 /**
- * The Royalty Credit for one Customer, recomputed from current state.
- * Idempotent and serialised per Customer (UAT SYS-09: one Credit per
- * opportunity however the events race).
+ * Rechecks one award's hold. A PENDING award with none posts its tokens (one
+ * AWARD_POSTED per posting cycle); a RELEASED award with one is restricted —
+ * still earned, never used to fund anything. Then the Member is settled.
+ */
+export async function refreshAward(tx: Tx, awardId: string, actorRef: string) {
+  const found = await tx.royaltyAward.findUnique({ where: { id: awardId }, select: { memberProfileId: true } });
+  if (!found) return;
+  await lockMember(tx, found.memberProfileId);
+  const award = await tx.royaltyAward.findUniqueOrThrow({
+    where: { id: awardId },
+    include: {
+      memberProfile: { select: { personId: true, status: true, memberId: true, person: { select: { fullName: true } } } },
+      customerProfile: { select: { customerId: true } },
+      triggerBooking: { select: { bookingNumber: true } },
+    },
+  });
+  if (award.state === "REVERSED") return;
+
+  // CP §55, §58 — the release controls raise their reviews even behind another hold.
+  const control = await controlHoldReason(tx, {
+    recordKind: AWARD_RECORD_KIND,
+    recordId: award.id,
+    personId: award.memberProfile.personId,
+    recordName: `${award.memberProfile.memberId} · ${award.memberProfile.person.fullName} · ${award.customerProfile.customerId}`,
+  });
+  const hold = (await holdFor(tx, award, award.memberProfile)) ?? control;
+  if (hold !== award.holdReason) {
+    await tx.royaltyAward.update({ where: { id: award.id }, data: { holdReason: hold } });
+    await awardEvent(tx, award.id, actorRef, hold ? "HELD" : "CLEARED", award.holdReason ?? undefined, hold ?? undefined);
+  }
+
+  if (award.state === "PENDING" && !hold) {
+    const cycle = award.postings + 1;
+    await tx.tokenLedgerEntry.create({
+      data: {
+        memberProfileId: award.memberProfileId,
+        kind: "AWARD_POSTED",
+        tokens: award.tokens,
+        awardId: award.id,
+        cycle,
+        actorRef,
+        reason: `${award.triggerBooking.bookingNumber} — Royalty from ${award.customerProfile.customerId}`,
+      },
+    });
+    await tx.royaltyAward.update({ where: { id: award.id }, data: { state: "RELEASED", postings: cycle, releasedAt: new Date() } });
+    await awardEvent(tx, award.id, actorRef, "POSTED", "PENDING", "RELEASED", `${award.tokens} tokens`);
+  }
+  await settleMember(tx, award.memberProfileId);
+}
+
+/**
+ * The award for one Customer, recomputed from current state. Idempotent and
+ * serialised per Customer: re-running it, or receiving the same event twice,
+ * changes nothing the second time.
  */
 export async function syncRoyaltyReward(tx: Tx, customerPersonId: string, actorRef: string) {
   const customer = await tx.customerProfile.findUnique({ where: { personId: customerPersonId } });
   if (!customer) return null;
   await lockKey(tx, `royalty:${customer.id}`);
 
-  // 1. The live Credit still stands only while its Booking still qualifies.
-  let live = await tx.royaltyCredit.findFirst({
-    where: { customerProfileId: customer.id, state: { in: [...LIVE_STATES] } },
-  });
+  // 1. A live award stands only while its link is final to its Member and its
+  //    Booking still qualifies.
+  let live = await tx.royaltyAward.findFirst({ where: { customerProfileId: customer.id, state: { in: [...LIVE] } } });
   if (live) {
     const trigger = await tx.booking.findUniqueOrThrow({ where: { id: live.triggerBookingId } });
-    const linkHolds = customer.royaltyLinkFinalAt && customer.royaltyLinkedMemberId === live.memberProfileId;
+    const linkHolds = customer.royaltyLinkFinalAt !== null && customer.royaltyLinkedMemberId === live.memberProfileId;
     if (!linkHolds || !(await triggerRoute(tx, trigger))) {
-      await reverseUndeliveredCredit(
+      await reverseAward(
         tx,
-        customer.id,
+        live.id,
         actorRef,
         linkHolds
           ? `${trigger.bookingNumber} no longer qualifies (payment, Buyback, cancellation or Sold By changed).`
@@ -158,9 +272,10 @@ export async function syncRoyaltyReward(tx: Tx, customerPersonId: string, actorR
     }
   }
 
-  // 2. With the opportunity unused, the first qualifying Club-direct purchase earns it.
-  // SSOT §100 — one real person, one opportunity: a merged-away identity earns
-  // nothing, and one consumed under a merged identity is consumed here too.
+  // 2. With none live: an unused opportunity is taken by the first qualifying
+  //    Club-direct purchase; a consumed one can only bring its own award back.
+  //    SSOT §100 — one real person, one opportunity: a merged-away identity
+  //    earns nothing, and one consumed under a merged identity is consumed here.
   const identity = await tx.person.findUniqueOrThrow({
     where: { id: customerPersonId },
     select: { mergeStatus: true, mergedPersons: { select: { customerProfile: { select: { royaltyOpportunityConsumedAt: true } } } } },
@@ -168,341 +283,508 @@ export async function syncRoyaltyReward(tx: Tx, customerPersonId: string, actorR
   const consumedByMerge =
     identity.mergeStatus === "MERGED_AWAY" || identity.mergedPersons.some((p) => p.customerProfile?.royaltyOpportunityConsumedAt);
   const fresh = await tx.customerProfile.findUniqueOrThrow({ where: { id: customer.id } });
-  if (!live && !consumedByMerge && !fresh.royaltyOpportunityConsumedAt && fresh.royaltyLinkFinalAt && fresh.royaltyLinkedMemberId) {
-    const candidates = (await originalPurchasesOf(tx, customerPersonId))
-      .filter((b) => b.id !== fresh.royaltyLinkFirstBookingId && b.royaltyProgrammeVersionId)
-      .sort((a, b) => (a.bookingNumber! < b.bookingNumber! ? -1 : 1));
+  const linkedMemberId = fresh.royaltyLinkedMemberId;
+  if (!live && !consumedByMerge && fresh.royaltyLinkFinalAt && linkedMemberId) {
+    const bound = fresh.royaltyOpportunityConsumedAt
+      ? await tx.royaltyAward.findFirst({
+          where: { customerProfileId: customer.id, state: "REVERSED", consumedAt: { not: null } },
+          orderBy: { consumedAt: "desc" },
+        })
+      : null;
+    const candidates = fresh.royaltyOpportunityConsumedAt
+      ? bound && bound.memberProfileId === linkedMemberId
+        ? [await tx.booking.findUniqueOrThrow({ where: { id: bound.triggerBookingId } })]
+        : []
+      : (await originalPurchasesOf(tx, customerPersonId))
+          .filter((b) => b.id !== fresh.royaltyLinkFirstBookingId && b.royaltyTokensPerAward !== null)
+          .sort((a, b) => (a.bookingNumber! < b.bookingNumber! ? -1 : 1));
+
     for (const booking of candidates) {
       const route = await triggerRoute(tx, booking);
       if (!route) continue;
-      const previous = await tx.royaltyCredit.findUnique({ where: { triggerBookingId: booking.id } });
-      const data = {
-        customerProfileId: customer.id,
-        memberProfileId: fresh.royaltyLinkedMemberId,
-        programmeVersionId: booking.royaltyProgrammeVersionId!,
-        state: "ELIGIBLE" as const,
+      const previous = await tx.royaltyAward.findUnique({ where: { triggerBookingId: booking.id } });
+      const state = {
+        memberProfileId: linkedMemberId,
+        state: "PENDING" as const,
         qualificationRoute: route,
-        eligibleAt: new Date(),
+        qualifiedAt: new Date(),
         holdReason: null,
-        selectedRewardRef: null,
-        selectedAt: null,
-        recipient: null,
-        recipientName: null,
-        recipientApprovedByRef: null,
-        recipientApprovedAt: null,
-        orderedAt: null,
-        orderReference: null,
         reversedAt: null,
         reversalReason: null,
       };
-      // SSOT §99 — the same Booking re-qualifying brings the same entitlement back.
-      live = previous
-        ? await tx.royaltyCredit.update({ where: { id: previous.id }, data })
-        : await tx.royaltyCredit.create({ data: { ...data, triggerBookingId: booking.id } });
-      await tx.customerProfile.update({ where: { id: customer.id }, data: { royaltyOpportunityConsumedAt: new Date() } });
-      await event(
+      if (previous) {
+        // docss/11 §1 — a legitimate requalification restores the same award,
+        // under its original saved rate; never a second benefit.
+        live = await tx.royaltyAward.update({ where: { id: previous.id }, data: state });
+      } else {
+        const approved = await tx.bookingReviewVersion.findFirst({
+          where: { bookingId: booking.id, status: "APPROVED" },
+          orderBy: { version: "desc" },
+          select: { version: true },
+        });
+        live = await tx.royaltyAward.create({
+          data: {
+            ...state,
+            customerProfileId: customer.id,
+            triggerBookingId: booking.id,
+            bookingReviewVersion: approved?.version ?? 1,
+            projectId: booking.projectId,
+            tokens: booking.royaltyTokensPerAward!,
+          },
+        });
+      }
+      if (!fresh.royaltyOpportunityConsumedAt) {
+        await tx.customerProfile.update({ where: { id: customer.id }, data: { royaltyOpportunityConsumedAt: new Date() } });
+      }
+      await awardEvent(
         tx,
         live.id,
         actorRef,
-        previous ? "REQUALIFIED" : "ELIGIBLE",
+        previous ? "RESTORED" : "QUALIFIED",
         previous?.state,
-        "ELIGIBLE",
+        "PENDING",
         `${booking.bookingNumber} — ${route === "PAYMENT_100" ? "100% Payment Received" : "Approved Buyback after 25%"}.`
       );
       break;
     }
   }
 
-  if (live) await refreshCredit(tx, live.id, actorRef);
+  if (live) await refreshAward(tx, live.id, actorRef);
   return live?.id ?? null;
 }
 
-/** Recomputes a live Credit's hold and its fulfilment task. */
-export async function refreshCredit(tx: Tx, creditId: string, actorRef: string) {
-  const credit = await tx.royaltyCredit.findUniqueOrThrow({
-    where: { id: creditId },
-    include: {
-      memberProfile: { select: { personId: true, status: true, memberId: true, person: { select: { fullName: true } } } },
-      customerProfile: { select: { customerId: true } },
-    },
-  });
-  if (!LIVE_STATES.includes(credit.state as (typeof LIVE_STATES)[number])) return;
-  // CP §55, §58 — the release controls raise their reviews even behind another hold.
-  const control = await controlHoldReason(tx, {
-    recordKind: CREDIT_RECORD_KIND,
-    recordId: credit.id,
-    personId: credit.memberProfile.personId,
-    recordName: `${credit.memberProfile.memberId} · ${credit.memberProfile.person.fullName} · ${credit.customerProfile.customerId}`,
-  });
-  const hold = (await holdFor(tx, credit, credit.memberProfile)) ?? control;
-  if (hold !== credit.holdReason) {
-    await tx.royaltyCredit.update({ where: { id: credit.id }, data: { holdReason: hold } });
-    await event(tx, credit.id, actorRef, hold ? "HELD" : "RELEASED", credit.holdReason ?? undefined, hold ?? undefined);
-  }
-  // CP §65 NT06, §66 — one task when the human work can start, not before.
-  if (!hold) {
-    await ensureTask(tx, {
-      recordKind: CREDIT_RECORD_KIND,
-      recordId: credit.id,
-      recordName: `${credit.memberProfile.memberId} · ${credit.memberProfile.person.fullName} · ${credit.customerProfile.customerId}`,
-      purpose: GIFT_FULFILMENT_PURPOSE,
-      title: "Royalty Gift Selection / Fulfilment",
-      assigneeRole: "CRM",
-      dueAt: new Date(),
-      latestResult: "Royalty Credit eligible. Record the Gift chosen from the frozen catalogue, then the order and delivery.",
-    });
-  }
+/**
+ * SSOT §100; CP §59 — the Customer's live award, reversed: a merge made it a
+ * duplicate, or a Sold By Correction moved the relationship it rested on.
+ */
+export async function reverseLiveAward(tx: Tx, customerProfileId: string, actorRef: string, reason: string) {
+  await lockKey(tx, `royalty:${customerProfileId}`);
+  const live = await tx.royaltyAward.findFirst({ where: { customerProfileId, state: { in: [...LIVE] } } });
+  if (live) await reverseAward(tx, live.id, actorRef, reason);
+  return live;
 }
 
-/**
- * CP §76.3, §76.4, §86 — re-evaluates the Credits a Member owns after a
- * Recovery, a deactivation or reactivation changed what holds them.
- */
-export async function refreshCreditsOfMember(tx: Tx, memberPersonId: string, actorRef: string) {
-  const credits = await tx.royaltyCredit.findMany({
-    where: { memberProfile: { personId: memberPersonId }, state: { in: [...LIVE_STATES] } },
+/** CP §76.3, §76.4, §86 — a Recovery, deactivation or reactivation changed what holds this Member's awards. */
+export async function refreshAwardsOfMember(tx: Tx, memberPersonId: string, actorRef: string) {
+  const awards = await tx.royaltyAward.findMany({
+    where: { memberProfile: { personId: memberPersonId }, state: { in: [...LIVE] } },
     select: { id: true },
   });
-  for (const { id } of credits) await refreshCredit(tx, id, actorRef);
-  return credits.length;
+  for (const { id } of awards) await refreshAward(tx, id, actorRef);
+  return awards.length;
 }
 
-/** SSOT §80 — a Buyback became, or stopped being, stable: its Booking's Credit is rechecked. */
-export async function refreshCreditOfBooking(tx: Tx, bookingId: string, actorRef: string) {
-  const credit = await tx.royaltyCredit.findUnique({ where: { triggerBookingId: bookingId }, select: { id: true } });
-  if (credit) await refreshCredit(tx, credit.id, actorRef);
-}
-
-/* ------------------------------------------------------------ fulfilment */
-
-type Actor = { idempotencyKey: string; actorRef: string; actorRole: string };
-
-/** CP §77 — CRM supports fulfilment; Admin operates it. */
-function fulfilmentRole(role: string) {
-  if (role !== "CRM" && role !== "ADMIN") blocked("Only CRM or Admin records Royalty Gift fulfilment.");
-}
-
-async function lockedCredit(tx: Tx, creditId: string) {
-  const found = await tx.royaltyCredit.findUnique({ where: { id: creditId }, select: { customerProfileId: true } });
-  if (!found) blocked("That Royalty Credit no longer exists.");
-  await lockKey(tx, `royalty:${found.customerProfileId}`);
-  return tx.royaltyCredit.findUniqueOrThrow({ where: { id: creditId } });
-}
-
-/**
- * Terms 6.2 §18, §20; doc 5 §6, §70 — the Gift chosen from the frozen
- * catalogue, and who receives it. A non-family recipient needs MD (NT10) and
- * holds fulfilment until approved. The choice may change until ordering.
- */
-export async function selectRoyaltyGift(
-  args: Actor & { creditId: string; rewardRef: string; recipient: RewardRecipient; recipientName: string }
-) {
-  fulfilmentRole(args.actorRole);
-  if (!args.rewardRef.trim()) blocked("Enter the Reward Reference from the Programme's catalogue.");
-  if (args.recipient !== "SELF" && !args.recipientName.trim()) blocked("Enter the recipient's name.");
-
-  return runCommand<{ creditId: string }>(
-    {
-      idempotencyKey: args.idempotencyKey,
-      operation: "ROYALTY_GIFT_SELECT",
-      actorRef: args.actorRef,
-      actorRole: args.actorRole,
-      payload: { creditId: args.creditId, rewardRef: args.rewardRef.trim(), recipient: args.recipient },
-    },
-    async (tx) => {
-      const credit = await lockedCredit(tx, args.creditId);
-      if (credit.state !== "ELIGIBLE" && credit.state !== "SELECTED") {
-        blocked("The Gift can only be chosen or changed before it is ordered.");
-      }
-      const recipientName = args.recipient === "SELF" ? null : args.recipientName.trim();
-      await tx.royaltyCredit.update({
-        where: { id: credit.id },
-        data: {
-          state: "SELECTED",
-          selectedRewardRef: args.rewardRef.trim(),
-          selectedAt: new Date(),
-          recipient: args.recipient,
-          recipientName,
-          recipientApprovedByRef: null,
-          recipientApprovedAt: null,
-        },
-      });
-      await event(tx, credit.id, args.actorRef, "SELECTED", credit.state, "SELECTED", `${args.rewardRef.trim()} for ${args.recipient}`);
-      if (args.recipient === "NON_FAMILY") {
-        await ensureTask(tx, {
-          recordKind: CREDIT_RECORD_KIND,
-          recordId: credit.id,
-          recordName: recipientName!,
-          purpose: NOMINEE_APPROVAL_PURPOSE,
-          title: "Non-Family Reward Nominee Approval",
-          assigneeRole: "MD",
-          dueAt: new Date(),
-          decision: true,
-          latestResult: `Royalty Gift ${args.rewardRef.trim()} to ${recipientName}, who is not immediate family.`,
-        });
-      } else {
-        await closeTasksFor(tx, CREDIT_RECORD_KIND, credit.id, args.actorRef, "Recipient changed to family.", NOMINEE_APPROVAL_PURPOSE);
-      }
-      await refreshCredit(tx, credit.id, args.actorRef);
-      return {
-        result: { creditId: credit.id },
-        audit: {
-          entity: "RoyaltyCredit",
-          entityId: credit.id,
-          action: "ROYALTY_GIFT_SELECTED",
-          after: { rewardRef: args.rewardRef.trim(), recipient: args.recipient, recipientName },
-        },
-      };
-    }
-  );
-}
-
-/** CP §65 NT10; doc 5 §6 — MD approves or rejects a non-family recipient. */
-export async function decideRoyaltyRecipient(args: Actor & { creditId: string; approve: boolean; note: string }) {
-  if (args.actorRole !== "MD") blocked("Only MD decides a non-family recipient.");
-  if (!args.note.trim()) blocked("A compulsory note is required.");
-
-  return runCommand<{ creditId: string }>(
-    {
-      idempotencyKey: args.idempotencyKey,
-      operation: "ROYALTY_RECIPIENT_DECIDE",
-      actorRef: args.actorRef,
-      actorRole: args.actorRole,
-      payload: { creditId: args.creditId, approve: args.approve },
-    },
-    async (tx) => {
-      const credit = await lockedCredit(tx, args.creditId);
-      if (credit.recipient !== "NON_FAMILY" || credit.recipientApprovedAt || credit.state !== "SELECTED") {
-        blocked("No non-family recipient is waiting for MD on this Royalty Credit.");
-      }
-      const note = args.note.trim();
-      await tx.royaltyCredit.update({
-        where: { id: credit.id },
-        data: args.approve
-          ? { recipientApprovedByRef: args.actorRef, recipientApprovedAt: new Date() }
-          : // Refused: the Gift goes back to being chosen, with a family or own recipient.
-            { state: "ELIGIBLE", recipient: null, recipientName: null, selectedAt: null, selectedRewardRef: null },
-      });
-      await event(tx, credit.id, args.actorRef, args.approve ? "RECIPIENT_APPROVED" : "RECIPIENT_REJECTED", credit.state, args.approve ? credit.state : "ELIGIBLE", note);
-      await closeTasksFor(tx, CREDIT_RECORD_KIND, credit.id, args.actorRef, `${args.approve ? "Approved" : "Rejected"} — ${note}`, NOMINEE_APPROVAL_PURPOSE);
-      await refreshCredit(tx, credit.id, args.actorRef);
-      return {
-        result: { creditId: credit.id },
-        audit: {
-          entity: "RoyaltyCredit",
-          entityId: credit.id,
-          action: args.approve ? "ROYALTY_RECIPIENT_APPROVED" : "ROYALTY_RECIPIENT_REJECTED",
-          after: { recipientName: credit.recipientName },
-          reason: note,
-        },
-      };
-    }
-  );
-}
-
-/** Terms 6.2 §18, §33 — ordered from the supplier; the choice locks. */
-/** CP §58, §78 — the Gift's owner, for the independent-processor check. */
-async function giftOwner(creditId: string) {
-  const credit = await db.royaltyCredit.findUnique({ where: { id: creditId }, select: { memberProfile: { select: { personId: true } } } });
-  if (!credit) blocked("That Royalty Credit no longer exists.");
-  return credit.memberProfile.personId;
-}
-
-export async function orderRoyaltyGift(args: Actor & { creditId: string; orderReference: string; orderedOn: Date }) {
-  fulfilmentRole(args.actorRole);
-  await assertIndependent({ ...args, beneficiaryPersonId: await giftOwner(args.creditId), action: "ROYALTY_GIFT_ORDER" });
-  if (!args.orderReference.trim()) blocked("Enter the order reference.");
-  const dated = notFutureDated("Order date", args.orderedOn);
-  if (!dated.ok) blocked(dated.reason);
-
-  return runCommand<{ creditId: string }>(
-    {
-      idempotencyKey: args.idempotencyKey,
-      operation: "ROYALTY_GIFT_ORDER",
-      actorRef: args.actorRef,
-      actorRole: args.actorRole,
-      payload: { creditId: args.creditId, orderReference: args.orderReference.trim() },
-    },
-    async (tx) => {
-      const credit = await lockedCredit(tx, args.creditId);
-      if (credit.state !== "SELECTED") blocked("Choose the Gift and its recipient before ordering it.");
-      await refreshCredit(tx, credit.id, args.actorRef);
-      const now = await tx.royaltyCredit.findUniqueOrThrow({ where: { id: credit.id } });
-      if (now.holdReason) blocked(`Fulfilment is on hold: ${now.holdReason.replaceAll("_", " ").toLowerCase()}.`);
-      await tx.royaltyCredit.update({
-        where: { id: credit.id },
-        data: { state: "ORDERED", orderedAt: args.orderedOn, orderReference: args.orderReference.trim() },
-      });
-      await event(tx, credit.id, args.actorRef, "ORDERED", "SELECTED", "ORDERED", args.orderReference.trim());
-      return {
-        result: { creditId: credit.id },
-        audit: { entity: "RoyaltyCredit", entityId: credit.id, action: "ROYALTY_GIFT_ORDERED", after: { orderReference: args.orderReference.trim() } },
-      };
-    }
-  );
-}
-
-/**
- * SSOT §64; Terms 6.2 §26 — delivered: the opportunity and the Credit stay
- * consumed forever; a later cancellation does not reopen them.
- */
-export async function deliverRoyaltyGift(
-  args: Actor & { creditId: string; deliveredOn: Date; deliveryReference: string }
-) {
-  fulfilmentRole(args.actorRole);
-  await assertIndependent({ ...args, beneficiaryPersonId: await giftOwner(args.creditId), action: "ROYALTY_GIFT_DELIVER" });
-  const dated = notFutureDated("Delivery date", args.deliveredOn);
-  if (!dated.ok) blocked(dated.reason);
-
-  return runCommand<{ creditId: string }>(
-    {
-      idempotencyKey: args.idempotencyKey,
-      operation: "ROYALTY_GIFT_DELIVER",
-      actorRef: args.actorRef,
-      actorRole: args.actorRole,
-      payload: { creditId: args.creditId },
-    },
-    async (tx) => {
-      const credit = await lockedCredit(tx, args.creditId);
-      if (credit.state !== "ORDERED") blocked("Only an ordered Gift can be marked delivered.");
-      await refreshCredit(tx, credit.id, args.actorRef);
-      const now = await tx.royaltyCredit.findUniqueOrThrow({ where: { id: credit.id } });
-      if (now.holdReason) blocked(`Fulfilment is on hold: ${now.holdReason.replaceAll("_", " ").toLowerCase()}.`);
-      await tx.royaltyCredit.update({
-        where: { id: credit.id },
-        data: {
-          state: "DELIVERED",
-          deliveredAt: args.deliveredOn,
-          deliveryReference: args.deliveryReference.trim() || null,
-          holdReason: null,
-        },
-      });
-      await event(tx, credit.id, args.actorRef, "DELIVERED", "ORDERED", "DELIVERED", args.deliveryReference.trim() || undefined);
-      await closeTasksFor(tx, CREDIT_RECORD_KIND, credit.id, args.actorRef, "Gift delivered.", GIFT_FULFILMENT_PURPOSE);
-      return {
-        result: { creditId: credit.id },
-        audit: {
-          entity: "RoyaltyCredit",
-          entityId: credit.id,
-          action: "ROYALTY_GIFT_DELIVERED",
-          after: { deliveredOn: args.deliveredOn.toISOString(), deliveryReference: args.deliveryReference.trim() || null },
-        },
-      };
-    }
-  );
+/** SSOT §80 — a Buyback became, or stopped being, stable: its Booking's award is rechecked. */
+export async function refreshAwardOfBooking(tx: Tx, bookingId: string, actorRef: string) {
+  const award = await tx.royaltyAward.findUnique({ where: { triggerBookingId: bookingId }, select: { id: true } });
+  if (award) await refreshAward(tx, award.id, actorRef);
 }
 
 /**
  * CP §60; SSOT §98 — whether a Sold By Correction on this Booking would touch
- * a delivered Gift: the Booking triggered one, or is the first purchase of a
- * Customer whose Gift was delivered. Such a correction needs MD.
+ * tokens already used: the Booking triggered a consumed award, or is the first
+ * purchase of a Customer whose award was consumed. Such a correction needs MD.
  */
-export async function touchesDeliveredGift(tx: Tx, bookingId: string): Promise<boolean> {
-  const count = await tx.royaltyCredit.count({
+export async function touchesConsumedAward(tx: Tx, bookingId: string): Promise<boolean> {
+  const count = await tx.royaltyAward.count({
     where: {
-      state: "DELIVERED",
+      consumedAt: { not: null },
       OR: [{ triggerBookingId: bookingId }, { customerProfile: { royaltyLinkFirstBookingId: bookingId } }],
     },
   });
   return count > 0;
 }
+
+/* ------------------------------------------------------------- position */
+
+export type MemberHold = "MERGED_AWAY" | "MEMBER_DEACTIVATED" | "RECOVERY_OUTSTANDING";
+
+export type TokenPosition = {
+  earned: number;
+  spent: number;
+  balance: number;
+  /** Released, unrestricted tokens free to spend, less any deficit. Negative in deficit. */
+  available: number;
+  /** Released tokens whose source is on hold: earned, but not usable. */
+  restricted: number;
+  restrictions: RewardHoldReason[];
+  memberHold: MemberHold | null;
+};
+
+/** docss/11 §1 — the three figures from the ledger, and what can be spent now. */
+export async function tokenPosition(tx: Tx, memberProfileId: string): Promise<TokenPosition> {
+  const member = await tx.memberProfile.findUniqueOrThrow({
+    where: { id: memberProfileId },
+    select: { status: true, personId: true, person: { select: { mergeStatus: true } } },
+  });
+  const live = { where: { voidedAt: null }, select: { tokens: true } } as const;
+  const [ledger, awards, redemptions] = await Promise.all([
+    tx.tokenLedgerEntry.findMany({ where: { memberProfileId }, select: { kind: true, tokens: true } }),
+    tx.royaltyAward.findMany({ where: { memberProfileId, state: "RELEASED" }, include: { allocations: live } }),
+    tx.tokenRedemption.findMany({ where: { memberProfileId, state: "RECORDED" }, include: { allocations: live } }),
+  ]);
+  const unfunded = redemptions.reduce((n, r) => n + r.tokens - sum(r.allocations), 0);
+  const free = (held: boolean) =>
+    awards.filter((a) => (a.holdReason !== null) === held).reduce((n, a) => n + a.tokens - sum(a.allocations), 0);
+  const memberHold: MemberHold | null =
+    member.person.mergeStatus === "MERGED_AWAY"
+      ? "MERGED_AWAY"
+      : member.status === "DEACTIVATED"
+        ? "MEMBER_DEACTIVATED"
+        : (await outstandingRecovery(tx, member.personId))
+          ? "RECOVERY_OUTSTANDING"
+          : null;
+  return {
+    ...tokenFigures(ledger),
+    available: free(false) - unfunded,
+    restricted: free(true),
+    restrictions: [...new Set(awards.flatMap((a) => (a.holdReason && a.tokens > sum(a.allocations) ? [a.holdReason] : [])))],
+    memberHold,
+  };
+}
+
+const HOLD_WORDS: Record<string, string> = {
+  RECOVERY_OUTSTANDING: "an outstanding Recovery",
+  MEMBER_DEACTIVATED: "the Member being Deactivated",
+  BUYBACK_STABLE_COMPLETION_PENDING: "a Buyback not yet stably complete",
+  STAFF_CONFLICT_REVIEW: "a staff conflict review",
+  RECOVERY_CIRCUMVENTION_REVIEW: "a Recovery circumvention review",
+};
+
+/** Staff-facing: why spending is blocked or limited now. */
+export function tokenBlockers(p: TokenPosition): string[] {
+  const out: string[] = [];
+  if (p.memberHold === "MERGED_AWAY") out.push("This identity was merged into another; record spending on the surviving Member.");
+  if (p.memberHold === "MEMBER_DEACTIVATED") out.push("The Member is Deactivated: spending is blocked until reactivation. The balance is kept.");
+  if (p.memberHold === "RECOVERY_OUTSTANDING") out.push("The Member has an outstanding Recovery: spending is blocked until it is cleared. The balance is kept.");
+  if (p.available < 0) out.push(`The balance is below zero by ${-p.available} tokens; tokens earned next cover it first.`);
+  if (p.restricted > 0) {
+    out.push(`${p.restricted} tokens are restricted while their source is held (${p.restrictions.map((r) => HOLD_WORDS[r] ?? r).join(", ")}).`);
+  }
+  return out;
+}
+
+/** Member-safe: one sentence when something stops spending. */
+function memberNotice(p: TokenPosition): string | null {
+  if (p.memberHold === "MEMBER_DEACTIVATED") return "Spending is paused while your membership is inactive.";
+  if (p.memberHold === "RECOVERY_OUTSTANDING") return "Spending is paused while an amount is being recovered.";
+  if (p.available < 0) return `Your balance is below zero by ${-p.available} tokens. Tokens you earn next will cover this first.`;
+  if (p.restricted > 0) return "Some tokens are under review and cannot be used yet.";
+  return null;
+}
+
+function refuseUnlessSpendable(p: TokenPosition, tokens: number) {
+  const reasons = tokenBlockers(p);
+  if (p.memberHold) blocked(reasons.join(" "));
+  if (tokens > p.available) {
+    blocked(`Not enough tokens: ${Math.max(0, p.available)} can be spent now.${reasons.length ? ` ${reasons.join(" ")}` : ""}`);
+  }
+}
+
+/** Every live award of the Member rechecked — holds re-read, anything releasable posted. */
+async function refreshMemberAwards(tx: Tx, memberProfileId: string, actorRef: string) {
+  const awards = await tx.royaltyAward.findMany({ where: { memberProfileId, state: { in: [...LIVE] } }, select: { id: true } });
+  for (const { id } of awards) await refreshAward(tx, id, actorRef);
+}
+
+/* ---------------------------------------------------------- redemptions */
+
+type Actor = { idempotencyKey: string; actorRef: string; actorRole: string };
+
+/** docss/11 §1 — recording spending keeps the existing CRM/Admin fulfilment permission. */
+function fulfilmentRole(role: string) {
+  if (role !== "CRM" && role !== "ADMIN") blocked("Only CRM or Admin records token spending.");
+}
+
+async function postRedemption(tx: Tx, redemption: { id: string; memberProfileId: string; tokens: number; reference: string | null }, actorRef: string) {
+  await tx.tokenLedgerEntry.create({
+    data: {
+      memberProfileId: redemption.memberProfileId,
+      kind: "REDEMPTION",
+      tokens: -redemption.tokens,
+      redemptionId: redemption.id,
+      actorRef,
+      reason: redemption.reference,
+    },
+  });
+  await settleMember(tx, redemption.memberProfileId);
+}
+
+async function ownerOf(memberProfileId: string) {
+  const member = await db.memberProfile.findUnique({ where: { id: memberProfileId }, select: { personId: true, memberId: true } });
+  if (!member) blocked("That Member no longer exists.");
+  return member;
+}
+
+/**
+ * docss/11 §1 — staff record spending arranged outside the CRM. Holds are
+ * rechecked and availability recomputed under the Member lock, so two
+ * redemptions at once can never overspend. A non-family recipient waits for MD
+ * (NT10) and posts only on approval.
+ */
+export async function recordTokenRedemption(
+  args: Actor & {
+    memberProfileId: string;
+    tokens: number;
+    redeemedOn: string;
+    recipient: RewardRecipient;
+    recipientName: string;
+    reference: string;
+  }
+) {
+  fulfilmentRole(args.actorRole);
+  const quantity = validateTokenQuantity("Tokens", args.tokens);
+  if (!quantity.ok) blocked(quantity.reason);
+  const dated = validateBusinessDay("Redemption date", args.redeemedOn, istDay(new Date()));
+  if (!dated.ok) blocked(dated.reason);
+  if (!RECIPIENTS.includes(args.recipient)) blocked("Choose who receives it.");
+  const recipientName = args.recipient === "SELF" ? null : args.recipientName.trim();
+  if (args.recipient !== "SELF" && !recipientName) blocked("Enter the recipient's name.");
+  const reference = args.reference.trim() || null;
+  const owner = await ownerOf(args.memberProfileId);
+  await assertIndependent({ ...args, beneficiaryPersonId: owner.personId, action: "TOKEN_REDEMPTION_RECORD" });
+
+  return runCommand<{ redemptionId: string; state: "RECORDED" | "AWAITING_MD" }>(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "TOKEN_REDEMPTION_RECORD",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { memberProfileId: args.memberProfileId, tokens: args.tokens, redeemedOn: args.redeemedOn, recipient: args.recipient, recipientName, reference },
+    },
+    async (tx) => {
+      await lockMember(tx, args.memberProfileId);
+      await refreshMemberAwards(tx, args.memberProfileId, args.actorRef);
+      refuseUnlessSpendable(await tokenPosition(tx, args.memberProfileId), args.tokens);
+
+      const nonFamily = args.recipient === "NON_FAMILY";
+      const redemption = await tx.tokenRedemption.create({
+        data: {
+          memberProfileId: args.memberProfileId,
+          tokens: args.tokens,
+          redeemedOn: new Date(`${args.redeemedOn}T00:00:00.000Z`),
+          recipient: args.recipient,
+          recipientName,
+          reference,
+          state: nonFamily ? "AWAITING_MD" : "RECORDED",
+          requestKey: args.idempotencyKey,
+          recordedByRef: args.actorRef,
+        },
+      });
+      if (nonFamily) {
+        await ensureTask(tx, {
+          recordKind: REDEMPTION_RECORD_KIND,
+          recordId: redemption.id,
+          recordName: `${owner.memberId} · ${args.tokens} tokens to ${recipientName}`,
+          purpose: NOMINEE_APPROVAL_PURPOSE,
+          title: "Non-Family Reward Nominee Approval",
+          assigneeRole: "MD",
+          dueAt: new Date(),
+          decision: true,
+          latestResult: `${args.tokens} Royalty tokens redeemed for ${recipientName}, who is not immediate family.`,
+        });
+      } else {
+        await postRedemption(tx, redemption, args.actorRef);
+      }
+      return {
+        result: { redemptionId: redemption.id, state: redemption.state as "RECORDED" | "AWAITING_MD" },
+        audit: {
+          entity: "MemberProfile",
+          entityId: args.memberProfileId,
+          action: nonFamily ? "TOKEN_REDEMPTION_AWAITING_MD" : "TOKEN_REDEMPTION_RECORDED",
+          after: { redemptionId: redemption.id, tokens: args.tokens, redeemedOn: args.redeemedOn, recipient: args.recipient, recipientName, reference },
+        },
+      };
+    }
+  );
+}
+
+/** CP §65 NT10; doc 5 §6 — MD approves or rejects a non-family redemption. Approval rechecks availability. */
+export async function decideTokenRedemption(args: Actor & { redemptionId: string; approve: boolean; note: string }) {
+  if (args.actorRole !== "MD") blocked("Only MD decides a non-family recipient.");
+  if (!args.note.trim()) blocked("A compulsory note is required.");
+  const found = await db.tokenRedemption.findUnique({ where: { id: args.redemptionId }, select: { memberProfileId: true } });
+  if (!found) blocked("That redemption no longer exists.");
+  const owner = await ownerOf(found.memberProfileId);
+  await assertIndependent({ ...args, beneficiaryPersonId: owner.personId, action: "TOKEN_REDEMPTION_DECIDE" });
+
+  return runCommand<{ redemptionId: string; state: "RECORDED" | "REJECTED" }>(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "TOKEN_REDEMPTION_DECIDE",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { redemptionId: args.redemptionId, approve: args.approve },
+    },
+    async (tx) => {
+      await lockMember(tx, found.memberProfileId);
+      const redemption = await tx.tokenRedemption.findUniqueOrThrow({ where: { id: args.redemptionId } });
+      if (redemption.state !== "AWAITING_MD") blocked("This redemption is not waiting for MD.");
+      const decided = { decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: args.note.trim() };
+      if (args.approve) {
+        await refreshMemberAwards(tx, redemption.memberProfileId, args.actorRef);
+        refuseUnlessSpendable(await tokenPosition(tx, redemption.memberProfileId), redemption.tokens);
+        // Recorded now: the funding queue counts from the moment it is spent.
+        await tx.tokenRedemption.update({ where: { id: redemption.id }, data: { state: "RECORDED", recordedAt: new Date(), ...decided } });
+        await postRedemption(tx, redemption, args.actorRef);
+      } else {
+        await tx.tokenRedemption.update({ where: { id: redemption.id }, data: { state: "REJECTED", ...decided } });
+      }
+      await closeTasksFor(
+        tx,
+        REDEMPTION_RECORD_KIND,
+        redemption.id,
+        args.actorRef,
+        `${args.approve ? "Approved" : "Rejected"} — ${args.note.trim()}`,
+        NOMINEE_APPROVAL_PURPOSE
+      );
+      return {
+        result: { redemptionId: redemption.id, state: args.approve ? ("RECORDED" as const) : ("REJECTED" as const) },
+        audit: {
+          entity: "MemberProfile",
+          entityId: redemption.memberProfileId,
+          action: args.approve ? "TOKEN_REDEMPTION_APPROVED" : "TOKEN_REDEMPTION_REJECTED",
+          after: { redemptionId: redemption.id, tokens: redemption.tokens, recipientName: redemption.recipientName },
+          reason: args.note.trim(),
+        },
+      };
+    }
+  );
+}
+
+/**
+ * docss/11 §1 — an erroneous redemption is corrected by a linked entry giving
+ * back exactly its tokens; its allocations are voided. The awards it used stay
+ * consumed: a correction never reopens a lifetime reward.
+ */
+export async function correctTokenRedemption(args: Actor & { redemptionId: string; reason: string }) {
+  if (args.actorRole !== "ADMIN" && args.actorRole !== "MD") blocked("Only Admin or MD corrects a recorded redemption.");
+  if (!args.reason.trim()) blocked("A compulsory reason is required.");
+  const found = await db.tokenRedemption.findUnique({ where: { id: args.redemptionId }, select: { memberProfileId: true } });
+  if (!found) blocked("That redemption no longer exists.");
+  const owner = await ownerOf(found.memberProfileId);
+  await assertIndependent({ ...args, beneficiaryPersonId: owner.personId, action: "TOKEN_REDEMPTION_CORRECT" });
+
+  return runCommand<{ redemptionId: string }>(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "TOKEN_REDEMPTION_CORRECT",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { redemptionId: args.redemptionId },
+    },
+    async (tx) => {
+      await lockMember(tx, found.memberProfileId);
+      const redemption = await tx.tokenRedemption.findUniqueOrThrow({ where: { id: args.redemptionId } });
+      if (redemption.state !== "RECORDED") blocked("Only a recorded redemption can be corrected.");
+      const entry = await tx.tokenLedgerEntry.findFirstOrThrow({ where: { redemptionId: redemption.id, kind: "REDEMPTION" } });
+      const reason = args.reason.trim();
+      await tx.tokenLedgerEntry.create({
+        data: {
+          memberProfileId: redemption.memberProfileId,
+          kind: "REDEMPTION_CORRECTED",
+          tokens: redemption.tokens,
+          redemptionId: redemption.id,
+          reversesEntryId: entry.id,
+          actorRef: args.actorRef,
+          reason,
+        },
+      });
+      await tx.tokenAllocation.updateMany({
+        where: { redemptionId: redemption.id, voidedAt: null },
+        data: { voidedAt: new Date(), voidReason: `Redemption corrected — ${reason}` },
+      });
+      await tx.tokenRedemption.update({
+        where: { id: redemption.id },
+        data: { state: "CORRECTED", correctedByRef: args.actorRef, correctedAt: new Date(), correctionReason: reason },
+      });
+      // The freed tokens may fund an older deficit.
+      await settleMember(tx, redemption.memberProfileId);
+      return {
+        result: { redemptionId: redemption.id },
+        audit: {
+          entity: "MemberProfile",
+          entityId: redemption.memberProfileId,
+          action: "TOKEN_REDEMPTION_CORRECTED",
+          before: { tokens: redemption.tokens, redeemedOn: redemption.redeemedOn.toISOString().slice(0, 10) },
+          reason,
+        },
+      };
+    }
+  );
+}
+
+/* ------------------------------------------------------------ read model */
+
+const dayOf = (d: Date) => d.toISOString().slice(0, 10);
+
+/**
+ * docss/11 §1 — what a screen shows. A Member sees only the three figures,
+ * each recorded redemption's tokens and date, and a one-line notice when
+ * something stops spending. Staff also see every redemption, the awards behind
+ * the balance (as history, never as wallets) and what can be recorded now.
+ */
+export async function memberTokenView(memberProfileId: string, audience: "STAFF" | "MEMBER") {
+  const position = await tokenPosition(db, memberProfileId);
+  const figures = { earned: position.earned, spent: position.spent, balance: position.balance };
+  const recorded = await db.tokenRedemption.findMany({
+    where: { memberProfileId, state: "RECORDED" },
+    orderBy: [{ redeemedOn: "desc" }, { recordedAt: "desc" }],
+    select: { tokens: true, redeemedOn: true },
+  });
+  const redemptions = recorded.map((r) => ({ tokens: r.tokens, redeemedOn: dayOf(r.redeemedOn) }));
+  if (audience === "MEMBER") return { figures, redemptions, notice: memberNotice(position), staff: null };
+
+  const [all, awards] = await Promise.all([
+    db.tokenRedemption.findMany({ where: { memberProfileId }, orderBy: [{ recordedAt: "desc" }] }),
+    db.royaltyAward.findMany({
+      where: { memberProfileId },
+      include: {
+        customerProfile: { select: { customerId: true, person: { select: { fullName: true } } } },
+        triggerBooking: { select: { id: true, bookingNumber: true } },
+        project: { select: { name: true } },
+      },
+      orderBy: { qualifiedAt: "desc" },
+    }),
+  ]);
+  return {
+    figures,
+    redemptions,
+    notice: memberNotice(position),
+    staff: {
+      canRecordUpTo: position.memberHold ? 0 : Math.max(0, position.available),
+      blockers: tokenBlockers(position),
+      redemptions: all.map((r) => ({
+        id: r.id,
+        memberProfileId: r.memberProfileId,
+        tokens: r.tokens,
+        redeemedOn: dayOf(r.redeemedOn),
+        state: r.state,
+        recipient: r.recipient,
+        recipientName: r.recipientName,
+        reference: r.reference,
+        recordedByRef: r.recordedByRef,
+        recordedAt: r.recordedAt.toISOString(),
+        decisionNote: r.decisionNote,
+        correctionReason: r.correctionReason,
+      })),
+      awards: awards.map((a) => ({
+        id: a.id,
+        customerId: a.customerProfile.customerId,
+        customerName: a.customerProfile.person.fullName,
+        bookingId: a.triggerBooking.id,
+        bookingNumber: a.triggerBooking.bookingNumber,
+        project: a.project.name,
+        tokens: a.tokens,
+        state: a.state,
+        holdReason: a.holdReason,
+        route: a.qualificationRoute,
+        consumed: a.consumedAt !== null,
+        qualifiedAt: a.qualifiedAt.toISOString(),
+        reversalReason: a.reversalReason,
+      })),
+    },
+  };
+}
+
+export type MemberTokenView = Awaited<ReturnType<typeof memberTokenView>>;

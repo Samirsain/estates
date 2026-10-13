@@ -184,17 +184,18 @@ export async function runReport(
     }
 
     case "ROYALTY": {
-      // CP §73.4; UAT VIS-10 — the relationship, its opportunity and the Gift it
-      // led to. Non-cash: no rate or amount column exists to show.
+      // CP §73.4; UAT VIS-10; docss/11 — the relationship, its one opportunity
+      // and the Royalty award it led to, in tokens. Non-cash: no rate, rupee or
+      // amount column exists to show.
       const rows = await db.customerProfile.findMany({
         where: { royaltyLinkFirstBookingId: { not: null }, person: NOT_MERGED_AWAY },
         include: {
           person: { select: { fullName: true } },
           royaltyLinkedMember: { select: { memberId: true, person: { select: { fullName: true } } } },
           royaltyLinkFirstBooking: { select: { bookingNumber: true, projectId: true, project: { select: { name: true } } } },
-          royaltyCredits: {
-            where: { state: { not: "REVERSED" } },
-            include: { triggerBooking: { select: { bookingNumber: true } }, programmeVersion: { select: { programmeRef: true } } },
+          royaltyAwards: {
+            include: { triggerBooking: { select: { bookingNumber: true } }, project: { select: { name: true } } },
+            orderBy: { updatedAt: "desc" },
             take: 1,
           },
         },
@@ -203,7 +204,7 @@ export async function runReport(
       return rows
         .filter((c) => !filters.projectId || c.royaltyLinkFirstBooking?.projectId === filters.projectId)
         .map((c) => {
-          const credit = c.royaltyCredits[0];
+          const award = c.royaltyAwards[0];
           return {
             customerId: c.customerId,
             customer: c.person.fullName,
@@ -215,12 +216,12 @@ export async function runReport(
             relationship: !c.royaltyLinkedMemberId ? "No Member" : c.royaltyLinkFinalAt ? "Final" : "Provisional",
             finalisedBy: c.royaltyLinkFinalRoute,
             opportunity: c.royaltyOpportunityConsumedAt ? "Consumed" : "Unused",
-            triggerBooking: credit?.triggerBooking.bookingNumber ?? null,
-            programmeVersion: credit?.programmeVersion.programmeRef ?? null,
-            giftState: credit?.state ?? null,
-            holdReason: credit?.holdReason ?? null,
-            selectedGift: credit?.selectedRewardRef ?? null,
-            deliveredOn: credit?.deliveredAt ?? null,
+            triggerBooking: award?.triggerBooking.bookingNumber ?? null,
+            awardProject: award?.project.name ?? null,
+            awardTokens: award?.tokens ?? null,
+            awardState: award?.state ?? null,
+            holdReason: award?.holdReason ?? null,
+            tokensUsed: award ? award.consumedAt !== null : null,
           };
         });
     }

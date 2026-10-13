@@ -24,6 +24,7 @@ export async function ensureActiveCommissionVersion(
       directPercent: "3",
       loyaltyEnabled: true,
       loyaltyPercent: "1",
+      royaltyTokensPerAward: 10,
       reason: "Seeded mock settings",
       preparedByRef: actorRef,
       submittedAt: now,

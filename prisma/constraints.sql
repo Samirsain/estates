@@ -749,39 +749,60 @@ ALTER TABLE "Recovery" ADD CONSTRAINT "recovery_cleared_stamps"
 CREATE UNIQUE INDEX IF NOT EXISTS "one_outstanding_recovery_per_record"
   ON "Recovery" ("commissionRecordId") WHERE "status" = 'OUTSTANDING';
 
--- ------------------------------------- Business Model v2 part 2 — Royalty Gift
+-- ---------------------------------------------- Royalty Tokens (docss/11)
 
--- SSOT §74, §75; CP §80 (7), (8) — one live Royalty Credit per Primary Customer,
--- and one per trigger Booking (the column is unique).
-CREATE UNIQUE INDEX IF NOT EXISTS "one_live_royalty_credit_per_customer"
-  ON "RoyaltyCredit" ("customerProfileId") WHERE "state" <> 'REVERSED';
+-- docss/11 §1, §2 — whole tokens, bounded to the range the service accepts.
+ALTER TABLE "ProjectCommissionVersion" DROP CONSTRAINT IF EXISTS "royalty_tokens_range";
+ALTER TABLE "ProjectCommissionVersion" ADD CONSTRAINT "royalty_tokens_range"
+  CHECK ("royaltyTokensPerAward" IS NULL OR "royaltyTokensPerAward" BETWEEN 1 AND 1000000);
+ALTER TABLE "Booking" DROP CONSTRAINT IF EXISTS "booking_royalty_tokens_range";
+ALTER TABLE "Booking" ADD CONSTRAINT "booking_royalty_tokens_range"
+  CHECK ("royaltyTokensPerAward" IS NULL OR "royaltyTokensPerAward" BETWEEN 1 AND 1000000);
 
--- SSOT §64, §78 — a delivered Gift names what, to whom and when; a reversed
--- Credit names why. A non-family recipient was approved by MD (doc 5 §6).
-ALTER TABLE "RoyaltyCredit" DROP CONSTRAINT IF EXISTS "royalty_credit_stamps";
-ALTER TABLE "RoyaltyCredit" ADD CONSTRAINT "royalty_credit_stamps"
-  CHECK (("state" NOT IN ('SELECTED', 'ORDERED', 'DELIVERED')
-          OR ("selectedRewardRef" IS NOT NULL AND "selectedAt" IS NOT NULL AND "recipient" IS NOT NULL))
-     AND ("state" NOT IN ('ORDERED', 'DELIVERED') OR ("orderedAt" IS NOT NULL AND "orderReference" IS NOT NULL))
-     AND ("state" <> 'DELIVERED' OR "deliveredAt" IS NOT NULL)
-     AND ("state" NOT IN ('ORDERED', 'DELIVERED') OR "recipient" <> 'NON_FAMILY' OR "recipientApprovedAt" IS NOT NULL)
+-- A released award has posted; a reversed one says when.
+ALTER TABLE "RoyaltyAward" DROP CONSTRAINT IF EXISTS "royalty_award_shape";
+ALTER TABLE "RoyaltyAward" ADD CONSTRAINT "royalty_award_shape"
+  CHECK ("tokens" BETWEEN 1 AND 1000000 AND "postings" >= 0
+     AND ("state" <> 'RELEASED' OR ("releasedAt" IS NOT NULL AND "postings" > 0))
      AND ("state" <> 'REVERSED' OR ("reversedAt" IS NOT NULL AND length(btrim(coalesce("reversalReason", ''))) > 0)));
 
--- SSOT §76; Terms 6.2 §38; CP §7.4 — an approved Programme Version carries its
--- approver, the economics review, and an effective time no earlier than approval.
-ALTER TABLE "RoyaltyProgrammeVersion" DROP CONSTRAINT IF EXISTS "royalty_programme_stamps";
-ALTER TABLE "RoyaltyProgrammeVersion" ADD CONSTRAINT "royalty_programme_stamps"
-  CHECK (length(btrim("programmeRef")) > 0 AND length(btrim("catalogueVersion")) > 0
-     AND length(btrim("termsVersion")) > 0
-     AND ("status" NOT IN ('APPROVED', 'ACTIVE', 'SUPERSEDED')
-          OR ("decidedByRef" IS NOT NULL AND "decidedAt" IS NOT NULL
-              AND "economicsReviewedAt" IS NOT NULL AND "economicsReviewedByRef" IS NOT NULL
-              AND "effectiveFrom" IS NOT NULL AND "effectiveFrom" >= "decidedAt"))
-     AND ("status" = 'DRAFT' OR "submittedAt" IS NOT NULL));
-CREATE UNIQUE INDEX IF NOT EXISTS "one_active_royalty_programme"
-  ON "RoyaltyProgrammeVersion" ((true)) WHERE "status" = 'ACTIVE';
-CREATE UNIQUE INDEX IF NOT EXISTS "one_open_royalty_programme"
-  ON "RoyaltyProgrammeVersion" ((true)) WHERE "status" IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED');
+-- SSOT §74 — the one lifetime opportunity: one live award per Customer.
+CREATE UNIQUE INDEX IF NOT EXISTS "one_live_royalty_award_per_customer"
+  ON "RoyaltyAward" ("customerProfileId") WHERE "state" <> 'REVERSED';
+
+-- Signs are fixed by kind, and each kind names what it is about.
+ALTER TABLE "TokenLedgerEntry" DROP CONSTRAINT IF EXISTS "token_entry_shape";
+ALTER TABLE "TokenLedgerEntry" ADD CONSTRAINT "token_entry_shape"
+  CHECK (abs("tokens") BETWEEN 1 AND 1000000
+     AND (("kind" IN ('AWARD_POSTED', 'REDEMPTION_CORRECTED')) = ("tokens" > 0))
+     AND (("kind" IN ('AWARD_POSTED', 'AWARD_REVERSED')) = ("awardId" IS NOT NULL AND "cycle" IS NOT NULL))
+     AND (("kind" IN ('REDEMPTION', 'REDEMPTION_CORRECTED')) = ("redemptionId" IS NOT NULL))
+     AND ("kind" NOT IN ('AWARD_REVERSED', 'REDEMPTION_CORRECTED') OR "reversesEntryId" IS NOT NULL));
+
+-- docss/11 §2 — append-only: an entry is never changed; a correction is a new
+-- linked entry. (The test purge and the reset script may still delete rows.)
+CREATE OR REPLACE FUNCTION token_ledger_no_update() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'Token ledger entries are append-only; record a reversal instead.';
+END $$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS token_ledger_append_only ON "TokenLedgerEntry";
+CREATE TRIGGER token_ledger_append_only BEFORE UPDATE ON "TokenLedgerEntry"
+  FOR EACH ROW EXECUTE FUNCTION token_ledger_no_update();
+
+-- A redemption names its recipient; a correction says who, when and why; an MD
+-- decision is stamped.
+ALTER TABLE "TokenRedemption" DROP CONSTRAINT IF EXISTS "token_redemption_shape";
+ALTER TABLE "TokenRedemption" ADD CONSTRAINT "token_redemption_shape"
+  CHECK ("tokens" BETWEEN 1 AND 1000000
+     AND ("recipient" = 'SELF' OR length(btrim(coalesce("recipientName", ''))) > 0)
+     AND ("state" <> 'CORRECTED'
+          OR ("correctedAt" IS NOT NULL AND "correctedByRef" IS NOT NULL
+              AND length(btrim(coalesce("correctionReason", ''))) > 0))
+     AND ("state" <> 'REJECTED' OR ("decidedAt" IS NOT NULL AND "decidedByRef" IS NOT NULL)));
+
+ALTER TABLE "TokenAllocation" DROP CONSTRAINT IF EXISTS "token_allocation_positive";
+ALTER TABLE "TokenAllocation" ADD CONSTRAINT "token_allocation_positive"
+  CHECK ("tokens" BETWEEN 1 AND 1000000 AND ("voidedAt" IS NULL OR length(btrim(coalesce("voidReason", ''))) > 0));
 
 -- ------------------------------------ Business Model v2 part 3 — Trip Reward
 

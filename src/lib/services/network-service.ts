@@ -12,8 +12,8 @@ import { blocked, nextReference, runCommand, type Tx } from "./command";
 import { CLOSING_LIMIT_PURPOSE, reassessCommission } from "./commission-service";
 import {
   originalPurchasesOf,
-  refreshCreditsOfMember,
-  reverseUndeliveredCredit,
+  refreshAwardsOfMember,
+  reverseLiveAward,
   syncRoyaltyReward,
 } from "./royalty-service";
 import { refreshTripOfMember } from "./trip-service";
@@ -196,7 +196,7 @@ export async function relinkAfterSoldByCorrection(tx: Tx, bookingId: string, act
             : "Sold By corrected — this first purchase now has no Royalty Linked Member (CP §59).",
         },
       });
-      await reverseUndeliveredCredit(tx, customer.id, actorRef, "Sold By corrected on the first purchase (CP §59).");
+      await reverseLiveAward(tx, customer.id, actorRef, "Sold By corrected on the first purchase (CP §59).");
     }
     await syncRoyaltyReward(tx, customer.personId, actorRef);
   }
@@ -448,7 +448,7 @@ export async function setMemberStatus(args: {
         if (bookingId) await reassessCommission(tx, bookingId, args.actorRef);
       }
       // SSOT §66, §82; CP §86 — the Member's Gift and Trip fulfilment hold or resume too.
-      await refreshCreditsOfMember(tx, member.personId, args.actorRef);
+      await refreshAwardsOfMember(tx, member.personId, args.actorRef);
       await refreshTripOfMember(tx, member.personId, args.actorRef);
 
       return {

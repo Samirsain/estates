@@ -163,7 +163,7 @@ export async function taskSubjects(
   const plotIds = idsFor("Plot");
   const acquisitionIds = idsFor("Acquisition");
   const commissionIds = idsFor("Commission");
-  const creditIds = idsFor("Royalty Credit");
+  const redemptionIds = idsFor("Token Redemption");
   const tripRewardIds = idsFor("Trip Reward");
   const tripBucketIds = idsFor("Trip Bucket");
 
@@ -187,7 +187,7 @@ export async function taskSubjects(
     customerProfile: { select: { customerId: true } },
   } as const;
 
-  const [bookings, enquiries, members, customers, plots, acquisitions, commissions, credits, tripOwners] =
+  const [bookings, enquiries, members, customers, plots, acquisitions, commissions, redemptions, tripOwners] =
     await Promise.all([
       bookingIds.length
         ? db.booking.findMany({
@@ -263,21 +263,11 @@ export async function taskSubjects(
             },
           })
         : [],
-      // SSOT §81 — a Royalty Credit's work is about the Member who owns it.
-      creditIds.length
-        ? db.royaltyCredit.findMany({
-            where: { id: { in: creditIds } },
-            select: {
-              id: true,
-              triggerBooking: {
-                select: {
-                  bookingNumber: true,
-                  project: { select: { name: true } },
-                  plot: { select: { id: true, plotNumber: true } },
-                },
-              },
-              memberProfile: { select: { person: { select: personSelect } } },
-            },
+      // docss/11 — a token redemption's work is about the Member who spends.
+      redemptionIds.length
+        ? db.tokenRedemption.findMany({
+            where: { id: { in: redemptionIds } },
+            select: { id: true, tokens: true, memberProfile: { select: { person: { select: personSelect } } } },
           })
         : [],
       // SSOT §65 — Trip work is about the Member who owns the reward or bucket.
@@ -377,14 +367,8 @@ export async function taskSubjects(
     add(b.id, subject);
     if (b.reward) add(b.reward.id, subject);
   }
-  for (const c of credits) {
-    add(c.id, {
-      project: c.triggerBooking.project.name,
-      plot: c.triggerBooking.plot.plotNumber,
-      plotId: c.triggerBooking.plot.id,
-      reference: c.triggerBooking.bookingNumber,
-      ...party(c.memberProfile.person),
-    });
+  for (const r of redemptions) {
+    add(r.id, { project: null, plot: null, plotId: null, reference: `${r.tokens} tokens`, ...party(r.memberProfile.person) });
   }
 
   return subjects;

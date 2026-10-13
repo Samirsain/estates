@@ -95,7 +95,8 @@ export async function purgeScope(db: PrismaClient, scope: PurgeScope) {
   const memberIds = (await db.memberProfile.findMany({ where: { personId: { in: personIds } }, select: { id: true } })).map((m) => m.id);
   const customerIds = (await db.customerProfile.findMany({ where: { personId: { in: personIds } }, select: { id: true } })).map((c) => c.id);
   const rewardIds = [
-    ...(await db.royaltyCredit.findMany({ where: { OR: [{ triggerBookingId: { in: bookingIds } }, { memberProfileId: { in: memberIds } }] }, select: { id: true } })),
+    ...(await db.royaltyAward.findMany({ where: { OR: [{ triggerBookingId: { in: bookingIds } }, { memberProfileId: { in: memberIds } }] }, select: { id: true } })),
+    ...(await db.tokenRedemption.findMany({ where: { memberProfileId: { in: memberIds } }, select: { id: true } })),
     ...(await db.tripReward.findMany({ where: { memberProfileId: { in: memberIds } }, select: { id: true } })),
     ...(await db.tripBucket.findMany({ where: { memberProfileId: { in: memberIds } }, select: { id: true } })),
     ...(await db.projectCommissionVersion.findMany({ where: { projectId: { in: projectIds } }, select: { id: true } })),
@@ -139,16 +140,26 @@ export async function purgeScope(db: PrismaClient, scope: PurgeScope) {
   });
 
   await db.recovery.deleteMany({ where: recoveryScope });
-  // Royalty Credits hang off a Booking, a Customer and a Member.
-  const creditScope = {
+  // Royalty Tokens: an award hangs off a Booking, a Customer and a Member; the
+  // ledger, allocations and redemptions off the award or the Member. Leaves first.
+  const awardScope = {
     OR: [
       { triggerBookingId: { in: bookingIds } },
       { customerProfile: { personId: { in: personIds } } },
       { memberProfileId: { in: memberIds } },
     ],
   };
-  await db.royaltyCreditEvent.deleteMany({ where: { credit: creditScope } });
-  await db.royaltyCredit.deleteMany({ where: creditScope });
+  const awardIds = (await db.royaltyAward.findMany({ where: awardScope, select: { id: true } })).map((a) => a.id);
+  const tokenMembers = [
+    ...new Set([...memberIds, ...(await db.royaltyAward.findMany({ where: awardScope, select: { memberProfileId: true } })).map((a) => a.memberProfileId)]),
+  ];
+  const redemptionIds = (await db.tokenRedemption.findMany({ where: { memberProfileId: { in: tokenMembers } }, select: { id: true } })).map((r) => r.id);
+  await db.tokenAllocation.deleteMany({ where: { OR: [{ awardId: { in: awardIds } }, { redemptionId: { in: redemptionIds } }] } });
+  // Reversals before what they reverse; one statement handles the pair.
+  await db.tokenLedgerEntry.deleteMany({ where: { OR: [{ awardId: { in: awardIds } }, { redemptionId: { in: redemptionIds } }] } });
+  await db.tokenRedemption.deleteMany({ where: { id: { in: redemptionIds } } });
+  await db.royaltyAwardEvent.deleteMany({ where: { awardId: { in: awardIds } } });
+  await db.royaltyAward.deleteMany({ where: { id: { in: awardIds } } });
   // Trip: credits before buckets, buckets after their rewards.
   const tripMembers = { memberProfile: { personId: { in: personIds } } };
   await db.tripEvent.deleteMany({ where: { memberProfileId: { in: memberIds } } });

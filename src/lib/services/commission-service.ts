@@ -30,7 +30,6 @@ import { normaliseReference, notFutureDated } from "@/lib/domain/booking";
 import { hasVerifiedBank } from "./bank-service";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { activateDueVersions } from "./commission-settings-service";
-import { liveRoyaltyProgramme } from "./royalty-programme-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 import { assertIndependent, controlHolds } from "./benefit-control-service";
 import { buyingCommissionMilestoneReached } from "@/lib/domain/acquisition";
@@ -84,15 +83,22 @@ export async function freezeAtSubmission(
     where: { projectId: args.projectId, status: "ACTIVE" },
   });
   if (!version) blocked("This Project has no approved commission settings.");
+  // docss/11 §1 — never substitute a missing rate: a version prepared before
+  // Royalty Tokens cannot be frozen until a version with a rate replaces it.
+  if (version.royaltyTokensPerAward === null) {
+    blocked(
+      "This Project's approved settings have no Royalty token rate. Admin must prepare a new settings " +
+        "version with one and MD approve it before a Booking Request can be submitted."
+    );
+  }
   const buyer = await tx.memberProfile.findUnique({
     where: { personId: args.buyerPersonId },
     select: { status: true },
   });
-  // SSOT §76; CP §10 — and the Royalty Gift Programme Version live now, if any.
-  const programme = await liveRoyaltyProgramme(tx);
   return {
     commissionVersionId: version.id,
-    royaltyProgrammeVersionId: programme?.id ?? null,
+    /** docss/11 §1 — the token rate this request version saves; Accounts approves it with the version. */
+    royaltyTokensPerAward: version.royaltyTokensPerAward,
     originalClassification: (buyer?.status === "ACTIVE" ? "MEMBER" : "CUSTOMER") as "MEMBER" | "CUSTOMER",
     loyaltySubjectDeactivated: await loyaltySubjectDeactivated(tx, args),
     terms: { versionId: version.id, ...termsOf(version) },

@@ -348,12 +348,10 @@ export function recordHref(
   if (record.kind === "Commission") {
     return subject?.bookingId ? `/bookings?booking=${subject.bookingId}` : null;
   }
-  // SSOT §65, §81 — Gifts and Trips are fulfilled from the owning Member's page.
-  if (record.kind === "Royalty Credit" || record.kind === "Trip Reward" || record.kind === "Trip Bucket") {
+  // SSOT §65, §81; docss/11 — Royalty tokens and Trips are handled on the owning Member's page.
+  if (record.kind === "Royalty Award" || record.kind === "Token Redemption" || record.kind === "Trip Reward" || record.kind === "Trip Bucket") {
     return subject?.partyPersonId ? `/people/${subject.partyPersonId}?as=member` : null;
   }
-  // CP §65 NT07 — Royalty Gift Programme Versions are approved in Administration.
-  if (record.kind === "Royalty Programme") return "/administration";
   // CP §65 NT08, NT09 — release-control reviews are decided on the Rewards page.
   if (record.kind === "Staff Conflict" || record.kind === "Circumvention Review") return "/rewards?tab=reviews";
   if (!INTERNAL_ID.test(record.id)) return null;

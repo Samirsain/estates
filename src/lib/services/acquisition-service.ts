@@ -43,7 +43,7 @@ import {
   refreshBuyingCommission,
 } from "./commission-service";
 import { syncRoyaltyLink } from "./network-service";
-import { refreshCreditOfBooking } from "./royalty-service";
+import { refreshAwardOfBooking } from "./royalty-service";
 import { refreshTripOfBooking, syncTripForBooking } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
@@ -1081,7 +1081,7 @@ export async function refreshStableCompletion(tx: Tx, acquisitionId: string, act
     },
   });
   if (acquisition.sourceBookingId) {
-    await refreshCreditOfBooking(tx, acquisition.sourceBookingId, actorRef);
+    await refreshAwardOfBooking(tx, acquisition.sourceBookingId, actorRef);
     await refreshTripOfBooking(tx, acquisition.sourceBookingId, actorRef);
   }
   return stable;

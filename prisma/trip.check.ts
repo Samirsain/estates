@@ -114,6 +114,7 @@ const terms = (trip: Partial<NonNullable<CommissionVersionInput["trip"]>>): Comm
   loyaltyPercent: "1",
   loyaltyExceptionReason: null,
   reason: "Trip launch",
+  royaltyTokensPerAward: 10,
   trip: {
     tripEnabled: true,
     tripTotalTarget: 5,

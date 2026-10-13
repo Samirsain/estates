@@ -31,8 +31,11 @@ async function main() {
   await db.circumventionReview.deleteMany({});
   await db.staffRelative.deleteMany({});
   await db.recovery.deleteMany({});
-  await db.royaltyCreditEvent.deleteMany({});
-  await db.royaltyCredit.deleteMany({});
+  await db.tokenAllocation.deleteMany({});
+  await db.tokenLedgerEntry.deleteMany({});
+  await db.tokenRedemption.deleteMany({});
+  await db.royaltyAwardEvent.deleteMany({});
+  await db.royaltyAward.deleteMany({});
   await db.tripEvent.deleteMany({});
   await db.tripCredit.deleteMany({});
   await db.tripReward.deleteMany({});
@@ -66,7 +69,6 @@ async function main() {
   // v2.1 §15 — a Booking names its frozen commission version, so the versions
   // leave after the Bookings and before their Projects.
   await db.projectCommissionVersion.deleteMany({});
-  await db.royaltyProgrammeVersion.deleteMany({});
 
   await db.enquiryFollowUp.deleteMany({});
   await db.enquiry.deleteMany({});

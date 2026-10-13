@@ -14,6 +14,7 @@ import {
   validateCommissionTerms,
   type CommissionTermsInput,
 } from "@/lib/domain/commission";
+import { validateTokenQuantity } from "@/lib/domain/tokens";
 import { validateTripSettings, type TripSettingsInput } from "@/lib/domain/trip";
 import { formatIst } from "@/lib/tasks";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
@@ -32,6 +33,8 @@ export type CommissionVersionInput = CommissionTermsInput & {
   effectiveFrom?: Date | null;
   /** SSOT §12.3; CP §7.1 — absent means the Trip Programme is Disabled. */
   trip?: TripSettingsInput & TripInventoryInput;
+  /** docss/11 §1 — whole tokens a qualifying Royalty earns on this Project. Required. */
+  royaltyTokensPerAward: number;
 };
 
 /** CP §65 NT01 — Project Commercial Settings Approval, assigned to MD. */
@@ -77,6 +80,7 @@ const termsData = (t: CommissionVersionInput) => ({
   reason: t.reason.trim(),
   effectiveFrom: t.effectiveFrom ?? null,
   ...tripData(t),
+  royaltyTokensPerAward: t.royaltyTokensPerAward,
 });
 
 /**
@@ -88,6 +92,8 @@ export function checkPreparable(actorRole: string, input: CommissionVersionInput
   if (!input.reason.trim()) blocked("A compulsory reason is required for a commission settings version.");
   const valid = validateCommissionTerms(input);
   if (!valid.ok) blocked(valid.reason);
+  const tokens = validateTokenQuantity("Royalty tokens per qualifying purchase", input.royaltyTokensPerAward);
+  if (!tokens.ok) blocked(tokens.reason);
   if (input.effectiveFrom && input.effectiveFrom.getTime() <= Date.now()) {
     blocked("Effective from must be in the future, or left empty to take effect on MD approval.");
   }
@@ -251,7 +257,8 @@ export async function sendCommissionVersion(args: Actor & { versionId: string })
         decision: true,
         latestResult:
           `Version ${version.version}: Direct ${rate(version.directEnabled, version.directPercent)}, ` +
-          `Loyalty ${rate(version.loyaltyEnabled, version.loyaltyPercent)}` +
+          `Loyalty ${rate(version.loyaltyEnabled, version.loyaltyPercent)}, ` +
+          `Royalty ${version.royaltyTokensPerAward ?? "not set"} tokens` +
           (version.loyaltyExceptionReason ? `. MD exception: ${version.loyaltyExceptionReason}` : "") +
           (version.tripEnabled
             ? `. Trip ${version.tripProgrammeCode}: target ${version.tripTotalTarget}, min Own ` +
@@ -385,6 +392,7 @@ export async function decideCommissionVersion(args: Actor & { versionId: string;
             directPercent: version.directPercent?.toString() ?? null,
             loyaltyPercent: version.loyaltyPercent?.toString() ?? null,
             loyaltyExceptionReason: version.loyaltyExceptionReason,
+            royaltyTokensPerAward: version.royaltyTokensPerAward,
             // CP §7.3 — MD's approval is the exception where one was needed.
             commercialExceptionApproved: needsLoyaltyException({
               directEnabled: version.directEnabled,
