@@ -12,14 +12,14 @@ import { formatIst } from "@/lib/tasks";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { REWARD_HOLD_LABEL } from "@/app/members/[id]/royalty-credits";
+import { REWARD_HOLD_LABEL } from "@/app/members/[id]/royalty-tokens";
 
 export const dynamic = "force-dynamic";
 
 const TABS = [
   ["monetary", "Monetary Benefits"],
   ["trip", "Trip Rewards"],
-  ["royalty", "Royalty Gifts"],
+  ["royalty", "Royalty Tokens"],
   ["recovery", "Recovery"],
   ["reviews", "Reviews"],
 ] as const;
@@ -40,7 +40,7 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
         <header>
           <h1 className="text-2xl font-bold tracking-tight">Rewards</h1>
           <p className="text-xs text-muted-foreground">
-            Project Direct, Customer Loyalty and Buying Commission are monetary; Trip and Royalty Gift are non-cash.
+            Project Direct, Customer Loyalty and Buying Commission are monetary; Trip and Royalty Tokens are non-cash.
           </p>
         </header>
         <nav className="flex flex-wrap gap-1">
@@ -136,39 +136,82 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
           )}
 
           {tab === "royalty" && (
-            <table className="w-full min-w-[40rem] text-xs">
-              <thead className="border-b border-border/50">
-                <tr>
-                  <th className={TH}>Royalty Linked Member</th>
-                  <th className={TH}>Customer · trigger</th>
-                  <th className={TH}>Programme</th>
-                  <th className={TH}>Gift</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lists.gifts.map((g) => (
-                  <tr key={g.id} className="border-b border-border/30">
-                    <td className={TD}>
-                      <Link className="text-primary hover:underline" href={member(g.memberProfile.person.id)}>
-                        {g.memberProfile.memberId} · {g.memberProfile.person.fullName}
-                      </Link>
-                    </td>
-                    <td className={TD}>
-                      {g.customerProfile.customerId} ·{" "}
-                      <Link className="text-primary hover:underline" href={`/bookings?booking=${g.triggerBooking.id}`}>
-                        {g.triggerBooking.bookingNumber}
-                      </Link>
-                    </td>
-                    <td className={TD}>{g.programmeVersion.programmeRef}</td>
-                    <td className={TD}>
-                      <Badge variant="info">{g.state.toLowerCase()}</Badge>
-                      {g.selectedRewardRef ? ` ${g.selectedRewardRef}` : ""}
-                      {g.holdReason && <span className="ml-1 text-amber-800">{REWARD_HOLD_LABEL[g.holdReason] ?? g.holdReason}</span>}
-                    </td>
+            <div className="divide-y divide-border/50">
+              {/* docss/11 — awards not yet posted, or posted but restricted. Spending is recorded on the Member. */}
+              <table className="w-full min-w-[40rem] text-xs">
+                <thead className="border-b border-border/50">
+                  <tr>
+                    <th className={TH}>Royalty Linked Member</th>
+                    <th className={TH}>Customer · trigger</th>
+                    <th className={TH}>Project</th>
+                    <th className={TH}>Award</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {lists.royalty.heldAwards.length === 0 && (
+                    <tr>
+                      <td className={TD} colSpan={4}>
+                        No Royalty award is waiting or held.
+                      </td>
+                    </tr>
+                  )}
+                  {lists.royalty.heldAwards.map((a) => (
+                    <tr key={a.id} className="border-b border-border/30">
+                      <td className={TD}>
+                        <Link className="text-primary hover:underline" href={member(a.memberProfile.person.id)}>
+                          {a.memberProfile.memberId} · {a.memberProfile.person.fullName}
+                        </Link>
+                      </td>
+                      <td className={TD}>
+                        {a.customerProfile.customerId} ·{" "}
+                        <Link className="text-primary hover:underline" href={`/bookings?booking=${a.triggerBooking.id}`}>
+                          {a.triggerBooking.bookingNumber}
+                        </Link>
+                      </td>
+                      <td className={TD}>{a.project.name}</td>
+                      <td className={TD}>
+                        <Badge variant={a.state === "PENDING" ? "warning" : "info"}>
+                          {a.state === "PENDING" ? "pending" : "posted, restricted"}
+                        </Badge>{" "}
+                        {a.tokens} tokens
+                        {a.holdReason && <span className="ml-1 text-amber-800">{REWARD_HOLD_LABEL[a.holdReason] ?? a.holdReason}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <table className="w-full min-w-[40rem] text-xs">
+                <thead className="border-b border-border/50">
+                  <tr>
+                    <th className={TH}>Member</th>
+                    <th className={TH}>Redemption waiting for MD</th>
+                    <th className={TH}>Recorded</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lists.royalty.awaitingMd.length === 0 && (
+                    <tr>
+                      <td className={TD} colSpan={3}>
+                        No non-family redemption is waiting for MD.
+                      </td>
+                    </tr>
+                  )}
+                  {lists.royalty.awaitingMd.map((r) => (
+                    <tr key={r.id} className="border-b border-border/30">
+                      <td className={TD}>
+                        <Link className="text-primary hover:underline" href={member(r.memberProfile.person.id)}>
+                          {r.memberProfile.memberId} · {r.memberProfile.person.fullName}
+                        </Link>
+                      </td>
+                      <td className={TD}>
+                        {r.tokens} tokens for {r.recipientName}
+                      </td>
+                      <td className={TD}>{formatIst(r.recordedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
 
           {tab === "reviews" && <Reviews rows={reviews} role={actor.role} />}

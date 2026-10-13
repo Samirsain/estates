@@ -3,7 +3,7 @@
 //
 // The Invite and Royalty positions, bands and cycles are gone (Removal Audit
 // OL-02 to OL-14). What stays is the relationship itself: the inviting Member
-// (Part 3, Reference Credit) and the Royalty Linked Member (Part 2, Gift).
+// (Part 3, Reference Credit) and the Royalty Linked Member (Royalty Tokens, docss/11).
 
 import type { Prisma } from "@prisma/client";
 import { BUYBACK_MIN_SOURCE_PAYMENT } from "@/lib/domain/commission";
@@ -171,10 +171,11 @@ async function syncLink(tx: Tx, personId: string, actorRef: string) {
 
 /**
  * CP §59 — a Sold By Correction on the Customer's first qualifying purchase
- * re-links the relationship to the corrected closer, final or not. A Royalty
- * Credit not yet delivered moves with it: the old one is reversed and the
- * reward sync gives the corrected Member a new one under the same rules. A
- * delivered Gift stays consumed (SSOT §98); only the history changes.
+ * re-links the relationship to the corrected closer, final or not. The old
+ * Member's live Royalty award is reversed. An unused one reopens the
+ * opportunity, so the reward sync gives the corrected Member the award under
+ * the same rules; a consumed one keeps it consumed (SSOT §98; docss/11), so
+ * nothing transfers.
  */
 export async function relinkAfterSoldByCorrection(tx: Tx, bookingId: string, actorRef: string) {
   const booking = await tx.booking.findUniqueOrThrow({ where: { id: bookingId } });
@@ -451,7 +452,7 @@ export async function setMemberStatus(args: {
         // Buying Commission hangs off an Acquisition rather than a Booking.
         if (bookingId) await reassessCommission(tx, bookingId, args.actorRef);
       }
-      // SSOT §66, §82; CP §86 — the Member's Gift and Trip fulfilment hold or resume too.
+      // SSOT §66, §82; CP §86 — the Member's Royalty awards and Trip fulfilment hold or resume too.
       await refreshAwardsOfMember(tx, member.personId, args.actorRef);
       await refreshTripOfMember(tx, member.personId, args.actorRef);
 

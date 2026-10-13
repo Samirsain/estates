@@ -64,6 +64,8 @@ export type CalcProjectView = {
   terms: FrozenTerms | null;
   /** CP §72 — the Project's Trip Programme as a non-cash indicator, or null. */
   trip: string | null;
+  /** docss/11 — Royalty tokens per qualifying purchase on the Active settings; null when not set. */
+  royaltyTokens: number | null;
 };
 
 /** One sale-commission component, with the milestone the engine gives it. */
@@ -265,9 +267,7 @@ export default function CalculatorClient({
   people,
   commissionTypes,
   initialPlotId,
-  royaltyProgramme,
 }: {
-  royaltyProgramme: string | null;
   role: StaffRole;
   actorName: string;
   staffAccountId: string;
@@ -636,8 +636,8 @@ export default function CalculatorClient({
         {projectId && (
           <p className="text-xs text-muted-foreground">
             Sales &amp; Reference Trip:{" "}
-            {projects.find((p) => p.id === projectId)?.trip ?? "no Trip Programme on this Project"} · Royalty Gift
-            Programme: {royaltyProgramme ?? "none live"}. Non-cash; one Royalty Credit is one Gift.
+            {projects.find((p) => p.id === projectId)?.trip ?? "no Trip Programme on this Project"} · Royalty:{" "}
+            {projects.find((p) => p.id === projectId)?.royaltyTokens ?? "no"} tokens per qualifying purchase. Non-cash; no expiry.
           </p>
         )}
 

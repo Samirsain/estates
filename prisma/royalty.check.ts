@@ -451,6 +451,10 @@ async function main() {
   const twice = await recordTokenRedemption({ idempotencyKey: k, actorRef: CRM, actorRole: "CRM", memberProfileId: held.id, tokens: 1, redeemedOn: todayIst, recipient: "SELF", recipientName: "", reference: "" });
   assert.equal(once.redemptionId, twice.redemptionId, "a retried submission is not a second redemption");
   assert.equal(await db.tokenRedemption.count({ where: { requestKey: k } }), 1);
+  const k2 = key();
+  const sameInstant = await Promise.allSettled([redeem(held.id, 1, { idempotencyKey: k2 }), redeem(held.id, 1, { idempotencyKey: k2 })]);
+  assert.equal(await db.tokenRedemption.count({ where: { requestKey: k2 } }), 1, "a double-click at the same instant is one redemption");
+  assert.ok(sameInstant.every((r) => r.status === "fulfilled"), "and neither click errors");
   const ledgerBefore = await entries({});
   for (let i = 0; i < 5; i++) {
     await db.$transaction((tx) => syncRoyaltyReward(tx, cbb.id, CRM));
@@ -598,6 +602,31 @@ async function main() {
   assert.equal(await db.royaltyAward.count({ where: { memberProfileId: other.id } }), 0, "nothing transfers to the corrected Member");
   assert.ok((await customerOf(crl.id)).royaltyOpportunityConsumedAt, "a consumed opportunity stays consumed after relinking");
   assert.deepEqual(await figures(relinked.id), { earned: 0, spent: 4, balance: -4 });
+
+  // CP §59 — the same correction before any token was used: the unused award
+  // moves to the corrected Member as the same row, at its saved rate.
+  const early2 = await member("Relink2");
+  const crl2 = await linkedCustomer("CRL2", A, early2);
+  const firstRl2 = (await customerOf(crl2.id)).royaltyLinkFirstBookingId!;
+  const qrl2 = await qualify(A, crl2.id);
+  const before2 = (await awardOf(qrl2.bookingId))!;
+  await requestSoldByCorrection({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    bookingId: firstRl2,
+    toSoldByType: "MEMBER",
+    toSoldByPersonId: other.personId,
+    reason: "The other Member closed it.",
+    supportingNote: "Register.",
+  });
+  await decideSoldByCorrection({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", bookingId: firstRl2, approve: true, note: "ok" });
+  const after2 = (await awardOf(qrl2.bookingId))!;
+  assert.equal(`${after2.id}|${after2.memberProfileId}|${after2.state}|${after2.tokens}`, `${before2.id}|${other.id}|RELEASED|10`, "unused: it moves");
+  assert.deepEqual(await figures(early2.id), { earned: 0, spent: 0, balance: 0 }, "and leaves the old Member at zero");
+  assert.deepEqual(await figures(other.id), { earned: 10, spent: 0, balance: 10 });
+  await invariants(early2.id, "relink2 old");
+  await invariants(other.id, "relink2 new");
 
   // COR-08 — merging two Customers who each used their opportunity.
   const merger = await member("Merger");

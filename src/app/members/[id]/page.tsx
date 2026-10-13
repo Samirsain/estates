@@ -31,7 +31,8 @@ import { MergeButton } from "@/app/customers/[id]/merge-button";
 import { MemberActions } from "./member-actions";
 import { AddTaskButton } from "./add-task-button";
 import PortalAccess from "./portal-access";
-import RoyaltyCredits from "./royalty-credits";
+import RoyaltyTokens from "./royalty-tokens";
+import { memberTokenView } from "@/lib/services/royalty-service";
 import TripSection from "./trip-section";
 import { tripProgrammes } from "@/lib/trip-view";
 import {
@@ -164,7 +165,7 @@ export default async function MemberDetailPage({
     audit,
     merges,
     tasks,
-    royaltyCredits,
+    tokens,
     tripCredits,
     tripBuckets,
     referenceWins,
@@ -247,16 +248,8 @@ export default async function MemberDetailPage({
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
-    // SSOT §75, §78 — the Gifts this Member owns, as Royalty Credits.
-    db.royaltyCredit.findMany({
-      where: { memberProfileId: id },
-      include: {
-        customerProfile: { select: { customerId: true, person: { select: { fullName: true } } } },
-        triggerBooking: { select: { bookingNumber: true } },
-        programmeVersion: { select: { programmeRef: true, version: true, catalogueVersion: true } },
-      },
-      orderBy: { eligibleAt: "desc" },
-    }),
+    // docss/11 — the Member's Royalty Tokens: figures, spending, the awards behind them.
+    memberTokenView(id, "STAFF"),
     // SSOT §40, §47; CP §68 — the Trip credits and buckets this Member owns.
     db.tripCredit.findMany({
       where: { memberProfileId: id },
@@ -655,7 +648,7 @@ export default async function MemberDetailPage({
                 <p className="pb-1 text-[11px] text-muted-foreground">
                   {royaltyLinkedCustomers.filter((c) => c.royaltyLinkFinalAt).length} final ·{" "}
                   {royaltyLinkedCustomers.filter((c) => c.royaltyLinkFinalAt && !c.royaltyOpportunityConsumedAt).length} can still
-                  earn a Gift · {royaltyLinkedCustomers.filter((c) => !c.royaltyLinkFinalAt).length} waiting for full payment
+                  earn tokens · {royaltyLinkedCustomers.filter((c) => !c.royaltyLinkFinalAt).length} waiting for full payment
                 </p>
                 <ul className="divide-y divide-border/40 text-xs">
                   {royaltyLinkedCustomers.map((c) => (
@@ -702,32 +695,12 @@ export default async function MemberDetailPage({
           />
         </Section>
 
-        {/* SSOT §75, §81; CP §68 — Royalty Credits: one Gift each, non-cash. */}
-        <Section title={`Royalty Credits (${royaltyCredits.length})`} icon={<Users className="h-3.5 w-3.5" />}>
-          <RoyaltyCredits
+        {/* docss/11 — Royalty Tokens: one pooled, non-cash balance. */}
+        <Section title="Royalty Tokens" icon={<Users className="h-3.5 w-3.5" />}>
+          <RoyaltyTokens
             role={actor.role}
-            credits={royaltyCredits.map((c) => ({
-              id: c.id,
-              state: c.state,
-              holdReason: c.holdReason,
-              customerId: c.customerProfile.customerId,
-              customerName: c.customerProfile.person.fullName,
-              bookingNumber: c.triggerBooking.bookingNumber,
-              programmeRef: c.programmeVersion.programmeRef,
-              programmeVersion: c.programmeVersion.version,
-              catalogueVersion: c.programmeVersion.catalogueVersion,
-              route: c.qualificationRoute,
-              eligibleAt: c.eligibleAt.toISOString(),
-              selectedRewardRef: c.selectedRewardRef,
-              recipient: c.recipient,
-              recipientName: c.recipientName,
-              recipientApproved: c.recipientApprovedAt !== null,
-              orderReference: c.orderReference,
-              orderedAt: c.orderedAt?.toISOString() ?? null,
-              deliveredAt: c.deliveredAt?.toISOString() ?? null,
-              deliveryReference: c.deliveryReference,
-              reversalReason: c.reversalReason,
-            }))}
+            memberProfileId={member.id}
+            view={tokens}
             openOpportunities={royaltyLinkedCustomers.filter((c) => c.royaltyLinkFinalAt && !c.royaltyOpportunityConsumedAt).length}
           />
         </Section>

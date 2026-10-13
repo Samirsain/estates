@@ -1058,7 +1058,7 @@ async function unwindApprovedBuyback(
  * SSOT §61; CP §51 — Stable Buyback Completion: Approved, Payment Given 100%,
  * not unwound, and the old sale's papers back where it had any. Stored when
  * achieved and cleared when lost, each with an event (CP §79). It releases
- * Buyback-based Gift fulfilment (SSOT §80); it never accelerates Direct.
+ * Buyback-based Royalty tokens (SSOT §80; docss/11); it never accelerates Direct.
  */
 export async function refreshStableCompletion(tx: Tx, acquisitionId: string, actorRef: string) {
   const acquisition = await tx.acquisition.findUniqueOrThrow({ where: { id: acquisitionId } });

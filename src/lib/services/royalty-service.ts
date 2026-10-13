@@ -554,6 +554,14 @@ export async function recordTokenRedemption(
     },
     async (tx) => {
       await lockMember(tx, args.memberProfileId);
+      // The same submission arriving twice at once: the second finds the first.
+      const already = await tx.tokenRedemption.findUnique({ where: { requestKey: args.idempotencyKey } });
+      if (already) {
+        return {
+          result: { redemptionId: already.id, state: already.state as "RECORDED" | "AWAITING_MD" },
+          audit: { entity: "MemberProfile", entityId: args.memberProfileId, action: "TOKEN_REDEMPTION_REPLAYED", after: { redemptionId: already.id } },
+        };
+      }
       await refreshMemberAwards(tx, args.memberProfileId, args.actorRef);
       refuseUnlessSpendable(await tokenPosition(tx, args.memberProfileId), args.tokens);
 

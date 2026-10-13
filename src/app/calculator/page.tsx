@@ -314,6 +314,7 @@ export default async function CalculatorPage({
     city: p.city,
     location: p.location,
     terms: p.commissionVersions[0] ? termsOf(p.commissionVersions[0]) : null,
+    royaltyTokens: p.commissionVersions[0]?.royaltyTokensPerAward ?? null,
     // CP §72 — Trip is shown as an eligibility indicator, never a value.
     trip: p.commissionVersions[0]?.tripEnabled
       ? `${p.commissionVersions[0].tripProgrammeCode}: target ${p.commissionVersions[0].tripTotalTarget} ` +
@@ -321,10 +322,6 @@ export default async function CalculatorPage({
         `${p.commissionVersions[0].tripMaxReferenceCredits} Reference)`
       : null,
   }));
-  const royaltyProgramme = await db.royaltyProgrammeVersion.findFirst({
-    where: { status: "ACTIVE" },
-    select: { programmeRef: true },
-  });
 
   return (
     <CalculatorClient
@@ -335,7 +332,6 @@ export default async function CalculatorPage({
       plots={plotRows}
       people={peopleRows}
       commissionTypes={commissionTypes}
-      royaltyProgramme={royaltyProgramme?.programmeRef ?? null}
       initialPlotId={plotRows.some((p) => p.id === initialPlotId) ? (initialPlotId ?? null) : null}
     />
   );

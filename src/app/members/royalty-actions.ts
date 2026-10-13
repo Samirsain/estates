@@ -1,18 +1,18 @@
 "use server";
 
-// Royalty Gift fulfilment — SSOT §75, §78, §81; Change Pack §45, §49, §65.
-// The service decides who may act: CRM or Admin records the Gift, the order and
-// the delivery; MD decides a non-family recipient.
+// Royalty Tokens — docss/11. The service decides who may act: CRM or Admin
+// records spending arranged outside the CRM; MD decides a non-family
+// recipient; Admin or MD corrects an erroneous entry.
 
 import type { RewardRecipient } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
 import { CommandError } from "@/lib/services/command";
 import {
-  decideRoyaltyRecipient,
-  deliverRoyaltyGift,
-  orderRoyaltyGift,
-  selectRoyaltyGift,
+  correctTokenRedemption,
+  decideTokenRedemption,
+  memberTokenView,
+  recordTokenRedemption,
 } from "@/lib/services/royalty-service";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
@@ -25,7 +25,9 @@ function toResult(error: unknown): ActionResult {
 
 function refresh() {
   revalidatePath("/members");
+  revalidatePath("/people");
   revalidatePath("/dashboard");
+  revalidatePath("/rewards");
   revalidatePath("/portal");
 }
 
@@ -40,54 +42,45 @@ async function act(run: (actor: { ref: string; role: string }) => Promise<unknow
   }
 }
 
-export async function selectRoyaltyGiftAction(
-  input: { creditId: string; rewardRef: string; recipient: RewardRecipient; recipientName: string },
+export async function recordTokenRedemptionAction(
+  input: {
+    memberProfileId: string;
+    tokens: number;
+    redeemedOn: string;
+    recipient: RewardRecipient;
+    recipientName: string;
+    reference: string;
+  },
   key: string
 ) {
   return act(
-    (a) => selectRoyaltyGift({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
+    (a) => recordTokenRedemption({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
     input.recipient === "NON_FAMILY"
-      ? "Gift recorded. MD must approve the non-family recipient before it is ordered."
-      : "Gift recorded."
+      ? "Recorded. MD must approve the non-family recipient before the tokens count as spent."
+      : `${input.tokens} tokens recorded as spent.`
   );
 }
 
-export async function decideRoyaltyRecipientAction(input: { creditId: string; approve: boolean; note: string }, key: string) {
+export async function decideTokenRedemptionAction(input: { redemptionId: string; approve: boolean; note: string }, key: string) {
   return act(
-    (a) => decideRoyaltyRecipient({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
-    input.approve ? "Recipient approved." : "Recipient rejected; the Gift is to be chosen again."
+    (a) => decideTokenRedemption({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
+    input.approve ? "Approved; the tokens are spent." : "Rejected; nothing was spent."
   );
 }
 
-export async function orderRoyaltyGiftAction(input: { creditId: string; orderReference: string; orderedOn: string }, key: string) {
+export async function correctTokenRedemptionAction(input: { redemptionId: string; reason: string }, key: string) {
   return act(
-    (a) =>
-      orderRoyaltyGift({
-        idempotencyKey: key,
-        actorRef: a.ref,
-        actorRole: a.role,
-        creditId: input.creditId,
-        orderReference: input.orderReference,
-        orderedOn: new Date(input.orderedOn),
-      }),
-    "Gift ordered."
+    (a) => correctTokenRedemption({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
+    "Corrected; its tokens are back in the balance."
   );
 }
 
-export async function deliverRoyaltyGiftAction(
-  input: { creditId: string; deliveredOn: string; deliveryReference: string },
-  key: string
-) {
-  return act(
-    (a) =>
-      deliverRoyaltyGift({
-        idempotencyKey: key,
-        actorRef: a.ref,
-        actorRole: a.role,
-        creditId: input.creditId,
-        deliveredOn: new Date(input.deliveredOn),
-        deliveryReference: input.deliveryReference,
-      }),
-    "Gift delivered. The Royalty opportunity stays consumed."
-  );
+/**
+ * docss/11 §1 — read before staff finalise the external redemption, so they
+ * know what can be recorded. Recording rechecks it under the Member lock.
+ */
+export async function tokenAvailabilityAction(memberProfileId: string): Promise<{ canRecordUpTo: number; blockers: string[] }> {
+  await requireStaff();
+  const view = await memberTokenView(memberProfileId, "STAFF");
+  return { canRecordUpTo: view.staff!.canRecordUpTo, blockers: view.staff!.blockers };
 }

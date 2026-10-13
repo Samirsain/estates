@@ -997,15 +997,15 @@ export async function loadBookingDetail(bookingId: string) {
         detail: `${t.programmeCode}${t.qualificationRoute === "APPROVED_BUYBACK" ? " · by Buyback" : ""}${t.reversalReason ? ` · ${t.reversalReason}` : ""}`,
       })),
       ...(
-        await db.royaltyCredit.findMany({
+        await db.royaltyAward.findMany({
           where: { triggerBookingId: bookingId },
-          include: { memberProfile: { select: { memberId: true } }, programmeVersion: { select: { programmeRef: true } } },
+          include: { memberProfile: { select: { memberId: true } } },
         })
       ).map((r) => ({
-        kind: "Royalty Gift",
+        kind: "Royalty Tokens",
         member: r.memberProfile.memberId,
         state: r.state,
-        detail: `${r.programmeVersion.programmeRef}${r.holdReason ? ` · ${r.holdReason.replaceAll("_", " ").toLowerCase()}` : ""}`,
+        detail: `${r.tokens} tokens${r.holdReason ? ` · ${r.holdReason.replaceAll("_", " ").toLowerCase()}` : ""}${r.reversalReason && r.state === "REVERSED" ? ` · ${r.reversalReason}` : ""}`,
       })),
     ],
     commissions: commissions.map((c) => ({

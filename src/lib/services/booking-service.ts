@@ -1450,14 +1450,14 @@ export async function decideSoldByCorrection(args: {
       if (correction.requestedByRef === args.actorRef) {
         blocked("A Sold By Correction must be approved by a different staff account.");
       }
-      // CP §60; SSOT §98 — after a Gift was delivered on this attribution, only
-      // MD may correct it, and no second Gift follows.
+      // CP §60; SSOT §98; docss/11 — once Royalty tokens from this attribution
+      // were used, only MD may correct it, and no second award follows.
       if (
         args.approve &&
         args.actorRole !== "MD" &&
         ((await touchesConsumedAward(tx, args.bookingId)) || (await touchesTravelledTrip(tx, args.bookingId)))
       ) {
-        blocked("A Gift was delivered or a Trip travelled on this attribution, so only MD may approve this correction.");
+        blocked("Royalty tokens from this attribution were used or a Trip travelled on it, so only MD may approve this correction.");
       }
 
       const booking = await tx.booking.findUniqueOrThrow({

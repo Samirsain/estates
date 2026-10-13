@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import type { TripProgrammeView } from "@/lib/trip-view";
-import { REWARD_HOLD_LABEL } from "./royalty-credits";
+import { REWARD_HOLD_LABEL } from "./royalty-tokens";
 import {
   bookTripAction,
   correctInviterAction,

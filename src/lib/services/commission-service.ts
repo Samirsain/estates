@@ -1314,7 +1314,7 @@ export async function cancelCommissionForBooking(
       latestResult:
         `Source Payment Received ${received.toFixed(2)}% — 25% reward gate ` +
         (gateMet
-          ? "met: Loyalty and the Royalty Gift may qualify by the Buyback; Gift fulfilment waits for Stable Buyback Completion."
+          ? "met: Loyalty and the Royalty tokens may qualify by the Buyback; the tokens post only after Stable Buyback Completion."
           : "not met: no reward qualifies by the Buyback.") +
         ` Direct stays on its normal milestone. ` +
         (remainsEarned ? `${n} still earned; check the written arrangement.` : `${n} reviewed.`),

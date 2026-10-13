@@ -16,8 +16,8 @@ export async function rewardCounts() {
     recoveries,
     tripsAwaiting,
     tripsDeficient,
-    giftsAwaitingSelection,
-    giftsAwaitingDelivery,
+    royaltyAwardsHeld,
+    redemptionsAwaitingMd,
     settingsAwaitingMd,
     buybackReviews,
     controlReviews,
@@ -29,8 +29,9 @@ export async function rewardCounts() {
     db.recovery.count({ where: { status: "OUTSTANDING" } }),
     db.tripReward.count({ where: { state: { in: ["EARNED", "BOOKED"] } } }),
     db.tripReward.count({ where: { state: "DEFICIENT" } }),
-    db.royaltyCredit.count({ where: { state: { in: ["ELIGIBLE", "SELECTED"] } } }),
-    db.royaltyCredit.count({ where: { state: "ORDERED" } }),
+    // docss/11 — awards waiting to post, or posted but restricted.
+    db.royaltyAward.count({ where: { state: { in: ["PENDING", "RELEASED"] }, holdReason: { not: null } } }),
+    db.tokenRedemption.count({ where: { state: "AWAITING_MD" } }),
     db.projectCommissionVersion.count({ where: { status: "PENDING_APPROVAL" } }),
     db.task.count({ where: { status: "PENDING", purpose: { in: ["BUYBACK_COMMISSION_REVIEW", "BUYBACK_UNWIND_REVIEW"] } } }),
     // CP §65 NT08, NT09 — release-control reviews waiting for a decision.
@@ -47,8 +48,8 @@ export async function rewardCounts() {
     recoveries,
     tripsAwaiting,
     tripsDeficient,
-    giftsAwaitingSelection,
-    giftsAwaitingDelivery,
+    royaltyAwardsHeld,
+    redemptionsAwaitingMd,
     settingsAwaitingMd,
     buybackReviews,
     controlReviews,
@@ -59,7 +60,7 @@ export type RewardCounts = Awaited<ReturnType<typeof rewardCounts>>;
 
 /** CP §90 — the open work behind each card, for the Rewards page. */
 export async function rewardLists() {
-  const [monetary, recoveries, trips, gifts] = await Promise.all([
+  const [monetary, recoveries, trips, heldAwards, awaitingMd] = await Promise.all([
     db.commissionRecord.findMany({
       where: { isCurrent: true, payment: { in: ["NOT_PAID", "ACCOUNTS_ADJUSTMENT_REQUIRED"] }, eligibility: { in: ["READY", "ON_HOLD"] } },
       include: {
@@ -86,18 +87,24 @@ export async function rewardLists() {
       },
       orderBy: { earnedAt: "asc" },
     }),
-    db.royaltyCredit.findMany({
-      where: { state: { in: ["ELIGIBLE", "SELECTED", "ORDERED"] } },
+    // docss/11 — Royalty awards not yet posted or restricted, and redemptions waiting for MD.
+    db.royaltyAward.findMany({
+      where: { OR: [{ state: "PENDING" }, { state: "RELEASED", holdReason: { not: null } }] },
       include: {
         memberProfile: { select: { memberId: true, person: { select: { id: true, fullName: true } } } },
         customerProfile: { select: { customerId: true } },
         triggerBooking: { select: { id: true, bookingNumber: true } },
-        programmeVersion: { select: { programmeRef: true } },
+        project: { select: { name: true } },
       },
-      orderBy: { eligibleAt: "asc" },
+      orderBy: { qualifiedAt: "asc" },
+    }),
+    db.tokenRedemption.findMany({
+      where: { state: "AWAITING_MD" },
+      include: { memberProfile: { select: { memberId: true, person: { select: { id: true, fullName: true } } } } },
+      orderBy: { recordedAt: "asc" },
     }),
   ]);
-  return { monetary, recoveries, trips, gifts };
+  return { monetary, recoveries, trips, royalty: { heldAwards, awaitingMd } };
 }
 
 /** CP §55, §58 — staff-conflict and circumvention reviews, open first, for the Reviews tab. */

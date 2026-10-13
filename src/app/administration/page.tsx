@@ -5,7 +5,6 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { can, canViewField } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
 import AdministrationClient from "./administration-client";
-import RoyaltyProgrammes from "./royalty-programmes";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +17,7 @@ export default async function AdministrationPage() {
   // outside people and stay masked wherever they appear.
   const canSeeStaffContact = can(actor.role, "STAFF_MANAGE", actor.extraPermissions);
 
-  const [staff, queuedTasks, queuedEnquiries, merges, recentAudit, programmes] = await Promise.all([
+  const [staff, queuedTasks, queuedEnquiries, merges, recentAudit] = await Promise.all([
     db.staffAccount.findMany({
       include: { person: true, _count: { select: { assignedTasks: true, assignedEnquiries: true } } },
       orderBy: [{ status: "asc" }, { staffAccountId: "asc" }],
@@ -42,8 +41,6 @@ export default async function AdministrationPage() {
     can(actor.role, "AUDIT_VIEW", actor.extraPermissions)
       ? db.auditEvent.findMany({ orderBy: { at: "desc" }, take: 50 })
       : Promise.resolve([]),
-    // SSOT §76 — the Royalty Gift Programme Versions, newest first.
-    db.royaltyProgrammeVersion.findMany({ orderBy: { version: "desc" }, take: 30 }),
   ]);
 
   return (
@@ -113,24 +110,6 @@ export default async function AdministrationPage() {
         action: event.action,
         reason: event.reason,
       }))}
-    >
-      {(actor.role === "ADMIN" || actor.role === "MD") && (
-        <RoyaltyProgrammes
-          role={actor.role}
-          versions={programmes.map((v) => ({
-            id: v.id,
-            version: v.version,
-            status: v.status,
-            programmeRef: v.programmeRef,
-            catalogueVersion: v.catalogueVersion,
-            termsVersion: v.termsVersion,
-            reason: v.reason,
-            decisionNote: v.decisionNote,
-            effectiveFrom: v.effectiveFrom?.toISOString() ?? null,
-            economicsReviewedAt: v.economicsReviewedAt?.toISOString() ?? null,
-          }))}
-        />
-      )}
-    </AdministrationClient>
+    />
   );
 }

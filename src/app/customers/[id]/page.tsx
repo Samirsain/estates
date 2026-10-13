@@ -119,8 +119,8 @@ export default async function CustomerDetailPage({
       royaltyLinkedMember: { include: { person: true } },
       royaltyLinkFirstBooking: { select: { id: true, bookingNumber: true, requestNo: true } },
       termsAcceptances: { orderBy: { acceptedOn: "desc" } },
-      // SSOT §74, §78 — the one Royalty opportunity and the Credit it created.
-      royaltyCredits: { where: { state: { not: "REVERSED" } }, take: 1 },
+      // SSOT §74; docss/11 — the one Royalty opportunity and the award it created.
+      royaltyAwards: { orderBy: { updatedAt: "desc" }, take: 1 },
     },
   });
 
@@ -845,10 +845,12 @@ export default async function CustomerDetailPage({
               label="Royalty opportunity"
               value={customer.royaltyOpportunityConsumedAt ? "Consumed" : "Unused"}
               hint={
-                customer.royaltyCredits[0]
-                  ? `Gift ${customer.royaltyCredits[0].state.toLowerCase()}`
+                customer.royaltyAwards[0]
+                  ? `${customer.royaltyAwards[0].tokens} tokens · ${
+                      { PENDING: "pending", RELEASED: "posted", REVERSED: "reversed" }[customer.royaltyAwards[0].state]
+                    }`
                   : customer.royaltyLinkedMemberId
-                    ? "One Gift for the linked Member on the first Club-direct repeat purchase"
+                    ? "Royalty tokens for the linked Member on the first Club-direct repeat purchase"
                     : undefined
               }
             />
