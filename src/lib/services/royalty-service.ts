@@ -238,7 +238,7 @@ export async function refreshAward(tx: Tx, awardId: string, actorRef: string) {
       },
     });
     await tx.royaltyAward.update({ where: { id: award.id }, data: { state: "RELEASED", postings: cycle, releasedAt: new Date() } });
-    await awardEvent(tx, award.id, actorRef, "POSTED", "PENDING", "RELEASED", `${award.tokens} tokens`);
+    await awardEvent(tx, award.id, actorRef, "POSTED", "PENDING", "RELEASED", `${award.tokens} points`);
   }
   await settleMember(tx, award.memberProfileId);
 }
@@ -380,21 +380,6 @@ export async function refreshAwardOfBooking(tx: Tx, bookingId: string, actorRef:
   if (award) await refreshAward(tx, award.id, actorRef);
 }
 
-/**
- * CP §60; SSOT §98 — whether a Sold By Correction on this Booking would touch
- * tokens already used: the Booking triggered a consumed award, or is the first
- * purchase of a Customer whose award was consumed. Such a correction needs MD.
- */
-export async function touchesConsumedAward(tx: Tx, bookingId: string): Promise<boolean> {
-  const count = await tx.royaltyAward.count({
-    where: {
-      consumedAt: { not: null },
-      OR: [{ triggerBookingId: bookingId }, { customerProfile: { royaltyLinkFirstBookingId: bookingId } }],
-    },
-  });
-  return count > 0;
-}
-
 /* ------------------------------------------------------------- position */
 
 export type MemberHold = "MERGED_AWAY" | "MEMBER_DEACTIVATED" | "RECOVERY_OUTSTANDING";
@@ -457,9 +442,9 @@ export function tokenBlockers(p: TokenPosition): string[] {
   if (p.memberHold === "MERGED_AWAY") out.push("This identity was merged into another; record spending on the surviving Member.");
   if (p.memberHold === "MEMBER_DEACTIVATED") out.push("The Member is Deactivated: spending is blocked until reactivation. The balance is kept.");
   if (p.memberHold === "RECOVERY_OUTSTANDING") out.push("The Member has an outstanding Recovery: spending is blocked until it is cleared. The balance is kept.");
-  if (p.available < 0) out.push(`The balance is below zero by ${-p.available} tokens; tokens earned next cover it first.`);
+  if (p.available < 0) out.push(`The balance is below zero by ${-p.available} points; points earned next cover it first.`);
   if (p.restricted > 0) {
-    out.push(`${p.restricted} tokens are restricted while their source is held (${p.restrictions.map((r) => HOLD_WORDS[r] ?? r).join(", ")}).`);
+    out.push(`${p.restricted} points are restricted while their source is held (${p.restrictions.map((r) => HOLD_WORDS[r] ?? r).join(", ")}).`);
   }
   return out;
 }
@@ -468,8 +453,8 @@ export function tokenBlockers(p: TokenPosition): string[] {
 function memberNotice(p: TokenPosition): string | null {
   if (p.memberHold === "MEMBER_DEACTIVATED") return "Spending is paused while your membership is inactive.";
   if (p.memberHold === "RECOVERY_OUTSTANDING") return "Spending is paused while an amount is being recovered.";
-  if (p.available < 0) return `Your balance is below zero by ${-p.available} tokens. Tokens you earn next will cover this first.`;
-  if (p.restricted > 0) return "Some tokens are under review and cannot be used yet.";
+  if (p.available < 0) return `Your balance is below zero by ${-p.available} points. Points you earn next will cover this first.`;
+  if (p.restricted > 0) return "Some points are under review and cannot be used yet.";
   return null;
 }
 
@@ -477,7 +462,7 @@ function refuseUnlessSpendable(p: TokenPosition, tokens: number) {
   const reasons = tokenBlockers(p);
   if (p.memberHold) blocked(reasons.join(" "));
   if (tokens > p.available) {
-    blocked(`Not enough tokens: ${Math.max(0, p.available)} can be spent now.${reasons.length ? ` ${reasons.join(" ")}` : ""}`);
+    blocked(`Not enough points: ${Math.max(0, p.available)} can be spent now.${reasons.length ? ` ${reasons.join(" ")}` : ""}`);
   }
 }
 
@@ -493,7 +478,7 @@ type Actor = { idempotencyKey: string; actorRef: string; actorRole: string };
 
 /** docss/11 §1 — recording spending keeps the existing CRM/Admin fulfilment permission. */
 function fulfilmentRole(role: string) {
-  if (role !== "CRM" && role !== "ADMIN") blocked("Only CRM or Admin records token spending.");
+  if (role !== "CRM" && role !== "MD") blocked("Only CRM or MD records token spending.");
 }
 
 async function postRedemption(tx: Tx, redemption: { id: string; memberProfileId: string; tokens: number; reference: string | null }, actorRef: string) {
@@ -520,7 +505,7 @@ async function ownerOf(memberProfileId: string) {
  * docss/11 §1 — staff record spending arranged outside the CRM. Holds are
  * rechecked and availability recomputed under the Member lock, so two
  * redemptions at once can never overspend. A non-family recipient waits for MD
- * (NT10) and posts only on approval.
+ * (NT10) and posts only on approval — unless MD records it, which is the approval.
  */
 export async function recordTokenRedemption(
   args: Actor & {
@@ -565,7 +550,8 @@ export async function recordTokenRedemption(
       await refreshMemberAwards(tx, args.memberProfileId, args.actorRef);
       refuseUnlessSpendable(await tokenPosition(tx, args.memberProfileId), args.tokens);
 
-      const nonFamily = args.recipient === "NON_FAMILY";
+      const nonFamily = args.recipient === "NON_FAMILY" && args.actorRole !== "MD";
+      const mdApproved = args.recipient === "NON_FAMILY" && args.actorRole === "MD";
       const redemption = await tx.tokenRedemption.create({
         data: {
           memberProfileId: args.memberProfileId,
@@ -577,19 +563,20 @@ export async function recordTokenRedemption(
           state: nonFamily ? "AWAITING_MD" : "RECORDED",
           requestKey: args.idempotencyKey,
           recordedByRef: args.actorRef,
+          ...(mdApproved ? { decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: "Recorded by MD." } : {}),
         },
       });
       if (nonFamily) {
         await ensureTask(tx, {
           recordKind: REDEMPTION_RECORD_KIND,
           recordId: redemption.id,
-          recordName: `${owner.memberId} · ${args.tokens} tokens to ${recipientName}`,
+          recordName: `${owner.memberId} · ${args.tokens} points to ${recipientName}`,
           purpose: NOMINEE_APPROVAL_PURPOSE,
           title: "Non-Family Reward Nominee Approval",
           assigneeRole: "MD",
           dueAt: new Date(),
           decision: true,
-          latestResult: `${args.tokens} Royalty tokens redeemed for ${recipientName}, who is not immediate family.`,
+          latestResult: `${args.tokens} Royalty points redeemed for ${recipientName}, who is not immediate family.`,
         });
       } else {
         await postRedemption(tx, redemption, args.actorRef);
@@ -666,7 +653,7 @@ export async function decideTokenRedemption(args: Actor & { redemptionId: string
  * consumed: a correction never reopens a lifetime reward.
  */
 export async function correctTokenRedemption(args: Actor & { redemptionId: string; reason: string }) {
-  if (args.actorRole !== "ADMIN" && args.actorRole !== "MD") blocked("Only Admin or MD corrects a recorded redemption.");
+  if (args.actorRole !== "MD") blocked("Only MD corrects a recorded redemption.");
   if (!args.reason.trim()) blocked("A compulsory reason is required.");
   const found = await db.tokenRedemption.findUnique({ where: { id: args.redemptionId }, select: { memberProfileId: true } });
   if (!found) blocked("That redemption no longer exists.");

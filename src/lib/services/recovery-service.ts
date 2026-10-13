@@ -23,6 +23,7 @@ import {
 import { refreshAwardsOfMember } from "./royalty-service";
 import { refreshTripOfMember } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
+import { CIRCUMVENTION_KIND, CIRCUMVENTION_PURPOSE } from "./benefit-control-service";
 
 const RECOVERY_DAYS = 15;
 
@@ -211,6 +212,16 @@ async function clear(
   // CP §76.4 — what the Recovery held is released if nothing else holds it,
   // including the benefits of anyone under a circumvention review for it (CP §55).
   await refreshBenefitsOfPerson(tx, recovery.personId, actorRef);
+  // A review still waiting on this Recovery has nothing left to guard: it clears with it.
+  const cleared = `${recovery.recoveryNo} cleared — nothing left to circumvent.`;
+  const waiting = await tx.circumventionReview.findMany({ where: { recoveryId: recovery.id, status: "PENDING_REVIEW" }, select: { id: true } });
+  for (const { id } of waiting) {
+    await tx.circumventionReview.update({
+      where: { id },
+      data: { status: "CLEARED", decidedByRef: actorRef, decidedAt: new Date(), reason: cleared },
+    });
+    await closeTasksFor(tx, CIRCUMVENTION_KIND, id, actorRef, cleared, CIRCUMVENTION_PURPOSE);
+  }
   const subjects = await tx.circumventionReview.findMany({ where: { recoveryId: recovery.id }, select: { subjectPersonId: true } });
   for (const { subjectPersonId } of subjects) await refreshBenefitsOfPerson(tx, subjectPersonId, actorRef);
   await reassessSourceBooking(tx, recovery.commissionRecordId, actorRef);

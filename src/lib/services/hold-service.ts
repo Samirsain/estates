@@ -7,7 +7,7 @@ import {
   DEFAULT_CALENDAR,
   checkOpenPositions,
   decideExtension,
-  extensionRequiresAdmin,
+  extensionRequiresMd,
   holdExpiry,
   holdRequestExpiry,
   isHoldExpired,
@@ -300,7 +300,7 @@ export async function requestHoldExtension(args: {
       if (isHoldExpired(hold.expiresAt)) blocked("This Hold has expired. Create a new Hold instead.");
 
       // CRM may always raise the request; Admin decides it from the second one on.
-      const requiresAdmin = extensionRequiresAdmin(hold.extensionCount);
+      const requiresAdmin = extensionRequiresMd(hold.extensionCount);
 
       const request = await tx.holdExtensionRequest.create({
         data: {
@@ -348,8 +348,8 @@ export async function decideHoldExtension(args: {
         include: { hold: true },
       });
       if (request.status !== "PENDING") blocked("This extension request has already been decided.");
-      if (request.requiresAdmin && args.actorRole !== "ADMIN" && args.actorRole !== "MD") {
-        blocked("A further Hold extension requires Admin approval.");
+      if (request.requiresAdmin && args.actorRole !== "MD") {
+        blocked("A further Hold extension requires MD approval.");
       }
       // Approving against a frozen Hold would push out an expiry that the
       // Booking rejection then overwrites with the frozen remainder, silently

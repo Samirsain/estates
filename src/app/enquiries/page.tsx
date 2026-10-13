@@ -76,7 +76,7 @@ export default async function EnquiriesPage({
     // Assigned CRM (DESIGN §8.2). Only the roles that carry an Enquiry
     // follow-up task appear, so the picker cannot create an unworkable task.
     db.staffAccount.findMany({
-      where: { status: "ACTIVE", role: { in: ["CRM", "ADMIN", "MD"] } },
+      where: { status: "ACTIVE", role: { in: ["CRM", "MD"] } },
       include: { person: true },
       orderBy: { staffAccountId: "asc" },
     }),

@@ -242,7 +242,7 @@ const HOLD_LABEL: Record<string, string> = {
 /** v2.1 §9 — one line, the same everywhere a Booking states its terms. */
 export function termsLine(t: { version: number; direct: string | null; loyalty: string | null }) {
   const rate = (r: string | null) => (r ? `${rateLabel(r)}%` : "Disabled");
-  return `Commission settings v${t.version} · Direct ${rate(t.direct)} · Loyalty ${rate(t.loyalty)}`;
+  return `Commission settings v${t.version} · Commission ${rate(t.direct)} · Loyalty Points ${rate(t.loyalty)}`;
 }
 
 const SOLD_BY_LABEL: Record<string, string> = {
@@ -597,7 +597,7 @@ export default function BookingsClient({
               {focusRow.commissionTerms && (
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   {termsLine(focusRow.commissionTerms)}
-                  {focusRow.royaltyTokens !== null ? ` · Royalty ${focusRow.royaltyTokens} tokens` : ""}
+                  {focusRow.royaltyTokens !== null ? ` · Royalty ${focusRow.royaltyTokens} points` : ""}
                 </p>
               )}
               {/* The one case the classification has to explain itself: the
@@ -1073,7 +1073,7 @@ export default function BookingsClient({
       {dialog?.kind === "SOLD_BY" && (
         <Modal
           title={`Sold By Correction — ${dialog.row.bookingNumber ?? dialog.row.requestNo}`}
-          description="Nothing changes until Admin or MD approves. Booking and Payment history are never touched by this correction."
+          description="Nothing changes until MD approves. Booking and Payment history are never touched by this correction."
           onClose={() => setDialog(null)}
         >
           <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
@@ -1429,7 +1429,7 @@ export default function BookingsClient({
         <ActionDialog
           title="Reopen a Delivered Booking"
           row={dialog.row}
-          consequence="Exceptional MD/Admin correction. The Booking returns to Payment Completed, the completion record is kept as history, and the Allotment/Registry work is queued again."
+          consequence="Exceptional MD correction. The Booking returns to Payment Completed, the completion record is kept as history, and the Allotment/Registry work is queued again."
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -3795,7 +3795,7 @@ export function DeliverDialog({
         </p>
         <p className="mt-1 text-muted-foreground">
           One buyer owns 100%. Add a Customer to split it, and the shares must then total exactly
-          100%. Delivered is recorded once, and only MD or Admin can reopen it.
+          100%. Delivered is recorded once, and only MD can reopen it.
         </p>
       </div>
 

@@ -95,7 +95,7 @@ export type CreateEnquiryInput = {
   sourceMemberId?: string | null;
   sourceCustomerId?: string | null;
   assignedStaffId: string;
-  assigneeRole: "CRM" | "ADMIN" | "MD";
+  assigneeRole: "CRM" | "MD";
   nextFollowUpAt: Date;
   remark?: string;
 };

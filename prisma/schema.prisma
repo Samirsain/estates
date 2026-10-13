@@ -20,7 +20,6 @@ generator client {
 
 enum StaffRole {
   MD
-  ADMIN
   ACCOUNTS
   CRM
   MIS

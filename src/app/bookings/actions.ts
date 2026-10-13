@@ -655,8 +655,8 @@ export async function markCommissionPaidAction(
 }
 
 /**
- * PRD §6.10 — CRM or Admin raises the correction with a compulsory reason and
- * supporting remark. Nothing moves until Admin or MD approves it.
+ * PRD §6.10 — CRM raises the correction with a compulsory reason and supporting
+ * remark, and nothing moves until MD approves it. MD raising it is the approval.
  */
 export async function requestSoldByCorrectionAction(
   input: {
@@ -680,11 +680,23 @@ export async function requestSoldByCorrectionAction(
       reason: input.reason,
       supportingNote: input.supportingNote,
     });
+    if (actor.role === "MD") {
+      await decideSoldByCorrection({
+        idempotencyKey: `${key}:approve`,
+        actorRef: actor.staffAccountId,
+        actorRole: actor.role,
+        bookingId: input.bookingId,
+        approve: true,
+        note: input.reason,
+      });
+    }
     refresh();
     return {
       ok: true,
       message:
-        "Sold By Correction raised. The attribution is unchanged until Admin or MD approves it.",
+        actor.role === "MD"
+          ? "Sold By corrected. Old commission records are superseded, new ones created, and Accounts has the impact review."
+          : "Sold By Correction raised. The attribution is unchanged until MD approves it.",
     };
   } catch (error) {
     return toResult(error);
@@ -1002,10 +1014,10 @@ export async function loadBookingDetail(bookingId: string) {
           include: { memberProfile: { select: { memberId: true } } },
         })
       ).map((r) => ({
-        kind: "Royalty Tokens",
+        kind: "Royalty Points",
         member: r.memberProfile.memberId,
         state: r.state,
-        detail: `${r.tokens} tokens${r.holdReason ? ` · ${r.holdReason.replaceAll("_", " ").toLowerCase()}` : ""}${r.reversalReason && r.state === "REVERSED" ? ` · ${r.reversalReason}` : ""}`,
+        detail: `${r.tokens} points${r.holdReason ? ` · ${r.holdReason.replaceAll("_", " ").toLowerCase()}` : ""}${r.reversalReason && r.state === "REVERSED" ? ` · ${r.reversalReason}` : ""}`,
       })),
     ],
     commissions: commissions.map((c) => ({

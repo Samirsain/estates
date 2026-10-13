@@ -321,14 +321,14 @@ async function commissionIntegrity(): Promise<RuleResult> {
       const record = records.find((r) => r.bookingId === bookingId);
       exceptions.push({
         record: record?.booking?.bookingNumber ?? record?.booking?.requestNo ?? bookingId,
-        detail: "Direct and Customer Loyalty are both current on one sale (v2.1 §11)",
+        detail: "Commission and Loyalty Points are both current on one sale (v2.1 §11)",
       });
     }
   }
 
   return {
     rule: "commission_integrity",
-    source: "PRD §6.9, v2.1 §11 — supersession intact, eligibility and payment separate, never Direct and Loyalty together",
+    source: "PRD §6.9, v2.1 §11 — supersession intact, eligibility and payment separate, never Commission and Loyalty Points together",
     checked: records.length,
     exceptions,
   };
@@ -363,7 +363,7 @@ async function customerClosingLoyalty(): Promise<RuleResult> {
     if (count > CUSTOMER_CLOSING_LOYALTY_LIMIT) {
       exceptions.push({
         record: name,
-        detail: `${count} Customer-closing Loyalty events qualified; the lifetime limit is ${CUSTOMER_CLOSING_LOYALTY_LIMIT}`,
+        detail: `${count} Customer-closing Loyalty Points events qualified; the lifetime limit is ${CUSTOMER_CLOSING_LOYALTY_LIMIT}`,
       });
     }
   }
@@ -439,7 +439,7 @@ async function businessModelV2(): Promise<RuleResult> {
   for (const v of versions) {
     const name = `${v.project.name} v${v.version}`;
     if (v.effectiveFrom && v.decidedAt && v.effectiveFrom < v.decidedAt) add(name, "Effective before its MD approval (§28.2)");
-    if (v.directPercent?.gt(5) || v.loyaltyPercent?.gt(3)) add(name, "Direct above 5% or Loyalty above 3% (§28.3)");
+    if (v.directPercent?.gt(5) || v.loyaltyPercent?.gt(3)) add(name, "Commission above 5% or Loyalty Points above 3% (§28.3)");
   }
 
   // 12. A Buyback-qualified non-cash reward fulfilled before Stable Buyback Completion.
@@ -452,7 +452,7 @@ async function businessModelV2(): Promise<RuleResult> {
   });
   for (const a of awardsOnBuyback) {
     if (a.triggerBooking.paymentReceivedPercent.lt(100) && !(await stable(a.triggerBookingId))) {
-      add(a.triggerBooking.bookingNumber ?? a.id, "Buyback-qualified Royalty tokens usable before Stable Completion (§28.12)");
+      add(a.triggerBooking.bookingNumber ?? a.id, "Buyback-qualified Royalty points usable before Stable Completion (§28.12)");
     }
   }
   const travelledOnBuyback = await db.tripCredit.findMany({
@@ -500,9 +500,9 @@ async function businessModelV2(): Promise<RuleResult> {
   });
   for (const r of redemptions) {
     const funded = sumOf(r.allocations);
-    if (funded > r.tokens || (r.state !== "RECORDED" && funded > 0)) add(r.memberProfile.memberId, "A token redemption is over-funded (docss/11)");
+    if (funded > r.tokens || (r.state !== "RECORDED" && funded > 0)) add(r.memberProfile.memberId, "A points redemption is over-funded (docss/11)");
     if (r.state === "RECORDED" && funded < r.tokens && (freeBy.get(r.memberProfileId) ?? 0) > 0) {
-      add(r.memberProfile.memberId, "Free tokens sit beside an unfunded deficit (docss/11)");
+      add(r.memberProfile.memberId, "Free points sit beside an unfunded deficit (docss/11)");
     }
   }
 
@@ -527,7 +527,7 @@ async function businessModelV2(): Promise<RuleResult> {
   for (const c of closings) {
     const p = c.beneficiaryPerson;
     if (p.aadhaarStatus !== "VERIFIED" || !p.customerProfile?._count.termsAcceptances) {
-      add(p.fullName, "Customer-closing Loyalty released without verified KYC and accepted Terms (§28.18)");
+      add(p.fullName, "Customer-closing Loyalty Points released without verified KYC and accepted Terms (§28.18)");
     }
   }
 

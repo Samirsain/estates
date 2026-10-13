@@ -10,7 +10,7 @@ const fail = (reason: string): Check => ({ ok: false, reason });
 export const MAX_TOKENS = 1_000_000;
 
 export function validateTokenQuantity(label: string, value: unknown): Check {
-  if (typeof value !== "number" || !Number.isInteger(value)) return fail(`${label} must be a whole number of tokens.`);
+  if (typeof value !== "number" || !Number.isInteger(value)) return fail(`${label} must be a whole number of points.`);
   if (value <= 0) return fail(`${label} must be more than 0.`);
   if (value > MAX_TOKENS) return fail(`${label} cannot be more than ${MAX_TOKENS.toLocaleString("en-IN")}.`);
   return ok;

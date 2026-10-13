@@ -15,10 +15,7 @@ import {
   type PlcComponentInput,
 } from "@/lib/services/project-service";
 import {
-  decideCommissionVersion,
-  prepareCommissionDraft,
-  recordEconomicsReview,
-  sendCommissionVersion,
+  createCommissionVersion,
   type CommissionVersionInput,
 } from "@/lib/services/commission-settings-service";
 import type { CommissionTermsInput } from "@/lib/domain/commission";
@@ -54,7 +51,7 @@ export async function createProjectAction(
     projectCode: string;
     isExternalResaleGroup: boolean;
     components: PlcComponentInput[];
-    /** SSOT §12–§14; CP §8 — the Commercial & Rewards settings, saved as Draft v1 for MD to approve. */
+    /** SSOT §12–§14; CP §8 — the Rewards settings, saved as version 1 and approved by the MD creating them. */
     commission?: CommissionDraftInput | null;
   },
   key: string
@@ -91,7 +88,7 @@ export async function createProjectAction(
       message:
         `${input.name} created as Unreleased (code ${result.projectCode}). Prepare inventory, then make it Active before anything is sold.` +
         (input.commission
-          ? " Its Commercial & Rewards settings are saved as Draft v1 — prepare the inventory, then send them to MD from the Project page."
+          ? " Its Rewards settings are saved and approved as version 1."
           : ""),
     };
   } catch (error) {
@@ -259,18 +256,17 @@ export async function updateProjectAction(
 /* ------------------------------------------- commission settings (SSOT §14) */
 
 // No Action argument on requireStaff: the service itself decides who may act —
-// Admin prepares and sends, MD decides — so PC's PROJECT_SETUP grant does not
-// reach these.
+// only MD creates a version — so PC's PROJECT_SETUP grant does not reach it.
 
 function refreshProject(projectId: string) {
   refresh();
   revalidatePath(`/projects/${projectId}`);
 }
 
-export async function prepareCommissionDraftAction(projectId: string, input: CommissionDraftInput, key: string): Promise<ActionResult> {
+export async function createCommissionVersionAction(projectId: string, input: CommissionDraftInput, key: string): Promise<ActionResult> {
   const actor = await requireStaff();
   try {
-    const result = await prepareCommissionDraft({
+    const result = await createCommissionVersion({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
@@ -278,13 +274,19 @@ export async function prepareCommissionDraftAction(projectId: string, input: Com
       ...toVersionInput(input),
     });
     refreshProject(projectId);
-    return { ok: true, message: `Draft version ${result.version} saved. Send it to MD when it is ready.` };
+    return {
+      ok: true,
+      message:
+        result.status === "ACTIVE"
+          ? `Version ${result.version} is now Active. New Booking Requests freeze it; existing ones keep theirs.`
+          : `Version ${result.version} saved. It becomes Active at its Effective from.`,
+    };
   } catch (error) {
     return toResult(error);
   }
 }
 
-/** CP §8 — a Commercial & Rewards Draft as the browser sends it (dates as ISO strings). */
+/** CP §8 — a Rewards settings version as the browser sends it (dates as ISO strings). */
 export type CommissionDraftInput = Omit<CommissionVersionInput, "effectiveFrom" | "trip"> & {
   effectiveFrom?: string | null;
   trip?: TripDraftInput | null;
@@ -320,69 +322,3 @@ export type TripDraftInput = {
   sharedPools: { plotId: string; parentPlotId: string }[];
 };
 
-/** CP §7.4, §65 NT02 — MD records the Trip Programme's economics review. */
-export async function recordEconomicsReviewAction(versionId: string, note: string, key: string): Promise<ActionResult> {
-  const actor = await requireStaff();
-  try {
-    const result = await recordEconomicsReview({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
-      versionId,
-      note,
-    });
-    refreshProject(result.projectId);
-    return { ok: true, message: "Economics review recorded. The version can now be approved." };
-  } catch (error) {
-    return toResult(error);
-  }
-}
-
-export async function sendCommissionVersionAction(versionId: string, key: string): Promise<ActionResult> {
-  const actor = await requireStaff();
-  try {
-    const result = await sendCommissionVersion({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
-      versionId,
-    });
-    refreshProject(result.projectId);
-    return { ok: true, message: `Version ${result.version} sent to MD.` };
-  } catch (error) {
-    return toResult(error);
-  }
-}
-
-export async function decideCommissionVersionAction(
-  versionId: string,
-  approve: boolean,
-  note: string,
-  key: string
-): Promise<ActionResult> {
-  const actor = await requireStaff();
-  try {
-    const result = await decideCommissionVersion({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
-      versionId,
-      approve,
-      note,
-    });
-    refreshProject(result.projectId);
-    return {
-      ok: true,
-      message:
-        result.status === "ACTIVE"
-          ? `Version ${result.version} is now Active` +
-            (result.supersededVersion ? `, superseding version ${result.supersededVersion}` : "") +
-            ". New Booking Requests freeze it; existing ones keep theirs."
-          : result.status === "APPROVED"
-            ? `Version ${result.version} approved. It becomes Active at its Effective from.`
-            : `Version ${result.version} rejected.`,
-    };
-  } catch (error) {
-    return toResult(error);
-  }
-}

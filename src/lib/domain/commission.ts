@@ -79,15 +79,15 @@ export function validateCommissionTerms(t: CommissionTermsInput): Check {
     if (n.gt(new D(max))) return fail(`${label} cannot exceed ${max}%.`);
     return ok;
   };
-  const direct = rate("Direct Commission", t.directEnabled, t.directPercent, DIRECT_MAX_PERCENT);
+  const direct = rate("Commission", t.directEnabled, t.directPercent, DIRECT_MAX_PERCENT);
   if (!direct.ok) return direct;
-  const loyalty = rate("Customer Loyalty", t.loyaltyEnabled, t.loyaltyPercent, LOYALTY_MAX_PERCENT);
+  const loyalty = rate("Loyalty Points", t.loyaltyEnabled, t.loyaltyPercent, LOYALTY_MAX_PERCENT);
   if (!loyalty.ok) return loyalty;
   if (needsLoyaltyException(t) && !t.loyaltyExceptionReason?.trim()) {
     return fail(
       t.directEnabled
-        ? "Customer Loyalty is not lower than Direct Commission. Write the reason for the MD exception."
-        : "Customer Loyalty is offered without Direct Commission. Write the reason for the MD exception."
+        ? "Loyalty Points are not lower than Commission. Write the reason for the MD exception."
+        : "Loyalty Points are offered without Commission. Write the reason for the MD exception."
     );
   }
   return ok;

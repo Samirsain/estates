@@ -22,7 +22,6 @@ const db = new PrismaClient();
 
 const STAFF: Array<{ staffAccountId: string; name: string; role: StaffRole; mobile: string }> = [
   { staffAccountId: "STF-0001", name: "Managing Director", role: "MD", mobile: "9800000001" },
-  { staffAccountId: "STF-0002", name: "Deepak Sharma", role: "ADMIN", mobile: "9800000002" },
   { staffAccountId: "STF-0003", name: "Priya Nair", role: "ACCOUNTS", mobile: "9800000003" },
   { staffAccountId: "STF-0004", name: "Suresh Iyer", role: "ACCOUNTS", mobile: "9800000004" },
   { staffAccountId: "STF-0005", name: "Rahul Mehta", role: "CRM", mobile: "9800000005" },

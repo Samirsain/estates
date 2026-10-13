@@ -46,7 +46,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   formatIst,
-  formatIstDate,
   formatIstDateTime,
   formatPercent,
   formatDimension,
@@ -96,7 +95,6 @@ export type PlotRowView = {
   pastHolds: Array<{ at: string; actorRef: string; reason: string | null }>;
   restriction: string;
   restrictionReason: string | null;
-  isResale: boolean;
   widthFt: string;
   lengthFt: string;
   exactAreaSqFt: string;
@@ -306,12 +304,11 @@ const rowActions = "flex w-28 items-center gap-1.5";
 const rowButton = "h-7 flex-1 basis-0 px-1.5 text-[11px]";
 
 // Status is a column, so its pills are one width — a ragged edge that changes
-// shape with the length of the word inside it is not a column. "Waiting
-// Approval" is four times the length of "Hold", so the long one wraps inside
-// the same pill instead of stretching it and dragging the whole column out
-// with it. Every screen says Waiting Approval — a Plot, a Booking Request and
-// an Acquisition are all waiting on the same kind of decision.
-const statusBadge = "w-[7.5rem] justify-center whitespace-normal text-center leading-tight";
+// shape with the length of the word inside it is not a column. The width fits
+// "Payment Completed" on one line, so no pill wraps into two. Every screen says
+// Waiting Approval — a Plot, a Booking Request and an Acquisition are all
+// waiting on the same kind of decision.
+const statusBadge = "w-[9rem] justify-center whitespace-nowrap text-center leading-tight";
 
 const inputClass =
   `h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${NO_STEPPER}`;
@@ -1338,28 +1335,11 @@ export default function PlotsClient({
                             {STATUS_LABEL[shown.status] ?? shown.status}
                           </Badge>
                         )}
-                        {plot.isResale && (
-                          <Badge variant="outline" className={statusBadge}>
-                            RESALE
-                          </Badge>
-                        )}
                       </div>
                       {shown.because && (
                         <span className="mt-1 block text-[11px] font-medium text-foreground">
                           {shown.because}
                         </span>
-                      )}
-                      {plot.hold && (
-                        <>
-                          <span className="mt-1 block text-[11px] text-muted-foreground">
-                            Held for {plot.hold.heldForName} · {holdRequestedBy(plot.hold)}
-                          </span>
-                          <span className="mt-1 block text-[11px] font-medium text-foreground">
-                            {plot.hold.frozen
-                              ? "Hold timer frozen — Booking Request under review"
-                              : `Expires ${formatIstDate(plot.hold.expiresAt)}`}
-                          </span>
-                        </>
                       )}
                       {requests.map((r) => (
                         <span key={r.id} className="mt-1 block text-[11px] font-medium text-amber-800">
@@ -1834,7 +1814,7 @@ export default function PlotsClient({
             dialog.plot.hold.expiresAt
           )}. ${
             dialog.plot.hold.extensionCount >= 1
-              ? "This is a further extension, so Admin approval is required."
+              ? "This is a further extension, so MD approval is required."
               : "This is the first extension, which CRM may approve."
           }`}
           busy={busy}

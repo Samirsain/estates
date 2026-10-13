@@ -17,19 +17,14 @@ import {
   rateLabel,
   validateCommissionTerms,
 } from "@/lib/domain/commission";
+import { validateTokenQuantity } from "@/lib/domain/tokens";
 import { formatIst } from "@/lib/tasks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
-import {
-  decideCommissionVersionAction,
-  prepareCommissionDraftAction,
-  recordEconomicsReviewAction,
-  sendCommissionVersionAction,
-  type ActionResult,
-  type CommissionDraftInput,
-} from "../actions";
+import { createCommissionVersionAction, type ActionResult, type CommissionDraftInput } from "../actions";
 
 export type CommissionVersionView = {
   id: string;
@@ -62,10 +57,9 @@ export type CommissionVersionView = {
   } | null;
   economicsReviewedAt: string | null;
   economicsReviewedByRef: string | null;
+  /** docss/11 — whole tokens per qualifying Royalty; null only on a version from before tokens. */
+  royaltyTokensPerAward: number | null;
 };
-
-/** CP §8 "Reward Programme References" — the company-wide Royalty Gift Programme in force. */
-export type RoyaltyProgrammeRef = { version: number; programmeRef: string; catalogueVersion: string; termsVersion: string } | null;
 
 export type PlotOption = { id: string; plotNumber: string };
 
@@ -108,38 +102,32 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 const yesNo = (b: boolean) => (b ? "Yes" : "No");
 
-function Terms({
-  v,
-  plotNo,
-  royalty,
-}: {
-  v: CommissionVersionView;
-  plotNo: (id: string) => string;
-  royalty: RoyaltyProgrammeRef;
-}) {
+function Terms({ v, plotNo }: { v: CommissionVersionView; plotNo: (id: string) => string }) {
   const decided = v.status === "REJECTED" ? "Rejected by" : "Approved by";
+  // A version MD created is approved by that act — one line, not two.
+  const selfApproved = v.decidedByRef === v.preparedByRef;
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <Section n={1} title="Direct Commission">
+      <Section n={1} title="Commission">
         <Row label="Direct Enabled">{yesNo(v.directEnabled)}</Row>
         <Row label="Direct Rate %">
           <span className="font-medium">{direct(v)}</span>
         </Row>
         {v.directEnabled && <Row label="Milestone">25% Payment Received · self-purchase 100%</Row>}
       </Section>
-      <Section n={2} title="Customer Loyalty">
-        <Row label="Loyalty Enabled">{yesNo(v.loyaltyEnabled)}</Row>
-        <Row label="Loyalty Rate %">
+      <Section n={2} title="Loyalty Points">
+        <Row label="Loyalty Points Enabled">{yesNo(v.loyaltyEnabled)}</Row>
+        <Row label="Loyalty Points Rate %">
           <span className="font-medium">{loyalty(v)}</span>
         </Row>
         {v.loyaltyEnabled && <Row label="Milestone">100% Payment Received</Row>}
         {v.loyaltyExceptionReason && <Row label="MD commercial exception">{v.loyaltyExceptionReason}</Row>}
       </Section>
-      <Section n={3} title="Trip Programme">
-        <Row label="Trip Programme Enabled">{yesNo(v.trip !== null)}</Row>
+      <Section n={3} title="Rewards">
+        <Row label="Rewards Enabled">{yesNo(v.trip !== null)}</Row>
         {v.trip && (
           <>
-            <Row label="Trip Total Target">{v.trip.target}</Row>
+            <Row label="Target">{v.trip.target}</Row>
             <Row label="Minimum Own-Sale Credits">{v.trip.minOwn}</Row>
             <Row label="Maximum Reference Credits">{v.trip.maxRef}</Row>
             <Row label="Excluded Plots">
@@ -153,41 +141,47 @@ function Terms({
           </>
         )}
       </Section>
-      <Section n={4} title="Reward Programme References">
+      <Section n={4} title="Royalty Points">
+        <Row label="Points per qualifying Royalty">
+          <span className="font-medium">
+            {v.royaltyTokensPerAward ?? "Not set — Booking Requests are refused until a version sets it"}
+          </span>
+        </Row>
+        <Row label="Earned by">The Royalty Linked Member, once per Customer</Row>
+      </Section>
+      <Section n={5} title="Reward Programme References">
         {v.trip && (
           <>
-            <Row label="Trip Programme Code">{v.trip.code}</Row>
-            <Row label="Trip Programme Version">{v.trip.versionRef}</Row>
-            <Row label="Trip Terms Version">{v.trip.termsRef}</Row>
-            <Row label="Trip Cut-off">{v.trip.cutOffAt ? formatIst(v.trip.cutOffAt) : "—"}</Row>
+            <Row label="Rewards Code">{v.trip.code}</Row>
+            <Row label="Rewards Version">{v.trip.versionRef}</Row>
+            <Row label="Terms Version">{v.trip.termsRef}</Row>
+            <Row label="Cut-off">{v.trip.cutOffAt ? formatIst(v.trip.cutOffAt) : "—"}</Row>
             <Row label="Final Wind-down">{v.trip.windDownAt ? formatIst(v.trip.windDownAt) : "—"}</Row>
           </>
         )}
-        <Row label="Royalty Gift Programme (company-wide)">
-          {royalty ? `${royalty.programmeRef} v${royalty.version} · ${royalty.catalogueVersion} · ${royalty.termsVersion}` : "None live"}
-        </Row>
+        {!v.trip && <Row label="Rewards">Disabled</Row>}
       </Section>
-      <Section n={5} title="Economics Review">
+      <Section n={6} title="Economics Review">
         <Row label="Economics Reviewed">
           {v.economicsReviewedAt
             ? `Yes · ${v.economicsReviewedByRef ?? ""} · ${formatIst(v.economicsReviewedAt)}`
             : v.trip
-              ? "No — required before MD approval"
-              : "No — not required without a Trip Programme"}
+              ? "No"
+              : "Not needed without Rewards"}
         </Row>
       </Section>
-      <Section n={6} title="Version">
+      <Section n={7} title="Version">
         <Row label="Status">{STATUS[v.status].label}</Row>
-        <Row label="Prepared by">{v.preparedByRef}</Row>
-        {v.decidedByRef && v.decidedAt && (
+        <Row label={selfApproved ? "Created and approved by" : "Prepared by"}>{v.preparedByRef}</Row>
+        {v.decidedByRef && v.decidedAt && !selfApproved && (
           <Row label={decided}>
             {v.decidedByRef} · {formatIst(v.decidedAt)}
           </Row>
         )}
-        <Row label="Effective From">{v.effectiveFrom ? formatIst(v.effectiveFrom) : "On MD approval"}</Row>
+        <Row label="Effective From">{v.effectiveFrom ? formatIst(v.effectiveFrom) : "—"}</Row>
         {v.effectiveTo && <Row label="Effective To">{formatIst(v.effectiveTo)}</Row>}
         <Row label="Reason">{v.reason}</Row>
-        {v.decisionNote && <Row label="MD note">{v.decisionNote}</Row>}
+        {v.decisionNote && v.decisionNote !== v.reason && <Row label="MD note">{v.decisionNote}</Row>}
       </Section>
     </div>
   );
@@ -198,27 +192,22 @@ export default function CommissionSettings({
   role,
   versions,
   plots,
-  royaltyProgramme,
 }: {
   projectId: string;
   role: string;
   versions: CommissionVersionView[];
   plots: PlotOption[];
-  royaltyProgramme: RoyaltyProgrammeRef;
 }) {
   const plotNo = (id: string) => plots.find((p) => p.id === id)?.plotNumber ?? "?";
-  const [reviewing, setReviewing] = React.useState(false);
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
   const [editing, setEditing] = React.useState(false);
-  const [deciding, setDeciding] = React.useState<boolean | null>(null);
 
   const active = versions.find((v) => v.status === "ACTIVE") ?? null;
   const open =
     versions.find((v) => v.status === "DRAFT" || v.status === "PENDING_APPROVAL" || v.status === "APPROVED") ?? null;
   const history = versions.filter((v) => v !== active && v !== open);
-  const isAdmin = role === "ADMIN";
   const isMd = role === "MD";
 
   async function run(action: () => Promise<ActionResult>) {
@@ -228,7 +217,6 @@ export default function CommissionSettings({
     setNotice(result);
     if (result.ok) {
       setEditing(false);
-      setDeciding(null);
       router.refresh();
     }
   }
@@ -237,14 +225,14 @@ export default function CommissionSettings({
     <Card className="space-y-3 p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold">Commercial &amp; Rewards settings</h2>
+          <h2 className="text-sm font-semibold">Rewards settings</h2>
           <p className="text-xs text-muted-foreground">
-            Applicable Direct Commission is Project-specific and disclosed before the relevant Booking.
+            Applicable Commission is Project-specific and disclosed before the relevant Booking.
           </p>
         </div>
-        {isAdmin && !open && (
+        {isMd && !open && (
           <Button size="xs" variant="outline" onClick={() => setEditing(true)}>
-            Prepare new version
+            New version
           </Button>
         )}
       </div>
@@ -264,12 +252,11 @@ export default function CommissionSettings({
               <span className="text-muted-foreground">since {formatIst(active.effectiveFrom)}</span>
             )}
           </div>
-          <Terms v={active} plotNo={plotNo} royalty={royaltyProgramme} />
+          <Terms v={active} plotNo={plotNo} />
         </div>
       ) : (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-800">
-          No approved settings. Booking Requests on this Project cannot be submitted until MD approves a
-          version.
+          No settings yet. Booking Requests on this Project cannot be submitted until MD creates a version.
         </p>
       )}
 
@@ -278,39 +265,9 @@ export default function CommissionSettings({
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="font-semibold">Version {open.version}</span>
             <Badge variant={STATUS[open.status].variant}>{STATUS[open.status].label}</Badge>
-            <div className="ml-auto flex gap-1.5">
-              {isAdmin && open.status === "DRAFT" && (
-                <>
-                  <Button size="xs" variant="outline" disabled={busy} onClick={() => setEditing(true)}>
-                    Edit
-                  </Button>
-                  <Button
-                    size="xs"
-                    disabled={busy}
-                    onClick={() => run(() => sendCommissionVersionAction(open.id, newKey()))}
-                  >
-                    Send to MD
-                  </Button>
-                </>
-              )}
-              {isMd && open.status === "PENDING_APPROVAL" && open.trip && !open.economicsReviewedAt && (
-                <Button size="xs" variant="outline" disabled={busy} onClick={() => setReviewing(true)}>
-                  Economics reviewed
-                </Button>
-              )}
-              {isMd && open.status === "PENDING_APPROVAL" && (
-                <>
-                  <Button size="xs" variant="outline" disabled={busy} onClick={() => setDeciding(false)}>
-                    Reject
-                  </Button>
-                  <Button size="xs" disabled={busy} onClick={() => setDeciding(true)}>
-                    Approve
-                  </Button>
-                </>
-              )}
-            </div>
+            {open.effectiveFrom && <span className="text-muted-foreground">takes effect {formatIst(open.effectiveFrom)}</span>}
           </div>
-          <Terms v={open} plotNo={plotNo} royalty={royaltyProgramme} />
+          <Terms v={open} plotNo={plotNo} />
         </div>
       )}
 
@@ -325,11 +282,12 @@ export default function CommissionSettings({
                     <span className="font-medium">Version {v.version}</span>
                     <Badge variant={STATUS[v.status].variant}>{STATUS[v.status].label}</Badge>
                     <span className="text-muted-foreground">
-                      Direct {direct(v)} · Loyalty {loyalty(v)} · Trip {v.trip ? v.trip.code : "Disabled"}
+                      Commission {direct(v)} · Loyalty Points {loyalty(v)} · Rewards {v.trip ? v.trip.code : "Disabled"} · Royalty{" "}
+                      {v.royaltyTokensPerAward ?? "—"} points
                     </span>
                   </summary>
                   <div className="mt-2">
-                    <Terms v={v} plotNo={plotNo} royalty={royaltyProgramme} />
+                    <Terms v={v} plotNo={plotNo} />
                   </div>
                 </details>
               </li>
@@ -342,57 +300,13 @@ export default function CommissionSettings({
         <VersionForm
           busy={busy}
           plots={plots}
-          start={open?.status === "DRAFT" ? open : active}
+          start={active}
           onClose={() => setEditing(false)}
-          onSubmit={(input) => run(() => prepareCommissionDraftAction(projectId, input, newKey()))}
+          onSubmit={(input) => run(() => createCommissionVersionAction(projectId, input, newKey()))}
         />
       )}
 
-      {reviewing && open && (
-        <Modal
-          title="Economics reviewed"
-          description="Confirms the Trip Programme's economics — Trip cost and Own + Reference exposure against margin — were reviewed outside the CRM. Only the fact, you and the date are kept."
-          onClose={() => setReviewing(false)}
-        >
-          <ReviewNote
-            busy={busy}
-            onSubmit={(note) =>
-              run(async () => {
-                const result = await recordEconomicsReviewAction(open.id, note, newKey());
-                if (result.ok) setReviewing(false);
-                return result;
-              })
-            }
-          />
-        </Modal>
-      )}
-
-      {deciding !== null && open && (
-        <DecisionForm
-          approve={deciding}
-          version={open.version}
-          busy={busy}
-          onClose={() => setDeciding(null)}
-          onSubmit={(note) => run(() => decideCommissionVersionAction(open.id, deciding, note, newKey()))}
-        />
-      )}
     </Card>
-  );
-}
-
-function ReviewNote({ busy, onSubmit }: { busy: boolean; onSubmit: (note: string) => void }) {
-  const [note, setNote] = React.useState("");
-  return (
-    <div className="space-y-3">
-      <Field label="Note (compulsory)">
-        <textarea className={`${inputClass} h-16 py-2`} value={note} onChange={(e) => setNote(e.target.value)} />
-      </Field>
-      <div className="flex justify-end">
-        <Button size="sm" disabled={busy || !note.trim()} onClick={() => onSubmit(note)}>
-          Confirm
-        </Button>
-      </div>
-    </div>
   );
 }
 
@@ -447,11 +361,12 @@ export function useCommercialRewardsDraft(
     start?.loyaltyPercent ? rateLabel(start.loyaltyPercent) : "1"
   );
   const [exception, setException] = React.useState(start?.loyaltyExceptionReason ?? "");
-  const [reason, setReason] = React.useState(start?.status === "DRAFT" ? start.reason : (defaultReason ?? ""));
-  // datetime-local wants "YYYY-MM-DDTHH:mm" in local time; empty means "on MD approval".
-  const [effectiveFrom, setEffectiveFrom] = React.useState(
-    start?.status === "DRAFT" && start.effectiveFrom ? toLocalInput(start.effectiveFrom) : ""
-  );
+  const [royaltyTokens, setRoyaltyTokens] = React.useState(String(start?.royaltyTokensPerAward ?? ""));
+  const [reason, setReason] = React.useState(defaultReason ?? "");
+  // datetime-local wants "YYYY-MM-DDTHH:mm" in local time; empty means "now".
+  const [effectiveFrom, setEffectiveFrom] = React.useState("");
+  // CP §7.4 — MD confirms the Rewards economics were reviewed outside the CRM.
+  const [economicsReviewed, setEconomicsReviewed] = React.useState(false);
 
   const terms = {
     directEnabled,
@@ -466,29 +381,34 @@ export function useCommercialRewardsDraft(
   const tripProblem = !tripEnabled
     ? null
     : !(whole(target) > 0)
-      ? "Trip Total Target must be a whole number above 0."
+      ? "Target must be a whole number above 0."
       : !(whole(minOwn) >= 0 && whole(minOwn) <= whole(target))
         ? "Minimum Own-Sale Credits must be from 0 to the Total Target."
         : !(whole(maxRef) >= 0 && whole(maxRef) <= whole(target))
           ? "Maximum Reference Credits must be from 0 to the Total Target."
           : !code.trim() || !versionRef.trim() || !termsRef.trim()
-            ? "Enter the Trip Programme code, version and Terms version."
-            : pools.problem;
+            ? "Enter the Rewards code, version and Terms version."
+            : pools.problem ?? (economicsReviewed ? null : "Confirm the Rewards economics were reviewed.");
+  const tokenCheck = validateTokenQuantity("Royalty points per qualifying purchase", whole(royaltyTokens));
   const problem = !check.ok
     ? check.reason
-    : tripProblem
+    : !tokenCheck.ok
+      ? tokenCheck.reason
+      : tripProblem
       ? tripProblem
       : !reason.trim()
       ? "Write the reason for this version."
       : effectiveFrom && new Date(effectiveFrom) <= new Date()
-        ? "Effective from must be in the future, or left empty to take effect on MD approval."
+        ? "Effective from must be in the future, or left empty to take effect now."
         : null;
 
   const value: CommissionDraftInput = {
     ...terms,
     loyaltyExceptionReason: showException ? terms.loyaltyExceptionReason : null,
+    royaltyTokensPerAward: whole(royaltyTokens),
     reason,
     effectiveFrom: effectiveFrom ? new Date(effectiveFrom).toISOString() : null,
+    economicsReviewed: tripEnabled && economicsReviewed,
     trip: tripEnabled
       ? {
           tripTotalTarget: Number(target),
@@ -505,59 +425,74 @@ export function useCommercialRewardsDraft(
       : null,
   };
 
+  // One flat grid in the same Field-over-input style as the Project form it
+  // sits under, so the two read as one form.
   const fields = (
-    <>
-        <FormSection n={1} title="Direct Commission">
-          <Benefit
-            label="Direct"
-            max={DIRECT_MAX_PERCENT}
-            enabled={directEnabled}
-            value={directPercent}
-            onEnabled={setDirectEnabled}
-            onValue={setDirectPercent}
-          />
-        </FormSection>
-        <FormSection n={2} title="Customer Loyalty">
-          <Benefit
-            label="Loyalty"
-            max={LOYALTY_MAX_PERCENT}
-            enabled={loyaltyEnabled}
-            value={loyaltyPercent}
-            onEnabled={setLoyaltyEnabled}
-            onValue={setLoyaltyPercent}
-          />
-          {showException && (
-            <Field label="MD commercial exception — why Loyalty is not lower than Direct (CP §7.3)">
-              <textarea className={`${inputClass} h-16 py-2`} value={exception} onChange={(e) => setException(e.target.value)} />
-            </Field>
-          )}
-        </FormSection>
-        <FormSection n={3} title="Trip Programme">
-          <label className="flex items-center gap-2 text-xs font-medium">
-            <input type="checkbox" checked={tripEnabled} onChange={(e) => setTripEnabled(e.target.checked)} />
-            Trip Programme Enabled
-          </label>
-          {tripEnabled && (
+    <div className="grid gap-3 md:grid-cols-2">
+      <RateField
+        label="Commission"
+        max={DIRECT_MAX_PERCENT}
+        enabled={directEnabled}
+        value={directPercent}
+        onEnabled={setDirectEnabled}
+        onValue={setDirectPercent}
+      />
+      <RateField
+        label="Loyalty Points"
+        max={LOYALTY_MAX_PERCENT}
+        enabled={loyaltyEnabled}
+        value={loyaltyPercent}
+        onEnabled={setLoyaltyEnabled}
+        onValue={setLoyaltyPercent}
+      />
+      <Field label="Royalty points per qualifying purchase">
+        <Input
+          inputMode="numeric"
+          placeholder="e.g. 10"
+          value={royaltyTokens}
+          onChange={(e) => setRoyaltyTokens(e.target.value)}
+        />
+      </Field>
+      {showException && (
+        <div className="md:col-span-2">
+          <Field label="MD commercial exception — why Loyalty Points are not lower than Commission (CP §7.3)">
+            <textarea className={`${inputClass} h-16 py-2`} value={exception} onChange={(e) => setException(e.target.value)} />
+          </Field>
+        </div>
+      )}
+      <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground md:col-span-2">
+        <input type="checkbox" checked={tripEnabled} onChange={(e) => setTripEnabled(e.target.checked)} />
+        Rewards
+      </label>
+      {tripEnabled && (
+        <>
+          <Field label="Target">
+            <Input inputMode="numeric" value={target} onChange={(e) => setTarget(e.target.value)} />
+          </Field>
+          <Field label="Minimum Own-Sale Credits">
+            <Input inputMode="numeric" value={minOwn} onChange={(e) => setMinOwn(e.target.value)} />
+          </Field>
+          <Field label="Maximum Reference Credits">
+            <Input inputMode="numeric" value={maxRef} onChange={(e) => setMaxRef(e.target.value)} />
+          </Field>
+          <Field label="Rewards Code">
+            <Input placeholder="TRIP-A" value={code} onChange={(e) => setCode(e.target.value)} />
+          </Field>
+          <Field label="Rewards Version">
+            <Input placeholder="TRIP-A-2026-01" value={versionRef} onChange={(e) => setVersionRef(e.target.value)} />
+          </Field>
+          <Field label="Terms Version">
+            <Input placeholder="TRIP-TERMS-1.0" value={termsRef} onChange={(e) => setTermsRef(e.target.value)} />
+          </Field>
+          <Field label="Cut-off (optional)">
+            <Input type="datetime-local" value={cutOff} onChange={(e) => setCutOff(e.target.value)} />
+          </Field>
+          <Field label="Final Wind-down (optional)">
+            <Input type="datetime-local" value={windDown} onChange={(e) => setWindDown(e.target.value)} />
+          </Field>
+          {plots.length > 0 && (
             <>
-              <div className="grid gap-2 sm:grid-cols-3">
-                <Field label="Trip Total Target">
-                  <input className={inputClass} inputMode="numeric" value={target} onChange={(e) => setTarget(e.target.value)} />
-                </Field>
-                <Field label="Minimum Own-Sale Credits">
-                  <input className={inputClass} inputMode="numeric" value={minOwn} onChange={(e) => setMinOwn(e.target.value)} />
-                </Field>
-                <Field label="Maximum Reference Credits">
-                  <input className={inputClass} inputMode="numeric" value={maxRef} onChange={(e) => setMaxRef(e.target.value)} />
-                </Field>
-              </div>
-              {plots.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground">
-                  Every Plot is eligible. Exclusions and shared credit pools are set on the Project page once the
-                  inventory is prepared — edit this Draft there before sending it to MD.
-                </p>
-              ) : (
-              <>
-              <Field label="Excluded Plots — every other Plot is eligible (hold Ctrl to pick several)">
+              <Field label="Excluded Plots (Ctrl to pick several)">
                 <select
                   multiple
                   className={`${inputClass} h-24 py-1`}
@@ -571,50 +506,24 @@ export function useCommercialRewardsDraft(
                   ))}
                 </select>
               </Field>
-              <Field label="Shared credit pools — one CHILD=PARENT per line (SSOT §44)">
-                <textarea className={`${inputClass} h-14 py-2`} value={poolText} onChange={(e) => setPoolText(e.target.value)} />
+              <Field label="Shared credit pools — CHILD=PARENT per line">
+                <textarea className={`${inputClass} h-24 py-2`} value={poolText} onChange={(e) => setPoolText(e.target.value)} />
               </Field>
-              </>
-              )}
             </>
           )}
-        </FormSection>
-        {tripEnabled && (
-          <FormSection n={4} title="Reward Programme References">
-            <div className="grid gap-2 sm:grid-cols-3">
-              <Field label="Trip Programme Code">
-                <input className={inputClass} placeholder="TRIP-A" value={code} onChange={(e) => setCode(e.target.value)} />
-              </Field>
-              <Field label="Trip Programme Version">
-                <input className={inputClass} placeholder="TRIP-A-2026-01" value={versionRef} onChange={(e) => setVersionRef(e.target.value)} />
-              </Field>
-              <Field label="Trip Terms Version">
-                <input className={inputClass} placeholder="TRIP-TERMS-1.0" value={termsRef} onChange={(e) => setTermsRef(e.target.value)} />
-              </Field>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Field label="Trip Cut-off — optional">
-                <input type="datetime-local" className={inputClass} value={cutOff} onChange={(e) => setCutOff(e.target.value)} />
-              </Field>
-              <Field label="Final Wind-down — optional">
-                <input type="datetime-local" className={inputClass} value={windDown} onChange={(e) => setWindDown(e.target.value)} />
-              </Field>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              The Royalty Gift Programme is company-wide and is versioned in Administration. Economics Review is recorded by MD
-              before approval.
-            </p>
-          </FormSection>
-        )}
-        <FormSection n={tripEnabled ? 5 : 4} title="Version">
-          <Field label="Effective From — optional; empty takes effect on MD approval">
-            <input type="datetime-local" className={inputClass} value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />
-          </Field>
-          <Field label="Reason — compulsory">
-            <textarea className={`${inputClass} h-16 py-2`} value={reason} onChange={(e) => setReason(e.target.value)} />
-          </Field>
-        </FormSection>
-    </>
+          <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground md:col-span-2">
+            <input type="checkbox" checked={economicsReviewed} onChange={(e) => setEconomicsReviewed(e.target.checked)} />
+            Rewards economics reviewed (Trip cost and Own + Reference exposure against margin)
+          </label>
+        </>
+      )}
+      <Field label="Effective From (optional)">
+        <Input type="datetime-local" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />
+      </Field>
+      <Field label="Reason">
+        <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+      </Field>
+    </div>
   );
   return { fields, value, problem };
 }
@@ -635,8 +544,8 @@ function VersionForm({
   const draft = useCommercialRewardsDraft(start, plots);
   return (
     <Modal
-      title="New Commercial & Rewards version"
-      description="Saved as a Draft. Approved and Active versions are never edited; nothing changes until MD approves this one."
+      title="New Rewards version"
+      description="Saved and approved at once. It becomes Active now, or at its Effective from. Earlier versions are never edited."
       onClose={onClose}
     >
       <div className="space-y-3">
@@ -647,7 +556,7 @@ function VersionForm({
             Cancel
           </Button>
           <Button size="sm" disabled={busy || draft.problem !== null} onClick={() => onSubmit(draft.value)}>
-            Save Draft
+            Save
           </Button>
         </div>
       </div>
@@ -655,7 +564,8 @@ function VersionForm({
   );
 }
 
-export function Benefit({
+/** A Field whose label carries the on/off box, so a rate costs one cell. */
+function RateField({
   label,
   max,
   enabled,
@@ -671,77 +581,20 @@ export function Benefit({
   onValue: (v: string) => void;
 }) {
   return (
-    <div className="flex items-end gap-3">
-      <label className="flex h-9 items-center gap-2 text-xs font-medium">
+    <div className="space-y-1">
+      <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
         <input type="checkbox" checked={enabled} onChange={(e) => onEnabled(e.target.checked)} />
-        {label} Enabled
+        {label} % (max {max}%)
       </label>
-      <Field label={`${label} Rate % (max ${max}%)`}>
-        <input
-          className={inputClass}
-          inputMode="decimal"
-          disabled={!enabled}
-          value={enabled ? value : ""}
-          placeholder={enabled ? "" : "Disabled"}
-          onChange={(e) => onValue(e.target.value)}
-        />
-      </Field>
+      <Input
+        aria-label={`${label} %`}
+        inputMode="decimal"
+        disabled={!enabled}
+        value={enabled ? value : ""}
+        placeholder={enabled ? "" : "Disabled"}
+        onChange={(e) => onValue(e.target.value)}
+      />
     </div>
-  );
-}
-
-function FormSection({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
-  return (
-    <fieldset className="space-y-2 rounded-lg border border-border/60 p-2.5">
-      <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {n}. {title}
-      </legend>
-      {children}
-    </fieldset>
-  );
-}
-
-function DecisionForm({
-  approve,
-  version,
-  busy,
-  onClose,
-  onSubmit,
-}: {
-  approve: boolean;
-  version: number;
-  busy: boolean;
-  onClose: () => void;
-  onSubmit: (note: string) => void;
-}) {
-  const [note, setNote] = React.useState("");
-  return (
-    <Modal
-      title={approve ? `Approve version ${version}` : `Reject version ${version}`}
-      description={
-        approve
-          ? "It becomes Active at its Effective from — now, if none was set. New Booking Requests freeze it from then; existing ones keep theirs."
-          : "The Active version stays in force."
-      }
-      onClose={onClose}
-    >
-      <Field label="Note (compulsory)">
-        <textarea className={`${inputClass} h-16 py-2`} value={note} onChange={(e) => setNote(e.target.value)} />
-      </Field>
-      <div className="flex justify-end gap-2">
-        <Button size="sm" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          size="sm"
-          variant={approve ? "default" : "destructive"}
-          disabled={busy || !note.trim()}
-          onClick={() => onSubmit(note)}
-        >
-          {approve ? "Approve" : "Reject"}
-        </Button>
-      </div>
-    </Modal>
   );
 }
 

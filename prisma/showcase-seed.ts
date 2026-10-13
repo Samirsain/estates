@@ -62,7 +62,6 @@ const db = new PrismaClient();
 
 /** Staff from the Phase 1 seed. Maker and checker are never the same account. */
 const MD = "STF-0001";
-const ADMIN = "STF-0002";
 const ACC = "STF-0003";
 const CRM = "STF-0005";
 
@@ -424,8 +423,8 @@ async function main() {
   }
   await prepareInventory({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD,
+    actorRole: "MD",
     projectId: project.id,
     rows,
   });
@@ -439,16 +438,16 @@ async function main() {
     if (p.status !== "NOT_AVAILABLE" || p.plotNumber === "SHW-029") continue;
     await makeAvailable({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD,
+      actorRole: "MD",
       plotId: p.id,
       reason: "Released for sale",
     });
   }
   await setRestriction({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD,
+    actorRole: "MD",
     plotId: plot(30),
     restriction: "PLEDGE",
     reason: "Pledged against the development loan",
@@ -701,8 +700,8 @@ async function main() {
   });
   await decideSoldByCorrection({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD,
+    actorRole: "MD",
     bookingId: s1,
     approve: true,
     note: "Register entry confirms it.",
@@ -886,8 +885,8 @@ async function main() {
   await briefHold(kiranAgain, plot(17), "Duplicate record; the real Kiran already holds SHW-004.");
   await requestPersonMerge({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD,
+    actorRole: "MD",
     survivingPersonId: kiran.id,
     mergedPersonId: kiranAgain.id,
     reason: "Same person — enquired again from a second mobile.",

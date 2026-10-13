@@ -33,12 +33,14 @@ import { AddTaskButton } from "./add-task-button";
 import PortalAccess from "./portal-access";
 import RoyaltyTokens from "./royalty-tokens";
 import { memberTokenView } from "@/lib/services/royalty-service";
-import TripSection from "./trip-section";
+import TripSection, { CorrectInviterButton } from "./trip-section";
 import { tripProgrammes } from "@/lib/trip-view";
 import {
   ArrowLeft,
   Banknote,
+  Coins,
   FileText,
+  Gift,
   History,
   KeyRound,
   Layers,
@@ -405,6 +407,7 @@ export default async function MemberDetailPage({
                 }}
               />
             )}
+            {(actor.role === "MD") && <CorrectInviterButton memberProfileId={member.id} />}
             <MemberActions
               member={{
                 id: member.id,
@@ -505,7 +508,12 @@ export default async function MemberDetailPage({
                   "3% Club"
                 )
               }
-              hint={member.invitedByMember?.person.fullName ?? "No inviting Member"}
+              hint={[
+                member.invitedByMember?.person.fullName ?? "No inviting Member",
+                member.inviterFrozenAt ? `fixed ${formatIst(member.inviterFrozenAt)}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             />
           </dl>
         </Card>
@@ -628,7 +636,19 @@ export default async function MemberDetailPage({
                     href={`/members/${m.id}`}
                     code={m.memberId}
                     name={m.person.fullName}
-                    note={m.status === "ACTIVE" ? null : <Badge variant="destructive">Deactivated</Badge>}
+                    note={
+                      <>
+                        {/* SSOT §38 — each invited Member's one Reference opportunity. */}
+                        <Badge variant={m.referenceOpportunityConsumedAt ? "outline" : "info"}>
+                          {m.referenceOpportunityConsumedAt
+                            ? ["Reference used", referenceWins.find((b) => b.id === m.referenceWinningBookingId)?.bookingNumber]
+                                .filter(Boolean)
+                                .join(" · ")
+                            : "Reference unused"}
+                        </Badge>
+                        {m.status !== "ACTIVE" && <Badge variant="destructive">Deactivated</Badge>}
+                      </>
+                    }
                   />
                 ))}
               </ul>
@@ -648,7 +668,7 @@ export default async function MemberDetailPage({
                 <p className="pb-1 text-[11px] text-muted-foreground">
                   {royaltyLinkedCustomers.filter((c) => c.royaltyLinkFinalAt).length} final ·{" "}
                   {royaltyLinkedCustomers.filter((c) => c.royaltyLinkFinalAt && !c.royaltyOpportunityConsumedAt).length} can still
-                  earn tokens · {royaltyLinkedCustomers.filter((c) => !c.royaltyLinkFinalAt).length} waiting for full payment
+                  earn points · {royaltyLinkedCustomers.filter((c) => !c.royaltyLinkFinalAt).length} waiting for full payment
                 </p>
                 <ul className="divide-y divide-border/40 text-xs">
                   {royaltyLinkedCustomers.map((c) => (
@@ -680,23 +700,12 @@ export default async function MemberDetailPage({
         </div>
 
         {/* SSOT §40, §65; CP §68 — the Sales & Reference Trip Reward. */}
-        <Section title="Sales & Reference Trip" icon={<Users className="h-3.5 w-3.5" />}>
-          <TripSection
-            role={actor.role}
-            memberProfileId={member.id}
-            inviterFrozenAt={member.inviterFrozenAt?.toISOString() ?? null}
-            programmes={await tripProgrammes(tripCredits, tripBuckets)}
-            references={member.invitedMembers.map((m) => ({
-              memberId: m.memberId,
-              name: m.person.fullName,
-              consumed: m.referenceOpportunityConsumedAt !== null,
-              winningBooking: referenceWins.find((b) => b.id === m.referenceWinningBookingId)?.bookingNumber ?? null,
-            }))}
-          />
+        <Section title="Rewards" icon={<Gift className="h-3.5 w-3.5" />}>
+          <TripSection role={actor.role} programmes={await tripProgrammes(tripCredits, tripBuckets)} />
         </Section>
 
         {/* docss/11 — Royalty Tokens: one pooled, non-cash balance. */}
-        <Section title="Royalty Tokens" icon={<Users className="h-3.5 w-3.5" />}>
+        <Section title="Royalty Points" icon={<Coins className="h-3.5 w-3.5" />}>
           <RoyaltyTokens
             role={actor.role}
             memberProfileId={member.id}

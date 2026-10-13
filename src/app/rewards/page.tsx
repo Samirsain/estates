@@ -17,9 +17,9 @@ import { REWARD_HOLD_LABEL } from "@/app/members/[id]/royalty-tokens";
 export const dynamic = "force-dynamic";
 
 const TABS = [
-  ["monetary", "Monetary Benefits"],
-  ["trip", "Trip Rewards"],
-  ["royalty", "Royalty Tokens"],
+  ["monetary", "Commission & Loyalty Points"],
+  ["trip", "Rewards"],
+  ["royalty", "Royalty Points"],
   ["recovery", "Recovery"],
   ["reviews", "Reviews"],
 ] as const;
@@ -40,7 +40,7 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
         <header>
           <h1 className="text-2xl font-bold tracking-tight">Rewards</h1>
           <p className="text-xs text-muted-foreground">
-            Project Direct, Customer Loyalty and Buying Commission are monetary; Trip and Royalty Tokens are non-cash.
+            Commission, Loyalty Points and Buying Commission are monetary; Rewards and Royalty Points are non-cash.
           </p>
         </header>
         <nav className="flex flex-wrap gap-1">
@@ -74,8 +74,8 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
                     <td className={TD}>
                       {c.type === "LOYALTY"
                         ? c.beneficiaryRole === "CLOSING_CUSTOMER"
-                          ? "Customer-closing Loyalty"
-                          : "Repeat-purchase Loyalty"
+                          ? "Customer-closing Loyalty Points"
+                          : "Repeat-purchase Loyalty Points"
                         : c.type === "DIRECT"
                           ? "Project Direct"
                           : "Buying Commission"}{" "}
@@ -173,7 +173,7 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
                         <Badge variant={a.state === "PENDING" ? "warning" : "info"}>
                           {a.state === "PENDING" ? "pending" : "posted, restricted"}
                         </Badge>{" "}
-                        {a.tokens} tokens
+                        {a.tokens} points
                         {a.holdReason && <span className="ml-1 text-amber-800">{REWARD_HOLD_LABEL[a.holdReason] ?? a.holdReason}</span>}
                       </td>
                     </tr>
@@ -204,7 +204,7 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
                         </Link>
                       </td>
                       <td className={TD}>
-                        {r.tokens} tokens for {r.recipientName}
+                        {r.tokens} points for {r.recipientName}
                       </td>
                       <td className={TD}>{formatIst(r.recordedAt)}</td>
                     </tr>

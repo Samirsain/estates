@@ -125,8 +125,8 @@ export function readyForCompletion(args: {
  * correction applies, which is this same MD/Admin route with the reason on file.
  */
 export function canReopenDelivered(role: string, reason: string): Check {
-  if (role !== "MD" && role !== "ADMIN") {
-    return fail("Only MD or Admin may reopen a Delivered Booking.");
+  if (role !== "MD") {
+    return fail("Only MD may reopen a Delivered Booking.");
   }
   if (!reason.trim()) return fail("A compulsory reason is required to reopen a Delivered Booking.");
   return OK;

@@ -11,10 +11,7 @@ import { purgeCheckData } from "./check-cleanup.ts";
 import { decideBookingRequest, submitBookingRequest } from "@/lib/services/booking-service";
 import { confirmPaymentReceived, correctPaymentReceived } from "@/lib/services/payment-service";
 import {
-  decideCommissionVersion,
-  prepareCommissionDraft,
-  recordEconomicsReview,
-  sendCommissionVersion,
+  createCommissionVersion,
   type CommissionVersionInput,
 } from "@/lib/services/commission-settings-service";
 import { decideChangePlot, submitChangePlot } from "@/lib/services/change-plot-service";
@@ -28,7 +25,7 @@ const db = new PrismaClient();
 const TAG = "ZZ-TRIP";
 const CRM = `${TAG}-CRM`;
 const ACC = `${TAG}-ACC`;
-const ADMIN = `${TAG}-ADMIN`;
+const MD2 = `${TAG}-MD2`;
 const MD = `${TAG}-MD`;
 
 let seq = 0;
@@ -132,11 +129,8 @@ const terms = (trip: Partial<NonNullable<CommissionVersionInput["trip"]>>): Comm
 });
 
 async function approveTrip(projectId: string, input: CommissionVersionInput) {
-  const draft = await prepareCommissionDraft({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", projectId, ...input });
-  await sendCommissionVersion({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", versionId: draft.versionId });
-  await recordEconomicsReview({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", versionId: draft.versionId, note: "Reviewed." });
-  await decideCommissionVersion({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", versionId: draft.versionId, approve: true, note: "ok" });
-  return draft.versionId;
+  const created = await createCommissionVersion({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", projectId, ...input, economicsReviewed: true });
+  return created.versionId;
 }
 
 async function sell(label: string, buyerId: string, sellerPersonId: string | null, approve = true) {
@@ -188,33 +182,30 @@ async function main() {
     await plot(A.id, label);
   }
   await assert.rejects(
-    prepareCommissionDraft({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", projectId: A.id, ...terms({ tripMinOwnCredits: 6 }) }),
+    createCommissionVersion({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", projectId: A.id, ...terms({ tripMinOwnCredits: 6 }), economicsReviewed: true }),
     /Minimum Own-Sale Credits/,
     "SET-09"
   );
-  const draftA = await prepareCommissionDraft({
-    idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
-    projectId: A.id,
-    ...terms({
-      excludedPlotIds: [plots.get("A09")!],
-      sharedPools: [
-        { plotId: plots.get("A10B")!, parentPlotId: plots.get("A10A")! },
-        { plotId: plots.get("A10C")!, parentPlotId: plots.get("A10A")! },
-      ],
-    }),
+  const termsA = terms({
+    excludedPlotIds: [plots.get("A09")!],
+    sharedPools: [
+      { plotId: plots.get("A10B")!, parentPlotId: plots.get("A10A")! },
+      { plotId: plots.get("A10C")!, parentPlotId: plots.get("A10A")! },
+    ],
   });
-  await sendCommissionVersion({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", versionId: draftA.versionId });
-  const nt02 = await db.task.findFirst({ where: { recordId: A.id, purpose: "PROJECT_ECONOMICS_REVIEW", status: "PENDING" } });
-  assert.equal(nt02?.assigneeRole, "MD", "NT02 to MD");
   await assert.rejects(
-    decideCommissionVersion({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", versionId: draftA.versionId, approve: true, note: "ok" }),
-    /economics review/,
-    "SET-10 — not before the review"
+    createCommissionVersion({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", projectId: A.id, ...termsA }),
+    /economics were reviewed/,
+    "SET-10 — not without the review"
   );
-  await recordEconomicsReview({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", versionId: draftA.versionId, note: "Trip cost reviewed." });
-  await decideCommissionVersion({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", versionId: draftA.versionId, approve: true, note: "ok" });
+  const draftA = await createCommissionVersion({
+    idempotencyKey: key(),
+    actorRef: MD,
+    actorRole: "MD",
+    projectId: A.id,
+    ...termsA,
+    economicsReviewed: true,
+  });
   const vA = await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: draftA.versionId } });
   assert.equal(vA.status, "ACTIVE");
   assert.ok(vA.economicsReviewedAt, "only the fact and date of the review are kept");
@@ -307,6 +298,14 @@ async function main() {
     bookTripReward({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: reward.id, bookingReference: "TRV-1", bookedOn: today }),
     /Record who travels/
   );
+  // MD recording a non-family nominee is the approval: no NT10 task waits.
+  await recordTripNominee({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", rewardId: reward.id, recipient: "NON_FAMILY", recipientName: "Friend" });
+  assert.ok((await db.tripReward.findUniqueOrThrow({ where: { id: reward.id } })).recipientApprovedAt, "MD's own nominee is approved");
+  assert.equal(
+    await db.task.count({ where: { recordId: reward.id, purpose: "REWARD_NOMINEE_APPROVAL", status: "PENDING" } }),
+    0,
+    "and raises no MD task"
+  );
   await recordTripNominee({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: reward.id, recipient: "SPOUSE", recipientName: "Spouse" });
   await bookTripReward({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: reward.id, bookingReference: "TRV-1", bookedOn: today });
   await markTripTravelled({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: reward.id, travelledOn: today });
@@ -320,19 +319,19 @@ async function main() {
   const a12 = await sell("A12", await buyer("A12"), m5.person.id);
   await pay(a12, "100", "A12-100");
   assert.equal((await refOf(a12))?.state, "HELD", "REF-09 — consumed, created and held");
-  await setMemberStatus({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", memberProfileId: m8.member.id, active: true, reason: "Reinstated." });
+  await setMemberStatus({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", memberProfileId: m8.member.id, active: true, reason: "Reinstated." });
   assert.equal((await refOf(a12))?.state, "QUALIFIED", "REF-10 — released on reactivation");
 
   /* ===== REF-11, REF-12 — inviter correction before and after the cut-off ===== */
 
   await assert.rejects(
-    correctInviter({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", memberProfileId: m9.member.id, invitedByMemberId: m7.member.id, reason: "x" }),
+    correctInviter({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", memberProfileId: m9.member.id, invitedByMemberId: m7.member.id, reason: "x" }),
     /can no longer be changed/,
     "REF-11"
   );
   assert.ok(await db.auditEvent.findFirst({ where: { entityId: m9.member.id, action: "INVITER_CORRECTION_DENIED" } }), "the refusal is audited");
   const m11 = await member("11", m1.member.id);
-  await correctInviter({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", memberProfileId: m11.member.id, invitedByMemberId: m7.member.id, reason: "Wrong inviter keyed." });
+  await correctInviter({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", memberProfileId: m11.member.id, invitedByMemberId: m7.member.id, reason: "Wrong inviter keyed." });
   assert.equal((await db.memberProfile.findUniqueOrThrow({ where: { id: m11.member.id } })).invitedByMemberId, m7.member.id, "REF-12");
 
   /* ===== Project D (3/2/1): backfill, deficiency, Buyback, Change Plot, jobs ===== */

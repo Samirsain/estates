@@ -221,8 +221,8 @@ export async function activateMember(args: {
   reraExpiryDate?: Date | null;
   reraNotApplicableReason?: string | null;
 }) {
-  if (args.actorRole !== "ADMIN" && args.actorRole !== "MD") {
-    blocked("Only Admin or MD may activate a Member.");
+  if (args.actorRole !== "MD") {
+    blocked("Only MD may activate a Member.");
   }
 
   return runCommand(
@@ -366,8 +366,8 @@ export async function setMemberStatus(args: {
   active: boolean;
   reason: string;
 }) {
-  if (args.actorRole !== "ADMIN" && args.actorRole !== "MD") {
-    blocked("Only Admin or MD may activate or deactivate a Member.");
+  if (args.actorRole !== "MD") {
+    blocked("Only MD may activate or deactivate a Member.");
   }
   if (!args.reason.trim()) blocked("A compulsory reason is required to change a Member status.");
 
@@ -515,6 +515,9 @@ export async function updateMemberRera(args: {
           reraNotApplicableReason: args.notApplicableReason?.trim() || null,
         },
       });
+      // PRD §26 — the RERA reminder completes on an update. If the new expiry is
+      // still within seven days, the next reminder run raises it again.
+      await closeTasksFor(tx, "Member", member.id, args.actorRef, "RERA updated.", "RERA_EXPIRY");
 
       const affected = await tx.commissionRecord.findMany({
         where: {

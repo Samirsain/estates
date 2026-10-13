@@ -69,7 +69,7 @@ export function AppShell({
   staffAccountId: string;
   children: React.ReactNode;
 }) {
-  const canAdminister = role === "MD" || role === "ADMIN";
+  const canAdminister = role === "MD";
   const pathname = usePathname();
 
   // The rail shows icons; opening it is a click, not a hover. A click works the

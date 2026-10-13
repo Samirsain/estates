@@ -14,20 +14,21 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const actor = await requireStaff();
 
-  // PRD §3.2 — MD and Admin may see all Dashboard work; ordinary staff see
-  // work assigned to them and to their role. The scope is applied here, in the
-  // query, because a client-side filter is not a control (DESIGN §1): the rows
-  // would already be in the page payload, remarks and all.
-  const seesAllWork = actor.role === "MD" || actor.role === "ADMIN";
+  // PRD §3.2 — MD may see all Dashboard work; ordinary staff see work assigned
+  // to them and to their role. The scope is applied here, in the query,
+  // because a client-side filter is not a control (DESIGN §1): the rows would
+  // already be in the page payload, remarks and all.
+  const seesAllWork = actor.role === "MD";
+  const scope = seesAllWork ? {} : { OR: [{ assigneeStaffId: actor.accountId }, { assigneeRole: actor.role }] };
+  const include = { assigneeStaff: { include: { person: true } } } as const;
 
-  const rows = await db.task.findMany({
-    where: seesAllWork
-      ? undefined
-      : { OR: [{ assigneeStaffId: actor.accountId }, { assigneeRole: actor.role }] },
-    include: { assigneeStaff: { include: { person: true } } },
-    orderBy: { dueAt: "asc" },
-    take: 300,
-  });
+  // Every pending task, always — a cap here once hid live work behind old
+  // completed rows. Completed ones are history: only the most recent.
+  const [pending, completed] = await Promise.all([
+    db.task.findMany({ where: { ...scope, status: "PENDING" }, include, orderBy: { dueAt: "asc" } }),
+    db.task.findMany({ where: { ...scope, status: { not: "PENDING" } }, include, orderBy: { completedAt: "desc" }, take: 100 }),
+  ]);
+  const rows = [...pending, ...completed];
 
   // What each task is actually about, in columns rather than in one line of
   // display text (DESIGN §6.2).
@@ -58,7 +59,7 @@ export default async function DashboardPage() {
       initialTasks={tasks}
       seesAllWork={seesAllWork}
       // CP §67 — the reward cards are for staff who act on them.
-      cards={["MD", "ADMIN", "ACCOUNTS", "CRM"].includes(actor.role) ? <RewardCards counts={await rewardCounts()} /> : null}
+      cards={["MD", "ACCOUNTS", "CRM"].includes(actor.role) ? <RewardCards counts={await rewardCounts()} /> : null}
     />
   );
 }

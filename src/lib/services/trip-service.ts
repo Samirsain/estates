@@ -117,10 +117,10 @@ export async function syncTripForBooking(tx: Tx, bookingId: string, actorRef: st
   const creditPlotId = rule?.parentCreditPoolPlotId ?? booking.plotId;
   let why: string | null = null;
   if (!booking.bookingNumber || !booking.approvedAt || CLOSED_BOOKING.includes(booking.status)) why = "The Booking is not a live approved sale.";
-  else if (!v?.tripEnabled) why = "The frozen Project settings have no Trip Programme.";
+  else if (!v?.tripEnabled) why = "The frozen Project settings have Rewards Disabled.";
   else if (v.tripCutOffAt && booking.approvedAt > v.tripCutOffAt) why = "Approved after the programme cut-off (SSOT §48).";
   else if (!owner) why = "Not Sold By a Member, so no Own-Sale Credit (SSOT §60).";
-  else if (rule && !rule.eligible) why = "The final Plot is excluded from the Trip Programme (SSOT §45).";
+  else if (rule && !rule.eligible) why = "The final Plot is excluded from Rewards (SSOT §45).";
   else {
     const earned = await tx.tripCredit.findFirst({
       where: {
@@ -468,7 +468,7 @@ export async function refreshTripOfBooking(tx: Tx, bookingId: string, actorRef: 
 type Actor = { idempotencyKey: string; actorRef: string; actorRole: string };
 
 function fulfilmentRole(role: string) {
-  if (role !== "CRM" && role !== "ADMIN") blocked("Only CRM or Admin records Trip fulfilment.");
+  if (role !== "CRM" && role !== "MD") blocked("Only CRM or MD records Trip fulfilment.");
 }
 
 async function lockedReward(tx: Tx, rewardId: string) {
@@ -478,7 +478,7 @@ async function lockedReward(tx: Tx, rewardId: string) {
   return tx.tripReward.findUniqueOrThrow({ where: { id: rewardId } });
 }
 
-/** SSOT §65; doc 5 §6 — the traveller. Non-family needs MD (NT10) before fulfilment. */
+/** SSOT §65; doc 5 §6 — the traveller. Non-family needs MD (NT10) before fulfilment; MD recording it is that approval. */
 export async function recordTripNominee(args: Actor & { rewardId: string; recipient: RewardRecipient; recipientName: string }) {
   fulfilmentRole(args.actorRole);
   if (args.recipient !== "SELF" && !args.recipientName.trim()) blocked("Enter the nominee's name.");
@@ -488,12 +488,18 @@ export async function recordTripNominee(args: Actor & { rewardId: string; recipi
       const reward = await lockedReward(tx, args.rewardId);
       if (reward.state !== "EARNED") blocked("The traveller can only be recorded before the Trip is booked.");
       const name = args.recipient === "SELF" ? null : args.recipientName.trim();
+      const mdApproved = args.recipient === "NON_FAMILY" && args.actorRole === "MD";
       await tx.tripReward.update({
         where: { id: reward.id },
-        data: { recipient: args.recipient, recipientName: name, recipientApprovedByRef: null, recipientApprovedAt: null },
+        data: {
+          recipient: args.recipient,
+          recipientName: name,
+          recipientApprovedByRef: mdApproved ? args.actorRef : null,
+          recipientApprovedAt: mdApproved ? new Date() : null,
+        },
       });
       await event(tx, reward.memberProfileId, { rewardId: reward.id }, args.actorRef, "NOMINEE_RECORDED", null, args.recipient, name ?? undefined);
-      if (args.recipient === "NON_FAMILY") {
+      if (args.recipient === "NON_FAMILY" && !mdApproved) {
         await ensureTask(tx, {
           recordKind: TRIP_REWARD_KIND,
           recordId: reward.id,
@@ -506,7 +512,7 @@ export async function recordTripNominee(args: Actor & { rewardId: string; recipi
           latestResult: `Trip Reward nominee ${name}, who is not immediate family.`,
         });
       } else {
-        await closeTasksFor(tx, TRIP_REWARD_KIND, reward.id, args.actorRef, "Nominee is family.", TRIP_NOMINEE_PURPOSE);
+        await closeTasksFor(tx, TRIP_REWARD_KIND, reward.id, args.actorRef, mdApproved ? "Nominee recorded by MD." : "Nominee is family.", TRIP_NOMINEE_PURPOSE);
       }
       await refreshTripReward(tx, reward.id, args.actorRef);
       return { result: { rewardId: reward.id }, audit: { entity: "TripReward", entityId: reward.id, action: "TRIP_NOMINEE_RECORDED", after: { recipient: args.recipient, name } } };
@@ -593,15 +599,10 @@ export async function markTripTravelled(args: Actor & { rewardId: string; travel
   );
 }
 
-/** CP §60 — a Booking whose credit a Travelled Trip used. */
-export async function touchesTravelledTrip(tx: Tx, bookingId: string): Promise<boolean> {
-  return (await tx.tripCredit.count({ where: { sourceBookingId: bookingId, state: "USED" } })) > 0;
-}
-
 /* ---------------------------------------------------------------- inviter */
 
 /**
- * SSOT §37, §38; CP §22 — Admin or MD corrects the Membership inviter with a
+ * SSOT §37, §38; CP §22 — MD corrects the Membership inviter with a
  * reason, but not once the introduced Member's first Reference-eligible
  * Booking Request is submitted (a third-party sale in a Trip-enabled
  * version). A refused attempt is audited (CP §79).
@@ -618,7 +619,7 @@ export async function refuseInviteLoop(tx: Tx, memberProfileId: string, inviterI
 }
 
 export async function correctInviter(args: Actor & { memberProfileId: string; invitedByMemberId: string | null; reason: string }) {
-  if (args.actorRole !== "ADMIN" && args.actorRole !== "MD") blocked("Only Admin or MD may correct an inviter.");
+  if (args.actorRole !== "MD") blocked("Only MD may correct an inviter.");
   if (!args.reason.trim()) blocked("A compulsory reason is required.");
   const member = await db.memberProfile.findUnique({ where: { id: args.memberProfileId } });
   if (!member) blocked("That Member no longer exists.");

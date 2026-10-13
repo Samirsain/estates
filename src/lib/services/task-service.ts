@@ -368,7 +368,7 @@ export async function taskSubjects(
     if (b.reward) add(b.reward.id, subject);
   }
   for (const r of redemptions) {
-    add(r.id, { project: null, plot: null, plotId: null, reference: `${r.tokens} tokens`, ...party(r.memberProfile.person) });
+    add(r.id, { project: null, plot: null, plotId: null, reference: `${r.tokens} points`, ...party(r.memberProfile.person) });
   }
 
   return subjects;

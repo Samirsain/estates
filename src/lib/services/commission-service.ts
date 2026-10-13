@@ -87,8 +87,8 @@ export async function freezeAtSubmission(
   // Royalty Tokens cannot be frozen until a version with a rate replaces it.
   if (version.royaltyTokensPerAward === null) {
     blocked(
-      "This Project's approved settings have no Royalty token rate. Admin must prepare a new settings " +
-        "version with one and MD approve it before a Booking Request can be submitted."
+      "This Project's approved settings have no Royalty points rate. MD must create a new settings " +
+        "version with one before a Booking Request can be submitted."
     );
   }
   const buyer = await tx.memberProfile.findUnique({
@@ -235,8 +235,8 @@ async function raiseClosingLimitTask(tx: Tx, personId: string) {
     assigneeRole: "CRM",
     dueAt: new Date(),
     latestResult:
-      "Third Customer-closing Loyalty event earned. Membership is required for future third-party selling. " +
-      "Repeat-purchase Loyalty remains separately eligible.",
+      "Third Customer-closing Loyalty Points event earned. Membership is required for future third-party selling. " +
+      "Repeat-purchase Loyalty Points remain separately eligible.",
   });
 }
 
@@ -487,6 +487,10 @@ async function supersedeRecord(tx: Tx, recordId: string, actorRef: string, reaso
       reason,
     },
   });
+  // A superseded line can no longer be paid, so its payment and Paid Early
+  // tasks go with it. An adjustment it needs stays open.
+  await closeTasksFor(tx, "Commission", recordId, actorRef, `Superseded — ${reason}`, COMMISSION_PAYMENT_PURPOSE);
+  await closeTasksFor(tx, "Commission", recordId, actorRef, `Superseded — ${reason}`, PAID_EARLY_PURPOSE);
 }
 
 /* ------------------------------------------------------------- reassessment */
@@ -560,7 +564,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
         const alreadyQualified = await consumedClosingEvents(tx, record.beneficiaryPersonId, record.id);
         if (!closingLoyaltyQualifies(alreadyQualified)) {
           const reason =
-            "Three Customer-closing Loyalty events have already been earned. Membership activation " +
+            "Three Customer-closing Loyalty Points events have already been earned. Membership activation " +
             "is required to earn from further third-party sales (v2.1 §25).";
           payment = afterAffectingChange(record.payment, "CANCELLED_BEFORE_COMPLETION");
           await tx.commissionRecord.update({
@@ -1162,10 +1166,10 @@ export async function raiseBuybackUnwindReview(tx: Tx, bookingId: string, reason
     title: "Reward Review — Buyback Unwind",
     assigneeRole: "ACCOUNTS",
     dueAt: new Date(),
-    decision: true,
+    decision: false, // a review: Accounts marks it Done on the Dashboard
     latestResult:
       `Buyback unwound — ${reason}. Source Payment Received ` +
-      `${booking.paymentReceivedPercent.toFixed(2)}%; anything the Buyback alone qualified — Loyalty, a Royalty ` +
+      `${booking.paymentReceivedPercent.toFixed(2)}%; anything the Buyback alone qualified — Loyalty Points, a Royalty ` +
       `Credit not yet delivered — is stepped back. ` +
       (adjustments > 0
         ? `${adjustments} paid record${adjustments === 1 ? "" : "s"} need${adjustments === 1 ? "s" : ""} an Accounts adjustment.`
@@ -1310,11 +1314,11 @@ export async function cancelCommissionForBooking(
       title: "Reward Review — Approved Buyback",
       assigneeRole: "ACCOUNTS",
       dueAt: new Date(),
-      decision: true,
+      decision: false, // a review: Accounts marks it Done on the Dashboard
       latestResult:
         `Source Payment Received ${received.toFixed(2)}% — 25% reward gate ` +
         (gateMet
-          ? "met: Loyalty and the Royalty tokens may qualify by the Buyback; the tokens post only after Stable Buyback Completion."
+          ? "met: Loyalty Points and the Royalty points may qualify by the Buyback; the points post only after Stable Buyback Completion."
           : "not met: no reward qualifies by the Buyback.") +
         ` Direct stays on its normal milestone. ` +
         (remainsEarned ? `${n} still earned; check the written arrangement.` : `${n} reviewed.`),

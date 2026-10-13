@@ -28,7 +28,7 @@ const TAG = "ZZ-P6";
 const CRM = `${TAG}-CRM`;
 const ACC = `${TAG}-ACC`;
 const MD = `${TAG}-MD`;
-const ADMIN = `${TAG}-ADMIN`;
+const MD2 = `${TAG}-MD2`;
 
 let seq = 0;
 const key = () => `${TAG}-${Date.now()}-${seq++}`;
@@ -255,7 +255,7 @@ async function main() {
 
   /* ================================ exceptional reopen preserves history == */
 
-  await expectBlocked(/Only MD or Admin/, () =>
+  await expectBlocked(/Only MD/, () =>
     reopenDelivered({
       idempotencyKey: key(),
       actorRef: CRM,
@@ -425,8 +425,8 @@ async function main() {
   await expectBlocked(/Reassign them first/, () =>
     disableStaffAccount({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD2,
+      actorRole: "MD",
       staffAccountId: crmStaff.id,
       reason: "Resigned.",
       emergency: false,
@@ -435,8 +435,8 @@ async function main() {
 
   const disabled = await disableStaffAccount({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     staffAccountId: crmStaff.id,
     reason: "Suspected credential compromise.",
     emergency: true,
@@ -458,8 +458,8 @@ async function main() {
 
   await reassignWork({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     toStaffAccountId: successor.id,
     taskIds: [openTask.id],
   });
@@ -499,8 +499,8 @@ async function main() {
   await expectBlocked(/Deactivate one Member first/, () =>
     requestPersonMerge({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD2,
+      actorRole: "MD",
       survivingPersonId: survivorPerson.id,
       mergedPersonId: duplicatePerson.id,
       reason: "Same person registered twice.",
@@ -512,10 +512,11 @@ async function main() {
     data: { status: "DEACTIVATED" },
   });
 
+  // Raised by CRM, so it waits for MD (MD raising it would merge at once).
   const request = await requestPersonMerge({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "CRM",
     survivingPersonId: survivorPerson.id,
     mergedPersonId: duplicatePerson.id,
     reason: "Same person registered twice.",
@@ -525,8 +526,8 @@ async function main() {
   await expectBlocked(/Only the MD/, () =>
     decidePersonMerge({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD2,
+      actorRole: "CRM",
       requestId: request.requestId,
       approve: true,
       note: "self approve",
@@ -560,6 +561,20 @@ async function main() {
   const mergedAway = await db.person.findUniqueOrThrow({ where: { id: duplicatePerson.id } });
   assert.equal(mergedAway.mergeStatus, "MERGED_AWAY", "the merged Person is kept, never deleted");
   assert.equal(mergedAway.survivingPersonId, survivorPerson.id);
+
+  // MD raising a merge is the approval: it happens at once.
+  const instantA = await makePerson("Instant Survivor", "9500000607", null);
+  const instantB = await makePerson("Instant Duplicate", "9500000607", null);
+  const instant = await requestPersonMerge({
+    idempotencyKey: key(),
+    actorRef: MD,
+    actorRole: "MD",
+    survivingPersonId: instantA.id,
+    mergedPersonId: instantB.id,
+    reason: "Same person, entered twice.",
+  });
+  assert.equal(instant.status, "APPROVED", "MD's own merge needs no second decision");
+  assert.equal((await db.person.findUniqueOrThrow({ where: { id: instantB.id } })).mergeStatus, "MERGED_AWAY");
 
   // PRD §21 — a merged-away Person is not counted twice in reports.
   const commissionRows = await runReport("COMMISSION");

@@ -141,7 +141,7 @@ export async function requestExtensionAction(
     return {
       ok: true,
       message: result.requiresAdmin
-        ? "Extension requested. A further extension requires Admin approval. The Hold timer keeps running."
+        ? "Extension requested. A further extension requires MD approval. The Hold timer keeps running."
         : "Extension requested. The Hold timer keeps running.",
     };
   } catch (error) {

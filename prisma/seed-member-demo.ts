@@ -160,7 +160,7 @@ const activate = (personId: string, invitedByMemberId: string | null, rera: stri
   activateMember({
     idempotencyKey: key(),
     actorRef: ADM,
-    actorRole: "ADMIN",
+    actorRole: "MD",
     personId,
     invitedByMemberId,
     reraStatus: "REGISTERED",

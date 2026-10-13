@@ -42,9 +42,9 @@ export function validateTripSettings(t: TripSettingsInput): Check {
       t.tripMaxReferenceCredits !== null ||
       !!t.tripProgrammeCode ||
       t.tripCutOffAt !== null;
-    return any ? fail("The Trip Programme is Disabled, so it cannot carry a target or composition.") : ok;
+    return any ? fail("Rewards are Disabled, so it cannot carry a target or composition.") : ok;
   }
-  if (!count(t.tripTotalTarget) || t.tripTotalTarget! <= 0) return fail("The Trip Total Target must be a whole number above 0.");
+  if (!count(t.tripTotalTarget) || t.tripTotalTarget! <= 0) return fail("The Target must be a whole number above 0.");
   const target = t.tripTotalTarget!;
   if (!count(t.tripMinOwnCredits) || t.tripMinOwnCredits! < 0 || t.tripMinOwnCredits! > target) {
     return fail("Minimum Own-Sale Credits must be a whole number from 0 to the Total Target.");
@@ -52,8 +52,8 @@ export function validateTripSettings(t: TripSettingsInput): Check {
   if (!count(t.tripMaxReferenceCredits) || t.tripMaxReferenceCredits! < 0 || t.tripMaxReferenceCredits! > target) {
     return fail("Maximum Reference Credits must be a whole number from 0 to the Total Target.");
   }
-  if (!t.tripProgrammeCode?.trim()) return fail("Enter the Trip Programme code, e.g. TRIP-A.");
-  if (!t.tripProgrammeVersionRef?.trim()) return fail("Enter the Trip Programme Version reference.");
+  if (!t.tripProgrammeCode?.trim()) return fail("Enter the Rewards code, e.g. TRIP-A.");
+  if (!t.tripProgrammeVersionRef?.trim()) return fail("Enter the Rewards Version reference.");
   if (!t.tripTermsVersionRef?.trim()) return fail("Enter the Trip Terms version.");
   if (t.tripWindDownAt && !t.tripCutOffAt) return fail("A final wind-down deadline needs a programme cut-off.");
   if (t.tripWindDownAt && t.tripCutOffAt && t.tripWindDownAt < t.tripCutOffAt) {

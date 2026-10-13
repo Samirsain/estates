@@ -44,14 +44,14 @@ export function checkOpenPositions(positions: OpenPositions): PositionCheck {
       `Booking cannot proceed because the Customer already has ${count} open Plot positions ` +
       `(${positions.activeHolds} Hold, ${positions.waitingBookingApproval} Waiting for Booking Approval, ` +
       `${positions.pendingHoldRequests} Pending Hold Request). Review existing Holds/Requests or ` +
-      `request an Admin/MD exception.`,
+      `request an MD exception.`,
   };
 }
 
 /* ---------------------------------------------------------- extensions */
 
-/** PRD §8.5 — first extension is CRM's; any further extension needs Admin. */
-export function extensionRequiresAdmin(extensionCount: number): boolean {
+/** PRD §8.5 — first extension is CRM's; any further extension needs MD. */
+export function extensionRequiresMd(extensionCount: number): boolean {
   return extensionCount >= 1;
 }
 

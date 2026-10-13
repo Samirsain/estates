@@ -26,8 +26,8 @@ export type ReportName =
 /** CP §73.5 — the two Loyalty routes, named the same on every report. */
 const ROUTE: Record<string, string> = {
   SELLING_MEMBER: "Direct",
-  CLOSING_CUSTOMER: "Customer-closing Loyalty",
-  REPEAT_PURCHASE_CUSTOMER: "Repeat-purchase Loyalty",
+  CLOSING_CUSTOMER: "Customer-closing Loyalty Points",
+  REPEAT_PURCHASE_CUSTOMER: "Repeat-purchase Loyalty Points",
   ACQUISITION_ARRANGER: "Buying Commission",
 };
 

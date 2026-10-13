@@ -53,7 +53,6 @@ const db = new PrismaClient();
 
 /** Staff from the Phase 1 seed — §3's eight roles, already on the database. */
 const MD = "STF-0001";
-const ADMIN = "STF-0002";
 const ACC = "STF-0003";
 const CRM = "STF-0005";
 
@@ -524,8 +523,8 @@ async function main() {
 
     await prepareInventory({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD,
+      actorRole: "MD",
       projectId: project.id,
       rows: table.map(([plotNumber, widthFt, lengthFt, seed]) => ({
         plotNumber,
@@ -550,8 +549,8 @@ async function main() {
         if (p.status !== "NOT_AVAILABLE") continue;
         await makeAvailable({
           idempotencyKey: key(),
-          actorRef: ADMIN,
-          actorRole: "ADMIN",
+          actorRef: MD,
+          actorRole: "MD",
           plotId: p.id,
           reason: "Released for sale",
         });
@@ -568,8 +567,8 @@ async function main() {
     const project = number.startsWith("AG") ? projects["PRJ-001"] : projects["PRJ-002"];
     await setRestriction({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD,
+      actorRole: "MD",
       plotId: project.plots[number],
       restriction,
       reason:

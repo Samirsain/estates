@@ -29,7 +29,7 @@ import {
   decideAcquisition,
   recordBuybackDocumentsReturned,
 } from "@/lib/services/acquisition-service";
-import { decideCommissionVersion, prepareCommissionDraft, sendCommissionVersion } from "@/lib/services/commission-settings-service";
+import { createCommissionVersion } from "@/lib/services/commission-settings-service";
 import * as royalty from "@/lib/services/royalty-service";
 import {
   correctTokenRedemption,
@@ -51,7 +51,7 @@ const db = new PrismaClient();
 const TAG = "ZZ-ROY";
 const CRM = `${TAG}-CRM`;
 const ACC = `${TAG}-ACC`;
-const ADMIN = `${TAG}-ADMIN`;
+const MD2 = `${TAG}-MD2`;
 const MD = `${TAG}-MD`;
 
 let seq = 0;
@@ -107,10 +107,10 @@ async function member(name: string) {
 
 /** docss/11 §1 — a Project's token rate is a new approved settings version. */
 async function setRate(projectId: string, tokens: number) {
-  const draft = await prepareCommissionDraft({
+  await createCommissionVersion({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD,
+    actorRole: "MD",
     projectId,
     directEnabled: true,
     directPercent: "3",
@@ -120,8 +120,6 @@ async function setRate(projectId: string, tokens: number) {
     reason: `${TAG} rate ${tokens}`,
     royaltyTokensPerAward: tokens,
   });
-  await sendCommissionVersion({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", versionId: draft.versionId });
-  await decideCommissionVersion({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", versionId: draft.versionId, approve: true, note: "ok" });
 }
 
 async function project(code: string, tokens: number) {
@@ -412,12 +410,12 @@ async function main() {
 
   // A hold before release keeps the award pending; clearing it posts once.
   const ch = await linkedCustomer("CH", A, held);
-  await setMemberStatus({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", memberProfileId: held.id, active: false, reason: "Review." });
+  await setMemberStatus({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", memberProfileId: held.id, active: false, reason: "Review." });
   const qh = await qualify(A, ch.id);
   assert.equal(`${(await awardOf(qh.bookingId))!.state}|${(await awardOf(qh.bookingId))!.holdReason}`, "PENDING|MEMBER_DEACTIVATED");
   await assert.rejects(redeem(held.id, 1), /inactive|Deactivated/i, "a Member-level hold blocks spending");
   assert.deepEqual(await figures(held.id), { earned: 10, spent: 0, balance: 10 }, "a hold never deletes earned tokens");
-  await setMemberStatus({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", memberProfileId: held.id, active: true, reason: "Cleared." });
+  await setMemberStatus({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", memberProfileId: held.id, active: true, reason: "Cleared." });
   assert.equal((await awardOf(qh.bookingId))!.state, "RELEASED", "reactivation releases it");
   assert.equal(await entries({ awardId: (await awardOf(qh.bookingId))!.id, kind: "AWARD_POSTED" }), 1);
   assert.deepEqual(await figures(held.id), { earned: 20, spent: 0, balance: 20 });
@@ -556,9 +554,9 @@ async function main() {
   // A corrected erroneous redemption gives back exactly its tokens; consumption stays.
   await assert.rejects(
     correctTokenRedemption({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", redemptionId: spent25.redemptionId, reason: "Wrong Member." }),
-    /Admin or MD/
+    /Only MD/
   );
-  await correctTokenRedemption({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", redemptionId: spent25.redemptionId, reason: "Recorded against the wrong Member." });
+  await correctTokenRedemption({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", redemptionId: spent25.redemptionId, reason: "Recorded against the wrong Member." });
   assert.deepEqual(await figures(ex.id), { earned: 50, spent: 0, balance: 50 });
   assert.ok((await awardOf(qx1.bookingId))!.consumedAt, "correcting spending never reopens a consumed reward");
   await invariants(ex.id, "example corrected");
@@ -593,8 +591,8 @@ async function main() {
     supportingNote: "Register.",
   });
   await assert.rejects(
-    decideSoldByCorrection({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", bookingId: firstRl, approve: true, note: "ok" }),
-    /only MD may approve/,
+    decideSoldByCorrection({ idempotencyKey: key(), actorRef: MD2, actorRole: "CRM", bookingId: firstRl, approve: true, note: "ok" }),
+    /Only MD may approve/,
     "a correction touching consumed tokens needs MD"
   );
   await decideSoldByCorrection({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", bookingId: firstRl, approve: true, note: "MD approves." });
@@ -650,8 +648,8 @@ async function main() {
   for (const bad of [istDay(day(1)), "2026-02-30", ""]) {
     await assert.rejects(redeem(pool.id, 1, { redeemedOn: bad }), /date/, `refuses ${bad || "an empty date"}`);
   }
-  for (const role of ["ACCOUNTS", "MD", "MEMBER", "PC"]) {
-    await assert.rejects(redeem(pool.id, 1, { actorRole: role, actorRef: `${TAG}-${role}` }), /Only CRM or Admin/, role);
+  for (const role of ["ACCOUNTS", "MIS", "MEMBER", "PC"]) {
+    await assert.rejects(redeem(pool.id, 1, { actorRole: role, actorRef: `${TAG}-${role}` }), /Only CRM or MD/, role);
   }
   assert.ok(
     !Object.keys(royalty).some((name) => /transfer|withdraw|expire/i.test(name)),
@@ -666,12 +664,17 @@ async function main() {
   assert.equal(nonFamily.state, "AWAITING_MD");
   assert.deepEqual(await figures(pool.id), { earned: 30, spent: 12, balance: 18 }, "not spent until MD approves");
   assert.equal((await db.task.findFirst({ where: { recordId: nonFamily.redemptionId, purpose: "REWARD_NOMINEE_APPROVAL", status: "PENDING" } }))?.assigneeRole, "MD");
-  await assert.rejects(decideTokenRedemption({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", redemptionId: nonFamily.redemptionId, approve: true, note: "ok" }), /Only MD/);
+  await assert.rejects(decideTokenRedemption({ idempotencyKey: key(), actorRef: MD2, actorRole: "CRM", redemptionId: nonFamily.redemptionId, approve: true, note: "ok" }), /Only MD/);
   await decideTokenRedemption({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", redemptionId: nonFamily.redemptionId, approve: true, note: "Approved." });
   assert.deepEqual(await figures(pool.id), { earned: 30, spent: 15, balance: 15 });
   const rejected = await redeem(pool.id, 2, { recipient: "NON_FAMILY", recipientName: "Neighbour" });
   await decideTokenRedemption({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", redemptionId: rejected.redemptionId, approve: false, note: "No." });
   assert.deepEqual(await figures(pool.id), { earned: 30, spent: 15, balance: 15 }, "a rejected one spends nothing");
+  // MD recording a non-family recipient is the approval: spent at once, no NT10 task.
+  const byMd = await redeem(pool.id, 1, { recipient: "NON_FAMILY", recipientName: "Old Friend", actorRole: "MD", actorRef: MD });
+  assert.equal(byMd.state, "RECORDED", "MD's own non-family redemption needs no second approval");
+  assert.equal(await db.task.count({ where: { recordId: byMd.redemptionId } }), 0, "and raises no MD task");
+  assert.deepEqual(await figures(pool.id), { earned: 30, spent: 16, balance: 14 });
   await invariants(pool.id, "pool after nominee");
   console.log("  ✓ §5(7) — bounds, roles, no transfer/expiry/cash, nominee safeguard");
 

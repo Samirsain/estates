@@ -36,9 +36,7 @@ import {
   reassessCommission,
 } from "@/lib/services/commission-service";
 import {
-  decideCommissionVersion,
-  prepareCommissionDraft,
-  sendCommissionVersion,
+  createCommissionVersion,
 } from "@/lib/services/commission-settings-service";
 import { recordCustomerTermsAcceptance, verifyAadhaar } from "@/lib/services/customer-closer-service";
 import {
@@ -57,7 +55,7 @@ const Decimal = Prisma.Decimal;
 const TAG = "ZZ-COMM";
 const CRM = `${TAG}-CRM`;
 const ACC = `${TAG}-ACC`;
-const ADMIN = `${TAG}-ADMIN`;
+const MD2 = `${TAG}-MD2`;
 const MD = `${TAG}-MD`;
 
 let seq = 0;
@@ -194,7 +192,7 @@ const recordOf = (bookingId: string, type: "DIRECT" | "LOYALTY") =>
 const shape = (r: { type: string; percent: Prisma.Decimal; milestonePercent: Prisma.Decimal }) =>
   `${r.type}:${r.percent.toFixed(2)}@${r.milestonePercent.toFixed(0)}`;
 
-/** Admin prepares and sends, MD approves — the whole v2.1 §14 flow. */
+/** MD creates the version, which approves it (v2.1 §14). */
 async function approveVersion(
   projectId: string,
   o: Partial<{
@@ -205,10 +203,10 @@ async function approveVersion(
     loyaltyExceptionReason: string | null;
   }>
 ) {
-  const draft = await prepareCommissionDraft({
+  const created = await createCommissionVersion({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD,
+    actorRole: "MD",
     projectId,
     directEnabled: true,
     directPercent: "3",
@@ -219,16 +217,7 @@ async function approveVersion(
     royaltyTokensPerAward: 10,
     ...o,
   });
-  await sendCommissionVersion({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", versionId: draft.versionId });
-  await decideCommissionVersion({
-    idempotencyKey: key(),
-    actorRef: MD,
-    actorRole: "MD",
-    versionId: draft.versionId,
-    approve: true,
-    note: "ok",
-  });
-  return draft.version;
+  return created.version;
 }
 
 /**
@@ -350,7 +339,7 @@ async function main() {
   );
   for (const [actorRole, actorRef] of [
     ["ACCOUNTS", ACC],
-    ["ADMIN", ADMIN],
+    ["CRM", MD2],
   ] as const) {
     await expectBlocked(/Only MD may approve/, () =>
       approveCommissionPaidEarly({ idempotencyKey: key(), actorRef, actorRole, recordId: bRecords[0].id, note: "x" })
@@ -448,8 +437,8 @@ async function main() {
 
   await applyMemberCommissionHold({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     memberProfileId: sellerMember.id,
     hold: true,
     reason: "Documents under review.",
@@ -464,8 +453,8 @@ async function main() {
   );
   await applyMemberCommissionHold({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     memberProfileId: sellerMember.id,
     hold: false,
     reason: "Documents verified.",
@@ -546,7 +535,7 @@ async function main() {
       reason: "Trying to cancel mid-correction.",
     })
   );
-  await expectBlocked(/Only Admin or MD/, () =>
+  await expectBlocked(/Only MD/, () =>
     decideSoldByCorrection({
       idempotencyKey: key(),
       actorRef: ACC,
@@ -558,8 +547,8 @@ async function main() {
   );
   await decideSoldByCorrection({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     bookingId: correctionBooking,
     approve: true,
     note: "Evidence verified.",
@@ -582,8 +571,8 @@ async function main() {
   const invitee = await db.person.create({ data: { fullName: `${TAG} Invitee`, primaryMobile: "9600000131" } });
   const activated = await activateMember({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     personId: invitee.id,
     invitedByMemberId: inviterMember.id,
     reraStatus: "NOT_APPLICABLE",
@@ -593,10 +582,10 @@ async function main() {
   assert.equal(inviteeProfile.invitedByMemberId, inviterMember.id, "the inviter is recorded (v2.1 §26)");
   assert.ok(inviteeProfile.activationDate! <= new Date(), "activation is now, never backdated");
   await expectBlocked(/already an activated Member/, () =>
-    activateMember({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", personId: invitee.id })
+    activateMember({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", personId: invitee.id })
   );
   const notForCrm = await db.person.create({ data: { fullName: `${TAG} NotForCrm`, primaryMobile: "9600000199" } });
-  await expectBlocked(/Only Admin or MD/, () =>
+  await expectBlocked(/Only MD/, () =>
     activateMember({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", personId: notForCrm.id })
   );
 
@@ -645,7 +634,7 @@ async function main() {
   );
   await approve(pendingAC1);
   const beforeConversion = (await currentRecords(pendingAC1)).map(shape);
-  await activateMember({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", personId: convert.id });
+  await activateMember({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", personId: convert.id });
   await generateForBooking_(pendingAC1);
   assert.equal(
     (await db.booking.findUniqueOrThrow({ where: { id: pendingAC1 } })).originalClassification,
@@ -747,8 +736,8 @@ async function main() {
   });
   await decideSoldByCorrection({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     bookingId: frozenOn1,
     approve: true,
     note: "Corrected",
@@ -824,15 +813,15 @@ async function main() {
   });
   assert.equal(limitTasks.length, 1, "one Customer-closing limit task");
   assert.equal(limitTasks[0].assigneeRole, "CRM");
-  assert.match(limitTasks[0].latestResult ?? "", /Repeat-purchase Loyalty remains separately eligible/);
+  assert.match(limitTasks[0].latestResult ?? "", /Repeat-purchase Loyalty Points remain separately eligible/);
   // UAT LOY-08 — with three consumed, the closer can no longer be selected.
   const plotSixth = await makePlot(project.id, "L6");
   const sixthBuyer = await makeEligiblePerson("LoyaltyBuyer6", "9600000160");
-  await expectBlocked(/three Customer-closing Loyalty events/, () =>
+  await expectBlocked(/three Customer-closing Loyalty Points events/, () =>
     submit({ plotId: plotSixth.id, buyerPersonId: sixthBuyer.id, soldByType: "CUSTOMER", soldByPersonId: closer.id })
   );
   // Becoming a Member is what the task asked for, so activation closes it.
-  await activateMember({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", personId: closer.id });
+  await activateMember({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", personId: closer.id });
   assert.equal(
     (await db.task.findUniqueOrThrow({ where: { id: limitTasks[0].id } })).status,
     "COMPLETED",
@@ -862,7 +851,7 @@ async function main() {
   const closeFor = () =>
     submit({ plotId: plotHold.id, buyerPersonId: holdBuyer.id, soldByType: "CUSTOMER", soldByPersonId: newCloser.id });
   await expectBlocked(/needs verified KYC/, closeFor);
-  await expectBlocked(/Only Accounts, Admin or MD/, () =>
+  await expectBlocked(/Only Accounts or MD/, () =>
     verifyAadhaar({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", personId: newCloser.id })
   );
   await verifyAadhaar({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", personId: newCloser.id });
@@ -911,13 +900,13 @@ async function main() {
   const loyaltyRows = await runReport("LOYALTY");
   const closerRows = loyaltyRows.filter((r) => r.customer === closer.fullName);
   assert.ok(
-    closerRows.every((r) => r.route === "Customer-closing Loyalty" && r.customerClosingUsed === "3 of 3"),
+    closerRows.every((r) => r.route === "Customer-closing Loyalty Points" && r.customerClosingUsed === "3 of 3"),
     "the closer's rows read 3 of 3, closing route only"
   );
   const repeaterRows = loyaltyRows.filter((r) => r.customer === repeater.fullName);
   assert.equal(repeaterRows.length, 4);
   assert.ok(
-    repeaterRows.every((r) => r.route === "Repeat-purchase Loyalty" && r.repeatPurchaseEvents === 4 && r.customerClosingUsed === null),
+    repeaterRows.every((r) => r.route === "Repeat-purchase Loyalty Points" && r.repeatPurchaseEvents === 4 && r.customerClosingUsed === null),
     "the repeat buyer counts four, with no closing count"
   );
 
@@ -1315,8 +1304,8 @@ async function main() {
   });
   await decideSoldByCorrection({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     bookingId: saleT,
     approve: true,
     note: "Register confirms it.",

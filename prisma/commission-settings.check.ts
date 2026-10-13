@@ -1,7 +1,7 @@
-// Project commission settings — SSOT §12–§16, Change Pack §7, §8, §65, against
-// the real database and the real commands. Admin prepares and sends; MD approves
-// or rejects; an approved version takes effect at its Effective from (now, if
-// none) and supersedes the previous one.
+// Project commission settings — SSOT §12–§16, Change Pack §7, §8, against the
+// real database and the real commands. MD creates each version and creating it
+// is its approval; a version takes effect at its Effective from (now, if none)
+// and supersedes the previous one.
 // Run: npm run commission-settings:check   (requires a seeded database)
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
@@ -11,10 +11,8 @@ assertCheckDatabase();
 import { purgeCheckData } from "./check-cleanup.ts";
 import {
   activateDueVersions,
-  decideCommissionVersion,
+  createCommissionVersion,
   listCommissionVersions,
-  prepareCommissionDraft,
-  sendCommissionVersion,
 } from "@/lib/services/commission-settings-service";
 import { freezeAtSubmission } from "@/lib/services/commission-service";
 import { runCommissionVersionActivation } from "@/lib/jobs";
@@ -24,7 +22,6 @@ const db = new PrismaClient();
 const TAG = "ZZ-CSET";
 let seq = 0;
 const key = () => `${TAG}-${Date.now()}-${seq++}`;
-const ADMIN = { actorRef: `${TAG}-ADMIN`, actorRole: "ADMIN" };
 const MD = { actorRef: `${TAG}-MD`, actorRole: "MD" };
 const terms = {
   directEnabled: true,
@@ -43,153 +40,63 @@ async function main() {
   });
   const projectId = project.id;
 
-  // Only Admin prepares — Review Focus 4: PC holds PROJECT_SETUP but may not.
-  for (const role of ["MD", "PC", "CRM", "ACCOUNTS"]) {
+  // Only MD creates — Review Focus 4: PC holds PROJECT_SETUP but may not.
+  for (const role of ["PC", "CRM", "ACCOUNTS", "MIS"]) {
     await assert.rejects(
-      prepareCommissionDraft({ idempotencyKey: key(), actorRef: `${TAG}-${role}`, actorRole: role, projectId, ...terms }),
-      /Only Admin prepares/,
+      createCommissionVersion({ idempotencyKey: key(), actorRef: `${TAG}-${role}`, actorRole: role, projectId, ...terms }),
+      /Only MD creates/,
       role
     );
   }
 
   // Validation reaches the service too.
   await assert.rejects(
-    prepareCommissionDraft({ idempotencyKey: key(), ...ADMIN, projectId, ...terms, directPercent: "6" }),
+    createCommissionVersion({ idempotencyKey: key(), ...MD, projectId, ...terms, directPercent: "6" }),
     /cannot exceed 5%/
   );
-  await assert.rejects(
-    prepareCommissionDraft({ idempotencyKey: key(), ...ADMIN, projectId, ...terms, reason: " " }),
-    /reason/
-  );
+  await assert.rejects(createCommissionVersion({ idempotencyKey: key(), ...MD, projectId, ...terms, reason: " " }), /reason/);
 
-  // docss/11 §1 — the Royalty token rate is a whole number, above 0, on every version.
+  // docss/11 §1 — the Royalty points rate is a whole number, above 0, on every version.
   for (const bad of [0, -5, 2.5, 1_000_001, null as unknown as number]) {
     await assert.rejects(
-      prepareCommissionDraft({ idempotencyKey: key(), ...ADMIN, projectId, ...terms, royaltyTokensPerAward: bad }),
-      /Royalty tokens/,
+      createCommissionVersion({ idempotencyKey: key(), ...MD, projectId, ...terms, royaltyTokensPerAward: bad }),
+      /Royalty points/,
       `refuses a rate of ${String(bad)}`
     );
   }
 
-  const v1 = await prepareCommissionDraft({ idempotencyKey: key(), ...ADMIN, projectId, ...terms });
-  assert.equal(v1.version, 1);
-  assert.equal(
-    (await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v1.versionId } })).royaltyTokensPerAward,
-    10,
-    "the rate is stored with the version"
-  );
-
-  // Editing the Draft keeps the same version.
-  const edited = await prepareCommissionDraft({
-    idempotencyKey: key(),
-    ...ADMIN,
-    projectId,
-    ...terms,
-    directPercent: "3.5",
-  });
-  assert.equal(edited.versionId, v1.versionId);
-  assert.equal(
-    (await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v1.versionId } })).directPercent?.toString(),
-    "3.5"
-  );
-
-  // Only Admin sends; MD cannot decide a Draft that was never sent.
-  await assert.rejects(sendCommissionVersion({ idempotencyKey: key(), ...MD, versionId: v1.versionId }), /Only Admin sends/);
-  await assert.rejects(
-    decideCommissionVersion({ idempotencyKey: key(), ...MD, versionId: v1.versionId, approve: true, note: "ok" }),
-    /not waiting for MD/
-  );
-  const sent = await sendCommissionVersion({ idempotencyKey: key(), ...ADMIN, versionId: v1.versionId });
-  assert.equal(sent.projectId, projectId);
-
-  // Review Focus 5 — a sent version is no longer editable, and no second open
-  // version may be started beside it.
-  await assert.rejects(prepareCommissionDraft({ idempotencyKey: key(), ...ADMIN, projectId, ...terms }), /waiting for MD/);
-  await assert.rejects(sendCommissionVersion({ idempotencyKey: key(), ...ADMIN, versionId: v1.versionId }), /Only a Draft/);
-
-  // Admin cannot approve; MD needs a note.
-  await assert.rejects(
-    decideCommissionVersion({ idempotencyKey: key(), ...ADMIN, versionId: v1.versionId, approve: true, note: "ok" }),
-    /Only MD/
-  );
-  await assert.rejects(
-    decideCommissionVersion({ idempotencyKey: key(), ...MD, versionId: v1.versionId, approve: false, note: " " }),
-    /note/
-  );
-
-  const approved = await decideCommissionVersion({
-    idempotencyKey: key(),
-    ...MD,
-    versionId: v1.versionId,
-    approve: true,
-    note: "Approved",
-  });
-  assert.equal(approved.status, "ACTIVE");
-  assert.equal(approved.supersededVersion, null);
-  assert.equal(approved.projectId, projectId);
+  // Created by MD = approved: Active at once, decided by the same MD.
+  const v1 = await createCommissionVersion({ idempotencyKey: key(), ...MD, projectId, ...terms });
+  assert.equal(`${v1.version}:${v1.status}`, "1:ACTIVE");
   const active1 = await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v1.versionId } });
-  assert.equal(active1.decidedByRef, MD.actorRef);
+  assert.equal(active1.royaltyTokensPerAward, 10, "the rate is stored with the version");
+  assert.equal(`${active1.preparedByRef}|${active1.decidedByRef}`, `${MD.actorRef}|${MD.actorRef}`);
   // v2.1 §15 — never effective before its approval.
   assert.ok(active1.effectiveFrom && active1.decidedAt && active1.effectiveFrom >= active1.decidedAt);
 
-  // Version 2, rejected with a note; version 1 stays Active.
-  const v2 = await prepareCommissionDraft({
-    idempotencyKey: key(),
-    ...ADMIN,
-    projectId,
-    ...terms,
-    loyaltyEnabled: false,
-    loyaltyPercent: null,
-    reason: "No Loyalty",
-  });
-  assert.equal(v2.version, 2);
-  await sendCommissionVersion({ idempotencyKey: key(), ...ADMIN, versionId: v2.versionId });
-  const rejected = await decideCommissionVersion({
-    idempotencyKey: key(),
-    ...MD,
-    versionId: v2.versionId,
-    approve: false,
-    note: "Keep Loyalty",
-  });
-  assert.equal(rejected.status, "REJECTED");
-  assert.equal((await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v1.versionId } })).status, "ACTIVE");
-  await assert.rejects(sendCommissionVersion({ idempotencyKey: key(), ...ADMIN, versionId: v2.versionId }), /Only a Draft/);
-
   // An MD exception: Loyalty equal to Direct needs the written reason (v2.1 §13).
   await assert.rejects(
-    prepareCommissionDraft({ idempotencyKey: key(), ...ADMIN, projectId, ...terms, loyaltyPercent: "3" }),
+    createCommissionVersion({ idempotencyKey: key(), ...MD, projectId, ...terms, loyaltyPercent: "3" }),
     /MD exception/
   );
 
-  // Version 3 approved supersedes version 1.
-  const v3 = await prepareCommissionDraft({
+  // Version 2 supersedes version 1.
+  const v2 = await createCommissionVersion({
     idempotencyKey: key(),
-    ...ADMIN,
+    ...MD,
     projectId,
     ...terms,
-    directPercent: "3",
     loyaltyPercent: "3",
     loyaltyExceptionReason: "Launch offer",
     reason: "Raise Loyalty",
   });
-  assert.equal(v3.version, 3);
-  await sendCommissionVersion({ idempotencyKey: key(), ...ADMIN, versionId: v3.versionId });
-  const approved3 = await decideCommissionVersion({
-    idempotencyKey: key(),
-    ...MD,
-    versionId: v3.versionId,
-    approve: true,
-    note: "Exception approved",
-  });
-  assert.equal(approved3.supersededVersion, 1);
+  assert.equal(`${v2.version}:${v2.status}`, "2:ACTIVE");
   const old = await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v1.versionId } });
   assert.equal(old.status, "SUPERSEDED");
   assert.ok(old.effectiveTo);
-
-  const listed = await listCommissionVersions(projectId);
   assert.deepEqual(
-    listed.map((v) => `${v.version}:${v.status}`),
-    ["3:ACTIVE", "2:REJECTED", "1:SUPERSEDED"]
+    (await listCommissionVersions(projectId)).map((v) => `${v.version}:${v.status}`),
+    ["2:ACTIVE", "1:SUPERSEDED"]
   );
 
   // The database refuses a second Active version however it is written.
@@ -213,9 +120,9 @@ async function main() {
     /one_active_commission_version_per_project|Unique constraint/
   );
 
-  /* ============ Change Pack §7.3, §8, §65 — exception audit, NT01, effective time ============ */
+  /* ============ Change Pack §7.3, §8 — exception audit, effective time ============ */
 
-  // CP §7.3 — MD's approval of version 3 was the commercial exception, audited as such.
+  // CP §7.3 — MD creating version 2 was the commercial exception, audited as such.
   const approvals = await db.auditEvent.findMany({
     where: { entity: "Project", entityId: projectId, action: "COMMISSION_VERSION_APPROVED" },
     orderBy: { at: "asc" },
@@ -228,79 +135,54 @@ async function main() {
 
   const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const inMs = (ms: number) => new Date(Date.now() + ms);
-  const nt01 = (status: "PENDING" | "COMPLETED") =>
-    db.task.count({ where: { recordId: projectId, purpose: "COMMISSION_VERSION_APPROVAL", status } });
 
-  // UAT SET-08 — a past Effective from is refused when prepared.
+  // UAT SET-08 — a past Effective from is refused.
   await assert.rejects(
-    prepareCommissionDraft({ idempotencyKey: key(), ...ADMIN, projectId, ...terms, effectiveFrom: inMs(-60_000) }),
+    createCommissionVersion({ idempotencyKey: key(), ...MD, projectId, ...terms, effectiveFrom: inMs(-60_000) }),
     /must be in the future/
   );
 
-  // UAT SET-12, TSK-08 — a future version: NT01 to MD on send, closed on approval,
-  // and the version waits as Approved while version 3 stays Active.
-  const v4 = await prepareCommissionDraft({
+  // UAT SET-12 — a future version waits as Approved while version 2 stays Active.
+  const v3 = await createCommissionVersion({
     idempotencyKey: key(),
-    ...ADMIN,
+    ...MD,
     projectId,
     ...terms,
     directPercent: "2.5",
     reason: "Next quarter",
     effectiveFrom: inMs(6_000),
   });
-  assert.equal(await nt01("PENDING"), 0, "no MD task for a Draft");
-  await sendCommissionVersion({ idempotencyKey: key(), ...ADMIN, versionId: v4.versionId });
-  const nt01Task = await db.task.findFirstOrThrow({
-    where: { recordId: projectId, purpose: "COMMISSION_VERSION_APPROVAL", status: "PENDING" },
-  });
-  assert.equal(nt01Task.assigneeRole, "MD");
-  assert.equal(nt01Task.recordKind, "Project");
-  assert.match(nt01Task.latestResult ?? "", /Version 4: Direct 2\.5%, Loyalty 1%, Royalty 10 tokens\. Trip Disabled\. Effective from/);
-  const waiting = await decideCommissionVersion({
-    idempotencyKey: key(),
-    ...MD,
-    versionId: v4.versionId,
-    approve: true,
-    note: "From next quarter",
-  });
-  assert.equal(waiting.status, "APPROVED");
-  assert.equal(waiting.supersededVersion, null);
-  assert.equal(await nt01("PENDING"), 0, "the decision closes NT01");
+  assert.equal(v3.status, "APPROVED");
   assert.equal(
-    (await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v3.versionId } })).status,
+    (await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v2.versionId } })).status,
     "ACTIVE",
-    "the current version stays in force until the approved one's time"
+    "the current version stays in force until the next one's time"
   );
-  // One open version per Project: nothing new while version 4 waits.
-  await assert.rejects(
-    prepareCommissionDraft({ idempotencyKey: key(), ...ADMIN, projectId, ...terms }),
-    /approved and takes effect/
-  );
+  // One waiting version per Project: nothing new while version 3 waits.
+  await assert.rejects(createCommissionVersion({ idempotencyKey: key(), ...MD, projectId, ...terms }), /takes effect on/);
   assert.equal(await db.$transaction((tx) => activateDueVersions(tx, projectId)), 0, "not due yet");
 
   // The scheduled job activates it once its time has come — and only once.
   await wait(6_500);
   assert.ok((await runCommissionVersionActivation()).changed >= 1);
-  const v4Row = await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v4.versionId } });
   const v3Row = await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v3.versionId } });
-  assert.equal(`${v3Row.status}|${v4Row.status}`, "SUPERSEDED|ACTIVE");
-  assert.equal(v3Row.effectiveTo?.getTime(), v4Row.effectiveFrom?.getTime(), "the hand-over is seamless");
-  assert.ok(v4Row.effectiveFrom! >= v4Row.decidedAt!, "never effective before its approval");
+  const v2Row = await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: v2.versionId } });
+  assert.equal(`${v2Row.status}|${v3Row.status}`, "SUPERSEDED|ACTIVE");
+  assert.equal(v2Row.effectiveTo?.getTime(), v3Row.effectiveFrom?.getTime(), "the hand-over is seamless");
+  assert.ok(v3Row.effectiveFrom! >= v3Row.decidedAt!, "never effective before its approval");
   assert.equal(await db.$transaction((tx) => activateDueVersions(tx, projectId)), 0, "a re-run changes nothing");
 
   // Review Focus 3 — a Booking Request between the time and the job freezes
   // the new version: submission activates a due version itself.
-  const v5 = await prepareCommissionDraft({
+  const v4 = await createCommissionVersion({
     idempotencyKey: key(),
-    ...ADMIN,
+    ...MD,
     projectId,
     ...terms,
     directPercent: "2",
     reason: "Later still",
     effectiveFrom: inMs(6_000),
   });
-  await sendCommissionVersion({ idempotencyKey: key(), ...ADMIN, versionId: v5.versionId });
-  await decideCommissionVersion({ idempotencyKey: key(), ...MD, versionId: v5.versionId, approve: true, note: "ok" });
   await wait(6_500);
   const frozen = await db.$transaction((tx) =>
     freezeAtSubmission(tx, {
@@ -310,11 +192,11 @@ async function main() {
       buyerPersonId: "00000000-0000-0000-0000-000000000000",
     })
   );
-  assert.equal(frozen.commissionVersionId, v5.versionId, "the due version is the one frozen");
-  assert.equal(frozen.royaltyTokensPerAward, 10, "docss/11 — the token rate freezes with the request");
+  assert.equal(frozen.commissionVersionId, v4.versionId, "the due version is the one frozen");
+  assert.equal(frozen.royaltyTokensPerAward, 10, "docss/11 — the points rate freezes with the request");
 
-  // docss/11 §1; Review Focus 5 — an Active version without a token rate (one
-  // prepared before tokens) is never frozen as "0 tokens": the request is refused.
+  // docss/11 §1; Review Focus 5 — an Active version without a points rate (one
+  // created before points) is never frozen as "0 points": the request is refused.
   const legacy = await db.project.create({ data: { projectCode: `${TAG}L`, name: `${TAG} Legacy`, type: "RESIDENTIAL" } });
   await db.projectCommissionVersion.create({
     data: {
@@ -324,8 +206,8 @@ async function main() {
       directEnabled: true,
       directPercent: "3",
       loyaltyEnabled: false,
-      reason: "Before tokens",
-      preparedByRef: ADMIN.actorRef,
+      reason: "Before points",
+      preparedByRef: MD.actorRef,
       submittedAt: new Date(),
       decidedByRef: MD.actorRef,
       decidedAt: new Date(),
@@ -341,45 +223,26 @@ async function main() {
         buyerPersonId: "00000000-0000-0000-0000-000000000000",
       })
     ),
-    /no Royalty token rate/
+    /no Royalty points rate/
   );
 
-  // UAT SET-08, Review Focus 2 — MD cannot approve a time that passed while it waited.
-  const v6 = await prepareCommissionDraft({
-    idempotencyKey: key(),
-    ...ADMIN,
-    projectId,
-    ...terms,
-    reason: "Too slow",
-    effectiveFrom: inMs(4_000),
-  });
-  await sendCommissionVersion({ idempotencyKey: key(), ...ADMIN, versionId: v6.versionId });
-  await wait(4_500);
-  await assert.rejects(
-    decideCommissionVersion({ idempotencyKey: key(), ...MD, versionId: v6.versionId, approve: true, note: "ok" }),
-    /already passed/
-  );
-  assert.equal(await nt01("PENDING"), 1, "a refused approval leaves NT01 open");
-  await decideCommissionVersion({ idempotencyKey: key(), ...MD, versionId: v6.versionId, approve: false, note: "Re-time" });
-  assert.equal(await nt01("PENDING"), 0);
-
-  /* The create form may carry the settings too: they are saved as Draft v1,
-     which Admin sends and MD approves exactly as above. */
+  /* The create form may carry the settings too: saved as version 1, approved
+     by the MD creating the Project exactly as above. */
   const base = { name: `${TAG} Created`, type: "RESIDENTIAL" as const, components: [] };
   const created = await createProject({
     idempotencyKey: key(),
-    ...ADMIN,
+    ...MD,
     ...base,
     projectCode: "ZZCSETC1",
     commission: { ...terms, directPercent: "4", loyaltyPercent: "2" },
   });
-  const draft = await db.projectCommissionVersion.findFirstOrThrow({ where: { projectId: created.projectId } });
-  assert.equal(`${draft.version}:${draft.status}`, "1:DRAFT", "the create form saves Draft v1, not an Active version");
-  assert.equal(draft.directPercent?.toString(), "4");
-  assert.equal(draft.royaltyTokensPerAward, 10, "docss/11 — the create form carries the token rate");
-  assert.equal(draft.preparedByRef, ADMIN.actorRef);
+  const first = await db.projectCommissionVersion.findFirstOrThrow({ where: { projectId: created.projectId } });
+  assert.equal(`${first.version}:${first.status}`, "1:ACTIVE", "the create form saves an Active version 1");
+  assert.equal(first.directPercent?.toString(), "4");
+  assert.equal(first.royaltyTokensPerAward, 10, "docss/11 — the create form carries the points rate");
+  assert.equal(first.decidedByRef, MD.actorRef);
 
-  // Only Admin prepares, on the create form too; PC can still create without settings.
+  // Only MD sets settings, on the create form too; PC can still create without them.
   await assert.rejects(
     createProject({
       idempotencyKey: key(),
@@ -389,12 +252,12 @@ async function main() {
       projectCode: "ZZCSETC2",
       commission: terms,
     }),
-    /Only Admin prepares/
+    /Only MD creates/
   );
   await assert.rejects(
     createProject({
       idempotencyKey: key(),
-      ...ADMIN,
+      ...MD,
       ...base,
       projectCode: "ZZCSETC3",
       commission: { ...terms, loyaltyPercent: "3" },

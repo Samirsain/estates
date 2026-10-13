@@ -21,7 +21,7 @@ import {
 const db = new PrismaClient();
 const TAG = "ZZ-LAND";
 const CRM = `${TAG}-CRM`;
-const ADMIN = `${TAG}-ADMIN`;
+const MD2 = `${TAG}-MD2`;
 
 let seq = 0;
 const key = () => `${TAG}-${Date.now()}-${seq++}`;
@@ -440,8 +440,8 @@ async function main() {
   await expectBlocked(/working stage this inquiry reopens at/, () =>
     setLandInquiryStatus({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD2,
+      actorRole: "MD",
       id: edited.id,
       version,
       status: "WORKING",
@@ -450,8 +450,8 @@ async function main() {
   );
   const reopened = await setLandInquiryStatus({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     id: edited.id,
     version,
     status: "WORKING",
@@ -473,8 +473,8 @@ async function main() {
   if (staff) {
     const reassigned = await reassignLandInquiry({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD2,
+      actorRole: "MD",
       id: edited.id,
       version,
       assignedToId: staff.id,
@@ -511,15 +511,15 @@ async function main() {
 
   await archiveLandInquiry({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     id: edited.id,
     version,
     reason: "Duplicate of another inquiry.",
   });
   const archivedRow = await db.landInquiry.findUniqueOrThrow({ where: { id: edited.id } });
   assert.ok(archivedRow.archivedAt, "the row is still there");
-  assert.equal(archivedRow.archivedByRef, ADMIN, "and names who archived it");
+  assert.equal(archivedRow.archivedByRef, MD2, "and names who archived it");
   assert.equal(
     (await listLandInquiries({ q: `${TAG} Ajmer` })).totalRows,
     0,

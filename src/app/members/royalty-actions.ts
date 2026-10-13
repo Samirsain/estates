@@ -31,12 +31,15 @@ function refresh() {
   revalidatePath("/portal");
 }
 
-async function act(run: (actor: { ref: string; role: string }) => Promise<unknown>, message: string): Promise<ActionResult> {
+async function act(
+  run: (actor: { ref: string; role: string }) => Promise<unknown>,
+  message: string | ((role: string) => string)
+): Promise<ActionResult> {
   const actor = await requireStaff();
   try {
     await run({ ref: actor.staffAccountId, role: actor.role });
     refresh();
-    return { ok: true, message };
+    return { ok: true, message: typeof message === "function" ? message(actor.role) : message };
   } catch (error) {
     return toResult(error);
   }
@@ -55,23 +58,24 @@ export async function recordTokenRedemptionAction(
 ) {
   return act(
     (a) => recordTokenRedemption({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
-    input.recipient === "NON_FAMILY"
-      ? "Recorded. MD must approve the non-family recipient before the tokens count as spent."
-      : `${input.tokens} tokens recorded as spent.`
+    (role) =>
+      input.recipient === "NON_FAMILY" && role !== "MD"
+        ? "Recorded. MD must approve the non-family recipient before the points count as spent."
+        : `${input.tokens} points recorded as spent.`
   );
 }
 
 export async function decideTokenRedemptionAction(input: { redemptionId: string; approve: boolean; note: string }, key: string) {
   return act(
     (a) => decideTokenRedemption({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
-    input.approve ? "Approved; the tokens are spent." : "Rejected; nothing was spent."
+    input.approve ? "Approved; the points are spent." : "Rejected; nothing was spent."
   );
 }
 
 export async function correctTokenRedemptionAction(input: { redemptionId: string; reason: string }, key: string) {
   return act(
     (a) => correctTokenRedemption({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
-    "Corrected; its tokens are back in the balance."
+    "Corrected; its points are back in the balance."
   );
 }
 

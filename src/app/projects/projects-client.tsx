@@ -354,7 +354,7 @@ export default function ProjectsClient({
       {creating && (
         <ProjectDialog
           busy={busy}
-          canPrepareCommission={role === "ADMIN"}
+          canPrepareCommission={role === "MD"}
           onClose={() => setCreating(false)}
           onSubmit={(input) => run(() => createProjectAction(input, newKey()))}
         />
@@ -938,8 +938,8 @@ function ProjectDialog({
   onSubmit: (input: Parameters<typeof createProjectAction>[0]) => void;
 }) {
   // SSOT §12–§14; CP §8 — the Project is created with its Commercial &
-  // Rewards settings, the same fields a later version uses. Saved as Draft v1;
-  // nothing applies until MD approves it.
+  // Rewards settings, the same fields a later version uses. Saved as version 1,
+  // approved by the MD creating it.
   const [withCommission, setWithCommission] = React.useState(canPrepareCommission);
   const draft = useCommercialRewardsDraft(null, [], "Initial Project settings");
   const commissionProblem = withCommission ? draft.problem : null;
@@ -977,26 +977,22 @@ function ProjectDialog({
         <ProjectFieldset />
 
         {canPrepareCommission && (
-          <fieldset className="space-y-3 rounded-xl border border-border/60 p-3">
+          <div className="space-y-3 border-t border-border/60 pt-3">
             <label className="flex items-center gap-2 text-xs font-semibold">
               <input
                 type="checkbox"
                 checked={withCommission}
                 onChange={(e) => setWithCommission(e.target.checked)}
               />
-              Commercial &amp; Rewards settings
+              Rewards settings
             </label>
-            <p className="text-[11px] text-muted-foreground">
-              Saved as Draft v1. Send it to MD from the Project page; no Booking Request can be submitted
-              until MD approves a version. Later changes are a new dated version, never an edit.
-            </p>
             {withCommission && (
               <>
                 {draft.fields}
                 {commissionProblem && <p className="text-xs text-red-700">{commissionProblem}</p>}
               </>
             )}
-          </fieldset>
+          </div>
         )}
 
         <div className="flex justify-end gap-2 pt-2">

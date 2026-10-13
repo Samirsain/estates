@@ -159,7 +159,7 @@ export default function AcquisitionDetailClient({
             {row.status === "APPROVED" &&
               row.documentsReturnRequired &&
               !row.documentsReturnedAt &&
-              ["CRM", "ADMIN", "MD"].includes(role) && (
+              ["CRM", "MD"].includes(role) && (
                 <Button
                   size="sm"
                   variant="outline"

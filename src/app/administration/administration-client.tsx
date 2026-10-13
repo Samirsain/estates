@@ -582,7 +582,7 @@ function MergeTab({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Two Active Members cannot be merged — deactivate one first. Only the MD decides. Loyalty is
+        Two Active Members cannot be merged — deactivate one first. Only the MD decides. Loyalty Points are
         rebuilt from unique qualifying events, and old IDs stay searchable.
       </p>
 
@@ -610,7 +610,7 @@ function MergeTab({
                     </Badge>
                     {merge.loyaltyRebuiltTo !== null && (
                       <div className="mt-1 text-muted-foreground">
-                        Loyalty rebuilt to {merge.loyaltyRebuiltTo}
+                        Loyalty Points rebuilt to {merge.loyaltyRebuiltTo}
                       </div>
                     )}
                   </td>
@@ -770,7 +770,7 @@ export function RaiseMergeModal({
             <p className="text-xs text-muted-foreground">
               Nothing changes until the MD approves. Then the merged-away identity keeps its records
               and history and points to the one that remains, its IDs stay searchable as Old IDs,
-              and the Loyalty count is rebuilt.
+              and the Loyalty Points count is rebuilt.
             </p>
             <label className="flex items-center gap-2 text-xs font-medium text-foreground">
               <input
@@ -1012,7 +1012,7 @@ function CreateStaffModal({
           </Field>
           <Field label="Role">
             <select name="role" className={inputClass} required defaultValue="CRM">
-              {["MD", "ADMIN", "ACCOUNTS", "CRM", "MIS", "PC"].map((role) => (
+              {["MD", "ACCOUNTS", "CRM", "MIS", "PC"].map((role) => (
                 <option key={role} value={role}>
                   {role}
                 </option>
@@ -1564,7 +1564,7 @@ function IdentityTab({ canReveal }: { canReveal: boolean }) {
       <p className="text-xs text-muted-foreground">
         {canReveal
           ? "Values are masked until you reveal them. Every reveal is written to the Activity History with your account and the Person it was read for (PRD RD-05)."
-          : "Your role sees masked values only. Full Aadhaar and PAN are limited to MD and Admin."}
+          : "Your role sees masked values only. Full Aadhaar and PAN are limited to MD."}
       </p>
 
       {error && <p className="text-xs text-red-700">{error}</p>}

@@ -51,7 +51,7 @@ import {
   MAX_OPEN_POSITIONS,
   checkOpenPositions,
   decideExtension,
-  extensionRequiresAdmin,
+  extensionRequiresMd,
   holdExpiry,
   holdRequestExpiry,
   isWorkingDay,
@@ -577,13 +577,13 @@ assert.equal(checkOpenPositions({ activeHolds: 1, waitingBookingApproval: 1, pen
 const blocked = checkOpenPositions({ activeHolds: 2, waitingBookingApproval: 0, pendingHoldRequests: 1 });
 assert.equal(blocked.ok, false);
 assert.match(blocked.ok === false ? blocked.reason : "", /three open Plot positions|3 open Plot positions/);
-assert.match(blocked.ok === false ? blocked.reason : "", /Admin\/MD exception/);
+assert.match(blocked.ok === false ? blocked.reason : "", /MD exception/);
 assert.equal(MAX_OPEN_POSITIONS, 3);
 
-// First extension is CRM's; any further extension needs Admin (PRD §8.5).
-assert.equal(extensionRequiresAdmin(0), false);
-assert.equal(extensionRequiresAdmin(1), true);
-assert.equal(extensionRequiresAdmin(4), true);
+// First extension is CRM's; any further extension needs MD (PRD §8.5).
+assert.equal(extensionRequiresMd(0), false);
+assert.equal(extensionRequiresMd(1), true);
+assert.equal(extensionRequiresMd(4), true);
 
 // The timer never pauses: a decision after expiry closes the request as Expired.
 const expiry = new Date("2026-08-22T06:00:00Z");
@@ -1784,10 +1784,10 @@ assert.deepEqual(
   { ok: true }
 );
 
-// PRD §4.4 — only MD/Admin reopen a Delivered Booking, always with a reason.
+// PRD §4.4 — only MD reopens a Delivered Booking, always with a reason.
 assert.deepEqual(canReopenDelivered("MD", "Recorded against the wrong Plot."), { ok: true });
 assert.equal(canReopenDelivered("CRM", "Wrong Plot.").ok, false);
-assert.equal(canReopenDelivered("ADMIN", "   ").ok, false);
+assert.equal(canReopenDelivered("MD", "   ").ok, false);
 
 // PRD §21 — exports stay masked; already-masked columns survive.
 assert.deepEqual(
@@ -2488,7 +2488,7 @@ assert.equal(isValidStatusStage("WORKING", "REJECTED_CLOSED"), false);
   assert.ok(closed.ok && closed.nextStatus === "CLOSED");
   assert.ok(!planStageChange({ status: "WORKING", from: "NEW", to: "REJECTED_CLOSED", reason: " " }).ok);
 
-  // A Closed inquiry does not move until Admin or MD reopens it.
+  // A Closed inquiry does not move until MD reopens it.
   assert.ok(!planStageChange({ status: "CLOSED", from: "REJECTED_CLOSED", to: "NEW", reason: "x" }).ok);
 }
 

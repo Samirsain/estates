@@ -20,8 +20,8 @@ export async function recordCustomerTermsAcceptance(args: {
   termsVersion: string;
   acceptedOn: Date;
 }) {
-  if (!["CRM", "ADMIN", "MD"].includes(args.actorRole)) {
-    blocked("Only CRM, Admin or MD may record a Customer Terms acceptance.");
+  if (!["CRM", "MD"].includes(args.actorRole)) {
+    blocked("Only CRM or MD may record a Customer Terms acceptance.");
   }
   if (!args.termsVersion.trim()) blocked("Enter the Customer Terms version the Customer accepted.");
   const dated = notFutureDated("Acceptance date", args.acceptedOn);
@@ -71,8 +71,8 @@ export async function verifyAadhaar(args: {
   actorRole: string;
   personId: string;
 }) {
-  if (!["ACCOUNTS", "ADMIN", "MD"].includes(args.actorRole)) {
-    blocked("Only Accounts, Admin or MD may verify an Aadhaar.");
+  if (!["ACCOUNTS", "MD"].includes(args.actorRole)) {
+    blocked("Only Accounts or MD may verify an Aadhaar.");
   }
 
   return runCommand<{ personId: string; reassessed: number }>(

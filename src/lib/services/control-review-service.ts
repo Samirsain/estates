@@ -26,7 +26,7 @@ type CloseRelation = "SPOUSE" | "PARENT" | "CHILD" | "SIBLING";
 export async function declareStaffRelative(
   args: Actor & { staffPersonId: string; relativePersonId: string; relation: CloseRelation }
 ) {
-  if (args.actorRole !== "ADMIN" && args.actorRole !== "MD") blocked("Only Admin or MD records a staff relative.");
+  if (args.actorRole !== "MD") blocked("Only MD records a staff relative.");
   if (args.staffPersonId === args.relativePersonId) blocked("A Person cannot be their own relative.");
   return runCommand<{ declarationId: string }>(
     { idempotencyKey: args.idempotencyKey, operation: "STAFF_RELATIVE_DECLARE", actorRef: args.actorRef, actorRole: args.actorRole, payload: args },
@@ -53,7 +53,7 @@ export async function declareStaffRelative(
 
 /** Ended, never deleted; what MD already approved stays approved. */
 export async function endStaffRelative(args: Actor & { declarationId: string; reason: string }) {
-  if (args.actorRole !== "ADMIN" && args.actorRole !== "MD") blocked("Only Admin or MD ends a staff relative declaration.");
+  if (args.actorRole !== "MD") blocked("Only MD ends a staff relative declaration.");
   if (!args.reason.trim()) blocked("A reason is required.");
   return runCommand<{ declarationId: string }>(
     { idempotencyKey: args.idempotencyKey, operation: "STAFF_RELATIVE_END", actorRef: args.actorRef, actorRole: args.actorRole, payload: { declarationId: args.declarationId } },

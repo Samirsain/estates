@@ -81,7 +81,10 @@ async function dedupeAfterMerge(
   }
 }
 
-/** PRD §22 — MD approval is required, so a request is raised first. */
+/**
+ * PRD §22 — anyone else raises a request for MD; MD raising it is the approval,
+ * so the merge happens at once.
+ */
 export async function requestPersonMerge(args: {
   idempotencyKey: string;
   actorRef: string;
@@ -92,7 +95,7 @@ export async function requestPersonMerge(args: {
 }) {
   if (!args.reason.trim()) blocked("A compulsory reason is required to merge two Persons.");
 
-  return runCommand(
+  return runCommand<{ requestId: string; status: "PENDING" | "APPROVED" }>(
     {
       idempotencyKey: args.idempotencyKey,
       operation: "PERSON_MERGE_REQUEST",
@@ -136,8 +139,16 @@ export async function requestPersonMerge(args: {
         },
       });
 
+      if (args.actorRole === "MD") {
+        return applyMerge(tx, request, args.actorRef, {
+          decidedByRef: args.actorRef,
+          decidedAt: new Date(),
+          decisionNote: args.reason.trim(),
+        });
+      }
+
       return {
-        result: { requestId: request.id, status: "PENDING" },
+        result: { requestId: request.id, status: "PENDING" as const },
         audit: {
           entity: "Person",
           entityId: args.mergedPersonId,
@@ -207,89 +218,102 @@ export async function decidePersonMerge(args: {
         };
       }
 
-      // Both identities and their entitlement counters change together.
-      await lockKey(tx, `person-merge:${request.survivingPersonId}`);
-      await lockKey(tx, `person-merge:${request.mergedPersonId}`);
-
-      const [survivor, merged] = await Promise.all([
-        tx.person.findUniqueOrThrow({
-          where: { id: request.survivingPersonId },
-          include: { memberProfile: true, customerProfile: true },
-        }),
-        tx.person.findUniqueOrThrow({
-          where: { id: request.mergedPersonId },
-          include: { memberProfile: true, customerProfile: true },
-        }),
-      ]);
-
-      const recheck = validateMergeRequest(
-        { personId: survivor.id, memberStatus: survivor.memberProfile?.status ?? null },
-        { personId: merged.id, memberStatus: merged.memberProfile?.status ?? null }
-      );
-      if (!recheck.ok) blocked(recheck.reason);
-
-      if (survivor.customerProfile) {
-        await tx.customerProfile.update({
-          where: { id: survivor.customerProfile.id },
-          data: {
-            legacyCustomerIds: [
-              ...survivor.customerProfile.legacyCustomerIds,
-              ...(merged.customerProfile ? [merged.customerProfile.customerId] : []),
-              ...(merged.customerProfile?.legacyCustomerIds ?? []),
-            ],
-          },
-        });
-      }
-      if (survivor.memberProfile && merged.memberProfile) {
-        await tx.memberProfile.update({
-          where: { id: survivor.memberProfile.id },
-          data: {
-            legacyMemberIds: [
-              ...survivor.memberProfile.legacyMemberIds,
-              merged.memberProfile.memberId,
-              ...merged.memberProfile.legacyMemberIds,
-            ],
-          },
-        });
-      }
-
-      // The merged-away Person is kept and pointed at the survivor; its own
-      // records stay attached to it so history reads exactly as it happened.
-      await tx.person.update({
-        where: { id: merged.id },
-        data: { mergeStatus: "MERGED_AWAY", survivingPersonId: survivor.id },
-      });
-      await tx.person.update({
-        where: { id: survivor.id },
-        data: { mergeStatus: "SURVIVOR" },
-      });
-
-      await dedupeAfterMerge(tx, survivor, merged, args.actorRef);
-      // Holds, Recovery and the release controls now read the one identity.
-      await refreshBenefitsOfPerson(tx, survivor.id, args.actorRef);
-      await refreshBenefitsOfPerson(tx, merged.id, args.actorRef);
-
-      await tx.personMergeRequest.update({
-        where: { id: request.id },
-        data: {
-          status: "APPROVED",
-          ...decision,
-          // CP §87 — rebuilt from unique valid events, capped at three.
-          loyaltyRebuiltTo: Math.min(3, await consumedClosingEvents(tx, survivor.id)),
-        },
-      });
-
-      return {
-        result: { requestId: request.id, status: "APPROVED" },
-        audit: {
-          entity: "Person",
-          entityId: merged.id,
-          action: "PERSON_MERGED",
-          before: { mergeStatus: merged.mergeStatus },
-          after: { mergeStatus: "MERGED_AWAY", survivingPersonId: survivor.id },
-          reason: args.note,
-        },
-      };
+      return applyMerge(tx, request, args.actorRef, decision);
     }
   );
+}
+
+/**
+ * PRD §22 — the approved merge itself: the merged-away Person keeps its row and
+ * points at the survivor; the old IDs stay searchable; counters are rebuilt.
+ */
+async function applyMerge(
+  tx: Tx,
+  request: { id: string; survivingPersonId: string; mergedPersonId: string },
+  actorRef: string,
+  decision: { decidedByRef: string; decidedAt: Date; decisionNote: string }
+) {
+  // Both identities and their entitlement counters change together.
+  await lockKey(tx, `person-merge:${request.survivingPersonId}`);
+  await lockKey(tx, `person-merge:${request.mergedPersonId}`);
+
+  const [survivor, merged] = await Promise.all([
+    tx.person.findUniqueOrThrow({
+      where: { id: request.survivingPersonId },
+      include: { memberProfile: true, customerProfile: true },
+    }),
+    tx.person.findUniqueOrThrow({
+      where: { id: request.mergedPersonId },
+      include: { memberProfile: true, customerProfile: true },
+    }),
+  ]);
+
+  const recheck = validateMergeRequest(
+    { personId: survivor.id, memberStatus: survivor.memberProfile?.status ?? null },
+    { personId: merged.id, memberStatus: merged.memberProfile?.status ?? null }
+  );
+  if (!recheck.ok) blocked(recheck.reason);
+
+  if (survivor.customerProfile) {
+    await tx.customerProfile.update({
+      where: { id: survivor.customerProfile.id },
+      data: {
+        legacyCustomerIds: [
+          ...survivor.customerProfile.legacyCustomerIds,
+          ...(merged.customerProfile ? [merged.customerProfile.customerId] : []),
+          ...(merged.customerProfile?.legacyCustomerIds ?? []),
+        ],
+      },
+    });
+  }
+  if (survivor.memberProfile && merged.memberProfile) {
+    await tx.memberProfile.update({
+      where: { id: survivor.memberProfile.id },
+      data: {
+        legacyMemberIds: [
+          ...survivor.memberProfile.legacyMemberIds,
+          merged.memberProfile.memberId,
+          ...merged.memberProfile.legacyMemberIds,
+        ],
+      },
+    });
+  }
+
+  // The merged-away Person is kept and pointed at the survivor; its own
+  // records stay attached to it so history reads exactly as it happened.
+  await tx.person.update({
+    where: { id: merged.id },
+    data: { mergeStatus: "MERGED_AWAY", survivingPersonId: survivor.id },
+  });
+  await tx.person.update({
+    where: { id: survivor.id },
+    data: { mergeStatus: "SURVIVOR" },
+  });
+
+  await dedupeAfterMerge(tx, survivor, merged, actorRef);
+  // Holds, Recovery and the release controls now read the one identity.
+  await refreshBenefitsOfPerson(tx, survivor.id, actorRef);
+  await refreshBenefitsOfPerson(tx, merged.id, actorRef);
+
+  await tx.personMergeRequest.update({
+    where: { id: request.id },
+    data: {
+      status: "APPROVED",
+      ...decision,
+      // CP §87 — rebuilt from unique valid events, capped at three.
+      loyaltyRebuiltTo: Math.min(3, await consumedClosingEvents(tx, survivor.id)),
+    },
+  });
+
+  return {
+    result: { requestId: request.id, status: "APPROVED" as const },
+    audit: {
+      entity: "Person",
+      entityId: merged.id,
+      action: "PERSON_MERGED",
+      before: { mergeStatus: merged.mergeStatus },
+      after: { mergeStatus: "MERGED_AWAY", survivingPersonId: survivor.id },
+      reason: decision.decisionNote,
+    },
+  };
 }

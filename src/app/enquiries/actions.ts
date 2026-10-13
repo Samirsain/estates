@@ -66,7 +66,7 @@ export async function createEnquiryAction(
       sourceMemberId: input.sourceMemberId || null,
       sourceCustomerId: input.sourceCustomerId || null,
       assignedStaffId,
-      assigneeRole: assignee.role === "MD" || assignee.role === "ADMIN" ? assignee.role : "CRM",
+      assigneeRole: assignee.role === "MD" ? assignee.role : "CRM",
       nextFollowUpAt: new Date(input.nextFollowUpIso),
       remark: input.remark,
     });

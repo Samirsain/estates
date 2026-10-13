@@ -35,7 +35,6 @@ const db = new PrismaClient();
 
 const CODE = "SRG";
 const MD = "STF-0001";
-const ADMIN = "STF-0002";
 /** CRM submits, Accounts decides — never the same account on both sides. */
 const ACC = "STF-0003";
 const CRM = "STF-0005";
@@ -324,8 +323,8 @@ async function main() {
 
   await prepareInventory({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD,
+    actorRole: "MD",
     projectId: project.id,
     rows: PLOTS.map((p) => ({
       plotNumber: p.number,
@@ -346,8 +345,8 @@ async function main() {
   for (const number of ["S-01", "S-02", "S-03", "S-04", "S-05", "S-06", "S-07", "S-08"]) {
     await makeAvailable({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD,
+      actorRole: "MD",
       plotId: plots[number].id,
       reason: "Released for sale",
     });
@@ -355,8 +354,8 @@ async function main() {
 
   await setRestriction({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD,
+    actorRole: "MD",
     plotId: plots["S-10"].id,
     restriction: "PLEDGE",
     reason: "Pledged against the development loan",
@@ -540,8 +539,8 @@ async function main() {
   });
   await recordFinalBuyers({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD,
+    actorRole: "MD",
     bookingId: four.bookingId,
     buyers: [
       {
@@ -553,8 +552,8 @@ async function main() {
   });
   await recordCompletion({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD,
+    actorRole: "MD",
     bookingId: four.bookingId,
     completion: {
       route: "ALLOTMENT",

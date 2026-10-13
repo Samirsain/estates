@@ -141,7 +141,6 @@ export default async function PlotsPage({
       })),
       restriction: plot.restriction,
       restrictionReason: plot.restrictionReason,
-      isResale: plot.isResale,
       widthFt: plot.widthFt?.toString() ?? "",
       lengthFt: plot.lengthFt?.toString() ?? "",
       exactAreaSqFt: plot.exactAreaSqFt?.toString() ?? "",

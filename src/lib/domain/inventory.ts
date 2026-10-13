@@ -604,7 +604,7 @@ export function canAllocate(
       ok: false,
       reason:
         "The Project is still Unreleased and cannot accept a Hold or Booking. " +
-        "Admin or MD must activate the Project first.",
+        "MD must activate the Project first.",
     };
   }
   if (restrictionBlocksSale(restriction)) {

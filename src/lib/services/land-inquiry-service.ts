@@ -343,7 +343,7 @@ export async function updateLandInquiry(args: {
       const before = await tx.landInquiry.findUniqueOrThrow({ where: { id: args.id } });
       if (before.archivedAt) blocked("This inquiry is archived and cannot be edited.");
       if (before.status === "CLOSED") {
-        blocked("This inquiry is Closed. Admin or MD must reopen it before it can be edited.");
+        blocked("This inquiry is Closed. MD must reopen it before it can be edited.");
       }
       assertVersion(before.version, args.version);
 

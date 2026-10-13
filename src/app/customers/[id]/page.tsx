@@ -466,7 +466,7 @@ export default async function CustomerDetailPage({
             />
             <Stat label="Properties" value={`${bookedCount} booked · ${deliveredCount} delivered`} />
             <Stat
-              label="Closing Loyalty"
+              label="Closing Loyalty Points"
               value={`${closingUsed.length} of ${CUSTOMER_CLOSING_LOYALTY_LIMIT} used`}
               hint={closingUsed.length >= CUSTOMER_CLOSING_LOYALTY_LIMIT ? "Membership needed for more" : undefined}
             />
@@ -479,7 +479,7 @@ export default async function CustomerDetailPage({
                 under it. It used to carry a sentence for a value and a hint
                 that wrapped onto a second line, which left this one column
                 taller than the three beside it. Where the link stands and which
-                position it took moved down to Loyalty & commission — that block
+                position it took moved down to Loyalty Points & commission — that block
                 is already about exactly this and has the room. */}
             {customer.royaltyLinkedMember ? (
               <Stat
@@ -543,7 +543,7 @@ export default async function CustomerDetailPage({
                     {c.holdReason === "AADHAAR_PENDING" ? "Aadhaar Pending" : "Bank not verified"}
                   </span>
                   <span className={SUB}>
-                    Holds the {c.type === "LOYALTY" ? "Customer Loyalty" : `${words(c.type)} commission`}
+                    Holds the {c.type === "LOYALTY" ? "Loyalty Points" : `${words(c.type)} commission`}
                     {c.booking ? ` on ${c.booking.bookingNumber ?? c.booking.requestNo}` : ""}.
                   </span>
                 </li>
@@ -772,7 +772,7 @@ export default async function CustomerDetailPage({
             actually been earned were three separate cards saying the same
             thing in three places. The two short lists sit across the top and
             the table runs under them, so the whole answer is read in one go. */}
-        <Section title="Loyalty & commission" icon={<Layers className="h-3.5 w-3.5" />}>
+        <Section title="Loyalty Points & commission" icon={<Layers className="h-3.5 w-3.5" />}>
           {/* Five answers on one line, in the same shape as the summary row at
               the top of the page: three slots, the purchase that named the
               Royalty link, and where that link stands. They were two stacked
@@ -780,7 +780,7 @@ export default async function CustomerDetailPage({
               facts. `Stat` already draws exactly this, dividers included. */}
           <dl className="grid grid-cols-2 gap-y-4 md:grid-cols-4 md:divide-x md:divide-border/60 lg:grid-cols-7">
             {/* v2.1 §21, §25 — the three Customer-closing events of a lifetime,
-                in the order they qualified. Repeat-purchase Loyalty is unlimited
+                in the order they qualified. Repeat-purchase Loyalty Points are unlimited
                 and is not counted here. */}
             {Array.from({ length: CUSTOMER_CLOSING_LOYALTY_LIMIT }, (_, i) => {
               const event = closingUsed[i];
@@ -846,18 +846,18 @@ export default async function CustomerDetailPage({
               value={customer.royaltyOpportunityConsumedAt ? "Consumed" : "Unused"}
               hint={
                 customer.royaltyAwards[0]
-                  ? `${customer.royaltyAwards[0].tokens} tokens · ${
+                  ? `${customer.royaltyAwards[0].tokens} points · ${
                       { PENDING: "pending", RELEASED: "posted", REVERSED: "reversed" }[customer.royaltyAwards[0].state]
                     }`
                   : customer.royaltyLinkedMemberId
-                    ? "Royalty tokens for the linked Member on the first Club-direct repeat purchase"
+                    ? "Royalty points for the linked Member on the first Club-direct repeat purchase"
                     : undefined
               }
             />
           </dl>
 
           {/* v2.1 §22, §77 — what a Customer closer needs before Customer-closing
-              Loyalty is paid. Shown for every Customer: anyone may close a sale
+              Loyalty Points are paid. Shown for every Customer: anyone may close a sale
               once they have bought. */}
           <div className="mt-4 grid gap-3 border-t border-border/60 pt-3 md:grid-cols-2">
             {/* CP §17, §69 — the verdict first, then the two conditions staff can act on. */}
@@ -882,7 +882,7 @@ export default async function CustomerDetailPage({
                       : "No Aadhaar recorded"}
                 </p>
               </div>
-              {customer.person.aadhaarStatus === "AVAILABLE" && ["ACCOUNTS", "ADMIN", "MD"].includes(actor.role) && (
+              {customer.person.aadhaarStatus === "AVAILABLE" && ["ACCOUNTS", "MD"].includes(actor.role) && (
                 <VerifyAadhaarButton personId={customer.personId} />
               )}
             </div>
@@ -895,7 +895,7 @@ export default async function CustomerDetailPage({
                     : "Not accepted yet"}
                 </p>
               </div>
-              {["CRM", "ADMIN", "MD"].includes(actor.role) && (
+              {["CRM", "MD"].includes(actor.role) && (
                 <RecordTermsButton customerProfileId={customer.id} />
               )}
             </div>
@@ -937,8 +937,8 @@ export default async function CustomerDetailPage({
                       <td className={TD}>
                         {c.type === "LOYALTY"
                           ? c.beneficiaryRole === "CLOSING_CUSTOMER"
-                            ? "Customer-closing Loyalty"
-                            : "Repeat-purchase Loyalty"
+                            ? "Customer-closing Loyalty Points"
+                            : "Repeat-purchase Loyalty Points"
                           : words(c.type)}
                       </td>
                       <td className={`${TD} text-right font-medium tabular-nums`}>

@@ -15,6 +15,7 @@ import type { MemberTokenView } from "@/lib/services/royalty-service";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { Stat } from "@/components/record-section";
 import {
   correctTokenRedemptionAction,
   decideTokenRedemptionAction,
@@ -56,6 +57,11 @@ const AWARD_STATE: Record<string, { label: string; variant: "success" | "warning
   REVERSED: { label: "Reversed", variant: "outline" },
 };
 
+// The profile's own table look (Bookings sold).
+const TH = "pb-2 pr-4 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
+const TD = "py-2.5 pr-4 align-top";
+const SUB = "block text-[11px] text-muted-foreground";
+
 const newKey = () => `tok-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const signed = (n: number) => (n < 0 ? `−${Math.abs(n)}` : String(n));
 
@@ -81,8 +87,8 @@ export default function RoyaltyTokens({
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
   const [dialog, setDialog] = React.useState<Dialog | null>(null);
   const staff = view.staff!;
-  const records = role === "CRM" || role === "ADMIN";
-  const corrects = role === "ADMIN" || role === "MD";
+  const records = role === "CRM" || role === "MD";
+  const corrects = role === "MD";
 
   async function run(action: () => Promise<ActionResult>) {
     setBusy(true);
@@ -96,25 +102,21 @@ export default function RoyaltyTokens({
   }
 
   return (
-    <div className="space-y-3 text-xs">
-      {/* docss/11 §1 — exactly the three Member-facing figures. */}
-      <div className="grid grid-cols-3 gap-2">
-        {(
-          [
-            ["Tokens earned", view.figures.earned],
-            ["Tokens spent", view.figures.spent],
-            ["Token balance", view.figures.balance],
-          ] as const
-        ).map(([label, n]) => (
-          <div key={label} className="rounded-lg border border-border/60 px-2.5 py-2">
-            <p className={`text-base font-semibold tabular-nums ${n < 0 ? "text-red-700" : ""}`}>{signed(n)}</p>
-            <p className="text-[11px] text-muted-foreground">{label}</p>
-          </div>
-        ))}
-      </div>
+    <div className="space-y-4 text-xs">
+      {/* docss/11 §1 — the three Member-facing figures, plus who can still earn. */}
+      <dl className="grid grid-cols-2 gap-y-3 md:grid-cols-4 md:divide-x md:divide-border/60">
+        <Stat label="Earned" value={view.figures.earned} />
+        <Stat label="Spent" value={view.figures.spent} />
+        <Stat
+          label="Balance"
+          value={<span className={view.figures.balance < 0 ? "text-red-700" : undefined}>{signed(view.figures.balance)}</span>}
+          hint="One balance, every Project"
+        />
+        <Stat label="Can still earn" value={openOpportunities} hint="linked Customers" />
+      </dl>
 
       {staff.blockers.length > 0 && (
-        <ul className="space-y-0.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-amber-800">
+        <ul className="space-y-0.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-amber-800">
           {staff.blockers.map((b) => (
             <li key={b}>{b}</li>
           ))}
@@ -123,94 +125,121 @@ export default function RoyaltyTokens({
 
       {notice && <p className={notice.ok ? "text-emerald-700" : "text-red-700"}>{notice.ok ? notice.message : notice.error}</p>}
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-muted-foreground">
-          One balance across every Project. Earned when a final linked Customer&apos;s first Club-direct purchase qualifies
-          {openOpportunities > 0 ? ` — ${openOpportunities} relationship(s) can still earn` : ""}. No expiry, no cash value.
-        </p>
-        {records && (
-          <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "RECORD" })}>
-            Record redemption
-          </Button>
-        )}
-      </div>
-
       <div>
-        <h4 className="pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Tokens spent</h4>
+        <div className="flex items-center justify-between gap-2 pb-2">
+          <p className="text-sm font-semibold text-foreground">Spent</p>
+          {records && (
+            <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "RECORD" })}>
+              Record redemption
+            </Button>
+          )}
+        </div>
         {staff.redemptions.length === 0 ? (
           <p className="text-muted-foreground">Nothing spent yet.</p>
         ) : (
-          <ul className="divide-y divide-border/40">
-            {staff.redemptions.map((r) => (
-              <li key={r.id} className="flex flex-wrap items-start justify-between gap-2 py-1.5">
-                <div className="space-y-0.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold tabular-nums">{r.tokens} tokens</span>
-                    <span>{formatIst(r.redeemedOn)}</span>
-                    <Badge variant={REDEMPTION_STATE[r.state]?.variant ?? "outline"}>{REDEMPTION_STATE[r.state]?.label ?? r.state}</Badge>
-                  </div>
-                  <p className="text-muted-foreground">
-                    {r.recipient === "SELF"
-                      ? "For the Member"
-                      : `For ${r.recipientName} (${r.recipient.toLowerCase().replace("_", "-")})`}
-                    {r.reference ? ` · ${r.reference}` : ""} · recorded by {r.recordedByRef}
-                  </p>
-                  {r.decisionNote && <p className="text-muted-foreground">MD: {r.decisionNote}</p>}
-                  {r.correctionReason && <p className="text-muted-foreground">Corrected: {r.correctionReason}</p>}
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {role === "MD" && r.state === "AWAITING_MD" && (
-                    <>
-                      <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "DECIDE", redemptionId: r.id, approve: false })}>
-                        Reject
-                      </Button>
-                      <Button size="xs" onClick={() => setDialog({ kind: "DECIDE", redemptionId: r.id, approve: true })}>
-                        Approve
-                      </Button>
-                    </>
-                  )}
-                  {corrects && r.state === "RECORDED" && (
-                    <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "CORRECT", redemptionId: r.id, tokens: r.tokens })}>
-                      Correct
-                    </Button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[36rem]">
+              <thead className="border-b border-border/50">
+                <tr>
+                  <th className={TH}>Date</th>
+                  <th className={TH}>Points</th>
+                  <th className={TH}>For</th>
+                  <th className={TH}>Status</th>
+                  <th className={`${TH} pr-0`} />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40">
+                {staff.redemptions.map((r) => (
+                  <tr key={r.id}>
+                    <td className={TD}>{formatIst(r.redeemedOn)}</td>
+                    <td className={`${TD} font-semibold tabular-nums`}>{r.tokens}</td>
+                    <td className={TD}>
+                      {r.recipient === "SELF" ? "The Member" : `${r.recipientName} (${r.recipient.toLowerCase().replace("_", "-")})`}
+                      <span className={SUB}>
+                        {r.reference ? `${r.reference} · ` : ""}by {r.recordedByRef}
+                      </span>
+                      {r.decisionNote && <span className={SUB}>MD: {r.decisionNote}</span>}
+                      {r.correctionReason && <span className={SUB}>Corrected: {r.correctionReason}</span>}
+                    </td>
+                    <td className={TD}>
+                      <Badge variant={REDEMPTION_STATE[r.state]?.variant ?? "outline"}>{REDEMPTION_STATE[r.state]?.label ?? r.state}</Badge>
+                    </td>
+                    <td className={`${TD} pr-0`}>
+                      <span className="flex justify-end gap-1">
+                        {role === "MD" && r.state === "AWAITING_MD" && (
+                          <>
+                            <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "DECIDE", redemptionId: r.id, approve: false })}>
+                              Reject
+                            </Button>
+                            <Button size="xs" onClick={() => setDialog({ kind: "DECIDE", redemptionId: r.id, approve: true })}>
+                              Approve
+                            </Button>
+                          </>
+                        )}
+                        {corrects && r.state === "RECORDED" && (
+                          <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "CORRECT", redemptionId: r.id, tokens: r.tokens })}>
+                            Correct
+                          </Button>
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      {/* Internal history: where the tokens came from. Never a balance per Project. */}
-      <details>
-        <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Royalty awards — internal ({staff.awards.length})
-        </summary>
-        {staff.awards.length === 0 ? (
-          <p className="pt-1 text-muted-foreground">No award yet.</p>
-        ) : (
-          <ul className="mt-1 divide-y divide-border/40">
-            {staff.awards.map((a) => (
-              <li key={a.id} className="space-y-0.5 py-1.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={AWARD_STATE[a.state].variant}>{AWARD_STATE[a.state].label}</Badge>
-                  {a.holdReason && <Badge variant="warning">{REWARD_HOLD_LABEL[a.holdReason] ?? a.holdReason}</Badge>}
-                  <span className="font-medium tabular-nums">{a.tokens} tokens</span>
-                  {a.consumed && <span className="text-muted-foreground">used</span>}
-                </div>
-                <p className="text-muted-foreground">
-                  {a.customerId} · {a.customerName} ·{" "}
-                  <a className="underline-offset-2 hover:underline" href={`/bookings?booking=${a.bookingId}`}>
-                    {a.bookingNumber}
-                  </a>{" "}
-                  · {a.project} · {a.route === "PAYMENT_100" ? "100% Payment Received" : "Approved Buyback"} · {formatIst(a.qualifiedAt)}
-                </p>
-                {a.reversalReason && a.state === "REVERSED" && <p className="text-muted-foreground">{a.reversalReason}</p>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </details>
+      {/* Internal history: where the points came from. Never a balance per Project. */}
+      {staff.awards.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
+            Where the points came from ({staff.awards.length})
+          </summary>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[40rem]">
+              <thead className="border-b border-border/50">
+                <tr>
+                  <th className={TH}>Customer</th>
+                  <th className={TH}>Booking</th>
+                  <th className={TH}>Points</th>
+                  <th className={`${TH} pr-0`}>Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40">
+                {staff.awards.map((a) => (
+                  <tr key={a.id}>
+                    <td className={TD}>
+                      {a.customerId}
+                      <span className={SUB}>{a.customerName}</span>
+                    </td>
+                    <td className={TD}>
+                      <a className="font-semibold text-primary hover:underline" href={`/bookings?booking=${a.bookingId}`}>
+                        {a.bookingNumber}
+                      </a>
+                      <span className={SUB}>
+                        {a.project} · {a.route === "PAYMENT_100" ? "100% payment" : "Approved Buyback"} · {formatIst(a.qualifiedAt)}
+                      </span>
+                    </td>
+                    <td className={`${TD} font-semibold tabular-nums`}>
+                      {a.tokens}
+                      {a.consumed && <span className={SUB}>used</span>}
+                    </td>
+                    <td className={`${TD} pr-0`}>
+                      <span className="flex flex-wrap gap-1">
+                        <Badge variant={AWARD_STATE[a.state].variant}>{AWARD_STATE[a.state].label}</Badge>
+                        {a.holdReason && <Badge variant="warning">{REWARD_HOLD_LABEL[a.holdReason] ?? a.holdReason}</Badge>}
+                      </span>
+                      {a.reversalReason && a.state === "REVERSED" && <span className={SUB}>{a.reversalReason}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
 
       {dialog?.kind === "RECORD" && (
         <RecordDialog busy={busy} memberProfileId={memberProfileId} onClose={() => setDialog(null)} run={run} />
@@ -228,8 +257,8 @@ export default function RoyaltyTokens({
       )}
       {dialog?.kind === "CORRECT" && (
         <NoteDialog
-          title={`Correct an erroneous redemption of ${dialog.tokens} tokens`}
-          label="Why it was wrong (compulsory). The tokens return to the balance; the entry stays in history."
+          title={`Correct an erroneous redemption of ${dialog.tokens} points`}
+          label="Why it was wrong (compulsory). The points return to the balance; the entry stays in history."
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(reason) => run(() => correctTokenRedemptionAction({ redemptionId: dialog.redemptionId, reason }, newKey()))}
@@ -272,7 +301,7 @@ function RecordDialog({
     : !quantity.ok
       ? quantity.reason
       : availability && amount > availability.canRecordUpTo
-        ? `Only ${availability.canRecordUpTo} tokens can be recorded now.`
+        ? `Only ${availability.canRecordUpTo} points can be recorded now.`
         : !dated.ok
           ? dated.reason
           : recipient !== "SELF" && !recipientName.trim()
@@ -282,8 +311,8 @@ function RecordDialog({
 
   return (
     <Modal
-      title="Record a token redemption"
-      description="For spending already arranged outside the CRM. It comes off the one pooled balance, oldest tokens first."
+      title="Record a points redemption"
+      description="For spending already arranged outside the CRM. It comes off the one pooled balance, oldest points first."
       onClose={onClose}
     >
       <div className="space-y-3">
@@ -291,7 +320,7 @@ function RecordDialog({
           <p className="text-xs text-muted-foreground">Checking what can be spent…</p>
         ) : (
           <div className="text-xs">
-            <p className="font-medium">Up to {availability.canRecordUpTo} tokens can be recorded now.</p>
+            <p className="font-medium">Up to {availability.canRecordUpTo} points can be recorded now.</p>
             {availability.blockers.map((b) => (
               <p key={b} className="text-amber-800">
                 {b}

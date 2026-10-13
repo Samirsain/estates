@@ -18,7 +18,6 @@ export async function rewardCounts() {
     tripsDeficient,
     royaltyAwardsHeld,
     redemptionsAwaitingMd,
-    settingsAwaitingMd,
     buybackReviews,
     controlReviews,
   ] = await Promise.all([
@@ -32,7 +31,6 @@ export async function rewardCounts() {
     // docss/11 — awards waiting to post, or posted but restricted.
     db.royaltyAward.count({ where: { state: { in: ["PENDING", "RELEASED"] }, holdReason: { not: null } } }),
     db.tokenRedemption.count({ where: { state: "AWAITING_MD" } }),
-    db.projectCommissionVersion.count({ where: { status: "PENDING_APPROVAL" } }),
     db.task.count({ where: { status: "PENDING", purpose: { in: ["BUYBACK_COMMISSION_REVIEW", "BUYBACK_UNWIND_REVIEW"] } } }),
     // CP §65 NT08, NT09 — release-control reviews waiting for a decision.
     Promise.all([
@@ -50,7 +48,6 @@ export async function rewardCounts() {
     tripsDeficient,
     royaltyAwardsHeld,
     redemptionsAwaitingMd,
-    settingsAwaitingMd,
     buybackReviews,
     controlReviews,
   };

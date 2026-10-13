@@ -184,7 +184,7 @@ async function main() {
   // A crafted request that names a role it does not hold is refused by the
   // service, not by the hidden button (DESIGN §1).
   const member = await db.memberProfile.findFirstOrThrow();
-  await expectBlocked(/Only Admin or MD/, () =>
+  await expectBlocked(/Only MD/, () =>
     setMemberStatus({
       idempotencyKey: key(),
       actorRef: CRM,

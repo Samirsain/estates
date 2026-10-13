@@ -143,28 +143,28 @@ assert.ok(!can("PC", "PAYMENT_RECEIVED_CONFIRM"), "PC has no financial approval"
 assert.ok(!can("MIS", "TASK_COMPLETE"), "MIS is read-only besides manual tasks");
 assert.ok(can("MIS", "TASK_CREATE"));
 assert.ok(!can("MEMBER", "BOOKING_REQUEST_SUBMIT"), "Members submit Hold Requests, not Bookings");
-// MD and Admin hold everything, so a new Action is theirs the day it is added.
+// MD holds everything, so a new Action is MD's the day it is added.
 for (const action of ALL_ACTIONS) {
   assert.ok(can("MD", action), `MD holds ${action}`);
-  assert.ok(can("ADMIN", action), `Admin holds ${action}`);
 }
+assert.ok(!(STAFF_ROLES as string[]).includes("ADMIN"), "there is no Admin role");
 assert.ok(can("CRM", "HOLD_EXTEND_FIRST") && !can("CRM", "HOLD_EXTEND_FURTHER"));
-assert.ok(can("ADMIN", "HOLD_EXTEND_FURTHER"), "further extension needs Admin");
+assert.ok(can("MD", "HOLD_EXTEND_FURTHER"), "further extension needs MD");
 assert.ok(can("PC", "PLOT_SETUP", ["PLOT_SETUP"]));
 assert.ok(can("MIS", "AUDIT_VIEW", ["AUDIT_VIEW"]), "explicit extra grant is honoured");
 assert.throws(() => assertPermission("MIS", "BOOKING_DECIDE"), PermissionError);
 
 // Field scope.
 for (const role of STAFF_ROLES) {
-  const expected = role === "MD" || role === "ADMIN";
+  const expected = role === "MD";
   assert.equal(canViewField(role, "AADHAAR_FULL"), expected, `${role} full Aadhaar`);
 }
 assert.ok(!canViewField("MEMBER" as Role, "BUYER_IDENTITY"), "portal never exposes buyer identity");
 assert.ok(!canViewField("MEMBER" as Role, "AADHAAR_FULL"));
 assert.ok(canViewField("ACCOUNTS", "BANK_FULL"));
 assert.ok(!canViewField("CRM", "BANK_FULL"));
-assert.ok(canViewField("MD", "MOBILE_FULL") && canViewField("ADMIN", "MOBILE_FULL"));
-assert.ok(!canViewField("CRM", "MOBILE_FULL"), "a contact number stays masked below MD/Admin");
+assert.ok(canViewField("MD", "MOBILE_FULL"));
+assert.ok(!canViewField("CRM", "MOBILE_FULL"), "a contact number stays masked below MD");
 
 assert.throws(() => assertDifferentActor("STF-1", "STF-1"), /different staff accounts/);
 assert.doesNotThrow(() => assertDifferentActor("STF-1", "STF-2"));
@@ -379,6 +379,6 @@ assert.ok(
 assert.equal(canViewField.length, 2, "canViewField reads role and field only, never extra grants");
 assert.ok(!canViewField("ACCOUNTS", "AADHAAR_FULL"), "Accounts never sees Aadhaar in full");
 assert.ok(canViewField("ACCOUNTS", "BANK_FULL"), "Accounts does see bank details in full");
-assert.deepEqual(rolesHolding("AADHAAR_FULL"), ["MD", "ADMIN"], "Aadhaar is MD and Admin only");
+assert.deepEqual(rolesHolding("AADHAAR_FULL"), ["MD"], "Aadhaar is MD only");
 
 console.log("security.check.ts OK");

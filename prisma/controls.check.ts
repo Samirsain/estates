@@ -29,7 +29,7 @@ const db = new PrismaClient();
 const TAG = "ZZ-CTL";
 const CRM = `${TAG}-CRM`;
 const ACC = `${TAG}-ACC`;
-const ADMIN = `${TAG}-ADMIN`;
+const MD2 = `${TAG}-MD2`;
 const MD = `${TAG}-MD`;
 const STAFF_REF = `${TAG}-STF`;
 
@@ -190,12 +190,12 @@ async function main() {
   const relMember = await member("REL", relative.id);
   await refused(
     () => declareStaffRelative({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", staffPersonId: staffPerson.id, relativePersonId: relative.id, relation: "SPOUSE" }),
-    /Admin or MD/
+    /Only MD/
   );
   const declared = await declareStaffRelative({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     staffPersonId: staffPerson.id,
     relativePersonId: relative.id,
     relation: "SPOUSE",
@@ -235,7 +235,7 @@ async function main() {
     "CTL-11: both refusals audited"
   );
   await refused(
-    () => decideStaffConflict({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", reviewId: review.id, approve: true, note: "Admin." }),
+    () => decideStaffConflict({ idempotencyKey: key(), actorRef: MD2, actorRole: "ACCOUNTS", reviewId: review.id, approve: true, note: "Accounts." }),
     /Only MD/
   );
   await decideStaffConflict({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", reviewId: review.id, approve: true, note: "Disclosed; arm's-length sale." });
@@ -262,7 +262,7 @@ async function main() {
   const rel2Booking = await sale("REL2", buyer.id, second.id);
   await pay(rel2Booking, "40", "REL2-40");
   assert.equal((await direct(rel2Booking)).holdReason, "STAFF_CONFLICT_REVIEW");
-  await endStaffRelative({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", declarationId: secondDecl.declarationId, reason: "Declared in error." });
+  await endStaffRelative({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", declarationId: secondDecl.declarationId, reason: "Declared in error." });
   const rel2Review = await db.staffConflictReview.findUniqueOrThrow({
     where: { recordKind_recordId: { recordKind: "Commission", recordId: (await direct(rel2Booking)).id } },
   });
@@ -271,7 +271,7 @@ async function main() {
   assert.equal((await direct(rel2Booking)).eligibility, "READY");
 
   // An ended declaration stops new reviews; what MD decided stays.
-  await endStaffRelative({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", declarationId: declared.declarationId, reason: "Divorce recorded." });
+  await endStaffRelative({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", declarationId: declared.declarationId, reason: "Divorce recorded." });
   assert.equal((await db.staffConflictReview.findUniqueOrThrow({ where: { id: review.id } })).status, "APPROVED");
   void relMember;
   console.log("  ✓ CTL-10/11 — staff and declared relatives wait for MD; the conflicted user cannot decide or pay");

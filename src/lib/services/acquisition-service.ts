@@ -45,7 +45,7 @@ import {
 import { syncRoyaltyLink } from "./network-service";
 import { refreshAwardOfBooking } from "./royalty-service";
 import { refreshTripOfBooking, syncTripForBooking } from "./trip-service";
-import { closeTasksFor, ensureTask } from "./task-service";
+import { closeTasksFor, ensureTask, reviseTask } from "./task-service";
 
 const D = Prisma.Decimal;
 
@@ -639,6 +639,22 @@ export async function syncGivenFollowUp(tx: Tx, acquisitionId: string, actorRef:
   }
 
   const next = unpaid[0];
+  const result = `Due ${next.scheduledPercent
+    .sub(next.receivedPercent)
+    .toFixed(2)
+    .replace(/\.?0+$/, "")}% · Instalment ${next.seq}`;
+
+  // The same task rolls to the next instalment, as on the sale side.
+  const existing = await tx.task.findFirst({
+    where: { recordKind: "Acquisition", recordId: acquisitionId, purpose: "PAYMENT_GIVEN_FOLLOW_UP", status: "PENDING" },
+  });
+  if (existing) {
+    if (existing.dueAt.getTime() !== next.dueDate.getTime() || existing.latestResult !== result) {
+      await reviseTask(tx, existing.id, actorRef, next.dueDate, result);
+    }
+    return existing;
+  }
+
   return ensureTask(tx, {
     recordKind: "Acquisition",
     recordId: acquisitionId,
@@ -647,10 +663,7 @@ export async function syncGivenFollowUp(tx: Tx, acquisitionId: string, actorRef:
     title: "Payment Given Follow-up",
     assigneeRole: "ACCOUNTS",
     dueAt: next.dueDate,
-    latestResult: `Due ${next.scheduledPercent
-      .sub(next.receivedPercent)
-      .toFixed(2)
-      .replace(/\.?0+$/, "")}% · Instalment ${next.seq}`,
+    latestResult: result,
   });
 }
 
@@ -1098,8 +1111,8 @@ export async function recordBuybackDocumentsReturned(args: {
   acquisitionId: string;
   returnedOn: Date;
 }) {
-  if (!["CRM", "ADMIN", "MD"].includes(args.actorRole)) {
-    blocked("Only CRM, Admin or MD records the Buyback papers back.");
+  if (!["CRM", "MD"].includes(args.actorRole)) {
+    blocked("Only CRM or MD records the Buyback papers back.");
   }
   const dated = notFutureDated("Return date", args.returnedOn);
   if (!dated.ok) blocked(dated.reason);

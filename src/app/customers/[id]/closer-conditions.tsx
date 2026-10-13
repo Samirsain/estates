@@ -38,7 +38,7 @@ export function RecordTermsButton({ customerProfileId }: { customerProfileId: st
       {open && (
         <Modal
           title="Customer Terms accepted"
-          description="Required before this Customer can earn Customer-closing Loyalty."
+          description="Required before this Customer can earn Customer-closing Loyalty Points."
           onClose={() => setOpen(false)}
         >
           <Field label="Terms version">

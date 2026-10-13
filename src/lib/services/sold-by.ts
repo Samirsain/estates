@@ -79,7 +79,7 @@ export async function validateSoldBy(
     }
     if ((await consumedClosingEvents(tx, soldByPersonId)) >= CUSTOMER_CLOSING_LOYALTY_LIMIT) {
       blocked(
-        "This Customer has already earned three Customer-closing Loyalty events, the lifetime limit. " +
+        "This Customer has already earned three Customer-closing Loyalty Points events, the lifetime limit. " +
           "Membership is required to earn from further third-party sales."
       );
     }

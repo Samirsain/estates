@@ -17,7 +17,7 @@ import {
 } from "@/lib/domain/booking";
 import { checkOpenPositions } from "@/lib/domain/holds";
 import { canAllocate, plotReturnState, type PlotRestriction } from "@/lib/domain/inventory";
-import { blocked, lockBooking, lockPlot, nextReference, runCommand, type Tx } from "./command";
+import { CommandError, blocked, lockBooking, lockPlot, nextReference, runCommand, type Tx } from "./command";
 import { freezePlcSnapshot, loadPlotForPlc, type PlotForPlc } from "./plc-service";
 import { countOpenPositions } from "./hold-service";
 import { relinkAfterSoldByCorrection, syncRoyaltyLink } from "./network-service";
@@ -30,8 +30,7 @@ import {
   reassessCommission,
 } from "./commission-service";
 import { createScheduleVersion, syncPaymentFollowUp, type ScheduleInput } from "./payment-service";
-import { touchesConsumedAward } from "./royalty-service";
-import { syncTripForBooking, touchesTravelledTrip } from "./trip-service";
+import { syncTripForBooking } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 import { ensureCustomerProfile, linkOrCreatePerson } from "./enquiry-service";
 import { validateSoldBy } from "./sold-by";
@@ -614,6 +613,22 @@ export async function decideBookingRequest(args: {
   if (!args.note.trim()) blocked("A compulsory remark is required on the Accounts decision.");
   if (!args.approve && !args.rejectReason) blocked("Select a rejection reason.");
 
+  try {
+    return await decideInTransaction(args);
+  } catch (error) {
+    // CP §64 T19 — a refused approval rolls back everything it wrote, so the
+    // Commission Conflict task for CRM is raised in a transaction of its own.
+    if (args.approve && error instanceof CommandError) {
+      await db.$transaction(async (tx) => {
+        const commission = await previewCommission(tx, args.bookingId);
+        if (!commission.ok) await raiseCommissionConflict(tx, args.bookingId, commission.conflict, args.actorRef);
+      });
+    }
+    throw error;
+  }
+}
+
+function decideInTransaction(args: Parameters<typeof decideBookingRequest>[0]) {
   return runCommand<BookingDecisionResult>(
     {
       idempotencyKey: args.idempotencyKey,
@@ -688,12 +703,10 @@ export async function decideBookingRequest(args: {
 
       // Accounts cannot approve while the engine reports a Commission Conflict —
       // a Sold By that contradicts the buyer, or no frozen commission settings.
-      // Nothing is trimmed: the conflict is raised for CRM/Admin to correct.
+      // Nothing is trimmed: the conflict is raised for CRM to correct (after
+      // this refusal, by decideBookingRequest).
       const commission = await previewCommission(tx, args.bookingId);
-      if (!commission.ok) {
-        await raiseCommissionConflict(tx, args.bookingId, commission.conflict, args.actorRef);
-        blocked(commission.conflict);
-      }
+      if (!commission.ok) blocked(commission.conflict);
 
       const bookingNumber = await nextReference(tx, "BKG", "BookingNumber");
       await tx.bookingReviewVersion.update({
@@ -1305,10 +1318,10 @@ export async function decidePrimaryCustomerChange(args: {
 /* ------------------------------------------------------- Sold By correction */
 
 /**
- * PRD §6.10 — after Booking approval, CRM or Admin raises a Sold By Correction
- * with a compulsory reason and supporting remark. Nothing changes yet: the
- * attribution correction itself needs Admin or MD approval, and Accounts then
- * reviews the commission impact. Booking and Payment history are never touched.
+ * PRD §6.10 — after Booking approval, a Sold By Correction is raised with a
+ * compulsory reason and supporting remark. Nothing changes yet: the attribution
+ * correction itself needs MD approval, and Accounts then reviews the commission
+ * impact. Booking and Payment history are never touched.
  */
 export async function requestSoldByCorrection(args: {
   idempotencyKey: string;
@@ -1380,8 +1393,8 @@ export async function requestSoldByCorrection(args: {
         recordId: args.bookingId,
         recordName: `${booking.bookingNumber} · ${booking.plot.project.name} ${booking.plot.plotNumber}`,
         purpose: "SOLD_BY_CORRECTION_REVIEW",
-        title: "Sold By Correction — Admin/MD approval",
-        assigneeRole: "ADMIN",
+        title: "Sold By Correction — MD approval",
+        assigneeRole: "MD",
         dueAt: new Date(),
         decision: true,
         latestResult: `${args.reason} — ${args.supportingNote}`,
@@ -1415,7 +1428,8 @@ export async function requestSoldByCorrection(args: {
 }
 
 /**
- * PRD §6.10 — Admin or MD approves the attribution correction. On approval the
+ * PRD §6.10 — MD approves the attribution correction (MD's own request too:
+ * there is no second senior role to approve it). On approval the
  * old current commission records are superseded, new valid records are created,
  * and anything already Paid or Paid Early becomes Accounts Adjustment Required.
  * Accounts then reviews the impact, which is what the task that follows is for.
@@ -1429,8 +1443,8 @@ export async function decideSoldByCorrection(args: {
   note: string;
 }): Promise<SoldByDecisionResult> {
   if (!args.note.trim()) blocked("A compulsory remark is required on the decision.");
-  if (args.actorRole !== "ADMIN" && args.actorRole !== "MD") {
-    blocked("Only Admin or MD may approve a Sold By Correction.");
+  if (args.actorRole !== "MD") {
+    blocked("Only MD may approve a Sold By Correction.");
   }
 
   return runCommand<SoldByDecisionResult>(
@@ -1447,18 +1461,6 @@ export async function decideSoldByCorrection(args: {
         where: { bookingId: args.bookingId, status: "PENDING" },
       });
       if (!correction) blocked("There is no Sold By Correction waiting for a decision.");
-      if (correction.requestedByRef === args.actorRef) {
-        blocked("A Sold By Correction must be approved by a different staff account.");
-      }
-      // CP §60; SSOT §98; docss/11 — once Royalty tokens from this attribution
-      // were used, only MD may correct it, and no second award follows.
-      if (
-        args.approve &&
-        args.actorRole !== "MD" &&
-        ((await touchesConsumedAward(tx, args.bookingId)) || (await touchesTravelledTrip(tx, args.bookingId)))
-      ) {
-        blocked("Royalty tokens from this attribution were used or a Trip travelled on it, so only MD may approve this correction.");
-      }
 
       const booking = await tx.booking.findUniqueOrThrow({
         where: { id: args.bookingId },
@@ -1540,7 +1542,7 @@ export async function decideSoldByCorrection(args: {
         title: "Accounts Verification — Commission after Sold By Correction",
         assigneeRole: "ACCOUNTS",
         dueAt: new Date(),
-        decision: true,
+        decision: false, // a review: Accounts marks it Done on the Dashboard
         latestResult:
           regenerated.conflict ??
           `${regenerated.generated} commission record${

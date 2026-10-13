@@ -108,7 +108,7 @@ export default async function MembersPage() {
         deactivate: can(actor.role, "MEMBER_DEACTIVATE"),
         enterBank: can(actor.role, "BANK_DETAILS_ENTER"),
         verifyBank: can(actor.role, "BANK_VERIFY"),
-        viewFullBank: can(actor.role, "REPORT_VIEW") && (actor.role === "MD" || actor.role === "ADMIN" || actor.role === "ACCOUNTS"),
+        viewFullBank: can(actor.role, "REPORT_VIEW") && (actor.role === "MD" || actor.role === "ACCOUNTS"),
         viewFullIdentity: canViewField(actor.role, "AADHAAR_FULL"),
       }}
     />

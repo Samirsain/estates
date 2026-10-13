@@ -22,7 +22,7 @@ import {
 const db = new PrismaClient();
 const TAG = "ZZ-PLC";
 const PC = `${TAG}-PC`;
-const ADMIN = `${TAG}-ADMIN`;
+const MD2 = `${TAG}-MD2`;
 
 let seq = 0;
 const key = () => `${TAG}-${Date.now()}-${seq++}`;
@@ -81,8 +81,8 @@ async function main() {
 
   await updateProject({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     projectId,
     name: `${TAG} PLC Status Renamed`,
     type: "COMMERCIAL",
@@ -113,8 +113,8 @@ async function main() {
   await expectBlocked(/compulsory reason/, () =>
     updateProject({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD2,
+      actorRole: "MD",
       projectId,
       name: `${TAG} No Reason`,
       type: "COMMERCIAL",
@@ -160,8 +160,8 @@ async function main() {
 
   const published = await publishPlcVersion({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     plcRuleVersionId: draft.plcRuleVersionId,
   });
   assert.equal(published.supersededVersion, 1, "publishing closes the previous version");
@@ -181,8 +181,8 @@ async function main() {
   await expectBlocked(/already published and cannot be published again/, () =>
     publishPlcVersion({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD2,
+      actorRole: "MD",
       plcRuleVersionId: draft.plcRuleVersionId,
     })
   );
@@ -225,14 +225,14 @@ async function main() {
   const race = await Promise.allSettled([
     publishPlcVersion({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD2,
+      actorRole: "MD",
       plcRuleVersionId: raceA.plcRuleVersionId,
     }),
     publishPlcVersion({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD2,
+      actorRole: "MD",
       plcRuleVersionId: raceB.plcRuleVersionId,
     }),
   ]);
@@ -274,8 +274,8 @@ async function main() {
   // A known configuration to calculate against, whichever draft won the race.
   await revisePlcRules({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     projectId,
     components: [
       { category: "ROAD_WIDTH", threshold: "30", percent: "2.0000" },
@@ -348,8 +348,8 @@ async function main() {
   // 14. A later PLC version does not touch what is already frozen.
   await revisePlcRules({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     projectId,
     components: [{ category: "OPEN_SIDES", threshold: "2", percent: "4.0000" }],
     reason: "Post-Hold revision.",
@@ -376,8 +376,8 @@ async function main() {
 
   const correction = await correctPlcSnapshot({
     idempotencyKey: key(),
-    actorRef: ADMIN,
-    actorRole: "ADMIN",
+    actorRef: MD2,
+    actorRole: "MD",
     snapshotId: frozen.id,
     reason: "Road and park applicability were recorded against the wrong Plot.",
   });
@@ -407,7 +407,7 @@ async function main() {
     "old and new totals both remain visible (§19.30, §19.33)"
   );
   assert.ok(corrected.correctionReason, "a correction names its reason (§19.32)");
-  assert.equal(corrected.correctedBy, ADMIN, "and its actor (§19.32)");
+  assert.equal(corrected.correctedBy, MD2, "and its actor (§19.32)");
   assert.equal(
     corrected.ruleVersionId,
     frozen.ruleVersionId,
@@ -430,8 +430,8 @@ async function main() {
   await expectBlocked(/already been superseded/, () =>
     correctPlcSnapshot({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD2,
+      actorRole: "MD",
       snapshotId: frozen.id,
       reason: "Second attempt on a superseded snapshot.",
     })
@@ -453,8 +453,8 @@ async function main() {
   await expectBlocked(/compulsory reason/, () =>
     correctPlcSnapshot({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD2,
+      actorRole: "MD",
       snapshotId: corrected.id,
       reason: "   ",
     })
@@ -463,7 +463,7 @@ async function main() {
   const audit = await db.auditEvent.findFirstOrThrow({
     where: { entity: "PlcSnapshot", entityId: corrected.id, action: "PLC_SNAPSHOT_CORRECTED" },
   });
-  assert.equal(audit.actorRef, ADMIN, "the correction is audited against its actor");
+  assert.equal(audit.actorRef, MD2, "the correction is audited against its actor");
   assert.ok(audit.beforeMasked && audit.afterMasked, "with both the old and the new breakdown");
 
   await cleanup();

@@ -16,16 +16,16 @@ const db = new PrismaClient();
 const TAG = "ZZ-NOPRJ";
 let seq = 0;
 const key = () => `${TAG}-${Date.now()}-${seq++}`;
-const ADMIN = { actorRef: `${TAG}-ADMIN`, actorRole: "ADMIN" };
+const MD2 = { actorRef: `${TAG}-MD2`, actorRole: "MD" };
 
 async function join(name: string, invitedByMemberId: string | null) {
   const person = await db.person.create({ data: { fullName: `${TAG} ${name}`, primaryMobile: `96${String(10_000_000 + ++seq).slice(-8)}` } });
-  await activateMember({ idempotencyKey: key(), ...ADMIN, personId: person.id, invitedByMemberId });
+  await activateMember({ idempotencyKey: key(), ...MD2, personId: person.id, invitedByMemberId });
   return db.memberProfile.findUniqueOrThrow({ where: { personId: person.id } });
 }
 
 const correct = (memberProfileId: string, invitedByMemberId: string | null) =>
-  correctInviter({ idempotencyKey: key(), ...ADMIN, memberProfileId, invitedByMemberId, reason: "Check." });
+  correctInviter({ idempotencyKey: key(), ...MD2, memberProfileId, invitedByMemberId, reason: "Check." });
 
 async function main() {
   assert.equal(await db.project.count(), 0, "this check is for a database with no Project at all");
@@ -63,7 +63,7 @@ async function main() {
   const e = await db.person.create({ data: { fullName: `${TAG} E`, primaryMobile: `96${String(10_000_000 + ++seq).slice(-8)}` } });
   const eProfile = await db.memberProfile.create({ data: { memberId: `${TAG}-E`, personId: e.id, activationDate: null } });
   await assert.rejects(
-    activateMember({ idempotencyKey: key(), ...ADMIN, personId: e.id, invitedByMemberId: eProfile.id }),
+    activateMember({ idempotencyKey: key(), ...MD2, personId: e.id, invitedByMemberId: eProfile.id }),
     /own inviter/,
     "self-referral at activation"
   );

@@ -120,7 +120,7 @@ async function reissue(
     context: "STAFF" | "MEMBER";
     accountId: string;
     loginId: string;
-    role: "MD" | "ADMIN" | "ACCOUNTS" | "CRM" | "MIS" | "PC" | "MEMBER";
+    role: "MD" | "ACCOUNTS" | "CRM" | "MIS" | "PC" | "MEMBER";
     sessionVersion: number;
   }
 ) {

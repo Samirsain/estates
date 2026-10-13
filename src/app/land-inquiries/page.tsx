@@ -27,7 +27,7 @@ export default async function LandInquiriesPage({
 }) {
   const actor = await requireStaff();
   const params = await searchParams;
-  const admin = actor.role === "MD" || actor.role === "ADMIN";
+  const admin = actor.role === "MD";
 
   const filters: LandInquiryListFilters = {
     q: one(params.q),

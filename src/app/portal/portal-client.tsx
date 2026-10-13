@@ -32,8 +32,8 @@ import { PersonPicker } from "@/components/person-picker";
 
 /** PRD §23.1 — the only commission wording a Member ever sees. */
 const COMMISSION_LABEL: Record<string, string> = {
-  DIRECT: "Direct Commission",
-  LOYALTY: "Customer Loyalty",
+  DIRECT: "Commission",
+  LOYALTY: "Loyalty Points",
   BUYING: "Buying Commission",
 };
 
@@ -470,11 +470,11 @@ export default function PortalClient({ data }: { data: PortalData }) {
         <div className="rounded-2xl border border-border bg-card p-4 space-y-5 text-xs">
           <div className="space-y-3">
             <h3 className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-emerald-700">
-              <Layers className="h-3 w-3" /> Sales &amp; Reference Trip
+              <Layers className="h-3 w-3" /> Rewards
             </h3>
             {data.trip.length === 0 ? (
               <p className="text-muted-foreground">
-                Trip progress starts with a qualifying sale in a Project with a Trip Programme. Joining alone earns no credit.
+                Trip progress starts with a qualifying sale in a Project with Rewards. Joining alone earns no credit.
               </p>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
@@ -570,7 +570,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
 
           <div className="border-t border-border/50 pt-4 space-y-3">
             <h3 className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-emerald-700">
-              <Layers className="h-3 w-3" /> Royalty Relationship Reward
+              <Layers className="h-3 w-3" /> Royalty Points
             </h3>
             {(() => {
               const final = data.royaltyLinkedCustomers.filter((c) => c.final).length;
@@ -580,7 +580,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     [final, "Final relationships"],
-                    [open, "Can still earn tokens"],
+                    [open, "Can still earn points"],
                     [waiting, "Waiting for full payment"],
                   ].map(([n, label]) => (
                     <div key={label} className="rounded-xl border border-border/70 px-3 py-2">
@@ -595,9 +595,9 @@ export default function PortalClient({ data }: { data: PortalData }) {
             <div className="grid grid-cols-3 gap-2">
               {(
                 [
-                  [data.tokens.earned, "Tokens earned"],
-                  [data.tokens.spent, "Tokens spent"],
-                  [data.tokens.balance, "Token balance"],
+                  [data.tokens.earned, "Points earned"],
+                  [data.tokens.spent, "Points spent"],
+                  [data.tokens.balance, "Points balance"],
                 ] as const
               ).map(([n, label]) => (
                 <div key={label} className="rounded-xl border border-border/70 px-3 py-2">
@@ -610,14 +610,14 @@ export default function PortalClient({ data }: { data: PortalData }) {
             </div>
             {data.tokens.notice && <p className="text-[11px] font-medium text-amber-700">{data.tokens.notice}</p>}
             <div>
-              <p className="pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Tokens spent</p>
+              <p className="pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Points spent</p>
               {data.tokens.redemptions.length === 0 ? (
                 <p className="text-muted-foreground">Nothing spent yet.</p>
               ) : (
                 <ul className="divide-y divide-border/50">
                   {data.tokens.redemptions.map((r, i) => (
                     <li key={i} className="flex justify-between py-1.5">
-                      <span className="font-medium tabular-nums">{r.tokens} tokens</span>
+                      <span className="font-medium tabular-nums">{r.tokens} points</span>
                       <span className="text-muted-foreground">{formatIst(r.redeemedOn)}</span>
                     </li>
                   ))}
@@ -633,7 +633,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
           <div className="border-t border-border/50 pt-4">
           <div className="space-y-3">
             <h3 className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-primary">
-              <ShieldCheck className="h-3 w-3" /> Direct Commission &amp; Loyalty
+              <ShieldCheck className="h-3 w-3" /> Commission &amp; Loyalty Points
             </h3>
             {data.commissions.length === 0 ? (
               <p className="text-muted-foreground">No commission has been generated for you yet.</p>

@@ -18,14 +18,17 @@ import {
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
-async function act(run: (actor: { ref: string; role: string }) => Promise<unknown>, message: string): Promise<ActionResult> {
+async function act(
+  run: (actor: { ref: string; role: string }) => Promise<unknown>,
+  message: string | ((role: string) => string)
+): Promise<ActionResult> {
   const actor = await requireStaff();
   try {
     await run({ ref: actor.staffAccountId, role: actor.role });
     revalidatePath("/members");
     revalidatePath("/dashboard");
     revalidatePath("/portal");
-    return { ok: true, message };
+    return { ok: true, message: typeof message === "function" ? message(actor.role) : message };
   } catch (error) {
     if (error instanceof CommandError) return { ok: false, error: error.message };
     console.error(error);
@@ -39,7 +42,7 @@ export async function recordTripNomineeAction(
 ) {
   return act(
     (a) => recordTripNominee({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
-    input.recipient === "NON_FAMILY" ? "Nominee recorded. MD must approve before booking." : "Traveller recorded."
+    (role) => (input.recipient === "NON_FAMILY" && role !== "MD" ? "Nominee recorded. MD must approve before booking." : "Traveller recorded.")
   );
 }
 

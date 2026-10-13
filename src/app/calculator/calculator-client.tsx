@@ -565,21 +565,21 @@ export default function CalculatorClient({
   function ruleNotes(beneficiary: CalcPersonView, type: CommissionType, closing: boolean): string[] {
     const notes: string[] = [];
     if (type === "DIRECT" && !beneficiary.member) {
-      notes.push("Not a Member on file — Direct Commission is a Member component.");
+      notes.push("Not a Member on file — Commission is a Member component.");
     }
     if (type === "LOYALTY") {
       if (!beneficiary.customer) {
-        notes.push("Not a Customer on file — Customer Loyalty is a Customer benefit (v2.1 §21).");
+        notes.push("Not a Customer on file — Loyalty Points are a Customer benefit (v2.1 §21).");
       }
       if (beneficiary.member?.status === "ACTIVE") {
         notes.push(
           "Holds an Active Member capability, so a closing action uses Sold By Member and earns " +
-            "no Customer Loyalty (v2.1 §24)."
+            "no Loyalty Points (v2.1 §24)."
         );
       }
       if (closing && (beneficiary.customer?.closingLoyaltyUsed ?? 0) >= CUSTOMER_CLOSING_LOYALTY_LIMIT) {
         notes.push(
-          `Already earned ${CUSTOMER_CLOSING_LOYALTY_LIMIT} Customer-closing Loyalty events — Membership ` +
+          `Already earned ${CUSTOMER_CLOSING_LOYALTY_LIMIT} Customer-closing Loyalty Points events — Membership ` +
             "is required to earn from further sales (v2.1 §25)."
         );
       }
@@ -635,9 +635,9 @@ export default function CalculatorClient({
         {/* CP §72 — non-cash rewards are eligibility indicators only, never a value. */}
         {projectId && (
           <p className="text-xs text-muted-foreground">
-            Sales &amp; Reference Trip:{" "}
-            {projects.find((p) => p.id === projectId)?.trip ?? "no Trip Programme on this Project"} · Royalty:{" "}
-            {projects.find((p) => p.id === projectId)?.royaltyTokens ?? "no"} tokens per qualifying purchase. Non-cash; no expiry.
+            Rewards:{" "}
+            {projects.find((p) => p.id === projectId)?.trip ?? "no Rewards on this Project"} · Royalty:{" "}
+            {projects.find((p) => p.id === projectId)?.royaltyTokens ?? "no"} points per qualifying purchase. Non-cash; no expiry.
           </p>
         )}
 
@@ -985,7 +985,7 @@ export default function CalculatorClient({
 
             {/* Both commissions, always — Direct, then Loyalty. A combination
                 that earns one still shows the other's row, reading N/A, because
-                "this deal pays no Loyalty" is an answer somebody came here for
+                "this deal pays no Loyalty Points" is an answer somebody came here for
                 and a missing row is not one (v2.1 §11). */}
             <div className="overflow-x-auto">
               <table className="w-full min-w-[26rem] text-xs">

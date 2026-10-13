@@ -58,7 +58,6 @@ const db = new PrismaClient();
 
 /** Staff from the Phase 1 seed. CRM submits, Accounts decides — never both. */
 const MD = "STF-0001";
-const ADMIN = "STF-0002";
 const ACC = "STF-0003";
 const CRM = "STF-0005";
 
@@ -462,8 +461,8 @@ async function main() {
 
     await prepareInventory({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD,
+      actorRole: "MD",
       projectId: project.id,
       rows,
     });
@@ -485,8 +484,8 @@ async function main() {
       if (plot.status !== "NOT_AVAILABLE") continue;
       await makeAvailable({
         idempotencyKey: key(),
-        actorRef: ADMIN,
-        actorRole: "ADMIN",
+        actorRef: MD,
+        actorRole: "MD",
         plotId: plot.id,
         reason: "Released for sale",
       });
@@ -497,8 +496,8 @@ async function main() {
 
     await setRestriction({
       idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
+      actorRef: MD,
+      actorRole: "MD",
       plotId: made[made.length - 1].id,
       restriction: "PLEDGE",
       reason: "Pledged against the development loan",

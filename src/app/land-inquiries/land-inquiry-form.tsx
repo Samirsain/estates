@@ -67,12 +67,6 @@ const METRIC_FIELDS = [
   { unit: "SQ_FT" as const, label: "Sq. Ft.", decimals: 2 },
 ];
 
-const METRIC_LABEL: Record<LandMetricSourceUnit, string> = {
-  HECTARE: "Hectare",
-  SQ_M: "Sq. Mtr.",
-  SQ_FT: "Sq. Ft.",
-};
-
 function Section({
   index,
   title,
@@ -251,15 +245,7 @@ export default function LandInquiryForm({
   return (
     <div className="space-y-3">
       {/* 1 */}
-      <Section
-        index={1}
-        title="Inquiry Details"
-        hint={
-          inquiryNo
-            ? "The number and the date are the system's. Received From decides what the source is."
-            : "The date is the system's, and the Inquiry No. is issued when you save. Received From decides what the source is."
-        }
-      >
+      <Section index={1} title="Inquiry Details">
         <Grid>
           {/* Only once it exists. On a new inquiry the number is issued by the
               database at save, so a row saying so is a row that tells nobody
@@ -354,11 +340,7 @@ export default function LandInquiryForm({
       </Section>
 
       {/* 2 */}
-      <Section
-        index={2}
-        title="Land Owner Details"
-        hint="The first owner is Primary. Owners are recorded on the inquiry, not created as people."
-      >
+      <Section index={2} title="Land Owner Details">
         <div className="space-y-2">
           {form.owners.map((owner, i) => (
             <div key={i} className="grid gap-2 sm:grid-cols-[1fr_10rem_auto]">
@@ -531,11 +513,7 @@ export default function LandInquiryForm({
       </Section>
 
       {/* 5 */}
-      <Section
-        index={5}
-        title="Land Details"
-        hint="Bigha and Biswa go together and are stored exactly as entered. The three metric boxes are one measurement in three units — type in whichever one you were given."
-      >
+      <Section index={5} title="Land Details">
         <div className="space-y-3">
           <div>
             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -557,10 +535,6 @@ export default function LandInquiryForm({
                 />
               </Field>
             </Grid>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Rajasthan publishes different Bigha equivalents by district, so these are kept as
-              stated and never converted into the metric boxes below.
-            </p>
           </div>
 
           <div>
@@ -584,11 +558,6 @@ export default function LandInquiryForm({
                 </Field>
               ))}
             </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              {form.areaSourceValue.trim() && form.areaSourceUnit
-                ? `Entered in ${METRIC_LABEL[form.areaSourceUnit]}; the other two are converted from it and the entered figure is what is stored.`
-                : "Whichever box you type in becomes the recorded measurement; the other two follow it."}
-            </p>
           </div>
         </div>
 
@@ -648,11 +617,7 @@ export default function LandInquiryForm({
       </Section>
 
       {/* 7 */}
-      <Section
-        index={7}
-        title="Conversion / Approval"
-        hint="Internal tracking only. Never a guarantee of title, legality or a future approval."
-      >
+      <Section index={7} title="Conversion / Approval">
         <Grid>
           <Choice label="90A Status" value={form.status90A} options={APPROVAL_STATES} onChange={(v) => set("status90A", v ?? "UNKNOWN")} />
           <Choice label="Land Conversion Status" value={form.landConversionStatus} options={APPROVAL_STATES} onChange={(v) => set("landConversionStatus", v ?? "UNKNOWN")} />
@@ -662,11 +627,7 @@ export default function LandInquiryForm({
       </Section>
 
       {/* 8 */}
-      <Section
-        index={8}
-        title="Legal Check"
-        hint="Unknown is a real answer. On the risk lines, Yes means the issue exists or has been reported."
-      >
+      <Section index={8} title="Legal Check">
         <Grid>
           <Choice label="Registry / Sale Deed Available" value={form.registrySaleDeedAvailable} options={CHECK_STATES} onChange={(v) => set("registrySaleDeedAvailable", v ?? "UNKNOWN")} />
           <Choice label="Mutation Complete" value={form.mutationComplete} options={CHECK_STATES} onChange={(v) => set("mutationComplete", v ?? "UNKNOWN")} />
@@ -697,11 +658,7 @@ export default function LandInquiryForm({
       </Section>
 
       {/* 10 */}
-      <Section
-        index={10}
-        title="Commercial Details"
-        hint="Pre-acquisition figures only. Nothing here reaches a Booking, a Payment, a Commission or accounting."
-      >
+      <Section index={10} title="Commercial Details">
         <Grid>
           <Field label="Owner Asking Rate (₹)">
             <div className="flex gap-2">
@@ -802,11 +759,7 @@ export default function LandInquiryForm({
       </Section>
 
       {/* 12 */}
-      <Section
-        index={12}
-        title="Documents Received"
-        hint="A record of what the inquiry says was received. Nothing is uploaded or legally verified here."
-      >
+      <Section index={12} title="Documents Received">
         <CheckboxGroup
           options={DOCUMENTS}
           selected={form.documentsReceived}
@@ -820,15 +773,7 @@ export default function LandInquiryForm({
       </Section>
 
       {/* 14 */}
-      <Section
-        index={14}
-        title="Inquiry Stage"
-        hint={
-          mode === "create"
-            ? "A new inquiry starts Working at stage New. The stage moves from the inquiry's own screen, where the reason is recorded."
-            : "The stage and the status move from the inquiry's own screen, so the reason travels with them."
-        }
-      >
+      <Section index={14} title="Inquiry Stage">
         <p className="text-xs text-muted-foreground">
           {mode === "create" ? "Working · New" : "Managed on the inquiry screen."}
         </p>
@@ -847,9 +792,6 @@ export default function LandInquiryForm({
         <Button variant="ghost" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        <span className="text-[11px] text-muted-foreground">
-          Every business section may be left blank. Only the source is required.
-        </span>
       </div>
     </div>
   );

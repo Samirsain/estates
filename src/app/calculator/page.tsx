@@ -293,13 +293,13 @@ export default async function CalculatorPage({
   const commissionTypes: CalcCommissionTypeView[] = [
     {
       type: "DIRECT",
-      label: "Direct Commission",
+      label: "Commission",
       milestonePercent: DIRECT_MILESTONE,
       note: "to the selling Member at 25% paid, or to a Member buying for themselves at 100%",
     },
     {
       type: "LOYALTY",
-      label: "Customer Loyalty",
+      label: "Loyalty Points",
       milestonePercent: FULL_MILESTONE,
       note:
         `to the closing Customer (${CUSTOMER_CLOSING_LOYALTY_LIMIT} for life), or to the buyer on a ` +

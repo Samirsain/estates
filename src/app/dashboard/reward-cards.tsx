@@ -7,19 +7,18 @@ import type { RewardCounts } from "@/lib/rewards-overview";
 
 export function RewardCards({ counts }: { counts: RewardCounts }) {
   const cards: { label: string; value: string; href: string; warn?: boolean }[] = [
-    { label: "Direct Ready / On Hold", value: `${counts.directReady} / ${counts.directHeld}`, href: "/rewards?tab=monetary" },
-    { label: "Customer Loyalty Ready / On Hold", value: `${counts.loyaltyReady} / ${counts.loyaltyHeld}`, href: "/rewards?tab=monetary" },
+    { label: "Commission Ready / On Hold", value: `${counts.directReady} / ${counts.directHeld}`, href: "/rewards?tab=monetary" },
+    { label: "Loyalty Points Ready / On Hold", value: `${counts.loyaltyReady} / ${counts.loyaltyHeld}`, href: "/rewards?tab=monetary" },
     { label: "Recovery Outstanding", value: String(counts.recoveries), href: "/rewards?tab=recovery", warn: counts.recoveries > 0 },
     { label: "Trips awaiting fulfilment", value: String(counts.tripsAwaiting), href: "/rewards?tab=trip" },
     { label: "Trips Deficient", value: String(counts.tripsDeficient), href: "/rewards?tab=trip", warn: counts.tripsDeficient > 0 },
     { label: "Royalty awards on hold", value: String(counts.royaltyAwardsHeld), href: "/rewards?tab=royalty" },
-    { label: "Token redemptions awaiting MD", value: String(counts.redemptionsAwaitingMd), href: "/rewards?tab=royalty", warn: counts.redemptionsAwaitingMd > 0 },
-    { label: "Project settings awaiting MD", value: String(counts.settingsAwaitingMd), href: "/projects" },
+    { label: "Points redemptions awaiting MD", value: String(counts.redemptionsAwaitingMd), href: "/rewards?tab=royalty", warn: counts.redemptionsAwaitingMd > 0 },
     { label: "Reward reviews after Buyback", value: String(counts.buybackReviews), href: "/dashboard" },
     { label: "Conflict / circumvention reviews", value: String(counts.controlReviews), href: "/rewards?tab=reviews", warn: counts.controlReviews > 0 },
   ];
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
       {cards.map((c) => (
         <Link
           key={c.label}

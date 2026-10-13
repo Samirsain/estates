@@ -45,7 +45,7 @@ function refresh() {
  */
 function refuseSelf(actorAccountId: string, staffAccountId: string) {
   if (actorAccountId === staffAccountId) {
-    blocked("You cannot do this to your own account. Change your own password under My Account, or ask another Admin or the MD.");
+    blocked("You cannot do this to your own account. Change your own password under My Account, or ask another MD account.");
   }
 }
 
@@ -109,7 +109,7 @@ export async function reassignWorkAction(
   }
 }
 
-/** PRD §22 — Admin or MD raises the merge; only the MD decides it. */
+/** PRD §22 — MD raising a merge is its approval; anyone else's waits for MD. */
 export async function requestPersonMergeAction(
   survivingPersonId: string,
   mergedPersonId: string,
@@ -118,7 +118,7 @@ export async function requestPersonMergeAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("PERSON_MERGE");
   try {
-    await requestPersonMerge({
+    const result = await requestPersonMerge({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
@@ -127,7 +127,10 @@ export async function requestPersonMergeAction(
       reason,
     });
     refresh();
-    return { ok: true, message: "Merge raised. It waits for the MD decision." };
+    return {
+      ok: true,
+      message: result.status === "APPROVED" ? "Merged." : "Merge raised. It waits for the MD decision.",
+    };
   } catch (error) {
     return toResult(error);
   }
@@ -561,7 +564,7 @@ export async function resetStaffPasswordAction(
 ): Promise<{ ok: true; message: string; oneTimePassword: string } | { ok: false; error: string }> {
   const actor = await requireStaff("STAFF_MANAGE");
   if (actor.accountId === staffAccountId) {
-    return { ok: false, error: "You cannot reset your own password here — it would sign you out before the new password is shown. Use My Account, or ask another Admin or the MD." };
+    return { ok: false, error: "You cannot reset your own password here — it would sign you out before the new password is shown. Use My Account, or ask another MD account." };
   }
   if (!reason.trim()) return { ok: false, error: "A compulsory reason is required to reset a password." };
 
@@ -833,7 +836,7 @@ export async function revealIdentityAction(
     });
     return {
       ok: false,
-      error: `${actor.role} is not permitted to view a full Aadhaar Number. Only MD and Admin are.`,
+      error: `${actor.role} is not permitted to view a full Aadhaar Number. Only MD is.`,
     };
   }
 

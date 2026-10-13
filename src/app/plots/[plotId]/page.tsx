@@ -1282,7 +1282,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                       >
                         <span className="min-w-0">
                           <span className="font-medium text-foreground">
-                            {c.type === "LOYALTY" ? "Customer Loyalty" : humanise(c.type)}
+                            {c.type === "LOYALTY" ? "Loyalty Points" : humanise(c.type)}
                           </span>
                           <span className="block">
                             <PersonLink

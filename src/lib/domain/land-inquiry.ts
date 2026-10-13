@@ -283,7 +283,7 @@ export function planStageChange(args: {
   if (args.status === "CLOSED") {
     return {
       ok: false,
-      error: "This inquiry is Closed. Admin or MD must reopen it before the stage can move.",
+      error: "This inquiry is Closed. MD must reopen it before the stage can move.",
     };
   }
 

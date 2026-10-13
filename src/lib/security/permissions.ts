@@ -1,10 +1,10 @@
 // Role, record and field authorisation — prd-corrections.md §3; architecture.md §9.2.
 // Deny by default. Hiding a button is never the control (design.md §1).
 
-export type StaffRole = "MD" | "ADMIN" | "ACCOUNTS" | "CRM" | "MIS" | "PC";
+export type StaffRole = "MD" | "ACCOUNTS" | "CRM" | "MIS" | "PC";
 export type Role = StaffRole | "MEMBER";
 
-export const STAFF_ROLES: StaffRole[] = ["MD", "ADMIN", "ACCOUNTS", "CRM", "MIS", "PC"];
+export const STAFF_ROLES: StaffRole[] = ["MD", "ACCOUNTS", "CRM", "MIS", "PC"];
 
 export type Action =
   // Administration
@@ -76,12 +76,10 @@ export type Action =
 
 /** Baseline grants per role. Anything not listed is denied. */
 const ROLE_ACTIONS: Record<Role, readonly Action[]> = {
-  // MD and Admin answer for everything the company does, so they hold every
-  // Action rather than a list that has to be remembered each time one is added
-  // — see FULL_ACCESS in `can`. Maker-checker still stands: holding both sides
-  // of a decision never lets one account approve its own request.
+  // MD answers for everything the company does, so it holds every Action
+  // rather than a list that has to be remembered each time one is added — see
+  // FULL_ACCESS in `can`. There is no Admin role: the owner folded it into MD.
   MD: [],
-  ADMIN: [],
   // PRD §3 — Accounts decides Bookings, confirms payment, verifies banks and
   // processes commission. It does not administer users or set up inventory.
   ACCOUNTS: [
@@ -143,19 +141,19 @@ export type SensitiveField =
 const FIELD_ACCESS: Record<SensitiveField, readonly Role[]> = {
   // Full Aadhaar only for specifically authorised MD/Admin; every access is
   // logged by the caller (PRD RD-05, ARCHITECTURE §9.3).
-  AADHAAR_FULL: ["MD", "ADMIN"],
-  PAN_FULL: ["MD", "ADMIN", "ACCOUNTS"],
-  BANK_FULL: ["MD", "ADMIN", "ACCOUNTS"],
+  AADHAAR_FULL: ["MD"],
+  PAN_FULL: ["MD", "ACCOUNTS"],
+  BANK_FULL: ["MD", "ACCOUNTS"],
   // A contact number is not encrypted and is not a protected identity value —
   // it is masked so a screen shared in a room does not leak it. MD and Admin
   // run the business off these numbers, so they read them whole.
-  MOBILE_FULL: ["MD", "ADMIN"],
+  MOBILE_FULL: ["MD"],
   // Members never see buyer identity (PRD §23.1).
-  BUYER_IDENTITY: ["MD", "ADMIN", "ACCOUNTS", "CRM", "PC"],
+  BUYER_IDENTITY: ["MD", "ACCOUNTS", "CRM", "PC"],
 };
 
 /** The roles that hold every Action, present and future. */
-const FULL_ACCESS: readonly Role[] = ["MD", "ADMIN"];
+const FULL_ACCESS: readonly Role[] = ["MD"];
 
 export function can(role: Role, action: Action, extraPermissions: readonly string[] = []): boolean {
   return (
