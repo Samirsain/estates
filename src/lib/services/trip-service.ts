@@ -11,6 +11,7 @@ import type { Prisma, RewardHoldReason, RewardRecipient, TripCredit } from "@pri
 import { db } from "@/lib/db";
 import { notFutureDated } from "@/lib/domain/booking";
 import { BUYBACK_MIN_SOURCE_PAYMENT } from "@/lib/domain/commission";
+import { createsInviteCycle } from "@/lib/domain/network";
 import { allocate, creditExpiry, type AllocatableCredit } from "@/lib/domain/trip";
 import { recordAudit } from "@/lib/security/audit";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
@@ -605,6 +606,17 @@ export async function touchesTravelledTrip(tx: Tx, bookingId: string): Promise<b
  * Booking Request is submitted (a third-party sale in a Trip-enabled
  * version). A refused attempt is audited (CP §79).
  */
+/** docss/11 §3 — refuses self-referral and an inviter that would close a loop in who invited whom. */
+export async function refuseInviteLoop(tx: Tx, memberProfileId: string, inviterId: string) {
+  if (inviterId === memberProfileId) blocked("A Member cannot be their own inviter.");
+  // ponytail: loads every Member's inviter at once; walk it by query if the network outgrows memory.
+  const rows = await tx.memberProfile.findMany({ select: { id: true, invitedByMemberId: true } });
+  const inviterOf = new Map(rows.map((r) => [r.id, r.invitedByMemberId]));
+  if (createsInviteCycle(memberProfileId, inviterId, (id) => inviterOf.get(id) ?? null)) {
+    blocked("That inviter would make a loop in who invited whom.");
+  }
+}
+
 export async function correctInviter(args: Actor & { memberProfileId: string; invitedByMemberId: string | null; reason: string }) {
   if (args.actorRole !== "ADMIN" && args.actorRole !== "MD") blocked("Only Admin or MD may correct an inviter.");
   if (!args.reason.trim()) blocked("A compulsory reason is required.");
@@ -637,7 +649,7 @@ export async function correctInviter(args: Actor & { memberProfileId: string; in
     { idempotencyKey: args.idempotencyKey, operation: "INVITER_CORRECT", actorRef: args.actorRef, actorRole: args.actorRole, payload: { memberProfileId: args.memberProfileId, invitedByMemberId: args.invitedByMemberId } },
     async (tx) => {
       if (args.invitedByMemberId) {
-        if (args.invitedByMemberId === member.id) blocked("A Member cannot be their own inviter.");
+        await refuseInviteLoop(tx, member.id, args.invitedByMemberId);
         const inviter = await tx.memberProfile.findUnique({ where: { id: args.invitedByMemberId } });
         if (!inviter?.activationDate) blocked("The inviting Member is not activated.");
       }

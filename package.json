@@ -23,6 +23,7 @@
     "commission-settings:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/commission-settings.check.ts",
     "commission:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/commission.check.ts",
     "royalty:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/royalty.check.ts",
+    "members-empty:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/members-empty.check.ts",
     "trip:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/trip.check.ts",
     "controls:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/controls.check.ts",
     "plc:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/plc.check.ts",

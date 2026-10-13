@@ -16,7 +16,7 @@ import {
   reverseLiveAward,
   syncRoyaltyReward,
 } from "./royalty-service";
-import { refreshTripOfMember } from "./trip-service";
+import { refreshTripOfMember, refuseInviteLoop } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 
 /**
@@ -252,6 +252,10 @@ export async function activateMember(args: {
         blocked("A Registered RERA status requires the Registration Number.");
       }
 
+      // docss/11 §3 — never their own inviter, never a loop.
+      if (args.invitedByMemberId && person.memberProfile) {
+        await refuseInviteLoop(tx, person.memberProfile.id, args.invitedByMemberId);
+      }
       // v2.1 §26 — the inviter must be a real activated Member.
       if (args.invitedByMemberId) {
         const inviter = await tx.memberProfile.findUnique({ where: { id: args.invitedByMemberId } });
