@@ -9,8 +9,8 @@
 // STF-0005 CRM), so tasks and History read as real work.
 //
 // Re-runnable: it removes its own five Projects (codes UAT-PRJ-A … E), its own
-// People (mobiles beginning 95), its own references (UATV2-) and the RGP-01
-// Royalty Gift Programme, then rebuilds. Nothing else is touched.
+// People (mobiles beginning 95) with their Royalty tokens, and its own
+// references (UATV2-), then rebuilds. Nothing else is touched.
 //
 // It writes the key to the dataset — who is who, and what to try with each —
 // to docss/9. Business_Model_v2_Mock_Data_Key.md.
@@ -29,7 +29,6 @@ import {
   sendCommissionVersion,
   type CommissionVersionInput,
 } from "@/lib/services/commission-settings-service";
-import { decideRoyaltyProgramme, prepareRoyaltyProgramme, sendRoyaltyProgramme } from "@/lib/services/royalty-programme-service";
 import { activateMember, setMemberStatus } from "@/lib/services/network-service";
 import { enterBankDetails } from "@/lib/services/bank-service";
 import { recordCustomerTermsAcceptance, verifyAadhaar } from "@/lib/services/customer-closer-service";
@@ -40,7 +39,8 @@ import { decideCancellation } from "@/lib/services/cancellation-service";
 import { confirmPaymentReceived } from "@/lib/services/payment-service";
 import { markCommissionPaid, requestCommissionPaidEarly } from "@/lib/services/commission-service";
 import { openRecovery } from "@/lib/services/recovery-service";
-import { deliverRoyaltyGift, orderRoyaltyGift, selectRoyaltyGift } from "@/lib/services/royalty-service";
+import { recordTokenRedemption } from "@/lib/services/royalty-service";
+import { istDay } from "@/lib/tasks";
 import { confirmPaymentGiven, createAcquisition, decideAcquisition, recordBuyingCommission } from "@/lib/services/acquisition-service";
 
 assertCheckDatabase();
@@ -57,7 +57,6 @@ const STAFF_ID = "STF-UAT-01";
 const MOBILE = "95";
 const REF = "UATV2";
 const CODES = ["UAT-PRJ-A", "UAT-PRJ-B", "UAT-PRJ-C", "UAT-PRJ-D", "UAT-PRJ-E"];
-const RGP = ["RGP-01", "RGP-02"];
 
 let seq = 0;
 const key = () => `${REF}-${Date.now()}-${seq++}`;
@@ -81,14 +80,6 @@ async function wipe() {
     acquisitions: { sourceBookingId: { in: bookingIds } },
     references: { normalisedKey: { startsWith: REF } },
   });
-  const programmes = (await db.royaltyProgrammeVersion.findMany({ where: { programmeRef: { in: RGP } }, select: { id: true } })).map((p) => p.id);
-  if (programmes.length) {
-    const tasks = (await db.task.findMany({ where: { recordId: { in: programmes } }, select: { id: true } })).map((t) => t.id);
-    await db.taskEvent.deleteMany({ where: { taskId: { in: tasks } } });
-    await db.task.deleteMany({ where: { id: { in: tasks } } });
-    await db.booking.updateMany({ where: { royaltyProgrammeVersionId: { in: programmes } }, data: { royaltyProgrammeVersionId: null } });
-    await db.royaltyProgrammeVersion.deleteMany({ where: { id: { in: programmes } } });
-  }
 }
 
 /* -------------------------------------------------------------- projects */
@@ -363,6 +354,7 @@ async function main() {
   const base = { loyaltyExceptionReason: null, effectiveFrom: null } as const;
   await settings(P.A.id, {
     ...base,
+    royaltyTokensPerAward: 10,
     directEnabled: true,
     directPercent: "3",
     loyaltyEnabled: true,
@@ -376,9 +368,10 @@ async function main() {
       ],
     }),
   });
-  await settings(P.B.id, { ...base, directEnabled: true, directPercent: "5", loyaltyEnabled: true, loyaltyPercent: "2", reason: "PSV-B1 — maximum Direct, no Trip" });
+  await settings(P.B.id, { ...base, royaltyTokensPerAward: 20, directEnabled: true, directPercent: "5", loyaltyEnabled: true, loyaltyPercent: "2", reason: "PSV-B1 — maximum Direct, no Trip" });
   await settings(P.C.id, {
     ...base,
+    royaltyTokensPerAward: 15,
     directEnabled: false,
     directPercent: null,
     loyaltyEnabled: true,
@@ -389,6 +382,7 @@ async function main() {
   });
   await settings(P.D.id, {
     ...base,
+    royaltyTokensPerAward: 20,
     directEnabled: true,
     directPercent: "2",
     loyaltyEnabled: true,
@@ -399,6 +393,7 @@ async function main() {
   });
   await settings(P.E.id, {
     ...base,
+    royaltyTokensPerAward: 5,
     directEnabled: true,
     directPercent: "3",
     loyaltyEnabled: false,
@@ -406,22 +401,6 @@ async function main() {
     reason: "PSV-E1 — Loyalty Disabled",
     trip: trip("TRIP-E", 4, 3, 1, "TRIP-E-1"),
   });
-
-  /* UAT §6.7 — RGP-01 live before any purchase, so Bookings freeze it. */
-  const live = await db.royaltyProgrammeVersion.findFirst({ where: { status: "ACTIVE" } });
-  if (!live) {
-    const rgp = await prepareRoyaltyProgramme({
-      idempotencyKey: key(),
-      actorRef: ADMIN,
-      actorRole: "ADMIN",
-      programmeRef: "RGP-01",
-      catalogueVersion: "RGP-01-CAT (silver coin / smart watch / dinner set)",
-      termsVersion: "RGT-2026-10",
-      reason: "UAT Royalty Gift Programme",
-    });
-    await sendRoyaltyProgramme({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", versionId: rgp.versionId });
-    await decideRoyaltyProgramme({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", versionId: rgp.versionId, approve: true, note: "Gift costs reviewed.", economicsReviewed: true });
-  }
 
   /* UAT §6.4 — Members. */
   const M1 = await member("M-001", "Arjun Mehta", "Active, no inviter. Primary seller and inviter; holds the Desert Square Trip (TRIP-SEED-D).", null);
@@ -435,6 +414,7 @@ async function main() {
   const M6 = await member("M-006", "Karan Joshi", "Active, invited by M-002. His first sale earned M-002 (not M-001) a Reference Credit — no multi-level.", "M-002");
   const M7 = await member("M-007", "Ritu Saxena", "Active, no inviter. Has a Paid Early request waiting for MD (T20).", null);
   const M8 = await member("M-008", "Manoj Tiwari", "Active, no inviter. Also staff STF-UAT-01 (CRM): his Direct waits for MD (NT09).", null);
+  const M9 = await member("M-009", "Deepak Verma", "Active, no inviter. docss/11 negative-balance example: earned 10 + 20, spent 25, then the 10-token purchase was cancelled — Tokens earned 20, spent 25, balance −5. Spending is blocked until new tokens cover the deficit.", null);
   await db.staffAccount.create({ data: { staffAccountId: STAFF_ID, personId: M8.id, role: "CRM", passwordHash: "!no-login-mock-staff" } });
 
   const buyer = (n: number) => person(`B-${String(n).padStart(2, "0")}`, `Buyer ${["Anil", "Sneha", "Rakesh", "Divya", "Mahesh", "Kavita", "Suresh", "Geeta", "Harish", "Lata", "Naresh", "Usha"][n - 1]} Sharma`, "Filler buyer.");
@@ -451,16 +431,77 @@ async function main() {
   await pay(await sell(P.A.plots["A-10A"], await buyer(7), { member: M3 }), "40");
 
   /* UAT §6.5, §6.6 — Royalty. */
-  const C9 = await person("C-009", "Rohan Malhotra", "RR-001 — final Royalty relationship to M-005, opportunity UNUSED. A Club-direct purchase paid to 100% earns M-005 a Gift.", { kyc: "verified" });
+  const C9 = await person("C-009", "Rohan Malhotra", "RR-001 — final Royalty relationship to M-005, opportunity UNUSED. A Club-direct purchase paid to 100% earns M-005 that Project's Royalty tokens (10 on Aravali Greens).", { kyc: "verified" });
   await pay(await sell(P.A.plots["A-03"], C9, { member: M5 }), "100");
 
-  const RR2 = await person("RR-002", "Anjali Kapoor", "RR-002 — Royalty relationship to M-005 with a Delivered Gift; opportunity CONSUMED.", { kyc: "verified" });
+  const RR2 = await person("RR-002", "Anjali Kapoor", "RR-002 — Royalty relationship to M-005; her Club-direct repeat (A-05) earned M-005 10 tokens on Aravali Greens. Opportunity CONSUMED.", { kyc: "verified" });
   await pay(await sell(P.A.plots["A-04"], RR2, { member: M5 }), "100");
   await pay(await sell(P.A.plots["A-05"], RR2), "100");
-  const credit = await db.royaltyCredit.findFirstOrThrow({ where: { customerProfile: { personId: RR2.id }, state: "ELIGIBLE" } });
-  await selectRoyaltyGift({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", creditId: credit.id, rewardRef: "RGP-01 / G-02 Smart watch", recipient: "SELF", recipientName: "" });
-  await orderRoyaltyGift({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", creditId: credit.id, orderReference: reference("ORD"), orderedOn: today });
-  await deliverRoyaltyGift({ idempotencyKey: key(), actorRef: ADMIN, actorRole: "ADMIN", creditId: credit.id, deliveredOn: today, deliveryReference: reference("DLV") });
+
+  /* docss/11 §5 (1) — pooling: 10 (Aravali Greens) + 20 (Desert Square) = 30, then 12 spent → 18. */
+  const RR4 = await person("RR-004", "Kabir Sethi", "RR-004 — first purchase A-17 Sold By M-005; his Club-direct repeat D-04 earned M-005 20 tokens — the triggering purchase's Project (Desert Square) sets the rate. With RR-002's 10 that is one pooled balance of 30.", { kyc: "verified" });
+  await pay(await sell(P.A.plots["A-17"], RR4, { member: M5 }), "100");
+  await pay(await sell(P.D.plots["D-04"], RR4), "100");
+  const spend = (memberLabel: string, tokens: number, recipient: "SELF" | "NON_FAMILY", recipientName: string, what: string) =>
+    recordTokenRedemption({
+      idempotencyKey: key(),
+      actorRef: CRM,
+      actorRole: "CRM",
+      memberProfileId: members[memberLabel].profileId,
+      tokens,
+      redeemedOn: istDay(today),
+      recipient,
+      recipientName,
+      reference: what,
+    });
+  await spend("M-005", 12, "SELF", "", "Weekend hotel stay arranged by the team");
+  // The non-family safeguard: waits for MD, counts as spent only once approved.
+  await spend("M-005", 3, "NON_FAMILY", "Ramesh Jain (friend)", "Dinner voucher");
+
+  /* A Buyback-pending award: qualified, but nothing posts before Stable Buyback Completion. */
+  const RR3 = await person("RR-003", "Tanvi Arora", "RR-003 — Royalty relationship to M-005; her Club-direct repeat (A-14) is 30% paid and bought back. Its 10-token award is PENDING until Stable Buyback Completion and is not counted in M-005's figures.", { kyc: "verified" });
+  await pay(await sell(P.A.plots["A-13"], RR3, { member: M5 }), "100");
+  const rr3Repeat = await sell(P.A.plots["A-14"], RR3);
+  await pay(rr3Repeat, "30");
+  const rr3Buyback = await createAcquisition({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    type: "BUYBACK",
+    sourceBookingId: rr3Repeat,
+    sellerPersonId: RR3.id,
+    arrangedByType: "MEMBER",
+    arrangedByPersonId: M1.id,
+    purchaseDate: today,
+    remark: "UAT Buyback of A-14 — Royalty tokens wait for Stable Completion.",
+    schedule: [
+      { seq: 1, percent: "25", dueDate: today },
+      { seq: 2, percent: "75", dueDate: day(30) },
+    ],
+  });
+  await confirmPaymentGiven({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", acquisitionId: rr3Buyback.acquisitionId, percent: "25", paidOn: today, reference: reference("GIV") });
+  await decideAcquisition({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", acquisitionId: rr3Buyback.acquisitionId, approve: true, note: "Buyback approved." });
+
+  /* docss/11 §5 (5) — the handoff's example: earn 30, spend 25, invalidate 10 → 20 / 25 / −5. */
+  const RN1 = await person("RN-001", "Nisha Rao", "Royalty relationship to M-009; her Club-direct repeat (A-16) earned 10 tokens and was then cancelled — the reversal leaves M-009 at −5.", { kyc: "verified" });
+  const RN2 = await person("RN-002", "Gaurav Malik", "Royalty relationship to M-009; his Club-direct repeat (D-05) earned 20 tokens.", { kyc: "verified" });
+  await pay(await sell(P.A.plots["A-15"], RN1, { member: M9 }), "100");
+  const rn1Repeat = await sell(P.A.plots["A-16"], RN1);
+  await pay(rn1Repeat, "100");
+  await pay(await sell(P.A.plots["A-18"], RN2, { member: M9 }), "100");
+  await pay(await sell(P.D.plots["D-05"], RN2), "100");
+  await spend("M-009", 25, "SELF", "", "Family holiday package arranged by the team");
+  await cancelBooking({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: rn1Repeat, reason: "Buyer withdrew after the token redemption." });
+  await decideCancellation({
+    idempotencyKey: key(),
+    actorRef: ACC,
+    actorRole: "ACCOUNTS",
+    bookingId: rn1Repeat,
+    approve: true,
+    note: "Refund handled outside the CRM.",
+    reference: reference("RFD"),
+    actionDate: today,
+  });
 
   const C10 = await person("C-010", "Farhan Qureshi", "First purchase Sold By 3% Club — no Royalty relationship, even after a Member sells to him later. His first sale was bought back (Buying Commission to M-005).");
   const c10First = await sell(P.B.plots["B-01"], C10);
@@ -608,6 +649,7 @@ async function main() {
     loyaltyEnabled: true,
     loyaltyPercent: "1.5",
     reason: "PSV-A2 — later approved version",
+    royaltyTokensPerAward: 15,
     trip: trip("TRIP-A", 6, 4, 2, "TRIP-A-2", { excludedPlotIds: [P.A.plots["A-09"]] }),
   });
 
@@ -643,15 +685,15 @@ async function writeKey() {
     "",
     "## Projects and settings (UAT §6.2, §6.3)",
     "",
-    "| Project | Settings | Trip |",
-    "|---|---|---|",
-    "| Aravali Greens (A-01…A-20, A-10A, A-10B) | PSV-A1 Direct 3% / Loyalty 1% · PSV-A2 2.5% / 1.5% approved, effective in 30 days | TRIP-A 5 / min Own 3 / max Ref 2 · A-09 excluded · A-10A, A-10B share the A-10 pool |",
-    "| Blue Ridge (B-01…B-10) | PSV-B1 Direct 5% / Loyalty 2% | Disabled |",
-    "| Cedar Estate (C-01…C-10) | PSV-C1 Direct Disabled / Loyalty 2% (MD exception) | TRIP-C 4 / 4 / 0 |",
-    "| Desert Square (D-01…D-10) | PSV-D1 Direct 2% = Loyalty 2% (MD exception) | TRIP-D 3 / 2 / 1 |",
-    "| Everest Park (E-01…E-10) | PSV-E1 Direct 3% / Loyalty Disabled | TRIP-E 4 / 3 / 1 |",
+    "| Project | Settings | Royalty tokens | Trip |",
+    "|---|---|---|---|",
+    "| Aravali Greens (A-01…A-20, A-10A, A-10B) | PSV-A1 Direct 3% / Loyalty 1% · PSV-A2 2.5% / 1.5% approved, effective in 30 days | 10 · PSV-A2 15 | TRIP-A 5 / min Own 3 / max Ref 2 · A-09 excluded · A-10A, A-10B share the A-10 pool |",
+    "| Blue Ridge (B-01…B-10) | PSV-B1 Direct 5% / Loyalty 2% | 20 | Disabled |",
+    "| Cedar Estate (C-01…C-10) | PSV-C1 Direct Disabled / Loyalty 2% (MD exception) | 15 | TRIP-C 4 / 4 / 0 |",
+    "| Desert Square (D-01…D-10) | PSV-D1 Direct 2% = Loyalty 2% (MD exception) | 20 | TRIP-D 3 / 2 / 1 |",
+    "| Everest Park (E-01…E-10) | PSV-E1 Direct 3% / Loyalty Disabled | 5 | TRIP-E 4 / 3 / 1 |",
     "",
-    "Royalty Gift Programme RGP-01 is live. Terms: Customer CT-2026-10; Members have accepted the published Member Terms.",
+    "Royalty tokens (docss/11): the rate is part of each Project's settings and freezes on every Booking Request version. Terms: Customer CT-2026-10; Members have accepted the published Member Terms.",
     "",
     "## People",
     "",
@@ -670,6 +712,7 @@ async function writeKey() {
     "- Joint bank account exception: C-011B (task for Accounts; verify from the Member/Customer bank tab).",
     "- Paid Early request: M-007's Direct on A-07 (Bookings → Commission; MD approves).",
     "- Buyback + Buying Commission: B-01, arranged by M-005 (Acquisitions; Reward Review — Approved Buyback task).",
+    "- Royalty tokens: M-005 shows Tokens earned 30, spent 12, balance 18 (10 from Aravali Greens + 20 from Desert Square, pooled); a 3-token non-family redemption waits for MD; RR-003's 10-token award is pending on its Buyback and not counted. M-009 shows 20 / 25 / −5 and cannot spend. C-009 can still earn: sell him a Club-direct Plot and pay it in full.",
     "- Customer closers: C-001 ready · C-002 has 2 closings · C-003 has 3 (blocked) · C-006 no KYC · C-007 no Terms · C-008 no purchase.",
     "- Project settings: Aravali Greens shows PSV-A2 Approved, waiting for its effective time.",
     "- Repeat-purchase Loyalty: C-014 (Bookings → C-07 → Commission).",

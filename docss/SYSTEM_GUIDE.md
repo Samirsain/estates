@@ -53,7 +53,7 @@
 - **Bookings** — property transactions with full approval workflows
 - **Commissions** — Project Direct Commission and Customer Loyalty
 - **Trip Rewards** — non-cash performance-based travel rewards
-- **Royalty Gifts** — non-cash relationship-based gift rewards
+- **Royalty Tokens** — non-cash, pooled, whole-number tokens from the Royalty relationship (docss/11)
 - **Acquisitions / Buybacks** — Company purchases of property back from Customers
 - **Land Inquiries** — pre-acquisition land evaluation
 
@@ -134,8 +134,7 @@ Browser ──▶ Next.js (Server Components, Server Actions, /api routes)
 | `commission-service.ts` | Commission calculation and lifecycle |
 | `commission-settings-service.ts` | Project settings versioning |
 | `trip-service.ts` | Trip credit, bucket, and reward management |
-| `royalty-service.ts` | Royalty relationship and gift lifecycle |
-| `royalty-programme-service.ts` | Royalty programme versioning |
+| `royalty-service.ts` | Royalty awards, token ledger, redemptions and the token read model |
 | `acquisition-service.ts` | Buyback/acquisition workflow |
 | `payment-service.ts` | Payment recording and verification |
 | `recovery-service.ts` | Recovery creation and resolution |
@@ -185,7 +184,7 @@ Correct wording: *"Applicable Direct Commission is Project-specific and disclose
 - Membership Opportunity, Business Membership, Real-Estate Business Network
 - Project Direct Commission, Customer Loyalty
 - Sales & Reference Trip Reward, Own-Sale Credit, Reference Credit, Trip Target
-- Royalty Relationship Reward, Royalty Credit
+- Royalty Relationship Reward, Royalty award, token ledger and redemptions
 - Buying Commission, Stable Buyback Completion
 
 **Never use publicly:**
@@ -200,7 +199,7 @@ Correct wording: *"Applicable Direct Commission is Project-specific and disclose
 
 > **First-year Membership is complimentary.**
 
-Complimentary Membership does not guarantee: income, leads, sales, allocations, commissions, Trips, Gifts, or future renewal pricing.
+Complimentary Membership does not guarantee: income, leads, sales, allocations, commissions, Trips, Royalty Tokens, or future renewal pricing.
 
 ---
 
@@ -284,7 +283,7 @@ Application → Activation (Active) → [Deactivation → Reactivation] → ...
 - May buy property as a normal Customer
 - **Cannot** personally earn Customer-closing Loyalty or repeat-purchase Loyalty
 - Trip fulfilment is held until valid reactivation
-- Royalty Gift fulfilment is held until reactivation
+- Royalty awards stay unposted or restricted, and token spending is blocked, until reactivation
 - Reward/history remains recorded
 - Another Member may sell to them under normal Member-sale rules
 
@@ -403,7 +402,7 @@ BUYBACK_MIN_SOURCE_PAYMENT = "25"
 
 ### No Retroactive Eligibility
 
-Later Direct increase, Loyalty increase, Trip activation, target reduction, Gift improvement, or inventory expansion **does not retroactively improve an earlier Booking**.
+Later Direct increase, Loyalty increase, Trip activation, target reduction, Royalty token rate improvement, or inventory expansion **does not retroactively improve an earlier Booking**.
 
 ---
 
@@ -664,7 +663,7 @@ Trip **Earned** — traveller not recorded yet. Credits turn **Used** when the T
 |---|---|---|---|
 | Own sale | BKG-000004 - A-01 | Qualified | 10/10/2027 |
 
-**Royalty** — 3 final relationships (CUS-003391, CUS-003393, CUS-003394), all opportunities **UNUSED**; 0 Royalty Credits.
+**Royalty** — 3 final relationships (CUS-003391, CUS-003393, CUS-003394), all opportunities **UNUSED**; 0 Royalty awards.
 
 ### Nominee Rules
 
@@ -725,75 +724,75 @@ The relationship **finalises** when the first purchase reaches either:
 - If first purchase was NOT Member-sold: later Member sale does NOT retroactively create a relationship
 - History remains auditable
 
-### Royalty Reward Event
+### Royalty Reward Event — Royalty Tokens (docss/11)
 
-A final Royalty Linked Member receives **one Royalty Relationship Reward** when that Primary Customer later makes their first qualifying **direct personal purchase through 3% Club**, provided:
+A final Royalty Linked Member receives **one Royalty award** — the triggering purchase's Project token rate, in Royalty Tokens — when that Primary Customer later makes their first qualifying **direct personal purchase through 3% Club**, provided:
 
 - Royalty opportunity remains unused
 - Final Sold By is not another Member
 - Other eligibility conditions are satisfied
 
-If another Member is final Sold By: no Royalty Reward on that sale, but the unused opportunity remains available.
+If another Member is final Sold By: no Royalty on that sale, but the unused opportunity remains available. Joining, inviting or an ordinary sale earns nothing.
 
-### Key Royalty Rules
+### Key Royalty Token Rules
 
 | Rule | Value |
 |---|---|
-| One Royalty opportunity per Customer | **One lifetime** |
-| One Royalty Credit | = **One Gift entitlement** |
-| Gift Programme Version freeze | At qualifying future Booking Request version ultimately approved |
-| Original relationship creation date | Does NOT freeze the Gift programme |
-| Coexistence with Loyalty | Customer Loyalty + Royalty Reward CAN coexist on the same sale |
-| Cash alternative | **None** |
-| Fulfilled Gift finality | Opportunity consumed **forever**, even if underlying sale later cancels |
-| Royalty Credits combining into points | Not supported unless a future approved programme explicitly adds it |
+| One Royalty opportunity per Customer | **One lifetime award** |
+| Token rate | Whole number per Project settings version (Admin prepares, MD approves; required, 1–1,000,000) |
+| Rate freeze | On each Booking Request version; Accounts approves it with the version; a resubmission freezes the then-current rate |
+| Which Project's rate | The **triggering** purchase's Project |
+| Balance | One pooled balance per Member across all Projects; no Project wallets |
+| Posting | Pending until release conditions hold; pending tokens are not counted |
+| Expiry / cash / transfer | **None** |
+| Coexistence with Loyalty | Customer Loyalty + Royalty award CAN coexist on the same sale |
+| Reversal | Exactly once, even when spent; balance may go negative (non-cash deficit, cleared first by later earnings) |
+| Consumed award | Opportunity consumed **forever**, even if the award later reverses |
 
-### Royalty States
+### Royalty Award and Redemption States
 
 ```
-Eligible → Selected → Ordered → Delivered
-                                     ↓
-                                  Reversed (with reason)
+Award:       Pending ──(holds clear)──► Posted ──► (restricted while a hold stands)
+                │                          │
+                └────────► Reversed ◄──────┘   (a requalifying Booking restores the same award)
+
+Redemption:  Recorded            (self / family)
+             Awaiting MD ──► Recorded | Rejected   (non-family recipient)
+             Recorded ──► Corrected (Admin/MD; tokens return; consumption stays)
 ```
 
-### CRM Data Stored for Royalty
+### CRM Data Stored for Royalty Tokens
 
 - Royalty relationship and Linked Member
-- Royalty Credit ID and Programme Version
-- Selected Reward reference/code and selection date
-- Status tracking: Eligible / Ordered / Delivered / Cancelled-Reversed
-- Fulfilment reference and delivery date
+- Each award: Customer, Member, triggering Booking and request version, Project, saved rate, state, hold, consumed
+- Append-only token ledger (postings, reversals, redemptions, corrections) with actor, time, reason and reversal links
+- Which awards fund each redemption (oldest released first) — provenance, not wallets
+- Redemptions: tokens, business date, recipient, internal reference, state
 
-The complete catalogue and reward cost do NOT need to be stored in CRM.
+No catalogue, pricing, ordering or delivery data — redemption is arranged outside the CRM.
 
 ### Royalty and Buyback
 
 - Buyback itself does not earn or own Royalty
-- Buyback is only an alternative qualification milestone on the underlying qualifying Customer purchase
-- Credit belongs to the already-established Royalty Linked Member, NOT the Buyback arranger, Buying Commission beneficiary, or broker
+- Buyback is only an alternative qualification milestone on the underlying qualifying Customer purchase (after >= 25% received)
+- Tokens post only once the purchase reaches 100% or the Buyback reaches Stable Completion
+- The award belongs to the already-established Royalty Linked Member, NOT the Buyback arranger, Buying Commission beneficiary, or broker
 
-### Member Profile — Royalty Section
+### Member Profile — Royalty Tokens Section
 
 **Relationships owned:**
 - Customer ID, name (staff view only — never in portal)
 - Relationship Final / Provisional
 - First purchase that made it (Booking, Plot, final date)
 - Royalty opportunity UNUSED / CONSUMED
-- Summary: *"x final / y can still earn a Gift / z waiting for full payment"*
+- Summary: *"x final / y can still earn tokens / z waiting for full payment"*
 
-**Royalty Credits (one card per Gift):**
-- Customer ID, name and the trigger Booking
-- Qualified by — 100% Payment Received / Approved Buyback (after >= 25%)
-- Eligible on date
-- Programme Version, catalogue, terms
-- State — Eligible / Selected / Ordered / Delivered / Reversed
-- Gift reference, recipient and relation, non-family MD approval
-- Order reference, ordered on
-- Delivered on, delivery reference
-- Fulfilment hold — including "Waiting for Stable Buyback Completion"
-- Reversal reason
-
-**Empty state message:** *"A Gift is earned when a final linked Customer's first Club-direct purchase is paid in full (or an approved Buyback after 25%). y relationships can still earn one."*
+**Royalty Tokens:**
+- Tokens earned / Tokens spent / Token balance (signed) — the same three figures the Member sees
+- Tokens spent: each redemption's tokens and date, recipient, internal reference and state; MD approves/rejects a non-family one; Admin/MD corrects an erroneous one
+- Why spending is blocked now (Member deactivated, Recovery, restricted tokens, deficit)
+- Record redemption (CRM/Admin) — shows how many tokens can be recorded now before it is recorded
+- Royalty awards — internal history (Customer, Booking, Project, tokens, state, hold, used); never a balance per Project
 
 ---
 
@@ -833,7 +832,7 @@ If a paid monetary benefit later becomes invalid:
 2. Retain external Accounts Recovery Reference
 3. Future monetary benefits may be set off
 4. New cash payout blocked while Recovery remains unresolved
-5. Trip/Gift fulfilment held while Recovery remains unresolved
+5. Trip fulfilment and Royalty token posting/spending held while Recovery remains unresolved
 
 > **Recovery deadline: 15 calendar days from notice.** Unresolved Recovery may lead to Membership deactivation.
 
@@ -999,8 +998,8 @@ The Rewards page (`/rewards`) provides operational cards with counts (implemente
 | Recoveries | Outstanding recovery amounts |
 | Trips Awaiting | Trips in EARNED/BOOKED state |
 | Trips Deficient | Trips in DEFICIENT state |
-| Gifts Awaiting Selection | Royalty Gifts in ELIGIBLE/SELECTED state |
-| Gifts Awaiting Delivery | Royalty Gifts in ORDERED state |
+| Royalty awards on hold | Royalty awards pending with a hold, or posted and restricted |
+| Token redemptions awaiting MD | Non-family token redemptions waiting for MD |
 | Settings Awaiting MD | Project versions in PENDING_APPROVAL |
 | Buyback Reviews | Buyback commission/unwind review tasks pending |
 | Control Reviews | Staff conflict (PENDING) + circumvention reviews (PENDING_REVIEW) |
@@ -1028,7 +1027,7 @@ The portal (`/portal`) shows safe, Member-specific information:
 - Trip progress: Pending Own-Sale, Qualified Own-Sale, Reference Credits
 - Banked/used credits, target/composition
 - Earned Trip Rewards and their states
-- Royalty Reward status
+- Royalty Tokens: Tokens earned, Tokens spent, Token balance, and each redemption's tokens and date
 - Recovery/hold status (at a safe level)
 
 ### What Members CANNOT See
@@ -1037,7 +1036,7 @@ The portal (`/portal`) shows safe, Member-specific information:
 - Bank/KYC secrets
 - Internal Accounts notes
 - Project economics
-- Any rupee value, Trip cost, Gift cost
+- Any rupee value, Trip cost, token redemption cost, Project wallets or pending awards
 - Customer identities in credit lists (staff-only)
 
 ---
@@ -1121,7 +1120,7 @@ The final approved Sold By selection controls all sale-side monetary treatment.
 - A controlled correction may affect: Direct, Loyalty, Trip Credits, Reference Credits, Royalty relationship, Royalty Reward
 - Recalculation uses the Booking's **frozen** Project/Programme Versions (not current settings)
 - Only the correct final beneficiary keeps the applicable entitlement
-- After fulfilment: fulfilled reward remains consumed, correction updates history/future entitlement, correction requires MD approval, no automatic second Trip/Gift
+- After fulfilment: fulfilled reward remains consumed, correction updates history/future entitlement, correction requires MD approval, no automatic second Trip or Royalty award
 - Any exceptional compensation is separate MD settlement outside the reward-credit engine
 
 ### Change Plot Rules
@@ -1259,7 +1258,7 @@ Before production go-live, ALL of these must be satisfied:
 - [ ] Business Model v2 approved
 - [ ] Project settings approved
 - [ ] Trip Terms ready (package, destination, inclusions, exclusions, booking/travel windows, redemption deadline, passport/visa, nominee, cancellation, substitution, tax, wind-down)
-- [ ] Royalty Gift catalogue/terms ready (Gift choices, specifications, value/tier, substitution, selection deadline, delivery, warranty, nomination, cancellation, tax)
+- [ ] Royalty Token Terms ready (docss/6.2) and every Project settings version carries a token rate
 - [ ] Member/Customer Terms updated (reward framework, money-handling, privacy, recovery, fraud treatment, deactivation, nomination rules)
 - [ ] Marketing updated (no universal 3% Direct promise, Trip leads with sales performance not recruitment)
 - [ ] Staff trained
@@ -1296,7 +1295,8 @@ No legacy transition engine is required. Only mock/test data exists under the ea
 | **Recovery Outstanding** | Paid benefit that later became invalid — must be recovered |
 | **Reference Credit** | Trip Credit earned from an introduced Member's first qualifying sale |
 | **Repeat-Purchase Loyalty** | Customer Loyalty from second and later personal Bookings |
-| **Royalty Credit** | One Gift entitlement from a Royalty Relationship Reward |
+| **Royalty award** | One Customer opportunity's tokens, at the triggering purchase's frozen Project rate (docss/11) |
+| **Royalty Tokens** | One pooled, non-cash, non-expiring balance per Member: earned − spent |
 | **Royalty Linked Member** | The Member who first sold to a Customer, creating a lasting relationship |
 | **Sold By** | The final approved classification of who closed a sale |
 | **Stable Buyback Completion** | All Buyback conditions met (approved, 100% paid, no unwind, docs complete) |
