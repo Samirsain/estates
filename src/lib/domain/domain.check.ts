@@ -150,6 +150,8 @@ import {
 } from "./acquisition.ts";
 import { istDay, formatIst, formatIstDateTime } from "../tasks.ts";
 import { allocate, creditExpiry, validateTripSettings, type AllocatableCredit } from "./trip.ts";
+import { MAX_TOKENS, allocate as allocateTokens, tokenFigures, validateBusinessDay, validateTokenQuantity } from "./tokens.ts";
+import { createsInviteCycle } from "./network.ts";
 
 /** Reads the reason off a failed Check so the assertions stay one-liners. */
 const asReason = (check: Check) => (check.ok ? "" : check.reason);
@@ -2773,5 +2775,48 @@ assert.equal(
 );
 // SSOT §56 — twelve months after qualification.
 assert.equal(creditExpiry(new Date("2026-03-15T10:00:00Z")).toISOString(), "2027-03-15T10:00:00.000Z");
+
+/* ---------------------------------------------- Royalty Tokens (docss/11) */
+assert.ok(validateTokenQuantity("Tokens", 12).ok);
+for (const bad of [0, -3, 12.5, Number.NaN, 1e7, "12" as unknown]) {
+  assert.ok(!validateTokenQuantity("Tokens", bad).ok, `refuses ${String(bad)}`);
+}
+assert.ok(validateTokenQuantity("Tokens", MAX_TOKENS).ok);
+assert.ok(validateBusinessDay("Redemption date", "2026-10-13", "2026-10-13").ok);
+for (const bad of ["2026-10-14", "2026-02-30", "13/10/2026", "", "1999-12-31"]) {
+  assert.ok(!validateBusinessDay("Redemption date", bad, "2026-10-13").ok, `refuses ${bad}`);
+}
+// FIFO: oldest award first; one award may part-fund; a need may span awards.
+assert.deepEqual(
+  allocateTokens([{ awardId: "A", free: 10 }, { awardId: "B", free: 20 }], [{ redemptionId: "R1", unfunded: 12 }]),
+  [
+    { awardId: "A", redemptionId: "R1", tokens: 10 },
+    { awardId: "B", redemptionId: "R1", tokens: 2 },
+  ]
+);
+assert.deepEqual(allocateTokens([{ awardId: "A", free: 5 }], [{ redemptionId: "R1", unfunded: 3 }, { redemptionId: "R2", unfunded: 4 }]), [
+  { awardId: "A", redemptionId: "R1", tokens: 3 },
+  { awardId: "A", redemptionId: "R2", tokens: 2 },
+]);
+assert.deepEqual(allocateTokens([{ awardId: "A", free: 0 }], [{ redemptionId: "R1", unfunded: 3 }]), []);
+// Handoff example: earn 30, spend 25, invalidate 10 → 20 / 25 / −5; earn 20 → 15.
+const tokenExample = [
+  { kind: "AWARD_POSTED" as const, tokens: 10 },
+  { kind: "AWARD_POSTED" as const, tokens: 20 },
+  { kind: "REDEMPTION" as const, tokens: -25 },
+  { kind: "AWARD_REVERSED" as const, tokens: -10 },
+];
+assert.deepEqual(tokenFigures(tokenExample), { earned: 20, spent: 25, balance: -5 });
+assert.deepEqual(tokenFigures([...tokenExample, { kind: "AWARD_POSTED", tokens: 20 }]), { earned: 40, spent: 25, balance: 15 });
+assert.deepEqual(tokenFigures([...tokenExample, { kind: "REDEMPTION_CORRECTED", tokens: 25 }]), { earned: 20, spent: 0, balance: 20 });
+// Invite cycles: A ← B ← C. Making C the inviter of A closes a loop; self is a loop.
+const invitedUp = new Map([
+  ["B", "A"],
+  ["C", "B"],
+]);
+const inviterOf = (id: string) => invitedUp.get(id) ?? null;
+assert.ok(createsInviteCycle("A", "C", inviterOf));
+assert.ok(createsInviteCycle("A", "A", inviterOf));
+assert.ok(!createsInviteCycle("D", "C", inviterOf));
 
 console.log("domain.check.ts OK");
