@@ -98,20 +98,18 @@ export type PortalData = {
     nearestExpiry: string | null;
     rewards: Array<{ state: string; holdReason: string | null; earnedAt: string; travelledAt: string | null }>;
   }>;
-  /** CP §70 — each Gift's state, Programme and chosen Gift; never the Customer. */
-  royaltyCredits: Array<{
-    state: string;
-    holdReason: string | null;
-    programmeRef: string;
-    programmeVersion: number;
-    catalogueVersion: string;
-    route: string;
-    selectedRewardRef: string | null;
-    recipient: string | null;
-    eligibleAt: string;
-    orderedAt: string | null;
-    deliveredAt: string | null;
-  }>;
+  /**
+   * docss/11 — exactly three figures (balance may be negative), each
+   * redemption's tokens and date, and a Member-safe notice when something
+   * stops spending. No Project wallet, no pending award, no Customer.
+   */
+  tokens: {
+    earned: number;
+    spent: number;
+    balance: number;
+    redemptions: Array<{ tokens: number; redeemedOn: string }>;
+    notice: string | null;
+  };
   projects: Array<{ id: string; name: string }>;
   plots: Array<{ id: string; projectId: string; project: string; label: string; areaSqYd: string }>;
   buyers: Array<{ id: string; label: string }>;
@@ -161,23 +159,6 @@ const TRIP_HOLD_LABEL: Record<string, string> = {
   PROGRAMME_TERMS_ACTION_REQUIRED: "Terms action required",
   STAFF_CONFLICT_REVIEW: "Under Review",
   RECOVERY_CIRCUMVENTION_REVIEW: "Under Review",
-};
-
-/** SSOT §81 — a Gift's fulfilment, in order. */
-const GIFT_STEPS = [
-  ["ELIGIBLE", "Earned"],
-  ["SELECTED", "Gift chosen"],
-  ["ORDERED", "Ordered"],
-  ["DELIVERED", "Delivered"],
-] as const;
-
-const RECIPIENT_LABEL: Record<string, string> = {
-  SELF: "You",
-  SPOUSE: "Spouse",
-  PARENT: "Parent",
-  CHILD: "Child",
-  SIBLING: "Sibling",
-  NON_FAMILY: "Nominee (needs MD approval)",
 };
 
 const TRIP_STATE_LABEL: Record<string, string> = {
@@ -599,7 +580,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     [final, "Final relationships"],
-                    [open, "Can still earn a Gift"],
+                    [open, "Can still earn tokens"],
                     [waiting, "Waiting for full payment"],
                   ].map(([n, label]) => (
                     <div key={label} className="rounded-xl border border-border/70 px-3 py-2">
@@ -610,78 +591,43 @@ export default function PortalClient({ data }: { data: PortalData }) {
                 </div>
               );
             })()}
-            {data.royaltyCredits.length === 0 ? (
-              <p className="text-muted-foreground">
-                One Gift is earned when a final linked Customer makes their first direct personal purchase through 3% Club and
-                it is paid in full. No Gift is earned yet.
-              </p>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {data.royaltyCredits.map((c, i) => {
-                  const reached = GIFT_STEPS.findIndex(([state]) => state === c.state);
-                  return (
-                    <div key={i} className="space-y-2.5 rounded-xl border border-border/70 p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="font-semibold text-foreground">Royalty Gift</p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {c.programmeRef} v{c.programmeVersion} · {c.catalogueVersion}
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                          {GIFT_STEPS[reached]?.[1] ?? c.state}
-                        </span>
-                      </div>
-                      <ol className="flex items-center gap-1" aria-label="Gift progress">
-                        {GIFT_STEPS.map(([state, label], step) => (
-                          <li key={state} className="flex flex-1 flex-col gap-1">
-                            <span className={`h-1.5 rounded-full ${step <= reached ? "bg-emerald-600" : "bg-muted"}`} />
-                            <span className={`text-[10px] ${step <= reached ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>
-                          </li>
-                        ))}
-                      </ol>
-                      <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
-                        <dt className="text-muted-foreground">Gift</dt>
-                        <dd className="text-right font-medium">{c.selectedRewardRef ?? "Not chosen yet"}</dd>
-                        {c.recipient && (
-                          <>
-                            <dt className="text-muted-foreground">Receives it</dt>
-                            <dd className="text-right">{RECIPIENT_LABEL[c.recipient] ?? c.recipient}</dd>
-                          </>
-                        )}
-                        <dt className="text-muted-foreground">Earned</dt>
-                        <dd className="text-right">
-                          {formatIst(c.eligibleAt)}
-                          <span className="block text-[11px] text-muted-foreground">
-                            {c.route === "APPROVED_BUYBACK" ? "via an approved Buyback" : "Customer paid in full"}
-                          </span>
-                        </dd>
-                        {c.orderedAt && (
-                          <>
-                            <dt className="text-muted-foreground">Ordered</dt>
-                            <dd className="text-right">{formatIst(c.orderedAt)}</dd>
-                          </>
-                        )}
-                        {c.deliveredAt && (
-                          <>
-                            <dt className="text-muted-foreground">Delivered</dt>
-                            <dd className="text-right">{formatIst(c.deliveredAt)}</dd>
-                          </>
-                        )}
-                      </dl>
-                      {c.state === "ELIGIBLE" && !c.holdReason && (
-                        <p className="rounded-lg bg-emerald-50 px-2.5 py-2 text-[11px] text-emerald-800">
-                          The team will contact you to choose your Gift from the {c.programmeRef} catalogue.
-                        </p>
-                      )}
-                      {c.holdReason && (
-                        <p className="text-[11px] font-medium text-amber-700">{TRIP_HOLD_LABEL[c.holdReason] ?? "Under Review"}</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            {/* docss/11 §1 — exactly three figures, one balance across every Project. */}
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  [data.tokens.earned, "Tokens earned"],
+                  [data.tokens.spent, "Tokens spent"],
+                  [data.tokens.balance, "Token balance"],
+                ] as const
+              ).map(([n, label]) => (
+                <div key={label} className="rounded-xl border border-border/70 px-3 py-2">
+                  <p className={`text-lg font-semibold tabular-nums ${n < 0 ? "text-red-700" : "text-foreground"}`}>
+                    {n < 0 ? `−${Math.abs(n)}` : n}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">{label}</p>
+                </div>
+              ))}
+            </div>
+            {data.tokens.notice && <p className="text-[11px] font-medium text-amber-700">{data.tokens.notice}</p>}
+            <div>
+              <p className="pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Tokens spent</p>
+              {data.tokens.redemptions.length === 0 ? (
+                <p className="text-muted-foreground">Nothing spent yet.</p>
+              ) : (
+                <ul className="divide-y divide-border/50">
+                  {data.tokens.redemptions.map((r, i) => (
+                    <li key={i} className="flex justify-between py-1.5">
+                      <span className="font-medium tabular-nums">{r.tokens} tokens</span>
+                      <span className="text-muted-foreground">{formatIst(r.redeemedOn)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Tokens are earned when a final linked Customer&apos;s first direct personal purchase through 3% Club qualifies.
+              They do not expire, cannot be transferred and have no cash value. To use them, contact the team.
+            </p>
           </div>
 
           <div className="border-t border-border/50 pt-4">

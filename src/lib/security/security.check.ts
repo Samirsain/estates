@@ -282,6 +282,18 @@ assert.ok(
   "the portal payload builds the Member's own Network (DESIGN §3.2, §13.2)"
 );
 
+// docss/11 §1, §2 — the Member's tokens come only through the Member-audience
+// view of their own profile: never another Member's ledger, never the internal
+// awards (no Project wallets, no pending awards as balances).
+assert.ok(
+  portalSource.includes('memberTokenView(member.memberProfileId, "MEMBER")'),
+  "the portal reads only the Member's own token view"
+);
+assert.ok(
+  !/royaltyAward|tokenLedger|tokenRedemption|tokenAllocation/.test(portalSource),
+  "the portal never queries awards, the ledger or redemptions directly"
+);
+
 // A Customer ID must not appear anywhere in what the portal assembles. Inviting
 // Members are Members, so their name and Member ID are allowed (DESIGN §13.2);
 // an introduced Customer's identity is not.

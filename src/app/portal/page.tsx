@@ -8,6 +8,7 @@ import { requireMember } from "@/lib/security/current-actor";
 import { maskMobile } from "@/lib/security/identity";
 import { experienceSince } from "@/lib/domain/commission";
 import { memberCommissionView } from "@/lib/services/commission-service";
+import { memberTokenView } from "@/lib/services/royalty-service";
 import PortalClient, { type PortalData } from "./portal-client";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function PortalPage() {
   const member = await requireMember();
 
-  const [profile, availablePlots, ownEnquiries, ownRequests, commissions] = await Promise.all([
+  const [profile, availablePlots, ownEnquiries, ownRequests, commissions, tokens] = await Promise.all([
     db.memberProfile.findUniqueOrThrow({
       where: { id: member.memberProfileId },
       include: {
@@ -25,12 +26,6 @@ export default async function PortalPage() {
         royaltyLinkedCustomers: {
           select: { royaltyLinkFinalAt: true, royaltyOpportunityConsumedAt: true },
           orderBy: { royaltyLinkFinalAt: "asc" },
-        },
-        // SSOT §102; CP §70 — the Member's own Royalty Credits, non-cash, no Customer identity.
-        royaltyCredits: {
-          where: { state: { not: "REVERSED" } },
-          include: { programmeVersion: { select: { programmeRef: true, version: true, catalogueVersion: true } } },
-          orderBy: { eligibleAt: "desc" },
         },
       },
     }),
@@ -61,6 +56,9 @@ export default async function PortalPage() {
     // PRD §23.1 — the view is built by the service, which selects only the
     // Member-safe columns. No buyer identity ever reaches this page.
     memberCommissionView(member.personId),
+    // docss/11 — the three token figures, each redemption's tokens and date, and
+    // a Member-safe notice. Only this Member's own view; no awards or wallets.
+    memberTokenView(member.memberProfileId, "MEMBER"),
   ]);
 
   const data: PortalData = {
@@ -81,7 +79,7 @@ export default async function PortalPage() {
     // relationships they hold and whether each is final, never the Customer.
     royaltyLinkedCustomers: profile.royaltyLinkedCustomers.map((c) => ({
       final: c.royaltyLinkFinalAt !== null,
-      // SSOT §74 — one Gift per Customer: whether this relationship can still earn it.
+      // SSOT §74 — one award per Customer: whether this relationship can still earn it.
       opportunityOpen: c.royaltyLinkFinalAt !== null && c.royaltyOpportunityConsumedAt === null,
     })),
     // SSOT §102; CP §70 — Trip progress per Project, privacy-safe.
@@ -102,20 +100,7 @@ export default async function PortalPage() {
         travelledAt: r.travelledAt,
       })),
     })),
-    // CP §70 — state, Programme Version, chosen Gift and fulfilment; never the Customer.
-    royaltyCredits: profile.royaltyCredits.map((c) => ({
-      state: c.state,
-      holdReason: c.holdReason,
-      programmeRef: c.programmeVersion.programmeRef,
-      programmeVersion: c.programmeVersion.version,
-      catalogueVersion: c.programmeVersion.catalogueVersion,
-      route: c.qualificationRoute,
-      selectedRewardRef: c.selectedRewardRef,
-      recipient: c.recipient,
-      eligibleAt: c.eligibleAt.toISOString(),
-      orderedAt: c.orderedAt?.toISOString() ?? null,
-      deliveredAt: c.deliveredAt?.toISOString() ?? null,
-    })),
+    tokens: { ...tokens.figures, redemptions: tokens.redemptions, notice: tokens.notice },
     projects: [...new Map(availablePlots.map((p) => [p.projectId, p.project.name])).entries()].map(
       ([id, name]) => ({ id, name })
     ),
