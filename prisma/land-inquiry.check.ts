@@ -503,9 +503,6 @@ async function main() {
     byDealerMobile.rows.some((r) => r.id === dealerA.id),
     "so is a dealer mobile"
   );
-  await expectBlocked(/date range starts after it ends/, () =>
-    listLandInquiries({ dateFrom: "2026-09-02", dateTo: "2026-09-01" })
-  );
 
   /* ---- archive hides without deleting (§4.6, §30.29) */
 

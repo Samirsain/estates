@@ -194,7 +194,7 @@ async function accountsBookingTask(
     recordId: booking.id,
     recordName,
     purpose: "BOOKING_REVIEW",
-    title: "Accounts Verification — Booking",
+    title: "Verify — Booking Payment",
     assigneeRole: "ACCOUNTS",
     dueAt: new Date(Date.now() + BOOKING_DECISION_DAYS * 86_400_000),
     decision: true,
@@ -993,7 +993,7 @@ export async function cancelBooking(args: {
         recordId: args.bookingId,
         recordName: `${booking.bookingNumber} · ${booking.plot.project.name} ${booking.plot.plotNumber}`,
         purpose: "REFUND_REVIEW",
-        title: "Accounts Verification — Refund",
+        title: "Verify — Refund",
         assigneeRole: "ACCOUNTS",
         dueAt: new Date(),
         decision: true,
@@ -1174,7 +1174,7 @@ export async function requestPrimaryCustomerChange(args: {
         recordId: args.bookingId,
         recordName: `${booking.bookingNumber} · ${booking.plot.project.name} ${booking.plot.plotNumber}`,
         purpose: "PRIMARY_CUSTOMER_CHANGE_REVIEW",
-        title: "Accounts Verification — Primary Customer Change",
+        title: "Verify — Primary Customer Change",
         assigneeRole: "ACCOUNTS",
         dueAt: new Date(),
         decision: true,
@@ -1320,8 +1320,8 @@ export async function decidePrimaryCustomerChange(args: {
 /**
  * PRD §6.10 — after Booking approval, a Sold By Correction is raised with a
  * compulsory reason and supporting remark. Nothing changes yet: the attribution
- * correction itself needs MD approval, and Accounts then reviews the commission
- * impact. Booking and Payment history are never touched.
+ * correction itself needs MD approval. Booking and Payment history are never
+ * touched.
  */
 export async function requestSoldByCorrection(args: {
   idempotencyKey: string;
@@ -1393,7 +1393,7 @@ export async function requestSoldByCorrection(args: {
         recordId: args.bookingId,
         recordName: `${booking.bookingNumber} · ${booking.plot.project.name} ${booking.plot.plotNumber}`,
         purpose: "SOLD_BY_CORRECTION_REVIEW",
-        title: "Sold By Correction — MD approval",
+        title: "Sold By Correction — MD Approval",
         assigneeRole: "MD",
         dueAt: new Date(),
         decision: true,
@@ -1431,8 +1431,8 @@ export async function requestSoldByCorrection(args: {
  * PRD §6.10 — MD approves the attribution correction (MD's own request too:
  * there is no second senior role to approve it). On approval the
  * old current commission records are superseded, new valid records are created,
- * and anything already Paid or Paid Early becomes Accounts Adjustment Required.
- * Accounts then reviews the impact, which is what the task that follows is for.
+ * and anything already Paid or Paid Early becomes Accounts Adjustment Required
+ * (its Early Commission Conflict task goes to Accounts).
  */
 export async function decideSoldByCorrection(args: {
   idempotencyKey: string;
@@ -1530,25 +1530,11 @@ export async function decideSoldByCorrection(args: {
       // CP §59 — and the Trip credits, under the Booking's frozen version.
       await syncTripForBooking(tx, args.bookingId, args.actorRef);
 
-      const regenerated = await generateForBooking(tx, args.bookingId, args.actorRef);
+      // The owner removed the separate "commission after Sold By Correction"
+      // review (14 Oct 2026): Verify — Commission Paid, Commission Conflict and
+      // Early Commission Conflict already carry that work.
+      await generateForBooking(tx, args.bookingId, args.actorRef);
       await reassessCommission(tx, args.bookingId, args.actorRef);
-
-      // PRD §6.10 step 4 — Accounts reviews the commission impact.
-      await ensureTask(tx, {
-        recordKind: "Booking",
-        recordId: args.bookingId,
-        recordName: `${booking.bookingNumber} · ${booking.plot.project.name} ${booking.plot.plotNumber}`,
-        purpose: "SOLD_BY_COMMISSION_IMPACT",
-        title: "Accounts Verification — Commission after Sold By Correction",
-        assigneeRole: "ACCOUNTS",
-        dueAt: new Date(),
-        decision: false, // a review: Accounts marks it Done on the Dashboard
-        latestResult:
-          regenerated.conflict ??
-          `${regenerated.generated} commission record${
-            regenerated.generated === 1 ? "" : "s"
-          } after the correction.`,
-      });
 
       await tx.bookingEvent.create({
         data: {

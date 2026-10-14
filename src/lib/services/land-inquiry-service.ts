@@ -637,8 +637,6 @@ export type LandInquiryListFilters = {
   status?: LandInquiryStatus;
   stage?: LandInquiryStage;
   assignedToId?: string;
-  dateFrom?: string;
-  dateTo?: string;
   page?: number;
   pageSize?: number;
   includeArchived?: boolean;
@@ -667,16 +665,6 @@ export async function listLandInquiries(filters: LandInquiryListFilters) {
       ? { jamabandiEntries: { some: { khasraNo: { contains: filters.khasraNo, mode: "insensitive" } } } }
       : {}),
   };
-
-  const from = filters.dateFrom?.trim();
-  const to = filters.dateTo?.trim();
-  if (from && to && from > to) blocked("The date range starts after it ends.");
-  if (from || to) {
-    where.inquiryDate = {
-      ...(from ? { gte: new Date(`${from}T00:00:00.000Z`) } : {}),
-      ...(to ? { lte: new Date(`${to}T00:00:00.000Z`) } : {}),
-    };
-  }
 
   // Spec §25 — one search box across the fields a person actually remembers:
   // the number, an owner, a mobile, where it is, or the Khasra.

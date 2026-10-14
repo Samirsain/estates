@@ -695,7 +695,7 @@ export async function requestSoldByCorrectionAction(
       ok: true,
       message:
         actor.role === "MD"
-          ? "Sold By corrected. Old commission records are superseded, new ones created, and Accounts has the impact review."
+          ? "Sold By corrected. Old commission records are superseded and new ones created."
           : "Sold By Correction raised. The attribution is unchanged until MD approves it.",
     };
   } catch (error) {
@@ -723,7 +723,7 @@ export async function decideSoldByCorrectionAction(
     return {
       ok: true,
       message: approve
-        ? "Approved. Old commission records are superseded, new ones created, and Accounts has the impact review. Booking and Payment history are unchanged."
+        ? "Approved. Old commission records are superseded and new ones created. Booking and Payment history are unchanged."
         : "Rejected. The attribution and every commission record stay as they are.",
     };
   } catch (error) {

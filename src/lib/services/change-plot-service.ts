@@ -148,7 +148,7 @@ export async function submitChangePlot(args: {
         recordId: args.bookingId,
         recordName: `${booking.bookingNumber} · ${booking.plot.project.name} ${booking.plot.plotNumber}`,
         purpose: "CHANGE_PLOT_REVIEW",
-        title: "Accounts Verification — Change Plot",
+        title: "Verify — Change Plot",
         assigneeRole: "ACCOUNTS",
         dueAt: new Date(),
         decision: true,

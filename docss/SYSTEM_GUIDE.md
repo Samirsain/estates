@@ -669,7 +669,7 @@ Trip **Earned** — traveller not recorded yet. Credits turn **Used** when the T
 
 - The earning Member remains the owner of all Credits and the Trip Reward entitlement
 - Underlying credits do not transfer ownership
-- Permitted nominee: immediate family **or** one MD-approved non-family nominee
+- Permitted nominee: immediate family **or** one non-family nominee (no MD approval)
 - Nominee identity must be recorded before fulfilment
 - No automatic cash alternative exists
 
@@ -756,8 +756,7 @@ Award:       Pending ──(holds clear)──► Posted ──► (restricted w
                 │                          │
                 └────────► Reversed ◄──────┘   (a requalifying Booking restores the same award)
 
-Redemption:  Recorded            (self / family)
-             Awaiting MD ──► Recorded | Rejected   (non-family recipient)
+Redemption:  Recorded            (any recipient: self, family or non-family)
              Recorded ──► Corrected (Admin/MD; tokens return; consumption stays)
 ```
 
@@ -789,7 +788,7 @@ No catalogue, pricing, ordering or delivery data — redemption is arranged outs
 
 **Royalty Tokens:**
 - Tokens earned / Tokens spent / Token balance (signed) — the same three figures the Member sees
-- Tokens spent: each redemption's tokens and date, recipient, internal reference and state; MD approves/rejects a non-family one; Admin/MD corrects an erroneous one
+- Tokens spent: each redemption's tokens and date, recipient, internal reference and state; Admin/MD corrects an erroneous one
 - Why spending is blocked now (Member deactivated, Recovery, restricted tokens, deficit)
 - Record redemption (CRM/Admin) — shows how many tokens can be recorded now before it is recorded
 - Royalty awards — internal history (Customer, Booking, Project, tokens, state, hold, used); never a balance per Project
@@ -999,7 +998,6 @@ The Rewards page (`/rewards`) provides operational cards with counts (implemente
 | Trips Awaiting | Trips in EARNED/BOOKED state |
 | Trips Deficient | Trips in DEFICIENT state |
 | Royalty awards on hold | Royalty awards pending with a hold, or posted and restricted |
-| Token redemptions awaiting MD | Non-family token redemptions waiting for MD |
 | Settings Awaiting MD | Project versions in PENDING_APPROVAL |
 | Buyback Reviews | Buyback commission/unwind review tasks pending |
 | Control Reviews | Staff conflict (PENDING) + circumvention reviews (PENDING_REVIEW) |

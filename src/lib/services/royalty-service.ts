@@ -23,13 +23,10 @@ import { db } from "@/lib/db";
 import { istDay } from "@/lib/tasks";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { outstandingRecovery } from "./commission-service";
-import { closeTasksFor, ensureTask } from "./task-service";
+import { closeTasksFor } from "./task-service";
 import { assertIndependent, controlHoldReason } from "./benefit-control-service";
 
 export const AWARD_RECORD_KIND = "Royalty Award";
-export const REDEMPTION_RECORD_KIND = "Token Redemption";
-/** CP §65 NT10 — Non-Family Reward Nominee Approval, the same task Trip uses. */
-export const NOMINEE_APPROVAL_PURPOSE = "REWARD_NOMINEE_APPROVAL";
 
 const LIVE = ["PENDING", "RELEASED"] as const;
 const RECIPIENTS: readonly RewardRecipient[] = ["SELF", "SPOUSE", "PARENT", "CHILD", "SIBLING", "NON_FAMILY"];
@@ -432,7 +429,6 @@ const HOLD_WORDS: Record<string, string> = {
   RECOVERY_OUTSTANDING: "an outstanding Recovery",
   MEMBER_DEACTIVATED: "the Member being Deactivated",
   BUYBACK_STABLE_COMPLETION_PENDING: "a Buyback not yet stably complete",
-  STAFF_CONFLICT_REVIEW: "a staff conflict review",
   RECOVERY_CIRCUMVENTION_REVIEW: "a Recovery circumvention review",
 };
 
@@ -504,8 +500,8 @@ async function ownerOf(memberProfileId: string) {
 /**
  * docss/11 §1 — staff record spending arranged outside the CRM. Holds are
  * rechecked and availability recomputed under the Member lock, so two
- * redemptions at once can never overspend. A non-family recipient waits for MD
- * (NT10) and posts only on approval — unless MD records it, which is the approval.
+ * redemptions at once can never overspend. Any recipient, family or not, posts
+ * at once: the owner removed MD approval for a non-family recipient (14 Oct 2026).
  */
 export async function recordTokenRedemption(
   args: Actor & {
@@ -529,7 +525,7 @@ export async function recordTokenRedemption(
   const owner = await ownerOf(args.memberProfileId);
   await assertIndependent({ ...args, beneficiaryPersonId: owner.personId, action: "TOKEN_REDEMPTION_RECORD" });
 
-  return runCommand<{ redemptionId: string; state: "RECORDED" | "AWAITING_MD" }>(
+  return runCommand<{ redemptionId: string }>(
     {
       idempotencyKey: args.idempotencyKey,
       operation: "TOKEN_REDEMPTION_RECORD",
@@ -543,15 +539,13 @@ export async function recordTokenRedemption(
       const already = await tx.tokenRedemption.findUnique({ where: { requestKey: args.idempotencyKey } });
       if (already) {
         return {
-          result: { redemptionId: already.id, state: already.state as "RECORDED" | "AWAITING_MD" },
+          result: { redemptionId: already.id },
           audit: { entity: "MemberProfile", entityId: args.memberProfileId, action: "TOKEN_REDEMPTION_REPLAYED", after: { redemptionId: already.id } },
         };
       }
       await refreshMemberAwards(tx, args.memberProfileId, args.actorRef);
       refuseUnlessSpendable(await tokenPosition(tx, args.memberProfileId), args.tokens);
 
-      const nonFamily = args.recipient === "NON_FAMILY" && args.actorRole !== "MD";
-      const mdApproved = args.recipient === "NON_FAMILY" && args.actorRole === "MD";
       const redemption = await tx.tokenRedemption.create({
         data: {
           memberProfileId: args.memberProfileId,
@@ -560,87 +554,19 @@ export async function recordTokenRedemption(
           recipient: args.recipient,
           recipientName,
           reference,
-          state: nonFamily ? "AWAITING_MD" : "RECORDED",
+          state: "RECORDED",
           requestKey: args.idempotencyKey,
           recordedByRef: args.actorRef,
-          ...(mdApproved ? { decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: "Recorded by MD." } : {}),
         },
       });
-      if (nonFamily) {
-        await ensureTask(tx, {
-          recordKind: REDEMPTION_RECORD_KIND,
-          recordId: redemption.id,
-          recordName: `${owner.memberId} · ${args.tokens} points to ${recipientName}`,
-          purpose: NOMINEE_APPROVAL_PURPOSE,
-          title: "Non-Family Reward Nominee Approval",
-          assigneeRole: "MD",
-          dueAt: new Date(),
-          decision: true,
-          latestResult: `${args.tokens} Royalty points redeemed for ${recipientName}, who is not immediate family.`,
-        });
-      } else {
-        await postRedemption(tx, redemption, args.actorRef);
-      }
+      await postRedemption(tx, redemption, args.actorRef);
       return {
-        result: { redemptionId: redemption.id, state: redemption.state as "RECORDED" | "AWAITING_MD" },
+        result: { redemptionId: redemption.id },
         audit: {
           entity: "MemberProfile",
           entityId: args.memberProfileId,
-          action: nonFamily ? "TOKEN_REDEMPTION_AWAITING_MD" : "TOKEN_REDEMPTION_RECORDED",
+          action: "TOKEN_REDEMPTION_RECORDED",
           after: { redemptionId: redemption.id, tokens: args.tokens, redeemedOn: args.redeemedOn, recipient: args.recipient, recipientName, reference },
-        },
-      };
-    }
-  );
-}
-
-/** CP §65 NT10; doc 5 §6 — MD approves or rejects a non-family redemption. Approval rechecks availability. */
-export async function decideTokenRedemption(args: Actor & { redemptionId: string; approve: boolean; note: string }) {
-  if (args.actorRole !== "MD") blocked("Only MD decides a non-family recipient.");
-  if (!args.note.trim()) blocked("A compulsory note is required.");
-  const found = await db.tokenRedemption.findUnique({ where: { id: args.redemptionId }, select: { memberProfileId: true } });
-  if (!found) blocked("That redemption no longer exists.");
-  const owner = await ownerOf(found.memberProfileId);
-  await assertIndependent({ ...args, beneficiaryPersonId: owner.personId, action: "TOKEN_REDEMPTION_DECIDE" });
-
-  return runCommand<{ redemptionId: string; state: "RECORDED" | "REJECTED" }>(
-    {
-      idempotencyKey: args.idempotencyKey,
-      operation: "TOKEN_REDEMPTION_DECIDE",
-      actorRef: args.actorRef,
-      actorRole: args.actorRole,
-      payload: { redemptionId: args.redemptionId, approve: args.approve },
-    },
-    async (tx) => {
-      await lockMember(tx, found.memberProfileId);
-      const redemption = await tx.tokenRedemption.findUniqueOrThrow({ where: { id: args.redemptionId } });
-      if (redemption.state !== "AWAITING_MD") blocked("This redemption is not waiting for MD.");
-      const decided = { decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: args.note.trim() };
-      if (args.approve) {
-        await refreshMemberAwards(tx, redemption.memberProfileId, args.actorRef);
-        refuseUnlessSpendable(await tokenPosition(tx, redemption.memberProfileId), redemption.tokens);
-        // Recorded now: the funding queue counts from the moment it is spent.
-        await tx.tokenRedemption.update({ where: { id: redemption.id }, data: { state: "RECORDED", recordedAt: new Date(), ...decided } });
-        await postRedemption(tx, redemption, args.actorRef);
-      } else {
-        await tx.tokenRedemption.update({ where: { id: redemption.id }, data: { state: "REJECTED", ...decided } });
-      }
-      await closeTasksFor(
-        tx,
-        REDEMPTION_RECORD_KIND,
-        redemption.id,
-        args.actorRef,
-        `${args.approve ? "Approved" : "Rejected"} — ${args.note.trim()}`,
-        NOMINEE_APPROVAL_PURPOSE
-      );
-      return {
-        result: { redemptionId: redemption.id, state: args.approve ? ("RECORDED" as const) : ("REJECTED" as const) },
-        audit: {
-          entity: "MemberProfile",
-          entityId: redemption.memberProfileId,
-          action: args.approve ? "TOKEN_REDEMPTION_APPROVED" : "TOKEN_REDEMPTION_REJECTED",
-          after: { redemptionId: redemption.id, tokens: redemption.tokens, recipientName: redemption.recipientName },
-          reason: args.note.trim(),
         },
       };
     }

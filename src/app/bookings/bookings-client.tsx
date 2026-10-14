@@ -235,7 +235,6 @@ const HOLD_LABEL: Record<string, string> = {
   CUSTOMER_TERMS_PENDING: "Customer Terms Pending",
   RECOVERY_OUTSTANDING: "Recovery Outstanding",
   OLD_RECOVERY_PENDING: "Waiting for the old beneficiary's Recovery",
-  STAFF_CONFLICT_REVIEW: "Staff conflict — awaiting MD",
   RECOVERY_CIRCUMVENTION_REVIEW: "Recovery circumvention review",
 };
 
@@ -1106,7 +1105,7 @@ export default function BookingsClient({
           row={dialog.row}
           consequence={
             dialog.approve
-              ? "The attribution moves, old commission records are superseded and new valid ones are created. Paid and Paid Early records become Accounts Adjustment Required, and Accounts receives the impact review. Booking and Payment history are unchanged."
+              ? "The attribution moves, old commission records are superseded and new valid ones are created. Paid and Paid Early records become Accounts Adjustment Required. Booking and Payment history are unchanged."
               : "The attribution and every commission record stay exactly as they are."
           }
           busy={busy}
@@ -2480,7 +2479,7 @@ export function ReviewDialog({
 
   return (
     <Modal
-      title={`Accounts Verification — Booking ${row.requestNo}`}
+      title={`Verify — Booking Payment ${row.requestNo}`}
       onClose={onClose}
       wide
     >

@@ -9,7 +9,8 @@ import { activateDueVersions } from "@/lib/services/commission-settings-service"
 import { expireTripCredits, windDownTripBuckets } from "@/lib/services/trip-service";
 import { releaseHold } from "@/lib/services/hold-service";
 import { syncPaymentFollowUp } from "@/lib/services/payment-service";
-import { ensureTask, reviseTask } from "@/lib/services/task-service";
+import { completeTask, ensureTask, reviseTask } from "@/lib/services/task-service";
+import { hasBuyerProcess } from "@/lib/services/acquisition-service";
 
 export type JobResult = { jobType: string; processed: number; changed: number };
 
@@ -139,7 +140,7 @@ export function runPaymentGivenReminder(now: Date = new Date()): Promise<JobResu
           recordId: acquisition.id,
           recordName: acquisition.acquisitionNo,
           purpose: "PAYMENT_GIVEN_FOLLOW_UP",
-          title: "Payment Given Follow-up",
+          title: "Payment Given Follow-Up",
           assigneeRole: "ACCOUNTS",
           dueAt: next.dueDate,
           latestResult: `Instalment ${next.seq}: ${next.scheduledPercent
@@ -224,7 +225,7 @@ export function runReraExpiryReminder(now: Date = new Date()): Promise<JobResult
           recordId: member.id,
           recordName: `${member.memberId} · ${member.person.fullName}`,
           purpose: "RERA_EXPIRY",
-          title: "RERA registration expiring",
+          title: "RERA Registration Expiring",
           assigneeRole: "CRM",
           dueAt: member.reraExpiryDate!,
           urgent: true,
@@ -281,6 +282,32 @@ export function runTripWindDown(now: Date = new Date()): Promise<JobResult> {
 }
 
 /**
+ * Owner, 14 Oct 2026 — "Selling Buyback/Resale Plot" closes by itself once the
+ * Plot no longer has the active Hold or Booking that raised it. A Hold or
+ * Booking ends along many paths (expiry, cancellation, rejection, refund,
+ * Change Plot), so one sweep here covers them all.
+ * ponytail: up to 30 minutes late (the job's schedule); hook the end paths if that matters.
+ */
+export function runManagementActionClear(_now: Date = new Date()): Promise<JobResult> {
+  return withRun("MANAGEMENT_ACTION_CLEAR", async () => {
+    const open = await db.task.findMany({
+      where: { purpose: "MANAGEMENT_ACTION_REQUIRED", status: "PENDING", recordKind: "Acquisition" },
+      select: { id: true, recordId: true },
+    });
+    let changed = 0;
+    for (const task of open) {
+      await db.$transaction(async (tx) => {
+        const deal = await tx.acquisition.findUnique({ where: { id: task.recordId }, select: { plotId: true } });
+        if (deal && (await hasBuyerProcess(tx, deal.plotId))) return;
+        await completeTask(tx, task.id, "SYSTEM", "The Hold or Booking on this Plot has ended.");
+        changed += 1;
+      });
+    }
+    return { processed: open.length, changed };
+  });
+}
+
+/**
  * PRD §18 — the full daily run. Every job records its own start, finish, counts
  * and error, so one failure is visible per job and never stops the rest.
  */
@@ -301,6 +328,7 @@ export const JOBS = {
   COMMISSION_VERSION_ACTIVATION: runCommissionVersionActivation,
   TRIP_CREDIT_EXPIRY: runTripCreditExpiry,
   TRIP_WIND_DOWN: runTripWindDown,
+  MANAGEMENT_ACTION_CLEAR: runManagementActionClear,
 } as const;
 
 export type JobName = keyof typeof JOBS;

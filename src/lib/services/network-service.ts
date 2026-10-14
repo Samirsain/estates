@@ -420,7 +420,7 @@ export async function setMemberStatus(args: {
             recordId: member.id,
             recordName: `${member.memberId} · ${member.person.fullName}`,
             purpose: "DEACTIVATED_MEMBER_REQUEST_REVIEW",
-            title: "Review Hold Requests of a deactivated Member",
+            title: "Plot Hold by Deactivated Member",
             assigneeRole: "CRM",
             dueAt: new Date(),
             urgent: true,

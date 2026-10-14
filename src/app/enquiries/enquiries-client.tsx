@@ -394,7 +394,7 @@ export default function EnquiriesClient({
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="center">
                               <DropdownMenuItem onSelect={() => setFollowUp(e)}>
-                                Record follow-up
+                                Record Follow-Up
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onSelect={() => setClosing(e)}
@@ -895,7 +895,7 @@ function FollowUpDialog({
             Back
           </Button>
           <Button type="submit" size="sm" disabled={busy}>
-            {busy ? "Saving…" : "Record follow-up"}
+            {busy ? "Saving…" : "Record Follow-Up"}
           </Button>
         </div>
       </form>

@@ -2,9 +2,9 @@
 
 // A Member's Rewards (the Sales & Reference Trip) — SSOT §40, §47, §54, §56,
 // §65; Change Pack §68. Per programme: progress toward the next Trip, the
-// credits behind it, and each earned Trip with its fulfilment. CRM or Admin
-// record the traveller, the booking and the travel; MD decides a non-family
-// nominee. Non-cash: there is no value to show.
+// credits behind it, and each earned Trip with its fulfilment. CRM or MD
+// record the traveller (family or not), the booking and the travel. Non-cash:
+// there is no value to show.
 
 import React from "react";
 import { useRouter } from "next/navigation";
@@ -18,7 +18,6 @@ import { REWARD_HOLD_LABEL } from "./royalty-tokens";
 import {
   bookTripAction,
   correctInviterAction,
-  decideTripNomineeAction,
   recordTripNomineeAction,
   travelledTripAction,
   type ActionResult,
@@ -32,7 +31,7 @@ const RECIPIENTS = [
   ["PARENT", "Parent"],
   ["CHILD", "Child"],
   ["SIBLING", "Sibling"],
-  ["NON_FAMILY", "Someone else (needs MD)"],
+  ["NON_FAMILY", "Someone else"],
 ] as const;
 
 const newKey = () => `trp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -64,7 +63,6 @@ const SUB = "block text-[11px] text-muted-foreground";
 
 type Dialog =
   | { kind: "NOMINEE"; rewardId: string }
-  | { kind: "DECIDE"; rewardId: string; approve: boolean }
   | { kind: "BOOK"; rewardId: string }
   | { kind: "TRAVELLED"; rewardId: string };
 
@@ -183,9 +181,6 @@ export default function TripSection({ role, programmes }: { role: string; progra
                         </td>
                         <td className={TD}>
                           {r.recipient ? (r.recipient === "SELF" ? "The Member" : r.recipientName) : "—"}
-                          {r.recipient === "NON_FAMILY" && (
-                            <span className={SUB}>{r.recipientApproved ? "MD approved" : "Waiting for MD"}</span>
-                          )}
                         </td>
                         <td className={TD}>
                           {r.bookingReference ?? "—"}
@@ -203,16 +198,6 @@ export default function TripSection({ role, programmes }: { role: string; progra
                               <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "NOMINEE", rewardId: r.id })}>
                                 {r.recipient ? "Change traveller" : "Add traveller"}
                               </Button>
-                            )}
-                            {role === "MD" && r.recipient === "NON_FAMILY" && !r.recipientApproved && r.state === "EARNED" && (
-                              <>
-                                <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "DECIDE", rewardId: r.id, approve: false })}>
-                                  Reject
-                                </Button>
-                                <Button size="xs" onClick={() => setDialog({ kind: "DECIDE", rewardId: r.id, approve: true })}>
-                                  Approve
-                                </Button>
-                              </>
                             )}
                             {fulfils && r.state === "EARNED" && r.recipient && !r.holdReason && (
                               <Button size="xs" onClick={() => setDialog({ kind: "BOOK", rewardId: r.id })}>
@@ -288,15 +273,6 @@ export default function TripSection({ role, programmes }: { role: string; progra
           }
         />
       )}
-      {dialog?.kind === "DECIDE" && (
-        <TextDialog
-          title={dialog.approve ? "Approve the nominee" : "Reject the nominee"}
-          label="Note (compulsory)"
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(note) => run(() => decideTripNomineeAction({ rewardId: dialog.rewardId, approve: dialog.approve, note }, newKey()))}
-        />
-      )}
       {dialog?.kind === "BOOK" && (
         <TextDialog
           title="Trip booked"
@@ -356,7 +332,7 @@ function NomineeDialog({ busy, onClose, onSubmit }: { busy: boolean; onClose: ()
   const [recipient, setRecipient] = React.useState<(typeof RECIPIENTS)[number][0]>("SELF");
   const [name, setName] = React.useState("");
   return (
-    <Modal title="Who travels" description="Immediate family needs no approval; anyone else needs MD. No cash alternative." onClose={onClose}>
+    <Modal title="Who travels" description="Anyone may travel: the Member, family or someone else. No cash alternative." onClose={onClose}>
       <div className="space-y-3">
         <Field label="Traveller / nominee">
           <select className={inputClass} value={recipient} onChange={(e) => setRecipient(e.target.value as typeof recipient)}>

@@ -99,7 +99,7 @@ export async function openRecovery(
         recordId: record.id,
         recordName: recoveryNo,
         purpose: RECOVERY_FOLLOW_UP_PURPOSE,
-        title: "Recovery Outstanding Follow-up",
+        title: "Recovery Follow-Up",
         assigneeRole: "ACCOUNTS",
         dueAt: dueOn,
         latestResult:

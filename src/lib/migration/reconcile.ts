@@ -531,39 +531,8 @@ async function businessModelV2(): Promise<RuleResult> {
     }
   }
 
-  // 19. A non-family nominee fulfilled without MD approval.
-  const nominees = await Promise.all([
-    db.tripReward.count({ where: { state: { in: ["BOOKED", "TRAVELLED"] }, recipient: "NON_FAMILY", recipientApprovedAt: null } }),
-    db.tokenRedemption.count({ where: { state: { in: ["RECORDED", "CORRECTED"] }, recipient: "NON_FAMILY", decidedAt: null } }),
-  ]);
-  if (nominees[0] + nominees[1] > 0) add("Rewards", `${nominees[0] + nominees[1]} non-family nominee(s) fulfilled without MD approval (§28.19)`);
-
-  // 20. A staff or declared-relative benefit paid or fulfilled without MD approval.
-  const [staff, relatives, approved] = await Promise.all([
-    db.staffAccount.findMany({ select: { personId: true } }),
-    db.staffRelative.findMany({ where: { endedAt: null }, select: { relativePersonId: true } }),
-    db.staffConflictReview.findMany({ where: { status: "APPROVED" }, select: { recordId: true } }),
-  ]);
-  const conflicted = [...new Set([...staff.map((s) => s.personId), ...relatives.map((r) => r.relativePersonId)])];
-  const cleared = new Set(approved.map((a) => a.recordId));
-  const [paidToConflicted, awardsToConflicted, tripsToConflicted] = await Promise.all([
-    db.commissionRecord.findMany({
-      where: { beneficiaryPersonId: { in: conflicted }, payment: { in: ["PAID", "PAID_EARLY"] } },
-      select: { id: true, beneficiaryPerson: { select: { fullName: true } } },
-    }),
-    db.royaltyAward.findMany({
-      where: { memberProfile: { personId: { in: conflicted } }, postings: { gt: 0 } },
-      select: { id: true, memberProfile: { select: { memberId: true } } },
-    }),
-    db.tripReward.findMany({
-      where: { memberProfile: { personId: { in: conflicted } }, state: { in: ["BOOKED", "TRAVELLED"] } },
-      select: { id: true, memberProfile: { select: { memberId: true } } },
-    }),
-  ]);
-  for (const r of paidToConflicted) if (!cleared.has(r.id)) add(r.beneficiaryPerson.fullName, "Staff/relative benefit paid without conflict approval (§28.20)");
-  for (const r of [...awardsToConflicted, ...tripsToConflicted]) {
-    if (!cleared.has(r.id)) add(r.memberProfile.memberId, "Staff/relative reward fulfilled without conflict approval (§28.20)");
-  }
+  // 19 and 20 (non-family nominees and staff/relative benefits without MD
+  // approval) are gone: the owner removed both approvals on 14 Oct 2026.
 
   // 21. One verified bank account shared by unrelated Persons without a joint-account exception.
   const banks = await db.bankDetail.findMany({

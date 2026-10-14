@@ -54,7 +54,7 @@ export async function ensureCompletionTasks(tx: Tx, bookingId: string) {
     recordId: bookingId,
     recordName,
     purpose: FINAL_BUYER_PURPOSE,
-    title: "Complete Final Buyer Details",
+    title: "Complete Customer Details",
     assigneeRole: "CRM",
     dueAt,
   });

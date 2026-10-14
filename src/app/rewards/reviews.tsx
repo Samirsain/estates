@@ -1,18 +1,17 @@
 "use client";
 
-// Release-control reviews — Change Pack §55, §58, §65 NT08/NT09. One list per
-// review type; each decision takes a compulsory note and is audited.
+// Recovery circumvention reviews — Change Pack §55, §65 NT08. Each decision
+// takes a compulsory note and is audited.
 
 import React from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
-import { decideCircumventionAction, decideStaffConflictAction, type ActionResult } from "./review-actions";
+import { decideCircumventionAction, type ActionResult } from "./review-actions";
 
 export type ReviewRow = {
   id: string;
-  kind: "CONFLICT" | "CIRCUMVENTION";
   person: string;
   personId: string;
   benefit: string;
@@ -20,6 +19,9 @@ export type ReviewRow = {
   status: string;
   decided: string | null;
 };
+
+/** The owner's words (14 Oct 2026): Approve releases, Reject keeps it held. */
+const STATUS_LABEL: Record<string, string> = { PENDING_REVIEW: "pending", CLEARED: "approved", RESTRICTED: "rejected" };
 
 const newKey = () => `rev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const TH = "px-2 py-1.5 text-left font-medium text-muted-foreground";
@@ -31,8 +33,7 @@ export function Reviews({ rows, role }: { rows: ReviewRow[]; role: string }) {
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
   const [deciding, setDeciding] = React.useState<{ row: ReviewRow; yes: boolean } | null>(null);
 
-  const canDecide = (row: ReviewRow) =>
-    row.kind === "CONFLICT" ? role === "MD" && row.status === "PENDING" : (role === "ACCOUNTS" || role === "MD") && row.status === "PENDING_REVIEW";
+  const canDecide = (row: ReviewRow) => (role === "ACCOUNTS" || role === "MD") && row.status === "PENDING_REVIEW";
 
   return (
     <div className="space-y-2 p-2">
@@ -51,13 +52,13 @@ export function Reviews({ rows, role }: { rows: ReviewRow[]; role: string }) {
           {rows.length === 0 && (
             <tr>
               <td className={`${TD} text-muted-foreground`} colSpan={5}>
-                No staff-conflict or circumvention reviews.
+                No Check Bank Account reviews.
               </td>
             </tr>
           )}
           {rows.map((r) => (
             <tr key={r.id} className="border-b border-border/30">
-              <td className={TD}>{r.kind === "CONFLICT" ? "Staff / relative conflict (NT09)" : "Recovery circumvention (NT08)"}</td>
+              <td className={TD}>Check Bank Account</td>
               <td className={TD}>
                 <a className="text-primary hover:underline" href={`/people/${r.personId}`}>
                   {r.person}
@@ -72,14 +73,12 @@ export function Reviews({ rows, role }: { rows: ReviewRow[]; role: string }) {
                   variant={
                     r.status.startsWith("PENDING")
                       ? "warning"
-                      : r.status === "APPROVED" || r.status === "CLEARED"
+                      : r.status === "CLEARED"
                         ? "success"
-                        : r.status === "CANCELLED"
-                          ? "outline"
-                          : "destructive"
+                        : "destructive"
                   }
                 >
-                  {r.status.replaceAll("_", " ").toLowerCase()}
+                  {STATUS_LABEL[r.status] ?? r.status.replaceAll("_", " ").toLowerCase()}
                 </Badge>
                 {r.decided && <span className="block text-[11px] text-muted-foreground">{r.decided}</span>}
               </td>
@@ -87,10 +86,10 @@ export function Reviews({ rows, role }: { rows: ReviewRow[]; role: string }) {
                 {canDecide(r) && (
                   <span className="flex justify-end gap-1">
                     <Button size="sm" onClick={() => setDeciding({ row: r, yes: true })}>
-                      {r.kind === "CONFLICT" ? "Approve" : "Clear"}
+                      Approve
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setDeciding({ row: r, yes: false })}>
-                      {r.kind === "CONFLICT" ? "Reject" : "Restrict"}
+                      Reject
                     </Button>
                   </span>
                 )}
@@ -102,12 +101,8 @@ export function Reviews({ rows, role }: { rows: ReviewRow[]; role: string }) {
 
       {deciding && (
         <Modal
-          title={`${deciding.yes ? (deciding.row.kind === "CONFLICT" ? "Approve" : "Clear") : deciding.row.kind === "CONFLICT" ? "Reject" : "Restrict"} — ${deciding.row.person}`}
-          description={
-            deciding.row.kind === "CONFLICT"
-              ? "MD decides. A conflicted MD cannot decide their own or their relative's benefit; another MD must."
-              : "Restricted keeps this Person's benefits held while the linked Recovery is outstanding. Nobody is denied automatically."
-          }
+          title={`${deciding.yes ? "Approve" : "Reject"} — ${deciding.row.person}`}
+          description="Approve releases the benefit. Reject keeps this Person's benefits held while the linked Recovery is outstanding. Nobody is denied automatically."
           onClose={() => setDeciding(null)}
         >
           <form
@@ -117,10 +112,7 @@ export function Reviews({ rows, role }: { rows: ReviewRow[]; role: string }) {
               const note = String(new FormData(e.currentTarget).get("note") ?? "");
               setBusy(true);
               const { row, yes } = deciding;
-              const result =
-                row.kind === "CONFLICT"
-                  ? await decideStaffConflictAction(row.id, yes, note, newKey())
-                  : await decideCircumventionAction(row.id, yes, note, newKey());
+              const result = await decideCircumventionAction(row.id, yes, note, newKey());
               setBusy(false);
               setNotice(result);
               if (result.ok) {

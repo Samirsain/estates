@@ -17,6 +17,7 @@ import {
 } from "@/lib/services/acquisition-service";
 import { decideBookingRequest, submitBookingRequest } from "@/lib/services/booking-service";
 import { confirmPaymentReceived } from "@/lib/services/payment-service";
+import { runManagementActionClear } from "@/lib/jobs";
 import {
   approveCommissionPaidEarly,
   markCommissionPaid,
@@ -350,7 +351,24 @@ async function main() {
       reason: "changed mind",
     })
   );
+  // Owner, 14 Oct 2026 — "Selling Buyback/Resale Plot" stays while the buyer's Hold lives, and closes by itself after.
+  const sellingTask = await db.task.create({
+    data: {
+      taskNo: `${TAG}-MAR`,
+      recordKind: "Acquisition",
+      recordId: buyback.acquisitionId,
+      recordName: `${TAG} deal`,
+      purpose: "MANAGEMENT_ACTION_REQUIRED",
+      title: "Selling Buyback/Resale Plot",
+      assigneeRole: "MD",
+      dueAt: today,
+    },
+  });
+  await runManagementActionClear();
+  assert.equal((await db.task.findUniqueOrThrow({ where: { id: sellingTask.id } })).status, "PENDING", "open while the Hold is active");
   await db.hold.updateMany({ where: { plotId: plotA.id }, data: { status: "CANCELLED" } });
+  await runManagementActionClear();
+  assert.equal((await db.task.findUniqueOrThrow({ where: { id: sellingTask.id } })).status, "COMPLETED", "closed once the Hold ends");
 
   await cancelAcquisitionDeal({
     idempotencyKey: key(),

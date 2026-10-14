@@ -172,7 +172,7 @@ export async function createEnquiry(input: CreateEnquiryInput) {
         recordId: enquiry.id,
         recordName: `${person.fullName} — ${project.name}`,
         purpose: ENQUIRY_FOLLOW_UP_PURPOSE,
-        title: "Enquiry Follow-up",
+        title: "Enquiry Follow-Up",
         assigneeRole: input.assigneeRole,
         assigneeStaffId: input.assignedStaffId,
         dueAt: input.nextFollowUpAt,

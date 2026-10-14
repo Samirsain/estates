@@ -1,6 +1,7 @@
 // Self-check for the dashboard task logic. Run: node src/lib/tasks.check.ts
 import assert from "node:assert/strict";
 import {
+  nextDue,
   addIstDays,
   emphasis,
   filterTasks,
@@ -137,8 +138,12 @@ assert.equal(recordHref({ kind: "Booking", id: uuid }), `/bookings?booking=${uui
 assert.equal(recordHref({ kind: "Booking Request", id: uuid }), `/bookings?booking=${uuid}`);
 assert.equal(recordHref({ kind: "Plot", id: uuid }), `/plots/${uuid}`);
 
-// Acquisitions have no per-record route, so the list is the honest destination.
-assert.equal(recordHref({ kind: "Acquisition", id: uuid }), "/acquisitions");
+// The four that once opened nothing or only a list (owner, 14 Oct 2026).
+assert.equal(recordHref({ kind: "Acquisition", id: uuid }), `/acquisitions/${uuid}`);
+assert.equal(recordHref({ kind: "Person", id: uuid }), `/people/${uuid}`, "the joint bank account task");
+assert.equal(recordHref({ kind: "MemberProfile", id: uuid }), `/members/${uuid}`, "the deactivated-Member task");
+const deal = { project: null, plot: null, plotId: null, partyRef: null, partyName: null, partyPersonId: null, reference: null };
+assert.equal(recordHref({ kind: "Commission", id: uuid }, { ...deal, acquisitionId: uuid }), `/acquisitions/${uuid}`, "a Buying Commission");
 
 // A Commission is approved on its Booking's screen and the task holds the
 // commission's own id, so the Booking comes from the resolved subject.
@@ -224,5 +229,12 @@ assert.equal(formatDue(new Date("2025-12-31T09:00:00.000Z"), noon), "31 Dec 2025
 assert.equal(formatDue(new Date("2026-08-31T18:35:00.000Z"), noon), "1 Sep");
 // And the last minute that is still today prints as a time.
 assert.equal(formatDue(new Date("2026-08-31T18:29:00.000Z"), noon), "11:59 PM");
+
+// A repeating task's next due: one step on, or more if it was closed late.
+const due = new Date("2026-08-31T05:30:00.000Z"); // 11:00 AM IST
+assert.equal(nextDue(due, "DAILY", noon).toISOString(), "2026-09-01T05:30:00.000Z");
+assert.equal(nextDue(due, "WEEKLY", noon).toISOString(), "2026-09-07T05:30:00.000Z");
+assert.equal(nextDue(due, "MONTHLY", noon).toISOString(), "2026-10-01T05:30:00.000Z");
+assert.equal(nextDue(due, "DAILY", new Date("2026-09-03T06:00:00.000Z")).toISOString(), "2026-09-04T05:30:00.000Z", "closed late: the next one is still ahead");
 
 console.log("tasks.check.ts OK");

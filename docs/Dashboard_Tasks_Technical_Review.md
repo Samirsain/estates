@@ -1,6 +1,8 @@
 # Dashboard Tasks Review
 
-**Prepared:** 13 Oct 2026
+**Prepared:** 13 Oct 2026 · **Updated:** 14 Oct 2026 — the owner removed task 25 (Staff / Relative Benefit Conflict Review) and task 31 (Non-Family Reward Nominee Approval); both are gone from the code and from this review.
+
+> **Titles and owner decisions, 14 Oct 2026:** task titles were renamed (for example "Accounts Verification — Booking" is now "Verify — Booking Payment"), task 6 was removed, task 17 now goes to Accounts, and the approved changes in section 6 are built. `docs/Dashboard_Tasks_Review.md` holds the current titles; this technical review still uses the old names.
 **Scope:** every task that appears in the staff Dashboard work list: what creates it, who gets it, and what closes it. Most attention goes to the tasks the system creates by itself.
 
 > How to read this: the body is written for the business owner. Code file references for the developer are collected in the Appendix at the end.
@@ -29,13 +31,11 @@ This document uses the **same words as the CRM screens**: the menu names and the
 
 | | Count |
 |---|---|
-| **Automatic task types** (raised by the system by itself) | **33** |
-| of which are **decisions** (Approve / Reject on the record's own page, reached through **Open Review**) | 15 |
+| **Automatic task types** (raised by the system by itself) | **31** |
+| of which are **decisions** (Approve / Reject on the record's own page, reached through **Open Review**) | 13 |
 | of which are **work / follow-up** tasks (**Action › Done / Revise** on the Dashboard) | 18 |
 | Automatic task types raised **by a scheduled job** (fully or partly) | 4 (Payment Follow-up, Payment Given Follow-up, RERA expiry, Trip wind-down). 2 more jobs only change existing tasks |
 | **Manual task types** | **1** (**+ Add Task** with any title, from the Dashboard, a Member page or a Plot page) |
-
-One task type, "Non-Family Reward Nominee Approval", is used for two things: a Trip traveller (**Who travels**) and a **Royalty Points** redemption (**Record a points redemption**). The count of 33 counts it once.
 
 **Who receives them (automatic types):**
 
@@ -43,7 +43,7 @@ One task type, "Non-Family Reward Nominee Approval", is used for two things: a T
 |---|---|---|
 | Accounts | 15 | Mostly "Accounts Verification —" decisions, reward reviews and money follow-ups |
 | CRM | 12 | Follow-ups, paperwork, Trip fulfilment, Member reminders |
-| MD | 6 | Paid Early, Sold By Correction, staff conflict, non-family nominee, old-recovery exception, Management Action Required. An Enquiry Follow-up also goes to MD when MD is the assigned person |
+| MD | 4 | Paid Early, Sold By Correction, old-recovery exception, Management Action Required. An Enquiry Follow-up also goes to MD when MD is the assigned person |
 
 **Grouping:** the types fall into 11 groups: Bookings & booking changes, Payments, Completion/paperwork, Enquiries, Buyback / Resale, Commission & Paid Early, Recovery, Buyback reward reviews, Trip & Royalty Points, Controls, and Members. See section 5.
 
@@ -60,11 +60,10 @@ One task type, "Non-Family Reward Nominee Approval", is used for two things: a T
 
 - **One senior role: MD.** All old senior accounts were disabled and turned into MD accounts. Their tasks were moved to MD. MD sees every task on the Dashboard.
 - **Project settings** (commission and Rewards settings) are created by MD and are active at once. No settings approval task and no economics review task is raised any more.
-- **MD's own actions apply at once, with no approval task.** This covers four actions:
+- **MD's own actions apply at once, with no approval task.** This covers two actions:
   - MD's own **Sold By Correction**
-  - MD's own non-family **Royalty Points** redemption
-  - MD's own non-family Trip traveller
   - MD's own **Person Merge**
+- **No approval for staff benefits or non-family recipients (owner, 14 Oct 2026).** Staff and their family earn like anyone else, and any staff member may record a non-family Trip traveller or Royalty Points recipient; both apply at once.
 
   When anyone else does any of these, it still goes to MD as an approval task.
 
@@ -212,7 +211,6 @@ All of these are acted on from the Booking page (Commission section).
 
 | # | Title shown | Created when | Who | Type | Due | Closed when | System code |
 |---|---|---|---|---|---|---|---|
-| 25 | Staff / Relative Benefit Conflict Review | A Commission, Loyalty Points, Trip or Royalty Points benefit would go to staff or a declared relative of staff | MD | Decision | now | **Approve / Reject** on Rewards › **Reviews**; the relative declaration is ended | `STAFF_CONFLICT_REVIEW` |
 | 26 | Recovery Circumvention Review | The benefit receiver shares a bank account, mobile or address with someone owing a Recovery | Accounts (MD can also decide) | Decision | now | **Clear / Restrict** on Rewards › **Reviews**; the Recovery is repaid or set off (the review is then marked Cleared) | `RECOVERY_CIRCUMVENTION_REVIEW` |
 | 27 | Joint Bank Account Exception — Approval | Bank details are entered for an account already verified for someone else, with proof that it is a joint account | Accounts | Decision | now | **Verify Bank Details** / **Reject Bank Details** (Members list) | `BANK_VERIFICATION` |
 
@@ -225,7 +223,6 @@ Both are acted on in the Member page's Trip and Royalty Points sections. The Rew
 | 28 | Trip Reward Fulfilment | A Trip becomes **Earned** with nothing holding it | CRM | Work | now | **Trip travelled** | `TRIP_REWARD_FULFILMENT` |
 | 29 | Trip Reward Deficiency Review | A credit used by an Earned or Booked Trip is no longer valid (the Trip shows **Deficient**) | CRM | Work | now | Another credit fills the gap; **Trip travelled** | `TRIP_REWARD_DEFICIENCY` |
 | 30 | Trip Credit Expiry / Bucket Wind-Down Review | Job: the Project's Trip programme has closed and the Member's Trip progress is still open | CRM | Work | The programme's final wind-down date | It expires at that date | `TRIP_BUCKET_WIND_DOWN` |
-| 31 | Non-Family Reward Nominee Approval | Anyone other than MD (a) uses **Who travels** for someone outside immediate family, or (b) uses **Record a points redemption** for a non-family recipient (shows "Waiting for MD"). MD's own entry applies at once | MD | Decision | now | (a) **Approve / Reject the nominee**, traveller changed to family, or **Trip travelled**; (b) **Approve / Reject the non-family recipient** | `REWARD_NOMINEE_APPROVAL` |
 
 ### 5.9 Members
 
@@ -308,7 +305,6 @@ Two pending copies of the same task on the same record are not possible. The dat
 | Commission Conflict — correct the source details | It now covers Loyalty Points too, not only Commission | Benefit Attribution Conflict — Correct Source Details |
 | RERA registration expiring | The business rules call it RERA Renewal | RERA Renewal |
 | Accounts Verification — Commission after Sold By Correction | See 6.5 | Remove |
-| Non-Family Reward Nominee Approval (two meanings) | Same title for a Trip traveller and a Royalty Points recipient | Keep the title; the row's reference column already differs (Trip code vs "N points") |
 
 ### 6.7 The Dashboard list itself
 
@@ -378,20 +374,20 @@ Each item says whether it is **required by the business rules** or **my suggesti
 | 23 | Reward Review — Buyback Unwind | Accounts | Work | Keep | Business rules |
 | 24 | Accounts Verification — Buying Commission | Accounts | Decision | **Add**, after **Mark Commission Paid** exists on the deal page | Business rules |
 | 25 | Customer-Closing Limit Reached — Membership Required for Future Selling | CRM | Work | Keep | Business rules |
-| 26 | Staff / Relative Benefit Conflict Review | MD | Decision | Keep | Business rules |
+| 26 | Staff / Relative Benefit Conflict Review | MD | Decision | **Removed** (owner, 14 Oct 2026) | Owner decision |
 | 27 | Recovery Circumvention Review | Accounts (MD can also decide) | Decision | Keep | Business rules |
 | 28 | Accounts Verification — Joint Bank Account | Accounts | Decision | Keep* (Open Review → Person page, rename) | Business rules |
 | 29 | Trip Reward Fulfilment | CRM | Work | Keep | Business rules |
 | 30 | Trip Reward Deficiency Review | CRM | Work | Keep | Business rules |
 | 31 | Trip Credit Expiry / Bucket Wind-Down Review | CRM | Work | Keep | Business rules |
-| 32 | Non-Family Reward Nominee Approval | MD | Decision | Keep (MD's own entry already applies at once) | Business rules |
+| 32 | Non-Family Reward Nominee Approval | MD | Decision | **Removed** (owner, 14 Oct 2026) | Owner decision |
 | 33 | Review Hold Requests of a Deactivated Member | CRM | Work | Keep* (close when no Hold Requests are waiting) | Business rules |
 | 34 | RERA Renewal | CRM | Work | Keep* (rename) | Business rules |
 | 35 | Hold Follow-up | CRM | Work | **Add** (or the owner waives it) | Business rules |
 | — | Project Settings Approval / Project Economics Review | — | — | **Removed** (MD creates settings and they are active at once) | Owner decision |
 | — | Manual task (any title) | any | Work | Keep* (save the assignee; build or remove recurrence) | Business rules |
 
-**Result:** 33 automatic task types today. The proposal removes 1 and adds 2 (Buying Commission and Hold Follow-up), giving **34 task types**. The final role split is MD 6, Accounts 15, CRM 13. The Buying Commission task can reuse the existing Commission task underneath, so the developer adds only one new kind (Hold Follow-up).
+**Result:** 31 automatic task types today. The proposal removes 1 and adds 2 (Buying Commission and Hold Follow-up), giving **32 task types**. The final role split is MD 4, Accounts 15, CRM 13. The Buying Commission task can reuse the existing Commission task underneath, so the developer adds only one new kind (Hold Follow-up).
 
 ---
 
@@ -442,13 +438,11 @@ All paths are under `C:\Users\Sai\Desktop\3pre\`. Line numbers are as of 13 Oct 
 | 22 | `BUYBACK_COMMISSION_REVIEW` | `commission-service.ts` R 1309 (work task); `acquisition-service.ts` C 1059 |
 | 23 | `BUYBACK_UNWIND_REVIEW` | `commission-service.ts` R 1161 (work task) |
 | 24 | `CUSTOMER_CLOSING_LIMIT` | `commission-service.ts` R 229; `network-service.ts` C 306 |
-| 25 | `STAFF_CONFLICT_REVIEW` | `benefit-control-service.ts` R 71, C 60; `control-review-service.ts` C 107 |
 | 26 | `RECOVERY_CIRCUMVENTION_REVIEW` | `benefit-control-service.ts` R 133; `control-review-service.ts` C 141; `recovery-service.ts` C 219-223 (Recovery cleared) |
 | 27 | `BANK_VERIFICATION` | `bank-service.ts` R 121; C 247 |
 | 28 | `TRIP_REWARD_FULFILMENT` | `trip-service.ts` R 421; C 596 |
 | 29 | `TRIP_REWARD_DEFICIENCY` | `trip-service.ts` R 364; C 323, 596 |
 | 30 | `TRIP_BUCKET_WIND_DOWN` | `trip-service.ts` R 717; C 713 |
-| 31 | `REWARD_NOMINEE_APPROVAL` | `trip-service.ts` R 503, C 515, 539, 596; `royalty-service.ts` R 570, C 628 |
 | 32 | `DEACTIVATED_MEMBER_REQUEST_REVIEW` | `network-service.ts` R 418; C 431 |
 | 33 | `RERA_EXPIRY` | `jobs.ts` R 222; `network-service.ts` C 520 (`updateMemberRera` 479) |
 | — | Buying Commission turns Ready (no task) | `commission-service.ts` 763 (`refreshBuyingCommission`) |

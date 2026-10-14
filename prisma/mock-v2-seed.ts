@@ -47,7 +47,7 @@ const db = new PrismaClient();
 const MD = "STF-0001";
 const ACC = "STF-0003";
 const CRM = "STF-0005";
-/** UAT §6.1 USR-STAFF-01 — a CRM staff Person who is also Member M-008 (CTL-10). */
+/** UAT §6.1 USR-STAFF-01 — a CRM staff Person who is also Member M-008 (CTL-10: earns with no MD review). */
 const STAFF_ID = "STF-UAT-01";
 
 const MOBILE = "95";
@@ -405,7 +405,7 @@ async function main() {
   const M5 = await member("M-005", "Pooja Bhandari", "Active, no inviter. Royalty Linked Member of C-009 and the RR-002 Customer; Buying Commission arranger.", null);
   const M6 = await member("M-006", "Karan Joshi", "Active, invited by M-002. His first sale earned M-002 (not M-001) a Reference Credit — no multi-level.", "M-002");
   const M7 = await member("M-007", "Ritu Saxena", "Active, no inviter. Has a Paid Early request waiting for MD (T20).", null);
-  const M8 = await member("M-008", "Manoj Tiwari", "Active, no inviter. Also staff STF-UAT-01 (CRM): his Direct waits for MD (NT09).", null);
+  const M8 = await member("M-008", "Manoj Tiwari", "Active, no inviter. Also staff STF-UAT-01 (CRM): staff earn like anyone else, so his Direct is Ready with no MD review.", null);
   const M9 = await member("M-009", "Deepak Verma", "Active, no inviter. docss/11 negative-balance example: earned 10 + 20, spent 25, then the 10-token purchase was cancelled — Tokens earned 20, spent 25, balance −5. Spending is blocked until new tokens cover the deficit.", null);
   await db.staffAccount.create({ data: { staffAccountId: STAFF_ID, personId: M8.id, role: "CRM", passwordHash: "!no-login-mock-staff" } });
 
@@ -447,7 +447,7 @@ async function main() {
       reference: what,
     });
   await spend("M-005", 12, "SELF", "", "Weekend hotel stay arranged by the team");
-  // The non-family safeguard: waits for MD, counts as spent only once approved.
+  // A non-family recipient is spent at once, like family (owner, 14 Oct 2026).
   await spend("M-005", 3, "NON_FAMILY", "Ramesh Jain (friend)", "Dinner voucher");
 
   /* A Buyback-pending award: qualified, but nothing posts before Stable Buyback Completion. */
@@ -562,7 +562,7 @@ async function main() {
   await closerReady(C12);
   await pay(await sell(P.C.plots["C-05"], await person("B-16", "Buyer Sarita Sharma", "Filler buyer."), { customer: C12 }), "100");
 
-  /* CTL-10 — M-008 is staff: his own Direct waits for MD. */
+  /* CTL-10 — M-008 is staff and earns his own Direct like any Member (owner, 14 Oct 2026). */
   await pay(await sell(P.E.plots["E-02"], await person("B-13", "Buyer Rekha Sharma", "Filler buyer."), { member: M8 }), "40");
 
   /* T20 — a Paid Early request waiting for MD. */
@@ -666,7 +666,6 @@ async function writeKey() {
     db.tripReward.count({ where: { memberProfile: { personId: { in: people.map((p) => p.id) } } } }),
     db.recovery.count({ where: { personId: { in: people.map((p) => p.id) }, status: "OUTSTANDING" } }),
     db.circumventionReview.count({ where: { subjectPersonId: { in: people.map((p) => p.id) } } }),
-    db.staffConflictReview.count({ where: { personId: { in: people.map((p) => p.id) } } }),
   ]);
   const lines = [
     "# Business Model v2 — Mock Data Key",
@@ -700,11 +699,10 @@ async function writeKey() {
     `- Trip Rewards earned: ${counts[0]} — M-001 on Desert Square (Members → M-001 → Trip). Record the traveller, book, mark travelled.`,
     `- Recovery Outstanding: ${counts[1]} — REC-001 on M-004 (Rewards → Recovery).`,
     `- Circumvention reviews: ${counts[2]} — C-012 (Rewards → Reviews, Accounts or MD clears/restricts).`,
-    `- Staff-conflict reviews: ${counts[3]} — M-008's Direct (Rewards → Reviews, MD approves).`,
     "- Joint bank account exception: C-011B (task for Accounts; verify from the Member/Customer bank tab).",
     "- Paid Early request: M-007's Direct on A-07 (Bookings → Commission; MD approves).",
     "- Buyback + Buying Commission: B-01, arranged by M-005 (Acquisitions; Reward Review — Approved Buyback task).",
-    "- Royalty tokens: M-005 shows Tokens earned 30, spent 12, balance 18 (10 from Aravali Greens + 20 from Desert Square, pooled); a 3-token non-family redemption waits for MD; RR-003's 10-token award is pending on its Buyback and not counted. M-009 shows 20 / 25 / −5 and cannot spend. C-009 can still earn: sell him a Club-direct Plot and pay it in full.",
+    "- Royalty tokens: M-005 shows Tokens earned 30, spent 15, balance 15 (10 from Aravali Greens + 20 from Desert Square, pooled; 12 on a hotel stay and 3 for a friend, spent at once with no MD approval); RR-003's 10-token award is pending on its Buyback and not counted. M-009 shows 20 / 25 / −5 and cannot spend. C-009 can still earn: sell him a Club-direct Plot and pay it in full.",
     "- Customer closers: C-001 ready · C-002 has 2 closings · C-003 has 3 (blocked) · C-006 no KYC · C-007 no Terms · C-008 no purchase.",
     "- Project settings: Aravali Greens shows PSV-A2 Approved, waiting for its effective time.",
     "- Repeat-purchase Loyalty: C-014 (Bookings → C-07 → Commission).",

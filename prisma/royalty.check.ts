@@ -33,7 +33,6 @@ import { createCommissionVersion } from "@/lib/services/commission-settings-serv
 import * as royalty from "@/lib/services/royalty-service";
 import {
   correctTokenRedemption,
-  decideTokenRedemption,
   memberTokenView,
   recordTokenRedemption,
   refreshAward,
@@ -342,7 +341,6 @@ async function main() {
   const qb = await qualify(B, cb.id);
   assert.deepEqual(await figures(pool.id), { earned: 30, spent: 0, balance: 30 }, "10 from A + 20 from B, no pooling step");
   const spent12 = await redeem(pool.id, 12);
-  assert.equal(spent12.state, "RECORDED");
   assert.deepEqual(await figures(pool.id), { earned: 30, spent: 12, balance: 18 });
   const poolView = await memberTokenView(pool.id, "MEMBER");
   assert.deepEqual(poolView.redemptions, [{ tokens: 12, redeemedOn: todayIst }], "each redemption's amount and date");
@@ -659,24 +657,15 @@ async function main() {
   const poolOnly = await memberTokenView(pool.id, "STAFF");
   assert.ok(poolOnly.staff!.redemptions.every((r) => r.memberProfileId === pool.id), "one Member's view holds only their own rows");
 
-  // Non-family recipient: waits for MD, posts on approval, never before.
+  // Non-family recipient (owner, 14 Oct 2026): spent at once whoever records it, no MD task.
   const nonFamily = await redeem(pool.id, 3, { recipient: "NON_FAMILY", recipientName: "Family Friend" });
-  assert.equal(nonFamily.state, "AWAITING_MD");
-  assert.deepEqual(await figures(pool.id), { earned: 30, spent: 12, balance: 18 }, "not spent until MD approves");
-  assert.equal((await db.task.findFirst({ where: { recordId: nonFamily.redemptionId, purpose: "REWARD_NOMINEE_APPROVAL", status: "PENDING" } }))?.assigneeRole, "MD");
-  await assert.rejects(decideTokenRedemption({ idempotencyKey: key(), actorRef: MD2, actorRole: "CRM", redemptionId: nonFamily.redemptionId, approve: true, note: "ok" }), /Only MD/);
-  await decideTokenRedemption({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", redemptionId: nonFamily.redemptionId, approve: true, note: "Approved." });
-  assert.deepEqual(await figures(pool.id), { earned: 30, spent: 15, balance: 15 });
-  const rejected = await redeem(pool.id, 2, { recipient: "NON_FAMILY", recipientName: "Neighbour" });
-  await decideTokenRedemption({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", redemptionId: rejected.redemptionId, approve: false, note: "No." });
-  assert.deepEqual(await figures(pool.id), { earned: 30, spent: 15, balance: 15 }, "a rejected one spends nothing");
-  // MD recording a non-family recipient is the approval: spent at once, no NT10 task.
+  assert.deepEqual(await figures(pool.id), { earned: 30, spent: 15, balance: 15 }, "CRM's non-family redemption is spent at once");
+  assert.equal(await db.task.count({ where: { recordId: nonFamily.redemptionId } }), 0, "and raises no MD task");
   const byMd = await redeem(pool.id, 1, { recipient: "NON_FAMILY", recipientName: "Old Friend", actorRole: "MD", actorRef: MD });
-  assert.equal(byMd.state, "RECORDED", "MD's own non-family redemption needs no second approval");
-  assert.equal(await db.task.count({ where: { recordId: byMd.redemptionId } }), 0, "and raises no MD task");
+  assert.equal(await db.task.count({ where: { recordId: byMd.redemptionId } }), 0);
   assert.deepEqual(await figures(pool.id), { earned: 30, spent: 16, balance: 14 });
   await invariants(pool.id, "pool after nominee");
-  console.log("  ✓ §5(7) — bounds, roles, no transfer/expiry/cash, nominee safeguard");
+  console.log("  ✓ §5(7) — bounds, roles, no transfer/expiry/cash, any recipient spends at once");
 
   /* ===== ROY-07, ROY-08, SSOT §62, COR-06 — the relationship rules that stay ===== */
 

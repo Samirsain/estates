@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NotificationBell } from "@/components/notification-bell";
 import { signOut } from "@/app/login/actions";
 import type { StaffRole } from "@/lib/security/permissions";
 
@@ -241,6 +242,7 @@ export function AppShell({
             />
           </div>
           <div className="flex items-center gap-3">
+            <NotificationBell />
             <a href="/account" className="text-right hover:opacity-80" title="My Account">
               <p className="text-xs font-semibold leading-tight">{actorName}</p>
               <p className="text-[10px] text-muted-foreground">

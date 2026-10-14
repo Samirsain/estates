@@ -723,7 +723,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               ))}
             {canFollowUp && current && (
               <AddTaskButton
-                label="Follow-up"
+                label="Follow-Up"
                 record={{
                   kind: "Booking",
                   id: current.id,

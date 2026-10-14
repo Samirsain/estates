@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
-import { CommandError, runCommand } from "@/lib/services/command";
+import { blocked, CommandError, runCommand } from "@/lib/services/command";
 import { completeTask, ensureTask, reviseTask } from "@/lib/services/task-service";
+import { FOLLOW_UP_PURPOSES } from "@/lib/tasks";
 import type { StaffRole } from "@/lib/security/permissions";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
@@ -29,6 +30,9 @@ export async function completeTaskAction(taskId: string, key: string): Promise<A
         const task = await tx.task.findUniqueOrThrow({ where: { id: taskId } });
         if (task.status === "COMPLETED") {
           return { result: { taskId }, audit: { entity: "Task", entityId: taskId, action: "TASK_ALREADY_COMPLETE" } };
+        }
+        if (FOLLOW_UP_PURPOSES.includes(task.purpose)) {
+          blocked("A follow-up closes when the follow-up or payment is recorded on its record, not with Done.");
         }
         await completeTask(tx, taskId, actor.staffAccountId);
         return { result: { taskId }, audit: { entity: "Task", entityId: taskId, action: "TASK_COMPLETED" } };
@@ -73,11 +77,22 @@ export async function reviseTaskAction(
   }
 }
 
+/** The people a manual task can be given to: active staff, by name and role. */
+export async function assignableStaffAction(): Promise<{ id: string; name: string; role: StaffRole }[]> {
+  await requireStaff("TASK_CREATE");
+  const staff = await db.staffAccount.findMany({
+    where: { status: "ACTIVE" },
+    select: { id: true, role: true, person: { select: { fullName: true } } },
+    orderBy: [{ role: "asc" }, { person: { fullName: "asc" } }],
+  });
+  return staff.map((s) => ({ id: s.id, name: s.person.fullName, role: s.role as StaffRole }));
+}
+
 export async function addTaskAction(
   input: {
     title: string;
-    assigneeRole: StaffRole;
-    assigneeName: string;
+    /** "ROLE:CRM" — anyone in that role — or "STAFF:<account id>" — that person. */
+    assignee: string;
     dueAtIso: string;
     urgent: boolean;
     recurrence: string;
@@ -90,6 +105,15 @@ export async function addTaskAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("TASK_CREATE");
   const purpose = `MANUAL:${input.title.trim().toUpperCase()}`;
+  // The chosen person is saved, and the task carries their role too.
+  const [kind, value] = input.assignee.split(":");
+  const person =
+    kind === "STAFF"
+      ? await db.staffAccount.findFirst({ where: { id: value, status: "ACTIVE" }, select: { id: true, role: true } })
+      : null;
+  if (kind === "STAFF" && !person) return { ok: false, error: "That staff member is not active. Choose someone else." };
+  const assigneeRole = (person?.role ?? value) as StaffRole;
+  if (!person && !["MD", "ACCOUNTS", "CRM", "MIS", "PC"].includes(assigneeRole)) return { ok: false, error: "Choose who the task is for." };
   const recordId = input.recordId.trim() || `UNLINKED:${actor.staffAccountId}`;
 
   try {
@@ -122,7 +146,8 @@ export async function addTaskAction(
           recordName: input.recordName.trim() || "Not linked",
           purpose,
           title: input.title,
-          assigneeRole: input.assigneeRole,
+          assigneeRole,
+          assigneeStaffId: person?.id ?? null,
           dueAt: new Date(input.dueAtIso),
           urgent: input.urgent,
           latestResult: input.remark || null,

@@ -15,7 +15,7 @@ export function AddTaskButton({
   label = "Add Task",
 }: {
   record: { kind: string; id: string; name: string };
-  /** "Follow-up" on a Plot's Booking; "Add Task" everywhere else. */
+  /** "Follow-Up" on a Plot's Booking; "Add Task" everywhere else. */
   label?: string;
 }) {
   const router = useRouter();

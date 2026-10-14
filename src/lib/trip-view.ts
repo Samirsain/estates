@@ -44,7 +44,6 @@ export type TripProgrammeView = {
     bookedAt: string | null;
     recipient: string | null;
     recipientName: string | null;
-    recipientApproved: boolean;
     bookingReference: string | null;
     travelledAt: string | null;
   }>;
@@ -97,7 +96,6 @@ export async function tripProgrammes(
       earnedAt: Date;
       recipient: string | null;
       recipientName: string | null;
-      recipientApprovedAt: Date | null;
       bookingReference: string | null;
       bookedAt?: Date | null;
       travelledAt: Date | null;
@@ -170,7 +168,6 @@ export async function tripProgrammes(
           bookedAt: b.reward!.bookedAt?.toISOString() ?? null,
           recipient: b.reward!.recipient,
           recipientName: b.reward!.recipientName,
-          recipientApproved: b.reward!.recipientApprovedAt !== null,
           bookingReference: b.reward!.bookingReference,
           travelledAt: b.reward!.travelledAt?.toISOString() ?? null,
         })),

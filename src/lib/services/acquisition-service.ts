@@ -62,7 +62,7 @@ async function activeGivenSchedule(tx: Tx, acquisitionId: string) {
  * PRD §11.4 — an acquisition cannot be unwound while a new buyer already holds
  * or has booked the property.
  */
-async function hasBuyerProcess(tx: Tx, plotId: string | null): Promise<boolean> {
+export async function hasBuyerProcess(tx: Tx, plotId: string | null): Promise<boolean> {
   if (!plotId) return false;
   const [holds, bookings] = await Promise.all([
     tx.hold.count({ where: { plotId, status: "ACTIVE" } }),
@@ -313,7 +313,7 @@ export async function createAcquisition(args: {
         recordId: acquisition.id,
         recordName: acquisitionNo,
         purpose: "ACQUISITION_REVIEW",
-        title: "Acquisition approval",
+        title: "Verify — Buyback/Resale",
         assigneeRole: "ACCOUNTS",
         dueAt: new Date(),
         decision: true,
@@ -578,7 +578,7 @@ export async function correctPaymentGiven(args: {
           recordId: acquisition.id,
           recordName: await acquisitionLabel(tx, acquisition.id),
           purpose: "MANAGEMENT_ACTION_REQUIRED",
-          title: "Management Action Required",
+          title: "Selling Buyback/Resale Plot",
           assigneeRole: "MD",
           dueAt: new Date(),
           urgent: true,
@@ -660,7 +660,7 @@ export async function syncGivenFollowUp(tx: Tx, acquisitionId: string, actorRef:
     recordId: acquisitionId,
     recordName: await acquisitionLabel(tx, acquisitionId),
     purpose: "PAYMENT_GIVEN_FOLLOW_UP",
-    title: "Payment Given Follow-up",
+    title: "Payment Given Follow-Up",
     assigneeRole: "ACCOUNTS",
     dueAt: next.dueDate,
     latestResult: result,
@@ -907,8 +907,8 @@ export async function decideAcquisition(args: {
             purpose: "BUYBACK_PAPERS",
             title:
               completion.route === "ALLOTMENT"
-                ? "Collect Allotment Papers Back"
-                : "Complete Registry Back",
+                ? "Collect Allotment"
+                : "Complete Registry",
             assigneeRole: "CRM",
             dueAt: new Date(),
           });

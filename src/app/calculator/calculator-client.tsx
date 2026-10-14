@@ -254,7 +254,6 @@ const HOLD_SENTENCE: Record<string, string> = {
   CUSTOMER_TERMS_PENDING: "Customer Terms Pending — the closer has not accepted Customer Terms",
   RECOVERY_OUTSTANDING: "Recovery Outstanding — new cash payouts wait until it is repaid or set off",
   OLD_RECOVERY_PENDING: "Waiting for the old beneficiary's Recovery on this Booking, unless MD approves",
-  STAFF_CONFLICT_REVIEW: "Staff conflict — staff or a declared close relative; waits for MD approval",
   RECOVERY_CIRCUMVENTION_REVIEW: "Recovery circumvention review — shares bank, mobile or address with an unresolved Recovery",
 };
 

@@ -4,7 +4,7 @@
 
 import type { StaffRole, TaskStatus } from "@prisma/client";
 import { db } from "@/lib/db";
-import type { TaskSubject } from "@/lib/tasks";
+import { nextDue, type TaskSubject } from "@/lib/tasks";
 import { nextReference, type Tx } from "./command";
 
 export type TaskInput = {
@@ -76,8 +76,25 @@ export async function completeTask(tx: Tx, taskId: string, actorRef: string, res
   await tx.taskEvent.create({
     data: { taskId, actorRef, action: "COMPLETED", detail: result },
   });
+  // A repeating manual task raises its next one as it closes.
+  if (task.origin === "MANUAL" && task.recurrence !== "NONE") {
+    await ensureTask(tx, {
+      recordKind: task.recordKind,
+      recordId: task.recordId,
+      recordName: task.recordName,
+      purpose: task.purpose,
+      title: task.title,
+      assigneeRole: task.assigneeRole,
+      assigneeStaffId: task.assigneeStaffId,
+      dueAt: nextDue(task.dueAt, task.recurrence, new Date()),
+      urgent: task.urgent,
+      recurrence: task.recurrence,
+      origin: "MANUAL",
+    });
+  }
   return task;
 }
+
 
 /** Revise keeps the task Pending and records the new date, result and remark. */
 export async function reviseTask(
@@ -166,6 +183,7 @@ export async function taskSubjects(
   const redemptionIds = idsFor("Token Redemption");
   const tripRewardIds = idsFor("Trip Reward");
   const tripBucketIds = idsFor("Trip Bucket");
+  const personIds = idsFor("Person");
 
   /** A Person carries at most one of each id; the task is about the Person. */
   const party = (person: {
@@ -187,7 +205,7 @@ export async function taskSubjects(
     customerProfile: { select: { customerId: true } },
   } as const;
 
-  const [bookings, enquiries, members, customers, plots, acquisitions, commissions, redemptions, tripOwners] =
+  const [bookings, enquiries, members, customers, plots, acquisitions, commissions, redemptions, tripOwners, persons] =
     await Promise.all([
       bookingIds.length
         ? db.booking.findMany({
@@ -259,6 +277,15 @@ export async function taskSubjects(
                   plot: { select: { id: true, plotNumber: true } },
                 },
               },
+              acquisition: {
+                select: {
+                  id: true,
+                  acquisitionNo: true,
+                  propertyName: true,
+                  propertyNumber: true,
+                  plot: { select: { id: true, plotNumber: true, project: { select: { name: true } } } },
+                },
+              },
               beneficiaryPerson: { select: personSelect },
             },
           })
@@ -282,6 +309,8 @@ export async function taskSubjects(
             },
           })
         : [],
+      // The joint bank account task hangs off the Person.
+      personIds.length ? db.person.findMany({ where: { id: { in: personIds } }, select: personSelect }) : [],
     ]);
 
   const subjects = new Map<string, TaskSubject>();
@@ -350,14 +379,17 @@ export async function taskSubjects(
     });
   }
   for (const r of commissions) {
+    // A Buying Commission has no Booking: it sits on its Buyback / Resale deal.
+    const deal = r.acquisition;
     add(r.id, {
-      project: r.booking?.project.name ?? null,
-      plot: r.booking?.plot.plotNumber ?? null,
-      plotId: r.booking?.plot.id ?? null,
-      reference: r.booking?.bookingNumber ?? r.booking?.requestNo ?? null,
-      // A Commission review happens on the Booking, so the row needs the
-      // Booking's id, not only its number.
+      project: r.booking?.project.name ?? deal?.plot?.project.name ?? deal?.propertyName ?? null,
+      plot: r.booking?.plot.plotNumber ?? deal?.plot?.plotNumber ?? deal?.propertyNumber ?? null,
+      plotId: r.booking?.plot.id ?? deal?.plot?.id ?? null,
+      reference: r.booking?.bookingNumber ?? r.booking?.requestNo ?? deal?.acquisitionNo ?? null,
+      // A Commission review happens on the Booking (or the deal), so the row
+      // needs that record's id, not only its number.
       bookingId: r.booking?.id ?? null,
+      acquisitionId: deal?.id ?? null,
       ...party(r.beneficiaryPerson),
     });
   }
@@ -366,6 +398,9 @@ export async function taskSubjects(
     const subject = { project: null, plot: null, plotId: null, reference: b.programmeCode, ...party(b.memberProfile.person) };
     add(b.id, subject);
     if (b.reward) add(b.reward.id, subject);
+  }
+  for (const p of persons) {
+    add(p.id, { project: null, plot: null, plotId: null, reference: null, ...party(p) });
   }
   for (const r of redemptions) {
     add(r.id, { project: null, plot: null, plotId: null, reference: `${r.tokens} points`, ...party(r.memberProfile.person) });

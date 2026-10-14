@@ -298,9 +298,9 @@ async function main() {
     bookTripReward({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: reward.id, bookingReference: "TRV-1", bookedOn: today }),
     /Record who travels/
   );
-  // MD recording a non-family nominee is the approval: no NT10 task waits.
-  await recordTripNominee({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", rewardId: reward.id, recipient: "NON_FAMILY", recipientName: "Friend" });
-  assert.ok((await db.tripReward.findUniqueOrThrow({ where: { id: reward.id } })).recipientApprovedAt, "MD's own nominee is approved");
+  // A non-family traveller recorded by CRM needs no MD (owner, 14 Oct 2026): no hold, no task.
+  await recordTripNominee({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: reward.id, recipient: "NON_FAMILY", recipientName: "Friend" });
+  assert.equal((await db.tripReward.findUniqueOrThrow({ where: { id: reward.id } })).holdReason, null, "a non-family traveller is not held");
   assert.equal(
     await db.task.count({ where: { recordId: reward.id, purpose: "REWARD_NOMINEE_APPROVAL", status: "PENDING" } }),
     0,

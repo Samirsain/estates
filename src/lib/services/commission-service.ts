@@ -147,7 +147,7 @@ export async function raiseAdjustmentTask(tx: Tx, recordId: string, cause: strin
     recordId,
     recordName: await commissionRecordName(tx, recordId),
     purpose: ADJUSTMENT_PURPOSE,
-    title: "Accounts Adjustment Required",
+    title: "Early Commission Conflict",
     assigneeRole: "ACCOUNTS",
     dueAt: new Date(),
     decision: true,
@@ -231,7 +231,7 @@ async function raiseClosingLimitTask(tx: Tx, personId: string) {
     recordId: customer.id,
     recordName: `${customer.customerId} · ${customer.person.fullName}`,
     purpose: CLOSING_LIMIT_PURPOSE,
-    title: "Customer-Closing Limit Reached — Membership Required for Future Selling",
+    title: "Membership — Upgrade Customer",
     assigneeRole: "CRM",
     dueAt: new Date(),
     latestResult:
@@ -284,8 +284,8 @@ export async function previewCommission(tx: Tx, bookingId: string): Promise<Comm
 }
 
 /**
- * The conflict is shown and a Dashboard task is created for CRM/Admin to
- * correct Sold By, the beneficiary or another invalid source detail.
+ * The conflict is shown and a Dashboard task is created for Accounts (owner,
+ * 14 Oct 2026) to correct Sold By, the beneficiary or another invalid source detail.
  */
 export async function raiseCommissionConflict(
   tx: Tx,
@@ -302,8 +302,8 @@ export async function raiseCommissionConflict(
     recordId: bookingId,
     recordName: `${booking.bookingNumber ?? booking.requestNo} · ${booking.project.name} ${booking.plot.plotNumber}`,
     purpose: COMMISSION_CONFLICT_PURPOSE,
-    title: "Commission Conflict — correct the source details",
-    assigneeRole: "CRM",
+    title: "Commission Conflict — Correct Sold By",
+    assigneeRole: "ACCOUNTS",
     dueAt: new Date(),
     urgent: true,
     latestResult: conflict,
@@ -641,7 +641,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
       );
     }
 
-    // CP §55, §58 — only an unpaid benefit is still to be released.
+    // CP §55 — only an unpaid benefit is still to be released.
     const controls =
       payment === "NOT_PAID"
         ? await controlHolds(tx, {
@@ -667,7 +667,6 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
       oldRecoveryPending:
         !record.beforeRecoveryApprovedAt &&
         (await oldBeneficiaryRecoveryPending(tx, bookingId, record.beneficiaryPersonId)),
-      staffConflictPending: controls?.staffConflict,
       circumventionPending: controls?.circumvention,
       // v2.1 §22, §77 — the closer's own KYC and Customer Terms.
       closer: isClosing
@@ -702,7 +701,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
         recordId: record.id,
         recordName: await commissionRecordName(tx, record.id),
         purpose: BEFORE_RECOVERY_PURPOSE,
-        title: "Correct Beneficiary Before Old Recovery — MD Approval",
+        title: "Double Commission — MD Approval",
         assigneeRole: "MD",
         dueAt: new Date(),
         decision: true,
@@ -722,7 +721,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
         recordId: record.id,
         recordName: `${booking.bookingNumber ?? booking.requestNo} · ${record.type} ${record.percent.toFixed(2)}%`,
         purpose: COMMISSION_PAYMENT_PURPOSE,
-        title: "Accounts Verification — Commission",
+        title: "Verify — Commission Paid",
         assigneeRole: "ACCOUNTS",
         dueAt: new Date(),
         decision: true,
@@ -772,11 +771,7 @@ export async function refreshBuyingCommission(tx: Tx, acquisitionId: string, act
     personId: record.beneficiaryPersonId,
     recordName: `${record.acquisition.acquisitionNo} · BUYING ${record.percent.toFixed(2)}%`,
   });
-  const holdReason = controls.staffConflict
-    ? ("STAFF_CONFLICT_REVIEW" as const)
-    : controls.circumvention
-      ? ("RECOVERY_CIRCUMVENTION_REVIEW" as const)
-      : null;
+  const holdReason = controls.circumvention ? ("RECOVERY_CIRCUMVENTION_REVIEW" as const) : null;
   const eligibility = holdReason ? ("ON_HOLD" as const) : ("READY" as const);
   if (eligibility === record.eligibility && holdReason === record.holdReason) return;
   await tx.commissionRecord.update({ where: { id: record.id }, data: { eligibility, holdReason } });
@@ -853,7 +848,7 @@ export async function requestCommissionPaidEarly(args: {
         recordId: record.id,
         recordName: await commissionRecordName(tx, record.id),
         purpose: PAID_EARLY_PURPOSE,
-        title: "Paid Early Approval — MD",
+        title: "Early Commission — Pay After Approval",
         assigneeRole: "MD",
         dueAt: new Date(),
         decision: true,

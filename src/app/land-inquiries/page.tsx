@@ -38,8 +38,6 @@ export default async function LandInquiriesPage({
     status: one(params.status) as LandInquiryListFilters["status"],
     stage: one(params.stage) as LandInquiryListFilters["stage"],
     assignedToId: one(params.assignedToId),
-    dateFrom: one(params.dateFrom),
-    dateTo: one(params.dateTo),
     page: Number(one(params.page) ?? 1) || 1,
     pageSize: DEFAULT_PAGE_SIZE,
     // Spec §25 — only MD and Admin may look past the archive.

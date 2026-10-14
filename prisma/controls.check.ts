@@ -1,8 +1,9 @@
-// Release controls — bank-account uniqueness, staff / relative conflict,
-// Recovery circumvention, third-party payer, merge de-duplication.
-// SSOT §22, §92, §94, §95, §100; Change Pack §15, §55, §57, §58, §65 (NT08,
-// NT09), §78, §87; UAT CTL-04/05/08/09/10/11, SYS-11, COR-08 — against the
-// real database and the real commands.
+// Release controls — bank-account uniqueness, staff independence, Recovery
+// circumvention, third-party payer, merge de-duplication.
+// SSOT §22, §92, §94, §95, §100; Change Pack §15, §55, §57, §58, §65 (NT08),
+// §78, §87; UAT CTL-04/05/08/09/11, SYS-11, COR-08 — against the real
+// database and the real commands. Staff and their family earn with no MD
+// review (owner, 14 Oct 2026), so CTL-10 now expects no hold.
 // Run: npm run controls:check   (requires a seeded database)
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
@@ -17,7 +18,6 @@ import { markCommissionPaid } from "@/lib/services/commission-service";
 import { clearRecovery } from "@/lib/services/recovery-service";
 import {
   decideCircumvention,
-  decideStaffConflict,
   declareStaffRelative,
   endStaffRelative,
 } from "@/lib/services/control-review-service";
@@ -201,20 +201,14 @@ async function main() {
     relation: "SPOUSE",
   });
 
+  // Owner, 14 Oct 2026 — a staff relative earns like anyone else: no hold, no review, no task.
   const relBooking = await sale("REL", buyer.id, relative.id);
   await pay(relBooking, "40", "REL-40");
-  let record = await direct(relBooking);
-  assert.equal(record.eligibility, "ON_HOLD");
-  assert.equal(record.holdReason, "STAFF_CONFLICT_REVIEW", "CTL-10: the relative's Direct waits for MD");
-  const review = await db.staffConflictReview.findUniqueOrThrow({ where: { recordKind_recordId: { recordKind: "Commission", recordId: record.id } } });
-  assert.deepEqual(review.staffPersonIds, [staffPerson.id]);
-  assert.equal(await pendingTasks(review.id, "STAFF_CONFLICT_REVIEW"), 1, "NT09 raised for MD");
+  const record = await direct(relBooking);
+  assert.equal(record.eligibility, "READY", "the relative's Direct is not held for MD");
+  assert.equal(record.holdReason, null);
 
-  // CTL-11 — the conflicted staff user can neither decide nor process it.
-  await refused(
-    () => decideStaffConflict({ idempotencyKey: key(), actorRef: STAFF_REF, actorRole: "MD", reviewId: review.id, approve: true, note: "Mine." }),
-    /another staff account/
-  );
+  // CTL-11 — the related staff user still cannot process it; another account must.
   await refused(
     () =>
       markCommissionPaid({
@@ -231,50 +225,20 @@ async function main() {
   );
   assert.equal(
     await db.auditEvent.count({ where: { actorRef: STAFF_REF, action: "CONFLICTED_ACTION_DENIED" } }),
-    2,
-    "CTL-11: both refusals audited"
+    1,
+    "CTL-11: the refusal is audited"
   );
-  await refused(
-    () => decideStaffConflict({ idempotencyKey: key(), actorRef: MD2, actorRole: "ACCOUNTS", reviewId: review.id, approve: true, note: "Accounts." }),
-    /Only MD/
-  );
-  await decideStaffConflict({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", reviewId: review.id, approve: true, note: "Disclosed; arm's-length sale." });
-  record = await direct(relBooking);
-  assert.equal(record.eligibility, "READY", "released once MD approves");
-  assert.equal(await pendingTasks(review.id, "STAFF_CONFLICT_REVIEW"), 0);
 
-  // The staff Person's own benefit is conflicted too.
+  // The staff Person's own benefit, as a Member, is not held either.
   await member("STF", staffPerson.id);
   const staffBooking = await sale("STF", buyer.id, staffPerson.id);
   await pay(staffBooking, "40", "STF-40");
-  assert.equal((await direct(staffBooking)).holdReason, "STAFF_CONFLICT_REVIEW");
-  // A declaration ended before MD decided cancels the review and releases the benefit.
-  const second = await person("Second Relative", mobile(10));
-  await member("REL2", second.id);
-  const secondDecl = await declareStaffRelative({
-    idempotencyKey: key(),
-    actorRef: MD,
-    actorRole: "MD",
-    staffPersonId: staffPerson.id,
-    relativePersonId: second.id,
-    relation: "SIBLING",
-  });
-  const rel2Booking = await sale("REL2", buyer.id, second.id);
-  await pay(rel2Booking, "40", "REL2-40");
-  assert.equal((await direct(rel2Booking)).holdReason, "STAFF_CONFLICT_REVIEW");
-  await endStaffRelative({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", declarationId: secondDecl.declarationId, reason: "Declared in error." });
-  const rel2Review = await db.staffConflictReview.findUniqueOrThrow({
-    where: { recordKind_recordId: { recordKind: "Commission", recordId: (await direct(rel2Booking)).id } },
-  });
-  assert.equal(rel2Review.status, "CANCELLED", "an undecided review closes when the declaration ends");
-  assert.equal(await pendingTasks(rel2Review.id, "STAFF_CONFLICT_REVIEW"), 0);
-  assert.equal((await direct(rel2Booking)).eligibility, "READY");
+  assert.equal((await direct(staffBooking)).eligibility, "READY");
+  assert.equal(await db.task.count({ where: { title: { contains: "Staff / Relative" }, recordName: { contains: TAG } } }), 0, "no conflict task");
 
-  // An ended declaration stops new reviews; what MD decided stays.
   await endStaffRelative({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", declarationId: declared.declarationId, reason: "Divorce recorded." });
-  assert.equal((await db.staffConflictReview.findUniqueOrThrow({ where: { id: review.id } })).status, "APPROVED");
   void relMember;
-  console.log("  ✓ CTL-10/11 — staff and declared relatives wait for MD; the conflicted user cannot decide or pay");
+  console.log("  ✓ CTL-10/11 — staff and relatives earn with no MD review; the related user still cannot pay");
 
   // ---------------------------------------------------- CTL-04/05 NT08
   const debtorPhone = mobile(6);

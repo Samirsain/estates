@@ -1,23 +1,13 @@
 // Release-control decisions — Change Pack §55, §58, §65 (NT08, NT09), §78,
 // §79; SSOT §92, §95. Detection lives in benefit-control-service; this is the
-// human side: Admin/MD declare staff relatives, MD decides a staff conflict,
-// Accounts/MD clears or restricts a circumvention review. Every decision
-// re-runs the benefits it holds.
+// human side: MD declares staff relatives (they keep a staff member from
+// processing a relative's benefit), and Accounts/MD clears or restricts a
+// circumvention review. Every decision re-runs the benefits it holds.
 
-import { db } from "@/lib/db";
-import { blocked, lockKey, runCommand, type Tx } from "./command";
-import { reassessCommission, refreshBuyingCommission } from "./commission-service";
+import { blocked, lockKey, runCommand } from "./command";
 import { refreshBenefitsOfPerson } from "./recovery-service";
-import { AWARD_RECORD_KIND, refreshAward } from "./royalty-service";
-import { refreshTripReward, TRIP_REWARD_KIND } from "./trip-service";
 import { closeTasksFor } from "./task-service";
-import {
-  assertIndependent,
-  CIRCUMVENTION_KIND,
-  CIRCUMVENTION_PURPOSE,
-  STAFF_CONFLICT_KIND,
-  STAFF_CONFLICT_PURPOSE,
-} from "./benefit-control-service";
+import { CIRCUMVENTION_KIND, CIRCUMVENTION_PURPOSE } from "./benefit-control-service";
 
 type Actor = { idempotencyKey: string; actorRef: string; actorRole: string };
 type CloseRelation = "SPOUSE" | "PARENT" | "CHILD" | "SIBLING";
@@ -68,53 +58,6 @@ export async function endStaffRelative(args: Actor & { declarationId: string; re
       return {
         result: { declarationId: declaration.id },
         audit: { entity: "Person", entityId: declaration.relativePersonId, action: "STAFF_RELATIVE_ENDED", reason: args.reason.trim() },
-      };
-    }
-  );
-}
-
-/** Re-runs the one benefit a staff-conflict review holds. */
-async function refreshBenefit(tx: Tx, recordKind: string, recordId: string, actorRef: string) {
-  if (recordKind === AWARD_RECORD_KIND) return refreshAward(tx, recordId, actorRef);
-  if (recordKind === TRIP_REWARD_KIND) return refreshTripReward(tx, recordId, actorRef);
-  const record = await tx.commissionRecord.findUniqueOrThrow({ where: { id: recordId }, select: { bookingId: true, acquisitionId: true } });
-  if (record.bookingId) await reassessCommission(tx, record.bookingId, actorRef);
-  if (record.acquisitionId) await refreshBuyingCommission(tx, record.acquisitionId, actorRef);
-}
-
-/**
- * CP §58, NT09 — MD approves or rejects one conflicted benefit. A rejected one
- * stays held. The MD cannot decide a benefit of their own or of their declared
- * relative (UAT CTL-11); the refusal is audited.
- */
-export async function decideStaffConflict(args: Actor & { reviewId: string; approve: boolean; note: string }) {
-  if (args.actorRole !== "MD") blocked("Only MD decides a staff / relative benefit conflict.");
-  if (!args.note.trim()) blocked("A compulsory note is required on the decision.");
-  const review = await db.staffConflictReview.findUnique({ where: { id: args.reviewId } });
-  if (!review) blocked("That review no longer exists.");
-  await assertIndependent({ ...args, beneficiaryPersonId: review.personId, action: "STAFF_CONFLICT_DECIDE" });
-
-  return runCommand<{ reviewId: string }>(
-    { idempotencyKey: args.idempotencyKey, operation: "STAFF_CONFLICT_DECIDE", actorRef: args.actorRef, actorRole: args.actorRole, payload: { reviewId: args.reviewId, approve: args.approve } },
-    async (tx) => {
-      await lockKey(tx, `staff-conflict:${args.reviewId}`);
-      const current = await tx.staffConflictReview.findUniqueOrThrow({ where: { id: args.reviewId } });
-      if (current.status !== "PENDING") blocked(`This review is already ${current.status.toLowerCase()}.`);
-      await tx.staffConflictReview.update({
-        where: { id: current.id },
-        data: { status: args.approve ? "APPROVED" : "REJECTED", decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: args.note.trim() },
-      });
-      await closeTasksFor(tx, STAFF_CONFLICT_KIND, current.id, args.actorRef, `${args.approve ? "Approved" : "Rejected"} — ${args.note.trim()}`, STAFF_CONFLICT_PURPOSE);
-      await refreshBenefit(tx, current.recordKind, current.recordId, args.actorRef);
-      return {
-        result: { reviewId: current.id },
-        audit: {
-          entity: "Person",
-          entityId: current.personId,
-          action: args.approve ? "STAFF_CONFLICT_APPROVED" : "STAFF_CONFLICT_REJECTED",
-          after: { recordKind: current.recordKind, recordId: current.recordId },
-          reason: args.note.trim(),
-        },
       };
     }
   );

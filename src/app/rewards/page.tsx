@@ -180,37 +180,6 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
                   ))}
                 </tbody>
               </table>
-              <table className="w-full min-w-[40rem] text-xs">
-                <thead className="border-b border-border/50">
-                  <tr>
-                    <th className={TH}>Member</th>
-                    <th className={TH}>Redemption waiting for MD</th>
-                    <th className={TH}>Recorded</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lists.royalty.awaitingMd.length === 0 && (
-                    <tr>
-                      <td className={TD} colSpan={3}>
-                        No non-family redemption is waiting for MD.
-                      </td>
-                    </tr>
-                  )}
-                  {lists.royalty.awaitingMd.map((r) => (
-                    <tr key={r.id} className="border-b border-border/30">
-                      <td className={TD}>
-                        <Link className="text-primary hover:underline" href={member(r.memberProfile.person.id)}>
-                          {r.memberProfile.memberId} · {r.memberProfile.person.fullName}
-                        </Link>
-                      </td>
-                      <td className={TD}>
-                        {r.tokens} points for {r.recipientName}
-                      </td>
-                      <td className={TD}>{formatIst(r.recordedAt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           )}
 

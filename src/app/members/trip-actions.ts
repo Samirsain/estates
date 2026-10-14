@@ -11,7 +11,6 @@ import { CommandError } from "@/lib/services/command";
 import {
   bookTripReward,
   correctInviter,
-  decideTripNominee,
   markTripTravelled,
   recordTripNominee,
 } from "@/lib/services/trip-service";
@@ -42,14 +41,7 @@ export async function recordTripNomineeAction(
 ) {
   return act(
     (a) => recordTripNominee({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
-    (role) => (input.recipient === "NON_FAMILY" && role !== "MD" ? "Nominee recorded. MD must approve before booking." : "Traveller recorded.")
-  );
-}
-
-export async function decideTripNomineeAction(input: { rewardId: string; approve: boolean; note: string }, key: string) {
-  return act(
-    (a) => decideTripNominee({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
-    input.approve ? "Nominee approved." : "Nominee rejected."
+    "Traveller recorded."
   );
 }
 

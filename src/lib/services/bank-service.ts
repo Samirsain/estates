@@ -123,7 +123,7 @@ export async function enterBankDetails(args: {
           recordId: args.personId,
           recordName: `${person.fullName} · bank ••${pending.accountLastFour}`,
           purpose: "BANK_VERIFICATION",
-          title: "Joint Bank Account Exception — Approval",
+          title: "Check Joint Bank Account — Approval",
           assigneeRole: "ACCOUNTS",
           dueAt: new Date(),
           decision: true,

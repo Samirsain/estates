@@ -1,8 +1,8 @@
 "use server";
 
-// Royalty Tokens — docss/11. The service decides who may act: CRM or Admin
-// records spending arranged outside the CRM; MD decides a non-family
-// recipient; Admin or MD corrects an erroneous entry.
+// Royalty Tokens — docss/11. The service decides who may act: CRM or MD
+// records spending arranged outside the CRM, for any recipient; MD corrects
+// an erroneous entry.
 
 import type { RewardRecipient } from "@prisma/client";
 import { revalidatePath } from "next/cache";
@@ -10,7 +10,6 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { CommandError } from "@/lib/services/command";
 import {
   correctTokenRedemption,
-  decideTokenRedemption,
   memberTokenView,
   recordTokenRedemption,
 } from "@/lib/services/royalty-service";
@@ -58,17 +57,7 @@ export async function recordTokenRedemptionAction(
 ) {
   return act(
     (a) => recordTokenRedemption({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
-    (role) =>
-      input.recipient === "NON_FAMILY" && role !== "MD"
-        ? "Recorded. MD must approve the non-family recipient before the points count as spent."
-        : `${input.tokens} points recorded as spent.`
-  );
-}
-
-export async function decideTokenRedemptionAction(input: { redemptionId: string; approve: boolean; note: string }, key: string) {
-  return act(
-    (a) => decideTokenRedemption({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, ...input }),
-    input.approve ? "Approved; the points are spent." : "Rejected; nothing was spent."
+    `${input.tokens} points recorded as spent.`
   );
 }
 

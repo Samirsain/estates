@@ -3,8 +3,8 @@
 // A Member's Royalty Tokens — docss/11. The three figures a Member also sees,
 // every redemption recorded against the one pooled balance, and — for staff
 // only — the awards behind it (history, never wallets) and why spending is
-// blocked now. CRM or Admin record spending arranged outside the CRM; MD
-// decides a non-family recipient; Admin or MD corrects an erroneous entry.
+// blocked now. CRM or MD record spending arranged outside the CRM, for any
+// recipient; MD corrects an erroneous entry.
 // No cash, no rupee value, no expiry.
 
 import React from "react";
@@ -18,7 +18,6 @@ import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { Stat } from "@/components/record-section";
 import {
   correctTokenRedemptionAction,
-  decideTokenRedemptionAction,
   recordTokenRedemptionAction,
   tokenAvailabilityAction,
   type ActionResult,
@@ -29,9 +28,7 @@ export const REWARD_HOLD_LABEL: Record<string, string> = {
   MEMBER_DEACTIVATED: "Member Deactivated",
   BUYBACK_STABLE_COMPLETION_PENDING: "Waiting for Stable Buyback Completion",
   REWARD_DEFICIENT: "Reward Deficient",
-  NOMINEE_APPROVAL_PENDING: "Recipient waiting for MD",
   PROGRAMME_TERMS_ACTION_REQUIRED: "Programme Terms action required",
-  STAFF_CONFLICT_REVIEW: "Staff conflict review",
   RECOVERY_CIRCUMVENTION_REVIEW: "Recovery circumvention review",
 };
 
@@ -41,12 +38,11 @@ const RECIPIENTS = [
   ["PARENT", "Parent"],
   ["CHILD", "Child"],
   ["SIBLING", "Sibling"],
-  ["NON_FAMILY", "Someone else (needs MD)"],
+  ["NON_FAMILY", "Someone else"],
 ] as const;
 
 const REDEMPTION_STATE: Record<string, { label: string; variant: "success" | "warning" | "outline" | "destructive" | "info" }> = {
   RECORDED: { label: "Spent", variant: "success" },
-  AWAITING_MD: { label: "Waiting for MD", variant: "warning" },
   REJECTED: { label: "Rejected", variant: "outline" },
   CORRECTED: { label: "Corrected", variant: "outline" },
 };
@@ -67,7 +63,6 @@ const signed = (n: number) => (n < 0 ? `−${Math.abs(n)}` : String(n));
 
 type Dialog =
   | { kind: "RECORD" }
-  | { kind: "DECIDE"; redemptionId: string; approve: boolean }
   | { kind: "CORRECT"; redemptionId: string; tokens: number };
 
 export default function RoyaltyTokens({
@@ -166,16 +161,6 @@ export default function RoyaltyTokens({
                     </td>
                     <td className={`${TD} pr-0`}>
                       <span className="flex justify-end gap-1">
-                        {role === "MD" && r.state === "AWAITING_MD" && (
-                          <>
-                            <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "DECIDE", redemptionId: r.id, approve: false })}>
-                              Reject
-                            </Button>
-                            <Button size="xs" onClick={() => setDialog({ kind: "DECIDE", redemptionId: r.id, approve: true })}>
-                              Approve
-                            </Button>
-                          </>
-                        )}
                         {corrects && r.state === "RECORDED" && (
                           <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "CORRECT", redemptionId: r.id, tokens: r.tokens })}>
                             Correct
@@ -243,17 +228,6 @@ export default function RoyaltyTokens({
 
       {dialog?.kind === "RECORD" && (
         <RecordDialog busy={busy} memberProfileId={memberProfileId} onClose={() => setDialog(null)} run={run} />
-      )}
-      {dialog?.kind === "DECIDE" && (
-        <NoteDialog
-          title={dialog.approve ? "Approve the non-family recipient" : "Reject the non-family recipient"}
-          label="Note (compulsory)"
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(note) =>
-            run(() => decideTokenRedemptionAction({ redemptionId: dialog.redemptionId, approve: dialog.approve, note }, newKey()))
-          }
-        />
       )}
       {dialog?.kind === "CORRECT" && (
         <NoteDialog

@@ -87,7 +87,7 @@ export async function addMemberEnquiryAction(
           recordId: enquiry.id,
           recordName: `${person.fullName} — ${project.name}`,
           purpose: ENQUIRY_FOLLOW_UP_PURPOSE,
-          title: "Enquiry Follow-up",
+          title: "Enquiry Follow-Up",
           assigneeRole: "CRM",
           assigneeStaffId: crm.id,
           dueAt: new Date(Date.now() + 86_400_000),

@@ -25,8 +25,6 @@ export const TRIP_FULFILMENT_PURPOSE = "TRIP_REWARD_FULFILMENT";
 export const TRIP_DEFICIENCY_PURPOSE = "TRIP_REWARD_DEFICIENCY";
 /** CP §65 NT05. */
 export const TRIP_WIND_DOWN_PURPOSE = "TRIP_BUCKET_WIND_DOWN";
-/** CP §65 NT10 — the same task type Royalty uses. */
-export const TRIP_NOMINEE_PURPOSE = "REWARD_NOMINEE_APPROVAL";
 export const TRIP_REWARD_KIND = "Trip Reward";
 export const TRIP_BUCKET_KIND = "Trip Bucket";
 
@@ -366,7 +364,7 @@ async function deficiencyTask(tx: Tx, rewardId: string, memberProfileId: string,
     recordId: rewardId,
     recordName: `${member.memberId} · ${member.person.fullName}`,
     purpose: TRIP_DEFICIENCY_PURPOSE,
-    title: "Trip Reward Deficiency Review",
+    title: "Reward Sale Cancelled",
     assigneeRole: "CRM",
     dueAt: new Date(),
     latestResult: text,
@@ -394,7 +392,6 @@ async function rewardHold(tx: Tx, rewardId: string): Promise<RewardHoldReason | 
     });
     if (stable === 0) return "BUYBACK_STABLE_COMPLETION_PENDING";
   }
-  if (reward.recipient === "NON_FAMILY" && !reward.recipientApprovedAt) return "NOMINEE_APPROVAL_PENDING";
   return null;
 }
 
@@ -423,7 +420,7 @@ export async function refreshTripReward(tx: Tx, rewardId: string, actorRef: stri
       recordId: reward.id,
       recordName: `${reward.memberProfile.memberId} · ${reward.memberProfile.person.fullName}`,
       purpose: TRIP_FULFILMENT_PURPOSE,
-      title: "Trip Reward Fulfilment",
+      title: "Reward Earned",
       assigneeRole: "CRM",
       dueAt: new Date(),
       latestResult: "Trip Reward earned. Record the traveller/nominee, the booking, then the travel.",
@@ -478,7 +475,7 @@ async function lockedReward(tx: Tx, rewardId: string) {
   return tx.tripReward.findUniqueOrThrow({ where: { id: rewardId } });
 }
 
-/** SSOT §65; doc 5 §6 — the traveller. Non-family needs MD (NT10) before fulfilment; MD recording it is that approval. */
+/** SSOT §65; doc 5 §6 — the traveller. Family or not, it stands as recorded: the owner removed MD approval for a non-family nominee (14 Oct 2026). */
 export async function recordTripNominee(args: Actor & { rewardId: string; recipient: RewardRecipient; recipientName: string }) {
   fulfilmentRole(args.actorRole);
   if (args.recipient !== "SELF" && !args.recipientName.trim()) blocked("Enter the nominee's name.");
@@ -488,57 +485,10 @@ export async function recordTripNominee(args: Actor & { rewardId: string; recipi
       const reward = await lockedReward(tx, args.rewardId);
       if (reward.state !== "EARNED") blocked("The traveller can only be recorded before the Trip is booked.");
       const name = args.recipient === "SELF" ? null : args.recipientName.trim();
-      const mdApproved = args.recipient === "NON_FAMILY" && args.actorRole === "MD";
-      await tx.tripReward.update({
-        where: { id: reward.id },
-        data: {
-          recipient: args.recipient,
-          recipientName: name,
-          recipientApprovedByRef: mdApproved ? args.actorRef : null,
-          recipientApprovedAt: mdApproved ? new Date() : null,
-        },
-      });
+      await tx.tripReward.update({ where: { id: reward.id }, data: { recipient: args.recipient, recipientName: name } });
       await event(tx, reward.memberProfileId, { rewardId: reward.id }, args.actorRef, "NOMINEE_RECORDED", null, args.recipient, name ?? undefined);
-      if (args.recipient === "NON_FAMILY" && !mdApproved) {
-        await ensureTask(tx, {
-          recordKind: TRIP_REWARD_KIND,
-          recordId: reward.id,
-          recordName: name!,
-          purpose: TRIP_NOMINEE_PURPOSE,
-          title: "Non-Family Reward Nominee Approval",
-          assigneeRole: "MD",
-          dueAt: new Date(),
-          decision: true,
-          latestResult: `Trip Reward nominee ${name}, who is not immediate family.`,
-        });
-      } else {
-        await closeTasksFor(tx, TRIP_REWARD_KIND, reward.id, args.actorRef, mdApproved ? "Nominee recorded by MD." : "Nominee is family.", TRIP_NOMINEE_PURPOSE);
-      }
       await refreshTripReward(tx, reward.id, args.actorRef);
       return { result: { rewardId: reward.id }, audit: { entity: "TripReward", entityId: reward.id, action: "TRIP_NOMINEE_RECORDED", after: { recipient: args.recipient, name } } };
-    }
-  );
-}
-
-/** CP §65 NT10 — MD approves or rejects a non-family Trip nominee. */
-export async function decideTripNominee(args: Actor & { rewardId: string; approve: boolean; note: string }) {
-  if (args.actorRole !== "MD") blocked("Only MD decides a non-family nominee.");
-  if (!args.note.trim()) blocked("A compulsory note is required.");
-  return runCommand<{ rewardId: string }>(
-    { idempotencyKey: args.idempotencyKey, operation: "TRIP_NOMINEE_DECIDE", actorRef: args.actorRef, actorRole: args.actorRole, payload: { rewardId: args.rewardId, approve: args.approve } },
-    async (tx) => {
-      const reward = await lockedReward(tx, args.rewardId);
-      if (reward.recipient !== "NON_FAMILY" || reward.recipientApprovedAt) blocked("No non-family nominee is waiting for MD on this Trip.");
-      await tx.tripReward.update({
-        where: { id: reward.id },
-        data: args.approve
-          ? { recipientApprovedByRef: args.actorRef, recipientApprovedAt: new Date() }
-          : { recipient: null, recipientName: null },
-      });
-      await event(tx, reward.memberProfileId, { rewardId: reward.id }, args.actorRef, args.approve ? "NOMINEE_APPROVED" : "NOMINEE_REJECTED", null, null, args.note.trim());
-      await closeTasksFor(tx, TRIP_REWARD_KIND, reward.id, args.actorRef, `${args.approve ? "Approved" : "Rejected"} — ${args.note.trim()}`, TRIP_NOMINEE_PURPOSE);
-      await refreshTripReward(tx, reward.id, args.actorRef);
-      return { result: { rewardId: reward.id }, audit: { entity: "TripReward", entityId: reward.id, action: args.approve ? "TRIP_NOMINEE_APPROVED" : "TRIP_NOMINEE_REJECTED", reason: args.note.trim() } };
     }
   );
 }
@@ -719,7 +669,7 @@ export async function windDownTripBuckets(tx: Tx, now: Date) {
       recordId: bucket.id,
       recordName: `${bucket.memberProfile.memberId} · ${bucket.memberProfile.person.fullName} · ${bucket.programmeCode}`,
       purpose: TRIP_WIND_DOWN_PURPOSE,
-      title: "Trip Credit Expiry / Bucket Wind-Down Review",
+      title: "Reward Expiry",
       assigneeRole: "CRM",
       dueAt: windDown ?? now,
       latestResult: `The ${bucket.programmeCode} programme has closed; this open bucket ends ${windDown ? `on its wind-down deadline` : "when its wind-down deadline is set"}.`,

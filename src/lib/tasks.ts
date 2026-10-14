@@ -55,6 +55,8 @@ export type TaskSubject = {
    * carries the commission's own id, so the link needs this to go anywhere.
    */
   bookingId?: string | null;
+  /** A Buying Commission's Buyback / Resale deal — its review page when there is no Booking. */
+  acquisitionId?: string | null;
 };
 
 export type Task = {
@@ -80,6 +82,18 @@ export type Task = {
 };
 
 export type Recurrence = "NONE" | "DAILY" | "WEEKLY" | "MONTHLY";
+
+/** The next due time after `now`, stepping from the last due by the recurrence. */
+export function nextDue(from: Date, recurrence: string, now: Date): Date {
+  const next = new Date(from);
+  do {
+    if (recurrence === "DAILY") next.setUTCDate(next.getUTCDate() + 1);
+    else if (recurrence === "WEEKLY") next.setUTCDate(next.getUTCDate() + 7);
+    else if (recurrence === "MONTHLY") next.setUTCMonth(next.getUTCMonth() + 1);
+    else throw new Error(`Unknown recurrence ${recurrence}`);
+  } while (next <= now);
+  return next;
+}
 
 /* ---------------------------------------------------------------- Asia/Kolkata */
 
@@ -339,6 +353,13 @@ export function recordReference(record: { id: string; name: string }): string | 
  * database id a route can take. A task someone typed against "CUS-3390" holds
  * the reference they typed, which no route resolves — those get no link.
  */
+/**
+ * Follow-ups are closed by the work itself — Record Follow-Up, Confirm Payment
+ * Received, Confirm Payment Given — never by Done, so no follow-up is lost
+ * (owner, 14 Oct 2026).
+ */
+export const FOLLOW_UP_PURPOSES: readonly string[] = ["ENQUIRY_FOLLOW_UP", "PAYMENT_FOLLOW_UP", "PAYMENT_GIVEN_FOLLOW_UP"];
+
 export function recordHref(
   record: { kind: RecordKind | string; id: string },
   subject?: TaskSubject | null
@@ -346,14 +367,15 @@ export function recordHref(
   // Approved on its Booking, not on itself — and the Booking is only known
   // once the record has been resolved.
   if (record.kind === "Commission") {
-    return subject?.bookingId ? `/bookings?booking=${subject.bookingId}` : null;
+    if (subject?.bookingId) return `/bookings?booking=${subject.bookingId}`;
+    return subject?.acquisitionId ? `/acquisitions/${subject.acquisitionId}` : null;
   }
   // SSOT §65, §81; docss/11 — Royalty tokens and Trips are handled on the owning Member's page.
   if (record.kind === "Royalty Award" || record.kind === "Token Redemption" || record.kind === "Trip Reward" || record.kind === "Trip Bucket") {
     return subject?.partyPersonId ? `/people/${subject.partyPersonId}?as=member` : null;
   }
-  // CP §65 NT08, NT09 — release-control reviews are decided on the Rewards page.
-  if (record.kind === "Staff Conflict" || record.kind === "Circumvention Review") return "/rewards?tab=reviews";
+  // CP §65 NT08 — circumvention reviews are decided on the Rewards page.
+  if (record.kind === "Circumvention Review") return "/rewards?tab=reviews";
   if (!INTERNAL_ID.test(record.id)) return null;
   switch (record.kind) {
     case "Booking":
@@ -363,15 +385,21 @@ export function recordHref(
     case "Plot":
       return `/plots/${record.id}`;
     case "Member":
+    case "MemberProfile":
       return `/members/${record.id}`;
+    // The joint bank account task: bank details are verified on the Person.
+    case "Person":
+      return `/people/${record.id}`;
     case "Customer":
       return `/customers/${record.id}`;
     // CP §65 NT01 — the settings are approved on the Project page.
     case "Project":
       return `/projects/${record.id}`;
-    // Acquisitions have no per-record route yet, so the link lands on the list.
     case "Acquisition":
-      return "/acquisitions";
+      return `/acquisitions/${record.id}`;
+    // ponytail: the list, not the row — /enquiries has no focus param yet; add one if the list grows long.
+    case "Enquiry":
+      return "/enquiries";
     default:
       return null;
   }

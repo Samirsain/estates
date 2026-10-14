@@ -208,7 +208,11 @@ export async function purgeScope(db: PrismaClient, scope: PurgeScope) {
   });
 
   // Inventory.
-  await db.plcSnapshot.deleteMany({ where: { plotId: { in: plotIds } } });
+  // A snapshot of a scoped Project's PLC version can sit on a Plot outside the
+  // scope (an interrupted seed left some), and it would block the version below.
+  await db.plcSnapshot.deleteMany({
+    where: { OR: [{ plotId: { in: plotIds } }, { ruleVersion: { projectId: { in: projectIds } } }] },
+  });
   await db.plotEvent.deleteMany({ where: { plotId: { in: plotIds } } });
   await db.plotBoundary.deleteMany({ where: { plotId: { in: plotIds } } });
   await db.plot.deleteMany({ where: { id: { in: plotIds } } });

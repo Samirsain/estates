@@ -63,7 +63,6 @@ const HOLD_LABEL: Record<string, string> = {
   // CP §68, §70 — a safe hold indicator; Accounts notes stay internal.
   RECOVERY_OUTSTANDING: "On Hold — Recovery",
   OLD_RECOVERY_PENDING: "Under Review",
-  STAFF_CONFLICT_REVIEW: "Under Review",
   RECOVERY_CIRCUMVENTION_REVIEW: "Under Review",
 };
 
@@ -155,9 +154,7 @@ const TRIP_HOLD_LABEL: Record<string, string> = {
   MEMBER_DEACTIVATED: "On Hold — Membership inactive",
   BUYBACK_STABLE_COMPLETION_PENDING: "Waiting for the Buyback to complete",
   REWARD_DEFICIENT: "Under Review",
-  NOMINEE_APPROVAL_PENDING: "Waiting for traveller approval",
   PROGRAMME_TERMS_ACTION_REQUIRED: "Terms action required",
-  STAFF_CONFLICT_REVIEW: "Under Review",
   RECOVERY_CIRCUMVENTION_REVIEW: "Under Review",
 };
 

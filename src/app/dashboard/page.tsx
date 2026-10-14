@@ -5,9 +5,7 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { taskSubjects } from "@/lib/services/task-service";
 import type { RecordKind, Recurrence, Task } from "@/lib/tasks";
-import { rewardCounts } from "@/lib/rewards-overview";
 import DashboardClient from "./dashboard-client";
-import { RewardCards } from "./reward-cards";
 
 export const dynamic = "force-dynamic";
 
@@ -58,8 +56,6 @@ export default async function DashboardPage() {
       staffAccountId={actor.staffAccountId}
       initialTasks={tasks}
       seesAllWork={seesAllWork}
-      // CP §67 — the reward cards are for staff who act on them.
-      cards={["MD", "ACCOUNTS", "CRM"].includes(actor.role) ? <RewardCards counts={await rewardCounts()} /> : null}
     />
   );
 }

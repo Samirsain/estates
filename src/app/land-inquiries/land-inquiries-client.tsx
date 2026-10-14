@@ -176,20 +176,6 @@ export default function LandInquiriesClient({
               </option>
             ))}
           </select>
-          <input
-            type="date"
-            className={filterClass}
-            value={value("dateFrom")}
-            onChange={(e) => apply({ dateFrom: e.target.value })}
-            aria-label="From date"
-          />
-          <input
-            type="date"
-            className={filterClass}
-            value={value("dateTo")}
-            onChange={(e) => apply({ dateTo: e.target.value })}
-            aria-label="To date"
-          />
           {canSeeArchived && (
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <input

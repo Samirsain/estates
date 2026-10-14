@@ -559,11 +559,10 @@ async function main() {
   const correctedDirect = await recordOf(correctionBooking, "DIRECT");
   assert.equal(correctedDirect.beneficiaryPersonId, seller.id, "Direct is created for the corrected closer");
   assert.equal(correctedDirect.eligibility, "READY", "the 25% milestone is already met");
-  assert.ok(
-    await db.task.findFirst({
-      where: { recordId: correctionBooking, purpose: "SOLD_BY_COMMISSION_IMPACT", status: "PENDING" },
-    }),
-    "Accounts receives the commission impact review"
+  assert.equal(
+    await db.task.count({ where: { recordId: correctionBooking, purpose: "SOLD_BY_COMMISSION_IMPACT" } }),
+    0,
+    "no separate commission-impact task (owner, 14 Oct 2026)"
   );
 
   /* -------------------------------- activation records who invited whom */
@@ -1162,7 +1161,7 @@ async function main() {
   assert.equal((await recordOf(saleR1, "DIRECT")).payment, "ACCOUNTS_ADJUSTMENT_REQUIRED", "paid Direct below 25%");
   const t21 = await tasksOn(directR1.id, "ACCOUNTS_ADJUSTMENT");
   assert.equal(t21.length, 1, "one T21");
-  assert.equal(`${t21[0].title}|${t21[0].assigneeRole}`, "Accounts Adjustment Required|ACCOUNTS");
+  assert.equal(`${t21[0].title}|${t21[0].assigneeRole}`, "Early Commission Conflict|ACCOUNTS");
 
   // Only Accounts opens a Recovery; it answers T21 and raises T22, due in 15 days.
   await expectBlocked(/Only Accounts handles Recovery/, () =>
@@ -1318,7 +1317,7 @@ async function main() {
   assert.equal(`${t23Direct.eligibility}|${t23Direct.holdReason}`, "ON_HOLD|OLD_RECOVERY_PENDING");
   const t23 = await tasksOn(t23Direct.id, "BENEFICIARY_BEFORE_RECOVERY");
   assert.equal(t23.length, 1, "one T23");
-  assert.equal(`${t23[0].title}|${t23[0].assigneeRole}`, "Correct Beneficiary Before Old Recovery — MD Approval|MD");
+  assert.equal(`${t23[0].title}|${t23[0].assigneeRole}`, "Double Commission — MD Approval|MD");
   await openRecovery({
     idempotencyKey: key(),
     actorRef: ACC,

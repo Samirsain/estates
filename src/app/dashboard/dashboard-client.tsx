@@ -8,9 +8,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PersonLink } from "@/components/person-link";
 import { AlertTriangle, ChevronDown, Plus, CheckCircle2 } from "lucide-react";
-import { addTaskAction, completeTaskAction, reviseTaskAction, type ActionResult } from "./actions";
+import { addTaskAction, assignableStaffAction, completeTaskAction, reviseTaskAction, type ActionResult } from "./actions";
 import { AppShell } from "@/components/app-shell";
-import { STAFF_ROLES } from "@/lib/security/permissions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -38,6 +37,7 @@ import {
   type StaffRole,
   type Task,
   type TaskView,
+  FOLLOW_UP_PURPOSES,
   recordHref,
   recordReference,
 } from "@/lib/tasks";
@@ -83,7 +83,6 @@ export default function DashboardClient({
   staffAccountId,
   initialTasks,
   seesAllWork,
-  cards,
 }: {
   role: StaffRole;
   actorName: string;
@@ -91,8 +90,6 @@ export default function DashboardClient({
   initialTasks: Task[];
   /** PRD §3.2 — only MD and Admin are served other people's work at all. */
   seesAllWork: boolean;
-  /** CP §67 — the reward cards, rendered on the server. */
-  cards?: React.ReactNode;
 }) {
   const tasks = initialTasks;
   const [now, setNow] = React.useState<Date | null>(null);
@@ -167,7 +164,6 @@ export default function DashboardClient({
             </Button>
           </div>
         </header>
-        {cards}
 
         <div className="flex flex-wrap items-center gap-2">
           {VIEWS.map((v) => (
@@ -440,11 +436,18 @@ export default function DashboardClient({
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onSelect={() => run(() => completeTaskAction(task.id, newKey()))}
-                                >
-                                  Done
-                                </DropdownMenuItem>
+                                {FOLLOW_UP_PURPOSES.includes(task.purpose) ? (
+                                  // Closed by recording the follow-up or the payment on the record.
+                                  <DropdownMenuItem disabled={!href} onSelect={() => href && router.push(href)}>
+                                    Open record
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem
+                                    onSelect={() => run(() => completeTaskAction(task.id, newKey()))}
+                                  >
+                                    Done
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem onSelect={() => setRevising(task)}>
                                   Revise
                                 </DropdownMenuItem>
@@ -627,6 +630,10 @@ export function AddTaskDialog({
   onClose: () => void;
   onSubmit: (input: Parameters<typeof addTaskAction>[0]) => void;
 }) {
+  const [staff, setStaff] = React.useState<{ id: string; name: string; role: StaffRole }[]>([]);
+  React.useEffect(() => {
+    assignableStaffAction().then(setStaff, () => setStaff([]));
+  }, []);
   return (
     <Modal
       title="Add Task"
@@ -644,8 +651,7 @@ export function AddTaskDialog({
             recordKind: record?.kind ?? String(f.get("kind")),
             recordId: record?.id ?? String(f.get("recordId") ?? ""),
             recordName: record?.name ?? String(f.get("recordName") ?? ""),
-            assigneeRole: f.get("assigneeRole") as StaffRole,
-            assigneeName: String(f.get("assigneeName")),
+            assignee: String(f.get("assignee")),
             dueAtIso: istInstant(String(f.get("date")), String(f.get("time"))),
             urgent: f.get("urgent") === "on",
             recurrence: String(f.get("recurrence")),
@@ -658,12 +664,16 @@ export function AddTaskDialog({
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Assignee">
-            <Input name="assigneeName" required defaultValue="Rahul Mehta" />
-          </Field>
-          <Field label="Assignee role">
-            <select name="assigneeRole" defaultValue="CRM" className={inputClass}>
-              {STAFF_ROLES.map((r) => (
-                <option key={r}>{r}</option>
+            <select name="assignee" defaultValue="ROLE:CRM" className={inputClass}>
+              {(["CRM", "ACCOUNTS", "MD"] as const).map((r) => (
+                <option key={r} value={`ROLE:${r}`}>
+                  Anyone in {r}
+                </option>
+              ))}
+              {staff.map((s) => (
+                <option key={s.id} value={`STAFF:${s.id}`}>
+                  {s.name} · {s.role}
+                </option>
               ))}
             </select>
           </Field>
