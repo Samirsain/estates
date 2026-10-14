@@ -19,6 +19,9 @@ const { runAllJobs } = await import("@/lib/jobs");
 const { MOBILE_PREFIX, PROJECT_CODES, REF_PREFIXES } = await import("./demo/world.ts");
 
 async function wipe() {
+  // Land Inquiries name their Member source, so they go before the People do
+  // (owners and Jamabandi entries cascade).
+  await db.landInquiry.deleteMany({ where: { createRequestId: { startsWith: "DEMO-" } } });
   const projectIds = (await db.project.findMany({ where: { projectCode: { in: PROJECT_CODES } }, select: { id: true } })).map((p) => p.id);
   const uat = await db.staffAccount.findUnique({ where: { staffAccountId: "STF-UAT-01" } });
   if (uat) {
