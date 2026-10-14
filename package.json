@@ -39,6 +39,8 @@
     "uat:seed:v2": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/uat-seed-v2.ts",
     "uat:seed": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/uat-seed.ts",
     "seed:mock-v2": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/mock-v2-seed.ts",
+    "seed:demo": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/demo-seed.ts",
+    "demo:verify": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/demo/verify.ts",
     "seed:showcase": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/showcase-seed.ts",
     "rotate:key": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/rotate-key.ts",
     "reset:password": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reset-password.ts",
