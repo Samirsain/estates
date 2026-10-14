@@ -93,6 +93,10 @@ export async function purgeScope(db: PrismaClient, scope: PurgeScope) {
   // Tasks first: they reference records by id, not by relation — the reward
   // records and the Project's settings versions included.
   const memberIds = (await db.memberProfile.findMany({ where: { personId: { in: personIds } }, select: { id: true } })).map((m) => m.id);
+  // An Enquiry's follow-up task names the Enquiry, so it goes with it.
+  const enquiryIds = (
+    await db.enquiry.findMany({ where: { OR: [{ personId: { in: personIds } }, { plotId: { in: plotIds } }] }, select: { id: true } })
+  ).map((e) => e.id);
   const customerIds = (await db.customerProfile.findMany({ where: { personId: { in: personIds } }, select: { id: true } })).map((c) => c.id);
   const rewardIds = [
     ...(await db.royaltyAward.findMany({ where: { OR: [{ triggerBookingId: { in: bookingIds } }, { memberProfileId: { in: memberIds } }] }, select: { id: true } })),
@@ -107,7 +111,7 @@ export async function purgeScope(db: PrismaClient, scope: PurgeScope) {
         OR: [
           {
             recordId: {
-              in: [...bookingIds, ...plotIds, ...personIds, ...commissionIds, ...acquisitionIds, ...projectIds, ...memberIds, ...customerIds, ...rewardIds],
+              in: [...bookingIds, ...plotIds, ...personIds, ...commissionIds, ...acquisitionIds, ...projectIds, ...memberIds, ...customerIds, ...rewardIds, ...enquiryIds],
             },
           },
           ...(tag ? [{ taskNo: { startsWith: tag } }, { recordName: { contains: tag } }] : []),

@@ -464,16 +464,17 @@ on("2026-06-25", "Kavita requests a Hold on AH-11", async () => {
   const req = await submitHoldRequest({ idempotencyKey: key(), actorRef: `MEMBER:${P("M06").key}`, memberProfileId: P("M06").profileId!, personId: sumit.id, plotId: plotId("AH-11") });
   B.HR2 = req.holdRequestId;
 });
-on("2026-06-26", "CRM declines it", () =>
+on("2026-06-25", "CRM declines it", () =>
   decideHoldRequest({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", requestId: B.HR2, approve: false, note: "Plot already offered to a walk-in buyer." })
-);
-on("2026-10-12", "Ramesh requests a Hold on AH-12", async () => {
+, "15:00"); // a Member Hold Request lapses at 23:59 on its working day
+// Today, so the request is still waiting when the demo is shown (it lapses at 23:59).
+on("2026-10-14", "Ramesh requests a Hold on AH-12", async () => {
   const naveen = await customer("naveen");
   await submitHoldRequest({ idempotencyKey: key(), actorRef: `MEMBER:${P("M10").key}`, memberProfileId: P("M10").profileId!, personId: naveen.id, plotId: plotId("AH-12") });
-});
-on("2026-10-13", "Ramesh Kumawat deactivated", () =>
+}, "08:30");
+on("2026-10-14", "Ramesh Kumawat deactivated", () =>
   setMemberStatus({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", memberProfileId: P("M10").profileId!, active: false, reason: "Membership on hold while his RERA renewal is pending." })
-, "16:00");
+, "09:00");
 on("2026-10-12", "Hold on SR-18 for Pooja Rawat", async () => {
   const pooja = await customer("poojaRawat");
   await enquiry(pooja, "SRE", "BY_MEMBER", { member: P("M03"), remark: "Wants SR-18; family visiting Sunday." });
@@ -528,11 +529,9 @@ on("2026-10-08", "Joint bank account entered for Meena Agarwal", () =>
     actorRole: "CRM",
     personId: P("meena").id,
     accountHolder: "Suresh & Meena Agarwal",
-    bankName: "HDFC Bank",
-    branchName: "C-Scheme, Jaipur",
-    // The account the toolkit entered for Suresh (stored encrypted, so kept in memory).
-    accountNumber: bankAccounts.suresh.accountNumber,
-    ifsc: "HDFC0000123",
+    // Suresh's own account (stored encrypted, so kept in memory). The bank's
+    // IFSC is part of the account's identity, so it has to match too.
+    ...bankAccounts.suresh,
     jointAccountProof: "Passbook first page names Suresh Agarwal and Meena Agarwal as joint holders",
   })
 );
@@ -603,7 +602,7 @@ export async function tellStory() {
   notes("M04", "Neha Joshi's Royalty Linked Member; earned 15 points on SR-27, spent 13.");
   notes("M07", "Direct on AH-06 paid early with MD approval.");
   notes("M08", "RERA registration expires 19 Oct — reminder on the Dashboard.");
-  notes("M10", "Deactivated 13 Oct with a Hold Request still waiting (task for CRM).");
+  notes("M10", "Deactivated 14 Oct with a Hold Request still waiting (task for CRM).");
   notes("M11", "Arranged the AH-05 Buyback; her 1% Buying Commission is Ready.");
   notes("M13", "No bank details — his Direct on AH-07 is On Hold.");
   notes("M14", "Aadhaar not available — her Directs are On Hold; corrected Sold By on SR-23.");
