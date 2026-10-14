@@ -232,14 +232,15 @@ export default function AcquisitionDetailClient({
               Buying Commission
             </h3>
             {row.commission ? (
-              <p className="text-xs">
+              // A div, not a p: the Badges inside render divs.
+              <div className="text-xs">
                 <PersonLink
                   personId={row.commission.beneficiaryPersonId}
                   name={row.commission.beneficiary}
                 />{" "}
                 · {row.commission.percent}% <Badge variant="outline">{row.commission.eligibility}</Badge>{" "}
                 <Badge variant="outline">{row.commission.payment}</Badge>
-              </p>
+              </div>
             ) : (
               <p className="text-xs text-muted-foreground">
                 {row.arrangedByType === "THREE_PERCENT_CLUB"
