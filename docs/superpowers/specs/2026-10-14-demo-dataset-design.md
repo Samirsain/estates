@@ -64,17 +64,24 @@ New script `prisma/demo-seed.ts`, run as `npm run seed:demo`, guarded by
   Buyback, Trip and points entry is made by the same service the screen calls,
   so every business rule applies and no impossible state is created. Different
   staff accounts act as maker and checker where the rules require it.
-- **Story clock.** The story is a list of steps, each with a story date. A step
-  runs at the real time; when it finishes, one SQL statement moves every
-  timestamp written during that step's real-time window (`started ≤ value ≤
-  finished`, across all timestamp columns of all tables) back by
-  `started − storyDate`. Business dates far from that window — instalment due
-  dates, a future Effective from — are untouched. One round trip per step,
-  so the shift adds little time.
+- **Story clock.** The story is a list of steps, each with a story date. While
+  a step runs, the script's own clock reads the story date (a `Date` that runs
+  at an offset), so everything the services compute from "now" — a Hold's
+  72-hour expiry, a Hold Request's cut-off, a task's due date, the Booking
+  date, "not a future date" checks — is computed in story time, and no
+  "backdated" reason is ever needed. The database still stamps its own
+  defaults (`createdAt`, `@updatedAt`, `at`) with the real time, so when the
+  step finishes, one SQL statement moves every timestamp the database wrote
+  during that step's real-time window (`started − 1 min ≤ value ≤ finished +
+  1 min`, across all timestamp columns of all tables) back by `started −
+  storyDate`. Story-time values sit months away from that window and are
+  untouched. One round trip per step.
+- **Append-only ledger.** `TokenLedgerEntry` has a trigger that refuses any
+  UPDATE. The shift disables that one trigger for its own statement and
+  re-enables it at once; it changes only a timestamp, never an amount, and
+  only while the seed runs.
 - **Business dates** the services take as input (Paid on, Purchase date,
-  Booking date) are passed as story dates. Where a service insists that a past
-  Booking date carries a reason, the seed sets the Booking date to its story
-  date directly after creation instead, so no "backdated" remark appears.
+  Booking date, instalment due dates) are written as story dates.
 - **Jobs last.** After the final step the scheduled jobs run once at the real
   time, so Holds placed in the past expire, overdue instalments turn urgent and
   follow-ups land on their real dates — exactly as production would show it.
