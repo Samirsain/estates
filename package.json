@@ -20,6 +20,7 @@
     "db:ping": "node --env-file=.env prisma/ping.ts",
     "demo": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/demo.ts",
     "land:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/land-inquiry.check.ts",
+    "demo-clock:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/demo/story-clock.check.ts",
     "commission-settings:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/commission-settings.check.ts",
     "commission:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/commission.check.ts",
     "royalty:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/royalty.check.ts",
