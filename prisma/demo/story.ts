@@ -64,6 +64,8 @@ const on = (day: string, label: string, run: () => Promise<unknown>, time = "11:
 
 /** Booking ids by story key. */
 export const B: Record<string, string> = {};
+/** The Enquiry each sale came from, by sale key. */
+const E: Record<string, string> = {};
 const P = (k: string) => people[k];
 const base = { loyaltyExceptionReason: null, effectiveFrom: null } as const;
 
@@ -171,7 +173,8 @@ const SALES: Sale[] = [
   { key: "S32", project: "MBP", day: "2026-09-08", plot: "MB-S03", buyer: "anil", by: { member: "M04" }, pays: [["2026-09-08", "30"]] },
   { key: "S33", project: "MBP", day: "2026-10-01", plot: "MB-S05", buyer: "rekha", by: { customer: "kamal" }, pays: [["2026-10-01", "30"]] },
   { key: "S34", project: "MBP", day: "2026-10-09", plot: "MB-S06", buyer: "sanjay", by: { member: "M14" }, pays: [["2026-10-09", "30"]] },
-  { key: "S35", project: "SRE", day: "2026-10-13", plot: "SR-17", buyer: "gaurav", by: { member: "M02" }, submitOnly: true, lead: "EXISTING_CUSTOMER" },
+  // Gaurav's May Enquiry is still open after the rejection; this request comes from it.
+  { key: "S35", project: "SRE", day: "2026-10-13", plot: "SR-17", buyer: "gaurav", by: { member: "M02" }, submitOnly: true, lead: null },
   { key: "S36", project: "MBP", day: "2026-10-13", plot: "MB-S08", buyer: "payal", submitOnly: true },
 ];
 
@@ -184,7 +187,7 @@ SALES.forEach((s, i) => {
     on(minusDays(s.day, 6), `Enquiry for ${s.plot}`, async () => {
       const who = await customer(s.buyer);
       if (s.joint) await customer(s.joint);
-      await enquiry(who, s.project, lead, {
+      E[s.key] = await enquiry(who, s.project, lead, {
         member: s.by?.member ? P(s.by.member) : undefined,
         customer: s.by?.customer ? P(s.by.customer) : undefined,
         remark: `Asked about ${s.plot}; site visit fixed.`,
@@ -199,6 +202,7 @@ SALES.forEach((s, i) => {
       schedule: s.schedule,
       submitOnly: s.submitOnly,
       reject: s.reject,
+      enquiryId: E[s.key] ?? (s.key === "S35" ? E.S09 : undefined),
     });
   }, "11:00");
   for (const [day, percent] of s.pays ?? []) {
@@ -269,15 +273,15 @@ on("2026-07-18", "MD merges the duplicate", () =>
 
 /* ------------------------------------------- Recovery and Check Recovery Link */
 
-on("2026-08-03", "SR-22 cancelled after its Direct was paid", () =>
-  cancelBooking({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B.S11, reason: "Buyer could not arrange the second instalment." })
-);
+on("2026-08-03", "SR-22 cancelled after its Direct was paid", async () => {
+  B.S11D = (await directOf(B.S11)).id; // the paid Direct, before cancellation supersedes it
+  await cancelBooking({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B.S11, reason: "Buyer could not arrange the second instalment." });
+});
 on("2026-08-06", "Refund approved for SR-22", () =>
   decideCancellation({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", bookingId: B.S11, approve: true, note: "Refund sent.", reference: ref("RFD26"), actionDate: new Date() })
 );
 on("2026-08-10", "Recovery opened on Nitin Goyal", async () => {
-  const direct = await directOf(B.S11);
-  await openRecovery({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", recordId: direct.id, noticeOn: new Date(), reference: "REC-2026-001", reason: "Direct paid on a sale later cancelled." });
+  await openRecovery({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", recordId: B.S11D, noticeOn: new Date(), reference: "REC-2026-001", reason: "Direct paid on a sale later cancelled." });
   notes("M09", "Owes a Recovery for the Direct paid on SR-22, which was later cancelled.");
 });
 on("2026-09-01", "Customer closers accept the Customer Terms", async () => {
@@ -563,7 +567,7 @@ LAND.forEach((land, i) => {
         tehsil: land.tehsil,
         exactLocation: land.location,
         areaBigha: land.bigha,
-        areaBiswa: "0",
+        areaBiswa: String(4 + ((i * 7) % 16)),
       },
     });
     B[`LI${i}`] = made.id;

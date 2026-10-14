@@ -22,8 +22,10 @@ export const ACC = "STF-0003";
 export const ACC2 = "STF-0004";
 export const CRM = "STF-0005";
 
+/** One id per run, read before any step moves the clock: story time repeats between runs, so keys built from it would replay an earlier run's. */
+const RUN = Date.now().toString(36);
 let seq = 0;
-export const key = () => `DEMO-${Date.now()}-${seq++}`;
+export const key = () => `DEMO-${RUN}-${seq++}`;
 let refSeq = 0;
 export const ref = (kind: "UTR26" | "NEFT26" | "RFD26") => `${kind}${String(48210000 + ++refSeq * 37).padStart(8, "0")}`;
 export const inDays = (n: number) => new Date(Date.now() + n * 86_400_000);
@@ -193,7 +195,7 @@ export async function sell(
   plotNumber: string,
   buyer: Who,
   soldBy: { member?: Who; customer?: Who } = {},
-  opts: { joint?: Who; schedule?: keyof typeof SCHEDULES; submitOnly?: boolean; reject?: string } = {}
+  opts: { joint?: Who; schedule?: keyof typeof SCHEDULES; submitOnly?: boolean; reject?: string; enquiryId?: string } = {}
 ) {
   const submitted = await submitBookingRequest({
     idempotencyKey: key(),
@@ -211,6 +213,8 @@ export async function sell(
     bookingDate: new Date(),
     customerType: "END_USER",
     schedule: SCHEDULES[opts.schedule ?? "standard"](),
+    // Linked, so approval marks the Enquiry Booked and closes its follow-up.
+    enquiryId: opts.enquiryId ?? null,
   });
   if (opts.submitOnly) return submitted.bookingId;
   await decideBookingRequest({
@@ -219,6 +223,8 @@ export async function sell(
     actorRole: "ACCOUNTS",
     bookingId: submitted.bookingId,
     approve: !opts.reject,
+    // A rejection in this story is always a payment the request claimed and the bank returned.
+    ...(opts.reject ? { rejectReason: "PAYMENT_NOT_RECEIVED" as const, requestClaimedPayment: true } : {}),
     note: opts.reject ?? "Verified against the signed agreement and the first receipt.",
   });
   return submitted.bookingId;

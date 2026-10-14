@@ -6,6 +6,7 @@
 // stamps its own defaults with the real time; when the step ends, one DO block
 // moves every timestamp written in that real-time window back by the offset.
 import type { PrismaClient } from "@prisma/client";
+import { retryTransient } from "@/lib/db-retry";
 
 const RealDate = Date;
 let offsetMs = 0;
@@ -79,6 +80,7 @@ export async function at<T>(db: PrismaClient, day: string, work: () => Promise<T
   } finally {
     offsetMs = 0;
     const finished = RealDate.now();
-    await shiftWindow(db, started + Math.min(0, skew) - SLACK_MS, finished + Math.max(0, skew) + SLACK_MS, started - storyMs);
+    // A rerun after a lost reply finds nothing left in the window, so retrying cannot shift twice.
+    await retryTransient(() => shiftWindow(db, started + Math.min(0, skew) - SLACK_MS, finished + Math.max(0, skew) + SLACK_MS, started - storyMs));
   }
 }

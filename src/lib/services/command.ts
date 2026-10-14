@@ -3,6 +3,7 @@
 // inside a database transaction, and a repeated key returns the original result.
 
 import { Prisma } from "@prisma/client";
+import { retryTransient } from "@/lib/db-retry";
 import { db } from "@/lib/db";
 import { recordAudit } from "@/lib/security/audit";
 import {
@@ -62,9 +63,23 @@ export type CommandContext = {
 
 /**
  * Runs `work` once per idempotency key. The audit entry is written inside the
- * same transaction, so a command and its audit trail never diverge.
+ * same transaction, so a command and its audit trail never diverge. A dropped
+ * connection is tried again (db-retry): the transaction rolled back whole, and
+ * the key replays anything that had already committed.
  */
-export async function runCommand<T>(
+export function runCommand<T>(
+  ctx: CommandContext,
+  work: (
+    tx: Tx,
+  ) => Promise<{
+    result: T;
+    audit: Omit<Parameters<typeof recordAudit>[0], "actorRef" | "actorRole">;
+  }>,
+): Promise<T> {
+  return retryTransient(() => runCommandOnce(ctx, work));
+}
+
+async function runCommandOnce<T>(
   ctx: CommandContext,
   work: (
     tx: Tx,

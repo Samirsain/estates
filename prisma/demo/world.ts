@@ -145,7 +145,7 @@ export const CUSTOMERS: Record<string, CastSpec> = {
   manoj: { name: "Manoj Saxena", kyc: "verified" },
   rakesh: { name: "Rakesh Saxena", kyc: "verified" },
   suresh: { name: "Suresh Agarwal", kyc: "verified", address: "17, C-Scheme" },
-  meena: { name: "Meena Agarwal", kyc: "verified", address: "17, C-Scheme" },
+  meena: { name: "Meena Agarwal", kyc: "verified", address: "17, C-Scheme", bank: false },
   rohit: { name: "Rohit Verma", kyc: "verified" },
   rohitAgain: { name: "Rohit Kumar Verma", kyc: "available" },
   dinesh: { name: "Dinesh Choudhary", kyc: "verified" },
