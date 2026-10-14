@@ -927,7 +927,7 @@ const conflict = assertProcessFree("REFUND_PENDING", "Change Plot");
 assert.equal(conflict.ok, false);
 // The blocked message names the exact process, in the approved wording (DESIGN §4.2).
 assert.match(asReason(conflict), /Change Plot is blocked .* already under Refund Pending/);
-assert.match(asReason(assertProcessFree("MANAGEMENT_ACTION_REQUIRED", "Buyback")), /Management Action Required/);
+assert.match(asReason(assertProcessFree("MANAGEMENT_ACTION_REQUIRED", "Buyback")), /Selling Buyback\/Resale Plot/);
 
 /* ------------------------------------------------------------ Hold freezing */
 
@@ -1572,7 +1572,7 @@ const belowWithBuyer = resolvePaymentGivenCorrection({
 });
 assert.equal(belowWithBuyer.plotStatus, null, "nothing is acqCancelled or released automatically");
 assert.equal(belowWithBuyer.managementActionRequired, true);
-assert.equal(belowWithBuyer.processMessage, "Management Action Required");
+assert.equal(belowWithBuyer.processMessage, "Selling Buyback/Resale Plot");
 
 // From 100% to below: Payment Pending again and the Buying Commission steps back.
 const fellFromFull = resolvePaymentGivenCorrection({

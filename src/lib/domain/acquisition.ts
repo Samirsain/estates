@@ -166,7 +166,7 @@ export type GivenCorrectionOutcome = {
  *  - below 20% with no buyer process: the Plot becomes Not Available until
  *    Payment Given returns to 20% or the deal is cancelled;
  *  - below 20% with a buyer process active: nothing is cancelled or released
- *    automatically. Management Action Required is raised and progression stops.
+ *    automatically. Selling Buyback/Resale Plot is raised and progression stops.
  *
  * Falling from 100% to below simply shows Payment Pending again and steps the
  * Buying Commission back.
@@ -185,7 +185,7 @@ export function resolvePaymentGivenCorrection(args: {
   if (belowThreshold && args.hasBuyerProcess) {
     return {
       plotStatus: null,
-      processMessage: "Management Action Required",
+      processMessage: "Selling Buyback/Resale Plot",
       managementActionRequired: true,
       buyingCommissionMilestoneLost: fellBelowFull,
       newSaleCommissionOnHold: true,

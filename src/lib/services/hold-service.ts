@@ -549,6 +549,7 @@ export async function decideHoldRequest(args: {
             decisionNote: args.note,
           },
         });
+        await closeDeactivatedReviewIfDone(tx, request.memberId, args.actorRef);
         return {
           result: { requestId: request.id, status: "REJECTED", holdId: null as string | null },
           audit: {
@@ -586,6 +587,7 @@ export async function decideHoldRequest(args: {
           resultingHoldId: hold.id,
         },
       });
+      await closeDeactivatedReviewIfDone(tx, request.memberId, args.actorRef);
 
       return {
         result: { requestId: request.id, status: "APPROVED", holdId: hold.id },
@@ -634,6 +636,7 @@ export async function withdrawHoldRequest(args: {
           decisionNote: "Withdrawn by the Member.",
         },
       });
+      await closeDeactivatedReviewIfDone(tx, request.memberId, args.actorRef);
 
       return {
         result: { requestId: request.id, status: "WITHDRAWN" },
@@ -645,6 +648,17 @@ export async function withdrawHoldRequest(args: {
       };
     }
   );
+}
+
+/**
+ * Owner, 14 Oct 2026 — "Plot Hold by Deactivated Member" closes by itself once
+ * none of that Member's Hold Requests is still waiting.
+ */
+export async function closeDeactivatedReviewIfDone(tx: Tx, memberId: string, actorRef: string) {
+  const waiting = await tx.holdRequest.count({ where: { memberId, status: "PENDING" } });
+  if (waiting === 0) {
+    await closeTasksFor(tx, "MemberProfile", memberId, actorRef, "No Hold Requests are waiting.", "DEACTIVATED_MEMBER_REQUEST_REVIEW");
+  }
 }
 
 /** DESIGN §9.3 — the queue, with each request's position for its Plot. */

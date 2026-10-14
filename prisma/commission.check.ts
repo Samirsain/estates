@@ -1161,7 +1161,7 @@ async function main() {
   assert.equal((await recordOf(saleR1, "DIRECT")).payment, "ACCOUNTS_ADJUSTMENT_REQUIRED", "paid Direct below 25%");
   const t21 = await tasksOn(directR1.id, "ACCOUNTS_ADJUSTMENT");
   assert.equal(t21.length, 1, "one T21");
-  assert.equal(`${t21[0].title}|${t21[0].assigneeRole}`, "Early Commission Conflict|ACCOUNTS");
+  assert.equal(`${t21[0].title}|${t21[0].assigneeRole}`, "Paid Commission Conflict|ACCOUNTS");
 
   // Only Accounts opens a Recovery; it answers T21 and raises T22, due in 15 days.
   await expectBlocked(/Only Accounts handles Recovery/, () =>

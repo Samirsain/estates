@@ -156,6 +156,19 @@ export default function AcquisitionDetailClient({
                   <Coins className="mr-2 h-3.5 w-3.5" /> Record Buying Commission
                 </Button>
               )}
+            {permissions.payCommission &&
+              row.commission?.payment === "NOT_PAID" &&
+              (row.commission.eligibility === "READY" || row.commission.earlyApproved) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setDialog({ kind: "COMMISSION_PAID", row, early: row.commission!.eligibility !== "READY" })
+                  }
+                >
+                  <Coins className="mr-2 h-3.5 w-3.5" /> Commission Paid
+                </Button>
+              )}
             {row.status === "APPROVED" &&
               row.documentsReturnRequired &&
               !row.documentsReturnedAt &&

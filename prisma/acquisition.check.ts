@@ -254,6 +254,9 @@ async function main() {
     "READY",
     "100% Payment Given makes the Buying Commission Ready"
   );
+  const buyingTask = { recordId: commission.recordId, purpose: "COMMISSION_PAYMENT", status: "PENDING" as const };
+  const raised = await db.task.findFirst({ where: buyingTask });
+  assert.equal(`${raised?.title}|${raised?.assigneeRole}`, "Verify — Buying Commission|ACCOUNTS", "R1 — Accounts gets the payment task");
   assert.equal(
     await db.task.count({
       where: { recordId: buyback.acquisitionId, purpose: "PAYMENT_GIVEN_FOLLOW_UP", status: "PENDING" },
@@ -298,6 +301,7 @@ async function main() {
     "MILESTONE_PENDING",
     "falling below 100% steps the Buying Commission back (PRD §11.3)"
   );
+  assert.equal(await db.task.count({ where: buyingTask }), 0, "and its payment task closes");
   assert.equal(
     (await db.paymentGivenEntry.findUniqueOrThrow({ where: { id: lastEntry.id } })).status,
     "SUPERSEDED",

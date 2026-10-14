@@ -18,6 +18,7 @@ import {
   confirmPaymentGivenAction,
   correctPaymentGivenAction,
   decideAcquisitionAction,
+  markBuyingCommissionPaidAction,
   recordBuyingCommissionAction,
   type ActionResult,
 } from "./actions";
@@ -199,6 +200,47 @@ export function AcquisitionDialogs({
       >
         <Field label="Remark — compulsory">
           <Input name="note" required minLength={3} />
+        </Field>
+      </FormDialog>
+    );
+  }
+
+  if (dialog.kind === "COMMISSION_PAID") {
+    const commission = dialog.row.commission!;
+    return (
+      <FormDialog
+        title={dialog.early ? "Commission Paid Early" : "Commission Paid"}
+        subtitle={`${commission.beneficiary} · ${commission.percent}%`}
+        consequence={
+          dialog.early
+            ? "Payment Given is not yet 100%, so this is Paid Early: MD has approved it and remarks are compulsory. It can never be marked Paid again."
+            : "The Buying Commission is Ready and is recorded as Paid against the reference below."
+        }
+        busy={busy}
+        onClose={onClose}
+        onSubmit={(f) =>
+          run(() =>
+            markBuyingCommissionPaidAction(
+              {
+                recordId: commission.recordId,
+                early: dialog.early,
+                paidOn: String(f.get("paidOn")),
+                reference: String(f.get("reference")),
+                remarks: String(f.get("remarks") ?? ""),
+              },
+              newKey()
+            )
+          )
+        }
+      >
+        <Field label="Paid Date">
+          <Input name="paidOn" type="date" defaultValue={istDay(new Date())} max={istDay(new Date())} required />
+        </Field>
+        <Field label="Payment Reference No.">
+          <Input name="reference" required />
+        </Field>
+        <Field label={dialog.early ? "Remarks — compulsory" : "Remarks"}>
+          <Input name="remarks" required={dialog.early} minLength={dialog.early ? 3 : undefined} />
         </Field>
       </FormDialog>
     );

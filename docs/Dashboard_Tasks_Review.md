@@ -16,13 +16,13 @@ Button and menu names are written exactly as staff see them on screen, in **bold
 
 | | Number |
 |---|---|
-| Tasks the system creates by itself | **30** |
-| of which need an **approval** (Approve / Reject) | **13** |
+| Tasks the system creates by itself | **31** |
+| of which need an **approval** (Approve / Reject) | **14** |
 | of which are **follow-up / work** tasks | **17** |
 | Tasks staff can create by hand (**+ Add Task**) | 1 kind, any title |
-| New tasks we recommend | **6** |
+| New tasks we recommend | **5** (R1 is built) |
 
-Who receives the automatic tasks: **Accounts 15**, **CRM 11**, **MD 4**.
+Who receives the automatic tasks: **Accounts 16**, **CRM 11**, **MD 4**.
 
 There is one senior role, **MD**. When MD does something that would normally need MD's approval, it applies at once, with no approval task. This covers:
 - a Sold By Correction
@@ -64,9 +64,10 @@ Nobody adds these by hand. The system raises each one when the event in the seco
 | # | Task | Created when | Goes to |
 |---|---|---|---|
 | 16 | Verify — Commission Paid | A Commission or Loyalty Points line becomes Ready to pay | Accounts |
+| R1 | Verify — Buying Commission | A Buying Commission on a Buyback / Resale deal becomes Ready (100% Payment Given) | Accounts |
 | 17 | Commission Conflict — Correct Sold By | The Sold By / beneficiary details do not fit together | Accounts |
 | 18 | Early Commission — Pay After Approval | Accounts asks to pay a commission before its milestone | MD |
-| 19 | Early Commission Conflict | A line that was already paid becomes invalid | Accounts |
+| 19 | Paid Commission Conflict | A line that was already paid becomes invalid | Accounts |
 | 20 | Recovery Follow-Up | A Recovery is opened | Accounts |
 | 21 | Double Commission — MD Approval | A corrected beneficiary is due payment while the old one's Recovery is still open | MD |
 | 22 | Reward Review — Approved Buyback | A Buyback is approved | Accounts |
@@ -92,7 +93,7 @@ Nobody adds these by hand. The system raises each one when the event in the seco
 
 | # | Task | Created when | Goes to |
 |---|---|---|---|
-| 32 | Plot Hold by Deactivated Member | A Member with waiting Hold Requests is deactivated | CRM |
+| 32 | Plot Hold by Deactivated Member | A Member with waiting Hold Requests is deactivated (closes by itself once none waits) | CRM |
 | 33 | RERA Registration Expiring | A Member's RERA registration expires within 7 days | CRM |
 
 ### Removed by the owner (14 Oct 2026)
@@ -107,11 +108,11 @@ Nobody adds these by hand. The system raises each one when the event in the seco
 
 ## Part 2 — Actions that need approval
 
-These 13 tasks are approvals. Nothing changes until the approver clicks **Approve** or **Reject** on the record's own page. The Dashboard row only shows **Open Review**, which takes the approver there.
+These 14 tasks are approvals. Nothing changes until the approver clicks **Approve** or **Reject** on the record's own page. The Dashboard row only shows **Open Review**, which takes the approver there.
 
 The person who raises a request can never approve it themselves. The one exception is MD, as explained in the Summary.
 
-### Approved by Accounts (10)
+### Approved by Accounts (11)
 
 | # | What needs approval | Who raises it | What approval does |
 |---|---|---|---|
@@ -122,6 +123,7 @@ The person who raises a request can never approve it themselves. The one excepti
 | 8 | A revised payment schedule | CRM | The new instalment dates take effect |
 | 12 | A Buyback or Resale deal | CRM | The plot comes back into stock (needs at least 20% Payment Given) |
 | 16 | Paying a Commission or Loyalty Points line | System, when the line is Ready | Accounts marks it paid |
+| R1 | Paying a Buying Commission | System, at 100% Payment Given | Accounts clicks **Commission Paid** on the deal page |
 | 19 | An adjustment on an already-paid line | System | Accounts opens a Recovery, or closes it with a reason |
 | 26 | A benefit to someone linked to an unpaid Recovery | System | **Approve** releases the benefit; **Reject** keeps it held |
 | 27 | A bank account shared with another person | Staff entering bank details | The joint account is accepted or refused |
@@ -146,11 +148,10 @@ The person who raises a request can never approve it themselves. The one excepti
 
 ## Part 3 — Recommended new tasks
 
-These are tasks the system does not create today. For each one we give the reason, and whether the business rules already require it (**Required**) or it is **our recommendation**. None of these is built yet.
+These are tasks the system does not create today. For each one we give the reason, and whether the business rules already require it (**Required**) or it is **our recommendation**. None of these is built yet. (R1, Verify — Buying Commission, was built on 14 Oct 2026 and is now in Part 1.)
 
 | # | New task | Goes to | Created when | Closed when | Why | Basis |
 |---|---|---|---|---|---|---|
-| R1 | **Verify — Buying Commission** | Accounts | A Buying Commission on a Buyback / Resale deal becomes Ready (100% Payment Given) | Accounts marks it paid | Today Accounts gets no task and must search the Rewards tab. **First a "Commission Paid" button must be built on the Buyback / Resale deal page.** At present a Buying Commission cannot be marked paid anywhere | Required |
 | R2 | **Hold Follow-Up** | CRM | A plot is put on Hold | The Hold is booked, cancelled or expires | CRM gets a reminder to convert the Hold before it lapses | Required (the owner may waive it, since Holds expire on their own after 72 hours) |
 | R3 | **Commission On Hold — Collect Details** | CRM | A Commission or Loyalty Points line is otherwise due but held because something is missing: Aadhaar, bank details, Customer Terms acceptance, the closer's KYC, or RERA | The missing item is recorded and the line becomes Ready | Today the money just sits On Hold and nobody is told to chase the missing document. This is the most common reason a payout is delayed | Our recommendation |
 | R4 | **Verify — Payment Correction** | Accounts | Accounts corrects a recorded payment received | MD approves or rejects the correction | A change to money received is applied at once today, with no second check. The Buyback side already requires a second person | Required (owner decision) |
@@ -169,6 +170,13 @@ These are tasks the system does not create today. For each one we give the reaso
   - deactivated-Member tasks → the Member's page
   - Buyback / Resale tasks → the deal page
 - **Manual tasks:** the chosen staff member is saved (or "Anyone in CRM / Accounts / MD"), and a repeating task (daily, weekly, monthly) creates the next one when it is done.
+
+### Suggestions approved by the owner and done (14 Oct 2026)
+
+- **Commission Paid** button on the Buyback / Resale deal page (Accounts), and the **Verify — Buying Commission** task (R1).
+- Task 19 is now **Paid Commission Conflict**: it covers any already-paid line, Paid or Paid Early.
+- The Booking page and blocked messages say **Selling Buyback/Resale Plot**, the same as task 14.
+- **Plot Hold by Deactivated Member** closes by itself once none of the Member's Hold Requests is waiting.
 
 ---
 

@@ -12,7 +12,7 @@ import { assertCheckDatabase } from "./check-guard.ts";
 assertCheckDatabase();
 import { purgeCheckData } from "./check-cleanup.ts";
 import { CommandError } from "@/lib/services/command";
-import { createHold } from "@/lib/services/hold-service";
+import { createHold, decideHoldRequest, submitHoldRequest } from "@/lib/services/hold-service";
 import { createEnquiry } from "@/lib/services/enquiry-service";
 import { setMemberStatus } from "@/lib/services/network-service";
 import { decideBookingRequest, submitBookingRequest } from "@/lib/services/booking-service";
@@ -194,6 +194,22 @@ async function main() {
       reason: "crafted request",
     })
   );
+
+  // Owner, 14 Oct 2026 — "Plot Hold by Deactivated Member" closes once no Hold Request waits.
+  const holder = await db.person.create({ data: { fullName: `${TAG} Deactivated Member`, primaryMobile: "9800000077" } });
+  const holderProfile = await db.memberProfile.create({ data: { memberId: `${TAG}-DM`, personId: holder.id, activationDate: today } });
+  const requested = await submitHoldRequest({
+    idempotencyKey: key(),
+    actorRef: `${TAG}-PORTAL`,
+    memberProfileId: holderProfile.id,
+    personId: buyer.id,
+    plotId: (await makePlot(project.id, "DM")).id,
+  });
+  await setMemberStatus({ idempotencyKey: key(), actorRef: `${TAG}-MD`, actorRole: "MD", memberProfileId: holderProfile.id, active: false, reason: "Check." });
+  const review = { recordId: holderProfile.id, purpose: "DEACTIVATED_MEMBER_REQUEST_REVIEW" };
+  assert.equal(await db.task.count({ where: { ...review, status: "PENDING" } }), 1, "raised while a request waits");
+  await decideHoldRequest({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", requestId: requested.holdRequestId, approve: false, note: "Member deactivated." });
+  assert.equal(await db.task.count({ where: { ...review, status: "PENDING" } }), 0, "closed once none waits");
 
   // Maker-checker: the account that submitted a Booking Request may not decide it.
   const plotC = await makePlot(project.id, "C");

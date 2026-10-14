@@ -37,6 +37,7 @@ import {
 import {
   BUYBACK_COMMISSION_PURPOSE,
   cancelCommissionForBooking,
+  COMMISSION_PAYMENT_PURPOSE,
   raiseAdjustmentTask,
   raiseBuybackUnwindReview,
   reassessCommission,
@@ -1348,6 +1349,7 @@ async function stepBackBuyingCommission(tx: Tx, acquisitionId: string, actorRef:
   const paid = record?.payment === "PAID" || record?.payment === "PAID_EARLY";
   if (!record || (record.eligibility === "MILESTONE_PENDING" && !paid)) return;
   if (paid) await raiseAdjustmentTask(tx, record.id, reason);
+  await closeTasksFor(tx, "Commission", record.id, actorRef, `Milestone lost — ${reason}`, COMMISSION_PAYMENT_PURPOSE);
   await tx.commissionRecord.update({
     where: { id: record.id },
     data: {

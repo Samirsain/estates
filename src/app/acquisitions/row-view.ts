@@ -76,6 +76,8 @@ export function toAcquisitionRow(a: AcquisitionWithRelations): AcquisitionRowVie
     })),
     commission: a.commissions[0]
       ? {
+          recordId: a.commissions[0].id,
+          earlyApproved: a.commissions[0].earlyApprovedAt !== null,
           beneficiary: a.commissions[0].beneficiaryPerson.fullName,
           beneficiaryPersonId: a.commissions[0].beneficiaryPersonId,
           percent: a.commissions[0].percent.toFixed(2),

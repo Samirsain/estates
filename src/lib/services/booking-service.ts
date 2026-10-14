@@ -1432,7 +1432,7 @@ export async function requestSoldByCorrection(args: {
  * there is no second senior role to approve it). On approval the
  * old current commission records are superseded, new valid records are created,
  * and anything already Paid or Paid Early becomes Accounts Adjustment Required
- * (its Early Commission Conflict task goes to Accounts).
+ * (its Paid Commission Conflict task goes to Accounts).
  */
 export async function decideSoldByCorrection(args: {
   idempotencyKey: string;
@@ -1532,7 +1532,7 @@ export async function decideSoldByCorrection(args: {
 
       // The owner removed the separate "commission after Sold By Correction"
       // review (14 Oct 2026): Verify — Commission Paid, Commission Conflict and
-      // Early Commission Conflict already carry that work.
+      // Paid Commission Conflict already carry that work.
       await generateForBooking(tx, args.bookingId, args.actorRef);
       await reassessCommission(tx, args.bookingId, args.actorRef);
 

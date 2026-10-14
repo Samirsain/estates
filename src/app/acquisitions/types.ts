@@ -45,6 +45,9 @@ export type AcquisitionRowView = {
   instalments: Array<{ seq: number; scheduled: string; received: string; dueDate: string }>;
   entries: EntryView[];
   commission: {
+    recordId: string;
+    /** MD approved paying it before 100% Payment Given (Paid Early). */
+    earlyApproved: boolean;
     beneficiary: string;
     beneficiaryPersonId: string;
     percent: string;
@@ -69,6 +72,8 @@ export type Permissions = {
   confirmGiven: boolean;
   correctGiven: boolean;
   recordCommission: boolean;
+  /** Accounts marks a Buying Commission paid (COMMISSION_PROCESS). */
+  payCommission: boolean;
 };
 
 /** Every dialog either screen can open, other than New Buyback. */
@@ -77,7 +82,8 @@ export type Dialog =
   | { kind: "CORRECT"; row: AcquisitionRowView; entry: EntryView }
   | { kind: "DECIDE"; row: AcquisitionRowView; approve: boolean }
   | { kind: "CANCEL"; row: AcquisitionRowView }
-  | { kind: "COMMISSION"; row: AcquisitionRowView };
+  | { kind: "COMMISSION"; row: AcquisitionRowView }
+  | { kind: "COMMISSION_PAID"; row: AcquisitionRowView; early: boolean };
 
 export const STATUS_LABEL: Record<string, string> = {
   PENDING_APPROVAL: "Waiting Approval",

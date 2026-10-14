@@ -57,6 +57,7 @@ export default async function AcquisitionDetailPage({
         confirmGiven: can(actor.role, "PAYMENT_GIVEN_CONFIRM", actor.extraPermissions),
         correctGiven: can(actor.role, "PAYMENT_CORRECT", actor.extraPermissions),
         recordCommission: can(actor.role, "BUYING_COMMISSION_RECORD", actor.extraPermissions),
+        payCommission: can(actor.role, "COMMISSION_PROCESS", actor.extraPermissions),
       }}
       row={toAcquisitionRow(acquisition)}
       people={people.map((p) => ({

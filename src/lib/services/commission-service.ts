@@ -147,7 +147,7 @@ export async function raiseAdjustmentTask(tx: Tx, recordId: string, cause: strin
     recordId,
     recordName: await commissionRecordName(tx, recordId),
     purpose: ADJUSTMENT_PURPOSE,
-    title: "Early Commission Conflict",
+    title: "Paid Commission Conflict",
     assigneeRole: "ACCOUNTS",
     dueAt: new Date(),
     decision: true,
@@ -773,6 +773,22 @@ export async function refreshBuyingCommission(tx: Tx, acquisitionId: string, act
   });
   const holdReason = controls.circumvention ? ("RECOVERY_CIRCUMVENTION_REVIEW" as const) : null;
   const eligibility = holdReason ? ("ON_HOLD" as const) : ("READY" as const);
+  // R1 (owner, 14 Oct 2026) — a Ready Buying Commission is Accounts' to pay; it
+  // is marked paid on its deal page, which closes this task.
+  if (eligibility === "READY") {
+    await ensureTask(tx, {
+      recordKind: "Commission",
+      recordId: record.id,
+      recordName: `${record.acquisition.acquisitionNo} · BUYING ${record.percent.toFixed(2)}%`,
+      purpose: COMMISSION_PAYMENT_PURPOSE,
+      title: "Verify — Buying Commission",
+      assigneeRole: "ACCOUNTS",
+      dueAt: new Date(),
+      decision: true,
+    });
+  } else {
+    await closeTasksFor(tx, "Commission", record.id, actorRef, "Held — not payable now.", COMMISSION_PAYMENT_PURPOSE);
+  }
   if (eligibility === record.eligibility && holdReason === record.holdReason) return;
   await tx.commissionRecord.update({ where: { id: record.id }, data: { eligibility, holdReason } });
   await tx.commissionEvent.create({

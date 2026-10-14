@@ -356,7 +356,11 @@ export function assertProcessFree(active: BookingProcess, action: string): Check
   );
 }
 
+/** Where the owner named a process differently from its code (14 Oct 2026). */
+const PROCESS_NAMES: Record<string, string> = { MANAGEMENT_ACTION_REQUIRED: "Selling Buyback/Resale Plot" };
+
 function label(value: string): string {
+  if (PROCESS_NAMES[value]) return PROCESS_NAMES[value];
   return value
     .split("_")
     .map((word) => word.charAt(0) + word.slice(1).toLowerCase())

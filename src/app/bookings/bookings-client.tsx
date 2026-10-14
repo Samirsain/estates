@@ -209,7 +209,7 @@ const PROCESS_LABEL: Record<string, string> = {
   CHANGE_PLOT_PENDING: "Change Plot Under Process",
   PRIMARY_CUSTOMER_CHANGE_UNDER_REVIEW: "Primary Customer Change — Waiting Approval",
   SOLD_BY_CORRECTION_UNDER_REVIEW: "Sold By Correction — Waiting Approval",
-  MANAGEMENT_ACTION_REQUIRED: "Management Action Required",
+  MANAGEMENT_ACTION_REQUIRED: "Selling Buyback/Resale Plot",
 };
 
 const PAYMENT_LABEL: Record<string, string> = {

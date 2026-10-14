@@ -63,6 +63,7 @@ export default async function AcquisitionsPage() {
         confirmGiven: can(actor.role, "PAYMENT_GIVEN_CONFIRM", actor.extraPermissions),
         correctGiven: can(actor.role, "PAYMENT_CORRECT", actor.extraPermissions),
         recordCommission: can(actor.role, "BUYING_COMMISSION_RECORD", actor.extraPermissions),
+        payCommission: can(actor.role, "COMMISSION_PROCESS", actor.extraPermissions),
       }}
       rows={acquisitions.map(toAcquisitionRow)}
       buybackable={buybackable.map((b) => ({

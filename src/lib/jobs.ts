@@ -7,7 +7,7 @@ import { istDay } from "@/lib/tasks";
 import { settleConstraints } from "@/lib/services/command";
 import { activateDueVersions } from "@/lib/services/commission-settings-service";
 import { expireTripCredits, windDownTripBuckets } from "@/lib/services/trip-service";
-import { releaseHold } from "@/lib/services/hold-service";
+import { closeDeactivatedReviewIfDone, releaseHold } from "@/lib/services/hold-service";
 import { syncPaymentFollowUp } from "@/lib/services/payment-service";
 import { completeTask, ensureTask, reviseTask } from "@/lib/services/task-service";
 import { hasBuyerProcess } from "@/lib/services/acquisition-service";
@@ -75,10 +75,15 @@ export function runHoldExpiry(now: Date = new Date()): Promise<JobResult> {
  */
 export function runHoldRequestExpiry(now: Date = new Date()): Promise<JobResult> {
   return withRun("MEMBER_HOLD_REQUEST_EXPIRY", async () => {
+    const due = { status: "PENDING" as const, expiresAt: { lte: now } };
+    const members = await db.holdRequest.findMany({ where: due, select: { memberId: true }, distinct: ["memberId"] });
     const result = await db.holdRequest.updateMany({
-      where: { status: "PENDING", expiresAt: { lte: now } },
+      where: due,
       data: { status: "EXPIRED", decidedAt: now, decisionNote: "Expired on the working-day cut-off." },
     });
+    for (const { memberId } of members) {
+      await db.$transaction((tx) => closeDeactivatedReviewIfDone(tx, memberId, "SYSTEM"));
+    }
     return { processed: result.count, changed: result.count };
   });
 }

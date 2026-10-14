@@ -15,6 +15,7 @@ import {
   recordBuybackDocumentsReturned,
   recordBuyingCommission,
 } from "@/lib/services/acquisition-service";
+import { markCommissionPaid } from "@/lib/services/commission-service";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
@@ -28,6 +29,30 @@ function refresh() {
   revalidatePath("/plots");
   revalidatePath("/bookings");
   revalidatePath("/dashboard");
+}
+
+/** R1 — Accounts records a Buying Commission as Paid (or Paid Early, once MD approved it) on its deal. */
+export async function markBuyingCommissionPaidAction(
+  input: { recordId: string; early: boolean; paidOn: string; reference: string; remarks: string },
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("COMMISSION_PROCESS");
+  try {
+    const result = await markCommissionPaid({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      recordId: input.recordId,
+      early: input.early,
+      paidOn: new Date(input.paidOn),
+      reference: input.reference,
+      remarks: input.remarks,
+    });
+    refresh();
+    return { ok: true, message: result.payment === "PAID_EARLY" ? "Buying Commission recorded as Paid Early." : "Buying Commission recorded as Paid." };
+  } catch (error) {
+    return toResult(error);
+  }
 }
 
 export type ScheduleRowInput = { seq: number; percent: string; dueDate: string };
