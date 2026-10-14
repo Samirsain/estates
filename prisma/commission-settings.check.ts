@@ -142,6 +142,17 @@ async function main() {
     /must be in the future/
   );
 
+  // A waiting version never blocks MD: a newer one replaces it before it takes effect.
+  const early = await createCommissionVersion({
+    idempotencyKey: key(),
+    ...MD,
+    projectId,
+    ...terms,
+    reason: "Far future",
+    effectiveFrom: inMs(3_600_000),
+  });
+  assert.equal(early.status, "APPROVED");
+
   // UAT SET-12 — a future version waits as Approved while version 2 stays Active.
   const v3 = await createCommissionVersion({
     idempotencyKey: key(),
@@ -158,8 +169,9 @@ async function main() {
     "ACTIVE",
     "the current version stays in force until the next one's time"
   );
-  // One waiting version per Project: nothing new while version 3 waits.
-  await assert.rejects(createCommissionVersion({ idempotencyKey: key(), ...MD, projectId, ...terms }), /takes effect on/);
+  const replaced = await db.projectCommissionVersion.findUniqueOrThrow({ where: { id: early.versionId } });
+  assert.equal(replaced.status, "SUPERSEDED", "the waiting version is replaced, never activated");
+  assert.equal(replaced.effectiveTo, null, "it never took effect");
   assert.equal(await db.$transaction((tx) => activateDueVersions(tx, projectId)), 0, "not due yet");
 
   // The scheduled job activates it once its time has come — and only once.

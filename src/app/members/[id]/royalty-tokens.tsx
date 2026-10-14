@@ -294,7 +294,7 @@ function RecordDialog({
   }, [memberProfileId]);
 
   const amount = /^\d+$/.test(tokens.trim()) ? Number(tokens) : Number.NaN;
-  const quantity = validateTokenQuantity("Tokens", amount);
+  const quantity = validateTokenQuantity("Points", amount);
   const dated = validateBusinessDay("Redemption date", on, today);
   const problem = !tokens
     ? null
@@ -329,7 +329,7 @@ function RecordDialog({
           </div>
         )}
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Tokens">
+          <Field label="Points">
             <input className={inputClass} inputMode="numeric" value={tokens} onChange={(e) => setTokens(e.target.value)} />
           </Field>
           <Field label="Redemption date">

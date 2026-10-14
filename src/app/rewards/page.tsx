@@ -77,7 +77,7 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
                           ? "Customer-closing Loyalty Points"
                           : "Repeat-purchase Loyalty Points"
                         : c.type === "DIRECT"
-                          ? "Project Direct"
+                          ? "Commission"
                           : "Buying Commission"}{" "}
                       {c.percent.toFixed(2)}%
                     </td>

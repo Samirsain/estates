@@ -16,7 +16,6 @@ import {
 } from "@/lib/domain/commission";
 import { validateTokenQuantity } from "@/lib/domain/tokens";
 import { validateTripSettings, type TripSettingsInput } from "@/lib/domain/trip";
-import { formatIst } from "@/lib/tasks";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { closeTasksFor, ensureTask } from "./task-service";
 
@@ -140,15 +139,27 @@ async function writeInventory(tx: Tx, versionId: string, projectId: string, inpu
  */
 export async function insertVersion(tx: Tx, projectId: string, actorRef: string, input: CommissionVersionInput) {
   await activateDueVersions(tx, projectId);
+  // A version still waiting for its Effective from (or a Draft/Pending one from
+  // before MD-only) is replaced by the new one: it never took effect, so
+  // nothing that froze it changes. Only one open version may exist per Project.
   const waiting = await tx.projectCommissionVersion.findFirst({
     where: { projectId, status: { in: ["DRAFT", "PENDING_APPROVAL", "APPROVED"] } },
   });
   if (waiting) {
-    blocked(
-      waiting.status === "APPROVED"
-        ? `Version ${waiting.version} takes effect on ${formatIst(waiting.effectiveFrom!)}. Create the next version after it takes effect.`
-        : `Version ${waiting.version} was never approved. It must be closed before a new version is created.`
-    );
+    const replaced = `Replaced by a newer version before it took effect — ${input.reason.trim()}`;
+    await tx.projectCommissionVersion.update({
+      where: { id: waiting.id },
+      data:
+        waiting.status === "APPROVED"
+          ? { status: "SUPERSEDED", decisionNote: replaced }
+          : {
+              status: "REJECTED",
+              submittedAt: waiting.submittedAt ?? new Date(),
+              decidedByRef: actorRef,
+              decidedAt: new Date(),
+              decisionNote: replaced,
+            },
+    });
   }
   const latest = await tx.projectCommissionVersion.findFirst({
     where: { projectId },

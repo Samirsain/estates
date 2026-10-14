@@ -109,8 +109,8 @@ function Terms({ v, plotNo }: { v: CommissionVersionView; plotNo: (id: string) =
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       <Section n={1} title="Commission">
-        <Row label="Direct Enabled">{yesNo(v.directEnabled)}</Row>
-        <Row label="Direct Rate %">
+        <Row label="Commission Enabled">{yesNo(v.directEnabled)}</Row>
+        <Row label="Commission Rate %">
           <span className="font-medium">{direct(v)}</span>
         </Row>
         {v.directEnabled && <Row label="Milestone">25% Payment Received · self-purchase 100%</Row>}
@@ -149,7 +149,7 @@ function Terms({ v, plotNo }: { v: CommissionVersionView; plotNo: (id: string) =
         </Row>
         <Row label="Earned by">The Royalty Linked Member, once per Customer</Row>
       </Section>
-      <Section n={5} title="Reward Programme References">
+      <Section n={5} title="Rewards References">
         {v.trip && (
           <>
             <Row label="Rewards Code">{v.trip.code}</Row>
@@ -230,7 +230,7 @@ export default function CommissionSettings({
             Applicable Commission is Project-specific and disclosed before the relevant Booking.
           </p>
         </div>
-        {isMd && !open && (
+        {isMd && (
           <Button size="xs" variant="outline" onClick={() => setEditing(true)}>
             New version
           </Button>
@@ -301,6 +301,7 @@ export default function CommissionSettings({
           busy={busy}
           plots={plots}
           start={active}
+          replacing={open?.version ?? null}
           onClose={() => setEditing(false)}
           onSubmit={(input) => run(() => createCommissionVersionAction(projectId, input, newKey()))}
         />
@@ -530,12 +531,15 @@ export function useCommercialRewardsDraft(
 
 function VersionForm({
   start,
+  replacing,
   busy,
   plots,
   onClose,
   onSubmit,
 }: {
   start: CommissionVersionView | null;
+  /** A version still waiting for its Effective from, which saving replaces. */
+  replacing: number | null;
   busy: boolean;
   plots: PlotOption[];
   onClose: () => void;
@@ -545,7 +549,10 @@ function VersionForm({
   return (
     <Modal
       title="New Rewards version"
-      description="Saved and approved at once. It becomes Active now, or at its Effective from. Earlier versions are never edited."
+      description={
+        "Saved and approved at once. It becomes Active now, or at its Effective from. Earlier versions are never edited." +
+        (replacing ? ` Saving replaces Version ${replacing}, which has not taken effect yet.` : "")
+      }
       onClose={onClose}
     >
       <div className="space-y-3">
