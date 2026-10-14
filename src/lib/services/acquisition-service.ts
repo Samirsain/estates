@@ -47,6 +47,7 @@ import { syncRoyaltyLink } from "./network-service";
 import { refreshAwardOfBooking } from "./royalty-service";
 import { refreshTripOfBooking, syncTripForBooking } from "./trip-service";
 import { closeTasksFor, ensureTask, reviseTask } from "./task-service";
+import { hasBuyerProcess } from "./selling-task";
 
 const D = Prisma.Decimal;
 
@@ -63,20 +64,6 @@ async function activeGivenSchedule(tx: Tx, acquisitionId: string) {
  * PRD §11.4 — an acquisition cannot be unwound while a new buyer already holds
  * or has booked the property.
  */
-export async function hasBuyerProcess(tx: Tx, plotId: string | null): Promise<boolean> {
-  if (!plotId) return false;
-  const [holds, bookings] = await Promise.all([
-    tx.hold.count({ where: { plotId, status: "ACTIVE" } }),
-    tx.booking.count({
-      where: {
-        plotId,
-        status: { in: ["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED", "REFUND_PENDING", "DELIVERED"] },
-      },
-    }),
-  ]);
-  return holds + bookings > 0;
-}
-
 async function acquisitionLabel(tx: Tx, acquisitionId: string): Promise<string> {
   const acquisition = await tx.acquisition.findUniqueOrThrow({
     where: { id: acquisitionId },

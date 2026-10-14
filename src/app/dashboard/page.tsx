@@ -17,7 +17,11 @@ export default async function DashboardPage() {
   // because a client-side filter is not a control (DESIGN §1): the rows would
   // already be in the page payload, remarks and all.
   const seesAllWork = actor.role === "MD";
-  const scope = seesAllWork ? {} : { OR: [{ assigneeStaffId: actor.accountId }, { assigneeRole: actor.role }] };
+  // A task given to one person is theirs alone (owner, 14 Oct 2026); a task
+  // given to a role is for everyone in it.
+  const scope = seesAllWork
+    ? {}
+    : { OR: [{ assigneeStaffId: actor.accountId }, { assigneeRole: actor.role, assigneeStaffId: null }] };
   const include = { assigneeStaff: { include: { person: true } } } as const;
 
   // Every pending task, always — a cap here once hid live work behind old

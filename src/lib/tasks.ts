@@ -397,9 +397,9 @@ export function recordHref(
       return `/projects/${record.id}`;
     case "Acquisition":
       return `/acquisitions/${record.id}`;
-    // ponytail: the list, not the row — /enquiries has no focus param yet; add one if the list grows long.
+    // The row is highlighted and its Record Follow-Up opens.
     case "Enquiry":
-      return "/enquiries";
+      return `/enquiries?enquiry=${record.id}`;
     default:
       return null;
   }

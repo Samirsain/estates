@@ -10,7 +10,7 @@ import { expireTripCredits, windDownTripBuckets } from "@/lib/services/trip-serv
 import { closeDeactivatedReviewIfDone, releaseHold } from "@/lib/services/hold-service";
 import { syncPaymentFollowUp } from "@/lib/services/payment-service";
 import { completeTask, ensureTask, reviseTask } from "@/lib/services/task-service";
-import { hasBuyerProcess } from "@/lib/services/acquisition-service";
+import { hasBuyerProcess } from "@/lib/services/selling-task";
 
 export type JobResult = { jobType: string; processed: number; changed: number };
 
@@ -291,7 +291,7 @@ export function runTripWindDown(now: Date = new Date()): Promise<JobResult> {
  * Plot no longer has the active Hold or Booking that raised it. A Hold or
  * Booking ends along many paths (expiry, cancellation, rejection, refund,
  * Change Plot), so one sweep here covers them all.
- * ponytail: up to 30 minutes late (the job's schedule); hook the end paths if that matters.
+ * Every end path also closes it at once (selling-task.ts); this sweep is the safety net.
  */
 export function runManagementActionClear(_now: Date = new Date()): Promise<JobResult> {
   return withRun("MANAGEMENT_ACTION_CLEAR", async () => {

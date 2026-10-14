@@ -32,6 +32,7 @@ import {
 import { createScheduleVersion, syncPaymentFollowUp, type ScheduleInput } from "./payment-service";
 import { syncTripForBooking } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
+import { closeSellingTasksIfClear } from "./selling-task";
 import { ensureCustomerProfile, linkOrCreatePerson } from "./enquiry-service";
 import { validateSoldBy } from "./sold-by";
 
@@ -673,6 +674,7 @@ function decideInTransaction(args: Parameters<typeof decideBookingRequest>[0]) {
           where: { id: args.bookingId },
           data: { status: "REQUEST_REJECTED", closedAt: new Date(), closeReason: args.note },
         });
+        await closeSellingTasksIfClear(tx, booking.plotId, args.actorRef);
         await closeTasksFor(tx, "Booking", args.bookingId, args.actorRef, `Rejected — ${args.note}`, "BOOKING_REVIEW");
         await tx.bookingEvent.create({
           data: {
@@ -913,6 +915,7 @@ export async function cancelBooking(args: {
           where: { id: args.bookingId },
           data: { status: "REQUEST_CANCELLED", closedAt: new Date(), closeReason: args.reason },
         });
+        await closeSellingTasksIfClear(tx, booking.plotId, args.actorRef);
         // The linked Enquiry stays Active (PRD §7.2).
         await closeTasksFor(tx, "Booking", args.bookingId, args.actorRef, "Request Cancelled", "BOOKING_REVIEW");
         await tx.bookingEvent.create({

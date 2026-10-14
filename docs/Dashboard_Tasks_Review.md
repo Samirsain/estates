@@ -78,7 +78,7 @@ Nobody adds these by hand. The system raises each one when the event in the seco
 
 | # | Task | Created when | Goes to |
 |---|---|---|---|
-| 26 | Check Bank Account | The person receiving a benefit shares a bank account, mobile or address with someone who owes a Recovery | Accounts |
+| 26 | Check Recovery Link | The person receiving a benefit shares a bank account, mobile or address with someone who owes a Recovery | Accounts |
 | 27 | Check Joint Bank Account — Approval | Bank details are entered for an account already used by someone else, with proof that it is joint | Accounts |
 
 ### Rewards (Trip) and Royalty Points
@@ -160,7 +160,7 @@ These are tasks the system does not create today. For each one we give the reaso
 
 ### Changes to existing tasks — approved by the owner and done (14 Oct 2026)
 
-- **"Selling Buyback/Resale Plot" closes by itself** when the conflicting Hold or Booking ends (checked every 30 minutes).
+- **"Selling Buyback/Resale Plot" closes by itself** when the conflicting Hold or Booking ends.
 - **"Verify — Commission after Sold By Correction" is removed.** Its work is covered by tasks 16, 17 and 19.
 - **Follow-up tasks** (Enquiry, Payment, Payment Given) have no **Done** button. The Dashboard shows **Open record** instead; staff use **Record Follow-Up**, **Confirm Payment Received** or **Confirm Payment Given**, so the follow-up is never lost.
 - **New titles** (Part 1) are in use.
@@ -177,6 +177,10 @@ These are tasks the system does not create today. For each one we give the reaso
 - Task 19 is now **Paid Commission Conflict**: it covers any already-paid line, Paid or Paid Early.
 - The Booking page and blocked messages say **Selling Buyback/Resale Plot**, the same as task 14.
 - **Plot Hold by Deactivated Member** closes by itself once none of the Member's Hold Requests is waiting.
+- A manual task given to **one staff member** is seen only by that person (and MD); a task given to a role is seen by everyone in it. Enquiry Follow-Ups go to the Enquiry's assigned person the same way.
+- **Enquiry Follow-Up → Open record** opens that Enquiry's row, highlighted, with **Record Follow-Up** already open.
+- Task 26 is now **Check Recovery Link** (it covers a shared bank account, mobile or address).
+- **Selling Buyback/Resale Plot** closes the moment the Hold or Booking ends (Hold released, Booking Request rejected or cancelled, Booking cancelled, Change Plot). The 30-minute job stays as a safety net.
 
 ---
 

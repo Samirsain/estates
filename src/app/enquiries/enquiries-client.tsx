@@ -134,6 +134,7 @@ export default function EnquiriesClient({
   staff,
   canManage,
   startFor,
+  focus,
 }: {
   role: StaffRole;
   actorName: string;
@@ -155,18 +156,26 @@ export default function EnquiriesClient({
   canManage: boolean;
   /** A Person id from ?for=: New Enquiry opens straight away for them. */
   startFor: string | null;
+  /** An Enquiry id from ?enquiry=: its row is highlighted and its follow-up opens. */
+  focus: string | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<{ kind: "ok" | "error"; text: string } | null>(null);
-  const [statusFilter, setStatusFilter] = React.useState("ACTIVE");
+  const focused = focus ? rows.find((r) => r.id === focus) ?? null : null;
+  const [statusFilter, setStatusFilter] = React.useState(focused && focused.status !== "ACTIVE" ? "ALL" : "ACTIVE");
   const [assigneeFilter, setAssigneeFilter] = React.useState("ALL");
   const [search, setSearch] = React.useState("");
   // null when closed; otherwise the Person the form opens with ("" for nobody).
   const [creating, setCreating] = React.useState<string | null>(
     canManage && startFor ? startFor : null
   );
-  const [followUp, setFollowUp] = React.useState<EnquiryRowView | null>(null);
+  const [followUp, setFollowUp] = React.useState<EnquiryRowView | null>(
+    canManage && focused?.status === "ACTIVE" ? focused : null
+  );
+  React.useEffect(() => {
+    if (focus) document.getElementById(`enq-${focus}`)?.scrollIntoView({ block: "center" });
+  }, [focus]);
   const [closing, setClosing] = React.useState<EnquiryRowView | null>(null);
 
   /** Who currently carries work here, for the filter beside the status one. */
@@ -304,7 +313,8 @@ export default function EnquiriesClient({
                 {visible.map((e) => (
                   <tr
                     key={e.id}
-                    className="h-14 border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1"
+                    id={`enq-${e.id}`}
+                    className={`${e.id === focus ? "bg-primary/10 " : ""}h-14 border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1`}
                   >
                     <td className="whitespace-nowrap tabular-nums text-muted-foreground">
                       {formatIstDate(e.createdAt)}

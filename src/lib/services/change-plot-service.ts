@@ -18,6 +18,7 @@ import { generateForBooking, raiseAdjustmentTask, reassessCommission } from "./c
 import { createScheduleVersion, syncPaymentFollowUp, type ScheduleInput } from "./payment-service";
 import { syncTripForBooking } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
+import { closeSellingTasksIfClear } from "./selling-task";
 
 const D = Prisma.Decimal;
 
@@ -395,6 +396,7 @@ export async function decideChangePlot(args: {
           reason: returned.message ? `${args.note} — ${returned.message}` : args.note,
         },
       });
+      await closeSellingTasksIfClear(tx, request.fromPlotId, args.actorRef);
 
       await tx.plot.update({
         where: { id: request.toPlotId },

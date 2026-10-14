@@ -84,7 +84,7 @@ async function circumventionHeld(tx: Tx, personId: string, recordName: string): 
         recordId: review.id,
         recordName: `${recordName} · ${recovery.recoveryNo}`,
         purpose: CIRCUMVENTION_PURPOSE,
-        title: "Check Bank Account",
+        title: "Check Recovery Link",
         assigneeRole: "ACCOUNTS",
         dueAt: new Date(),
         decision: true,

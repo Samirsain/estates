@@ -18,6 +18,7 @@ import {
 import { decideBookingRequest, submitBookingRequest } from "@/lib/services/booking-service";
 import { confirmPaymentReceived } from "@/lib/services/payment-service";
 import { runManagementActionClear } from "@/lib/jobs";
+import { releaseHold } from "@/lib/services/hold-service";
 import {
   approveCommissionPaidEarly,
   markCommissionPaid,
@@ -370,9 +371,10 @@ async function main() {
   });
   await runManagementActionClear();
   assert.equal((await db.task.findUniqueOrThrow({ where: { id: sellingTask.id } })).status, "PENDING", "open while the Hold is active");
-  await db.hold.updateMany({ where: { plotId: plotA.id }, data: { status: "CANCELLED" } });
-  await runManagementActionClear();
-  assert.equal((await db.task.findUniqueOrThrow({ where: { id: sellingTask.id } })).status, "COMPLETED", "closed once the Hold ends");
+  // Ending the Hold closes it at once, through the Hold's own release path — no job needed.
+  const buyerHold = await db.hold.findFirstOrThrow({ where: { plotId: plotA.id, status: "ACTIVE" } });
+  await db.$transaction((tx) => releaseHold(tx, buyerHold.id, ACC, "CANCELLED", "Buyer withdrew."));
+  assert.equal((await db.task.findUniqueOrThrow({ where: { id: sellingTask.id } })).status, "COMPLETED", "closed the moment the Hold ends");
 
   await cancelAcquisitionDeal({
     idempotencyKey: key(),

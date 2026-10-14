@@ -16,6 +16,7 @@ import { syncRoyaltyLink } from "./network-service";
 import { syncPaymentFollowUp } from "./payment-service";
 import { syncTripForBooking } from "./trip-service";
 import { closeTasksFor } from "./task-service";
+import { closeSellingTasksIfClear } from "./selling-task";
 
 type RestoreSnapshot = { bookingStatus: BookingStatus; plotStatus: PlotStatus };
 
@@ -197,6 +198,7 @@ export async function decideCancellation(args: {
         where: { id: args.bookingId },
         data: { status: "CANCELLED", activeProcess: "NONE", closedAt: new Date() },
       });
+      await closeSellingTasksIfClear(tx, booking.plotId, args.actorRef);
 
       // PRD §15 — the one restriction-aware return. Booking cancellation adds
       // no RESALE tag; only an acquisition does that.

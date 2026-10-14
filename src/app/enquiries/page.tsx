@@ -11,26 +11,24 @@ export const dynamic = "force-dynamic";
 export default async function EnquiriesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ for?: string }>;
+  searchParams: Promise<{ for?: string; enquiry?: string }>;
 }) {
   const actor = await requireStaff();
   // A Customer profile's Start Enquiry lands here with ?for=<personId>.
-  const { for: startFor } = await searchParams;
+  // A Dashboard follow-up task lands here with ?enquiry=<id>: that row opens.
+  const { for: startFor, enquiry: focusId } = await searchParams;
+  const enquiryInclude = {
+    person: true,
+    project: true,
+    plot: true,
+    sourceMember: { include: { person: true } },
+    sourceCustomer: { include: { person: true } },
+    assignedStaff: { include: { person: true } },
+    followUps: { orderBy: { at: "desc" as const }, take: 1 },
+  };
 
   const [enquiries, projects, plots, people, members, customers, staff] = await Promise.all([
-    db.enquiry.findMany({
-      include: {
-        person: true,
-        project: true,
-        plot: true,
-        sourceMember: { include: { person: true } },
-        sourceCustomer: { include: { person: true } },
-        assignedStaff: { include: { person: true } },
-        followUps: { orderBy: { at: "desc" }, take: 1 },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-    }),
+    db.enquiry.findMany({ include: enquiryInclude, orderBy: { createdAt: "desc" }, take: 200 }),
     db.project.findMany({ orderBy: { name: "asc" } }),
     db.plot.findMany({
       // Status and size travel with the Plot so the form can say what the
@@ -81,6 +79,12 @@ export default async function EnquiriesPage({
       orderBy: { staffAccountId: "asc" },
     }),
   ]);
+
+  // The focused Enquiry may be older than the latest 200.
+  if (focusId && !enquiries.some((e) => e.id === focusId)) {
+    const focused = await db.enquiry.findUnique({ where: { id: focusId }, include: enquiryInclude }).catch(() => null);
+    if (focused) enquiries.unshift(focused);
+  }
 
   const rows: EnquiryRowView[] = enquiries.map((e) => ({
     id: e.id,
@@ -146,6 +150,7 @@ export default async function EnquiriesPage({
       }))}
       canManage={can(actor.role, "ENQUIRY_MANAGE")}
       startFor={startFor && people.some((p) => p.id === startFor) ? startFor : null}
+      focus={focusId && rows.some((r) => r.id === focusId) ? focusId : null}
     />
   );
 }

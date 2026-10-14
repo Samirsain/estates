@@ -52,13 +52,13 @@ export function Reviews({ rows, role }: { rows: ReviewRow[]; role: string }) {
           {rows.length === 0 && (
             <tr>
               <td className={`${TD} text-muted-foreground`} colSpan={5}>
-                No Check Bank Account reviews.
+                No Check Recovery Link reviews.
               </td>
             </tr>
           )}
           {rows.map((r) => (
             <tr key={r.id} className="border-b border-border/30">
-              <td className={TD}>Check Bank Account</td>
+              <td className={TD}>Check Recovery Link</td>
               <td className={TD}>
                 <a className="text-primary hover:underline" href={`/people/${r.personId}`}>
                   {r.person}

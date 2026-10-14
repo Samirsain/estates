@@ -141,6 +141,7 @@ assert.equal(recordHref({ kind: "Plot", id: uuid }), `/plots/${uuid}`);
 // The four that once opened nothing or only a list (owner, 14 Oct 2026).
 assert.equal(recordHref({ kind: "Acquisition", id: uuid }), `/acquisitions/${uuid}`);
 assert.equal(recordHref({ kind: "Person", id: uuid }), `/people/${uuid}`, "the joint bank account task");
+assert.equal(recordHref({ kind: "Enquiry", id: uuid }), `/enquiries?enquiry=${uuid}`, "an Enquiry Follow-Up opens its own row");
 assert.equal(recordHref({ kind: "MemberProfile", id: uuid }), `/members/${uuid}`, "the deactivated-Member task");
 const deal = { project: null, plot: null, plotId: null, partyRef: null, partyName: null, partyPersonId: null, reference: null };
 assert.equal(recordHref({ kind: "Commission", id: uuid }, { ...deal, acquisitionId: uuid }), `/acquisitions/${uuid}`, "a Buying Commission");

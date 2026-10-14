@@ -17,6 +17,7 @@ import { blocked, lockPlot, runCommand, type Tx } from "./command";
 import { ensureCustomerProfile, linkOrCreatePerson } from "./enquiry-service";
 import { freezePlcSnapshot, loadPlotForPlc } from "./plc-service";
 import { closeTasksFor } from "./task-service";
+import { closeSellingTasksIfClear } from "./selling-task";
 import { validateSoldBy } from "./sold-by";
 
 /** PRD §8.2 — counts Active Holds, Waiting for Booking Approval and Pending requests. */
@@ -203,6 +204,7 @@ export async function releaseHold(
     where: { holdId, status: "PENDING" },
     data: { status: "EXPIRED", decidedAt: new Date(), decisionNote: reason },
   });
+  await closeSellingTasksIfClear(tx, hold.plotId, actorRef);
 
   if (status !== "CONVERTED_TO_BOOKING") {
     const next = plotReturnState(hold.plot.restriction, hold.plot.restrictionReason);
