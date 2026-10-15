@@ -146,7 +146,7 @@ model CustomerProfile {
   /// Customer's first qualifying purchase. Provisional while
   /// `royaltyLinkFinalAt` is null; final at 100% Payment Received or an
   /// Approved Buyback on that purchase (v2.1 §49 — a Buyback only once the
-  /// purchase has 25% Payment Received). Kept for the Royalty Gift (part 2). Null against a set
+  /// purchase has 25% Payment Received). Kept for the Royalty Tokens. Null against a set
   /// `royaltyLinkFirstBookingId` is CR-003's permanent "no Royalty Member":
   /// the first purchase was Sold By 3% CLUB or Sold By Customer.
   royaltyLinkedMemberId        String?
@@ -157,7 +157,7 @@ model CustomerProfile {
   /// CP §41 — how the link became final: PAYMENT_100 or APPROVED_BUYBACK.
   royaltyLinkFinalRoute        RewardQualificationRoute?
   /// SSOT §74; CP §41 — the one lifetime Royalty opportunity, consumed by the
-  /// Booking whose Royalty Credit it created. Null while unused.
+  /// Booking whose Royalty Award it created. Null while unused.
   royaltyOpportunityConsumedAt DateTime?
   royaltyAwards                RoyaltyAward[]
 
@@ -257,7 +257,7 @@ model MemberProfile {
   introducedCustomers    CustomerProfile[]  @relation("IntroducedCustomers")
   /// CR-002 — the Customers whose first qualifying purchase this Member closed.
   royaltyLinkedCustomers CustomerProfile[]  @relation("RoyaltyLinkedCustomers")
-  /// SSOT §75 — the Royalty Credits (Gift entitlements) this Member owns.
+  /// SSOT §75 — the Royalty Awards (token sources) this Member owns.
   royaltyAwards          RoyaltyAward[]
   tokenLedger            TokenLedgerEntry[]
   tokenRedemptions       TokenRedemption[]
@@ -2039,7 +2039,7 @@ model StaffRelative {
 /// declared close relative would receive. Until Approved the benefit is held.
 model StaffConflictReview {
   id             String         @id @default(uuid())
-  /// "Commission" | "Trip Reward" | "Royalty Credit" — the task record kinds.
+  /// "Commission" | "Trip Reward" | "Royalty Award" — the task record kinds.
   recordKind     String
   recordId       String
   personId       String

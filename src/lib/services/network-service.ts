@@ -21,7 +21,7 @@ import { closeTasksFor, ensureTask } from "./task-service";
 
 /**
  * The Royalty relationship — SSOT §67–§71; CP §40–§42 — recomputed from the
- * Bookings themselves, then the Royalty Credit it may lead to (SSOT §72).
+ * Bookings themselves, then the Royalty Award (tokens) it may lead to (SSOT §72).
  *
  * One idempotent function: every event that could move the link (approval, a
  * payment, a Buyback approved or unwound, a cancellation, a Sold By

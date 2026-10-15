@@ -1527,8 +1527,8 @@ export async function decideSoldByCorrection(args: {
       });
 
       // CP §59 — a corrected Sold By re-links the Royalty relationship of a
-      // first purchase, final or not, and rechecks any Royalty Credit this
-      // Booking triggered, using the frozen Programme Version.
+      // first purchase, final or not, and rechecks any Royalty Award this
+      // Booking triggered, at its frozen token rate.
       await relinkAfterSoldByCorrection(tx, args.bookingId, args.actorRef);
       // CP §59 — and the Trip credits, under the Booking's frozen version.
       await syncTripForBooking(tx, args.bookingId, args.actorRef);

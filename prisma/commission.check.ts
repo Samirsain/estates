@@ -920,7 +920,7 @@ async function main() {
   assert.deepEqual((await currentRecords(memberRepeat)).map((r) => r.type), ["DIRECT"]);
 
   /* ===================== CR-002 – CR-004 — the Royalty link ======================
-     The link itself stays for part 2's Royalty Gift; it no longer takes a
+     The link itself stays for the Royalty Tokens; it no longer takes a
      position or pays a percentage (v2.1 §48). */
 
   const royMemBPerson = await makeEligiblePerson("RoyMemB", "9600000042");
