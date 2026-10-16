@@ -23,6 +23,7 @@ import {
 import { formatIst } from "@/lib/tasks";
 import {
   ACTION_GROUPS,
+  MD_ONLY_ACTIONS,
   SENSITIVE_FIELDS,
   STAFF_ROLES,
   can,
@@ -1463,7 +1464,7 @@ function PermissionsModal({
             <div key={group} className="space-y-1">
               <p className="text-[11px] font-medium text-muted-foreground">{group}</p>
               <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
-                {actions.map((action) => {
+                {actions.filter((action) => !MD_ONLY_ACTIONS.includes(action)).map((action) => {
                   const base = fromRole(action);
                   return (
                     <label

@@ -150,7 +150,13 @@ for (const action of ALL_ACTIONS) {
 assert.ok(!(STAFF_ROLES as string[]).includes("ADMIN"), "there is no Admin role");
 assert.ok(can("CRM", "HOLD_EXTEND_FIRST") && !can("CRM", "HOLD_EXTEND_FURTHER"));
 assert.ok(can("MD", "HOLD_EXTEND_FURTHER"), "further extension needs MD");
-assert.ok(can("PC", "PLOT_SETUP", ["PLOT_SETUP"]));
+// Owner, 16 Oct 2026 — Project and Plot setup is MD's alone, even as an extra grant.
+for (const action of ["PROJECT_SETUP", "PLOT_SETUP"] as const) {
+  assert.ok(can("MD", action), `MD holds ${action}`);
+  for (const role of STAFF_ROLES.filter((r) => r !== "MD")) {
+    assert.ok(!can(role, action, [action]), `${role} cannot hold ${action}`);
+  }
+}
 assert.ok(can("MIS", "AUDIT_VIEW", ["AUDIT_VIEW"]), "explicit extra grant is honoured");
 assert.throws(() => assertPermission("MIS", "BOOKING_DECIDE"), PermissionError);
 

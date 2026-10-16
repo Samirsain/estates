@@ -124,8 +124,8 @@ const ROLE_ACTIONS: Record<Role, readonly Action[]> = {
   ],
   // Read-only masked reporting plus authorised manual task creation (PRD §3).
   MIS: ["REPORT_VIEW", "REPORT_EXPORT", "TASK_CREATE"],
-  // Project/Plot preparation only; no financial approval (PRD §3).
-  PC: ["PROJECT_SETUP", "PLOT_SETUP", "TASK_COMPLETE", "REPORT_VIEW"],
+  // No financial approval (PRD §3). Project and Plot setup is MD's alone (owner, 16 Oct 2026).
+  PC: ["TASK_COMPLETE", "REPORT_VIEW"],
   // Restricted portal actions only (PRD §23).
   MEMBER: ["HOLD_REQUEST_SUBMIT", "ENQUIRY_MANAGE"],
 };
@@ -155,12 +155,16 @@ const FIELD_ACCESS: Record<SensitiveField, readonly Role[]> = {
 /** The roles that hold every Action, present and future. */
 const FULL_ACCESS: readonly Role[] = ["MD"];
 
+/**
+ * Owner, 16 Oct 2026: only MD creates or changes Projects and Plots. No role
+ * grant or extra permission reaches these, so the permission screen hides them.
+ */
+export const MD_ONLY_ACTIONS: readonly Action[] = ["PROJECT_SETUP", "PLOT_SETUP"];
+
 export function can(role: Role, action: Action, extraPermissions: readonly string[] = []): boolean {
-  return (
-    FULL_ACCESS.includes(role) ||
-    ROLE_ACTIONS[role]?.includes(action) ||
-    extraPermissions.includes(action)
-  );
+  if (FULL_ACCESS.includes(role)) return true;
+  if (MD_ONLY_ACTIONS.includes(action)) return false;
+  return ROLE_ACTIONS[role]?.includes(action) || extraPermissions.includes(action);
 }
 
 export function canViewField(role: Role, field: SensitiveField): boolean {

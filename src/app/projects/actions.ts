@@ -256,7 +256,7 @@ export async function updateProjectAction(
 /* ------------------------------------------- commission settings (SSOT §14) */
 
 // No Action argument on requireStaff: the service itself decides who may act —
-// only MD creates a version — so PC's PROJECT_SETUP grant does not reach it.
+// only MD creates a version.
 
 function refreshProject(projectId: string) {
   refresh();
