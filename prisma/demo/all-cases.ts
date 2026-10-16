@@ -37,7 +37,6 @@ import { setRestriction } from "@/lib/services/inventory-service";
 import {
   cancelAcquisitionDeal,
   confirmPaymentGiven,
-  correctPaymentGiven,
   createAcquisition,
   decideAcquisition,
   recordBuyingCommission,
@@ -698,7 +697,7 @@ on("2026-10-13", "Sold By Correction on TN-32 waiting; Paid Early on TN-18 waiti
   });
   kase(OTHER, "—", "Manual tasks: one on Vijay's page, a daily one for Accounts, one for a named person (overdue)", "Dashboard; Vijay's page → Add Task.");
 });
-on("2026-10-14", "Settings version 3 for 1 Nov; Vijay's own request with a commission conflict; TN-15 Payment Given corrected below 20%", async () => {
+on("2026-10-14", "Settings version 3 for 1 Nov; Vijay's own request with a commission conflict", async () => {
   await settings(projectIds[C], { ...base, effectiveFrom: new Date("2026-11-01T00:00:00+05:30"), directEnabled: true, directPercent: "3.5", loyaltyEnabled: true, loyaltyPercent: "1", royaltyTokensPerAward: 12, reason: "Offer for a limited time" });
   kase(OTHER, "—", "Settings: v1 launch, v2 programme close, v3 scheduled for 1 Nov", "Project page → Commission settings history.");
 
@@ -710,9 +709,9 @@ on("2026-10-14", "Settings version 3 for 1 Nov; Vijay's own request with a commi
   }
   kase(VIJAY, "TN-C06", "Buys as an active Member with Sold By 3% Club → approval refused (task Commission Conflict — Correct Sold By)", "Dashboard (Accounts).");
 
-  const entry = await db.paymentGivenEntry.findFirstOrThrow({ where: { acquisitionId: B["BB:TN-15"], status: "CONFIRMED" }, orderBy: { recordedAt: "desc" } });
-  await correctPaymentGiven({ idempotencyKey: key(), actorRef: ACC2, actorRole: "ACCOUNTS", entryId: entry.id, percent: "10", paidOn: new Date("2026-08-15T11:00:00+05:30"), reference: acRef("TUTR"), reason: "Wrong amount entered" });
-  kase(OTHER, "TN-15", "Payment Given fell below 20% while the resale Booking is active (task Selling Buyback/Resale Plot, MD)", "Dashboard (MD).");
+  // The database refuses an approved deal below 20% Payment Given
+  // (acquisition_approval_threshold), so this task cannot arise from the screens today.
+  kase(OTHER, "TN-15", "Selling Buyback/Resale Plot (task 14) cannot happen today: an approved deal can never fall below 20% Payment Given", "—");
 }, "12:00");
 on("2026-10-15", "Vijay's portal Hold Requests", async () => {
   const vijay = await db.memberProfile.findUniqueOrThrow({ where: { id: VIJAY_ID() } });
