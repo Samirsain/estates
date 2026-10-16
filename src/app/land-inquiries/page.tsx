@@ -76,8 +76,6 @@ export default async function LandInquiriesPage({
       // Spec §24 — the metric area if it is known, otherwise what was actually
       // recorded in Bigha and Biswa, otherwise nothing. Never a conversion.
       area: areaLabel(row),
-      askingRate: row.ownerAskingRate ? row.ownerAskingRate.toFixed(2) : null,
-      askingRateBasis: row.ownerAskingRateBasis,
       status: row.status,
       stage: row.stage,
       assignedTo: row.assignedTo

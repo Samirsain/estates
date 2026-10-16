@@ -53,6 +53,7 @@ import {
   type ActionResult,
   type PersonOption,
 } from "./actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 export type StaffRowView = {
   id: string;
@@ -419,7 +420,7 @@ function DisableModal({
         )}
 
         <Field label="Compulsory reason">
-          <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+          <RemarkSelect presets="disableStaff" value={reason} onChange={setReason} required />
         </Field>
 
         {canEmergencyDisable && (
@@ -785,7 +786,7 @@ export function RaiseMergeModal({
         )}
 
         <Field label="Compulsory reason">
-          <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+          <RemarkSelect presets="raiseMerge" value={reason} onChange={setReason} required />
         </Field>
 
         <div className="flex justify-end gap-2">
@@ -855,7 +856,7 @@ function DecideMergeModal({
         </div>
 
         <Field label="Compulsory remark">
-          <Input value={note} onChange={(e) => setNote(e.target.value)} />
+          <RemarkSelect presets="decideMerge" value={note} onChange={setNote} required />
         </Field>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
@@ -1083,7 +1084,7 @@ function ResetPasswordModal({
       ) : (
         <form className="space-y-3" onSubmit={submit}>
           <Field label="Compulsory reason">
-            <Input name="reason" required minLength={3} placeholder="Forgot password, verified by phone" />
+            <RemarkSelect presets="resetStaffPassword" name="reason" required />
           </Field>
           <Field label="New password">
             <PasswordInput
@@ -1209,7 +1210,7 @@ function StaffDetailModal({
             </Field>
           </div>
           <Field label="Compulsory reason">
-            <Input name="reason" required minLength={3} placeholder="Mobile number corrected" />
+            <RemarkSelect presets="editStaff" name="reason" required />
           </Field>
           {error && <p className="text-xs text-red-700">{error}</p>}
           <div className="flex justify-end gap-2">
@@ -1361,7 +1362,7 @@ function ChangeRoleModal({
           </select>
         </Field>
         <Field label="Compulsory reason">
-          <Input name="reason" required minLength={3} placeholder="Moved to the accounts desk" />
+          <RemarkSelect presets="changeStaffRole" name="reason" required />
         </Field>
         <p className="rounded-lg border border-border/60 bg-secondary px-3 py-2 text-[11px] text-muted-foreground">
           Any extra permissions on this account are cleared — they were granted for the job this
@@ -1491,7 +1492,7 @@ function PermissionsModal({
         </section>
 
         <Field label="Compulsory reason">
-          <Input name="reason" required minLength={3} placeholder="Needs to export the monthly report" />
+          <RemarkSelect presets="changeStaffPermissions" name="reason" required />
         </Field>
         {error && <p className="text-xs text-red-700">{error}</p>}
         <div className="flex justify-end gap-2">

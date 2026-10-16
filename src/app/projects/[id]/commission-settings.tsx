@@ -25,6 +25,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { createCommissionVersionAction, type ActionResult, type CommissionDraftInput } from "../actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 export type CommissionVersionView = {
   id: string;
@@ -457,7 +458,7 @@ export function useCommercialRewardsDraft(
       {showException && (
         <div className="md:col-span-2">
           <Field label="MD commercial exception — why Loyalty Points are not lower than Commission (CP §7.3)">
-            <textarea className={`${inputClass} h-16 py-2`} value={exception} onChange={(e) => setException(e.target.value)} />
+            <RemarkSelect presets="mdException" value={exception} onChange={setException} required />
           </Field>
         </div>
       )}
@@ -522,7 +523,7 @@ export function useCommercialRewardsDraft(
         <Input type="datetime-local" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />
       </Field>
       <Field label="Reason">
-        <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+        <RemarkSelect presets="commissionSettings" value={reason} onChange={setReason} required />
       </Field>
     </div>
   );

@@ -28,8 +28,6 @@ export async function createEnquiryAction(
     source: EnquirySource;
     sourceMemberId: string;
     sourceCustomerId: string;
-    /** DESIGN §8.2 Assigned CRM. Blank keeps the Enquiry with whoever took it. */
-    assignedStaffId: string;
     nextFollowUpIso: string;
     remark: string;
   },
@@ -37,20 +35,6 @@ export async function createEnquiryAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("ENQUIRY_MANAGE");
   try {
-    // The follow-up task goes to the named staff account. Reading its role here
-    // keeps the task's assigneeRole and assigneeStaffId describing one person.
-    const assignedStaffId = input.assignedStaffId || actor.accountId;
-    const assignee =
-      assignedStaffId === actor.accountId
-        ? { role: actor.role, status: "ACTIVE" as const }
-        : await db.staffAccount.findUnique({
-            where: { id: assignedStaffId },
-            select: { role: true, status: true },
-          });
-    if (!assignee || assignee.status !== "ACTIVE") {
-      return { ok: false, error: "That staff account is not active. Pick someone else." };
-    }
-
     const result = await createEnquiry({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
@@ -65,8 +49,9 @@ export async function createEnquiryAction(
       source: input.source,
       sourceMemberId: input.sourceMemberId || null,
       sourceCustomerId: input.sourceCustomerId || null,
-      assignedStaffId,
-      assigneeRole: assignee.role === "MD" ? assignee.role : "CRM",
+      // Owner, 15 Oct 2026 — every new Enquiry's follow-up goes to the CRM team.
+      assignedStaffId: null,
+      assigneeRole: "CRM",
       nextFollowUpAt: new Date(input.nextFollowUpIso),
       remark: input.remark,
     });

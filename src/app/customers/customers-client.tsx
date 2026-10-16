@@ -8,6 +8,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { AppShell } from "@/components/app-shell";
 import { Input } from "@/components/ui/input";
 import { type StaffRole } from "@/lib/tasks";
@@ -38,7 +39,8 @@ export type CustomerRowView = {
   plotNumber: string | null;
   plotType: string | null;
   plotId: string | null;
-  otherBookings: number;
+  /** The other deals, "Project · Plot N", besides the one the row shows. */
+  otherBookings: string[];
   /** v2.1 §21 — Customer-closing Loyalty events qualified, of three for life. */
   closingLoyaltyUsed: number;
 };
@@ -143,7 +145,7 @@ export default function CustomersClient({
             aria-label="Sort by"
           >
             {/* optgroup says "Sort by" once, in the place the browser already
-                reserves for it, instead of at the head of all six options. */}
+                reserves for it, instead of at the head of every option. */}
             <optgroup label="Sort by">
               {Object.entries(SORTS).map(([key, label]) => (
                 <option key={key} value={key}>
@@ -160,6 +162,7 @@ export default function CustomersClient({
           />
         </div>
 
+        <Tooltip.Provider delayDuration={0}>
         <div className="overflow-x-auto">
           {/* A rule between rows, not a filled block behind each one: ten of
               them fit on a laptop screen without the page turning into stripes. */}
@@ -175,16 +178,14 @@ export default function CustomersClient({
                 <th className="w-[9.5rem] px-3 py-1.5">Name</th>
                 <th className="w-[7.5rem] px-3 py-1.5">Mobile</th>
                 <th className="w-[7.5rem] px-3 py-1.5">City</th>
-                <th className="w-[7rem] px-3 py-1.5">Type</th>
                 <th className="w-[11rem] px-3 py-1.5">Project</th>
                 <th className="w-[8rem] px-3 py-1.5">Plot</th>
-                <th className="w-[5rem] px-3 py-1.5 text-right" title="Customer-closing Loyalty Points used, of 3 for life">Closing</th>
               </tr>
             </thead>
             <tbody>
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={6}className="px-3 py-10 text-center text-sm text-muted-foreground">
                     No Customers yet. A Customer ID is created when the first Hold is placed, or
                     at the first Booking Request when no Hold came before it.
                   </td>
@@ -215,12 +216,42 @@ export default function CustomersClient({
                   </td>
                   <td className="whitespace-nowrap">{row.mobileMasked}</td>
                   <td className="truncate" title={row.city}>{row.city}</td>
-                  <td className="truncate">{row.customerType ? typeWord(row.customerType) : "—"}</td>
                   <td className="max-w-[11rem]">
                     <Cell
                       value={row.project ?? "—"}
                       title={row.project ?? undefined}
-                      under={row.otherBookings > 0 ? `+${row.otherBookings} more booked` : null}
+                      under={
+                        row.otherBookings.length > 0 ? (
+                          // Portalled, so the table's scroll box cannot clip it.
+                          <Tooltip.Root>
+                            <Tooltip.Trigger asChild>
+                              <span
+                                tabIndex={0}
+                                className="cursor-default underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:text-foreground"
+                              >
+                                +{row.otherBookings.length} more booked
+                              </span>
+                            </Tooltip.Trigger>
+                            <Tooltip.Portal>
+                              <Tooltip.Content
+                                side="bottom"
+                                align="start"
+                                sideOffset={6}
+                                className="z-50 rounded-xl border border-border/80 bg-popover/95 px-3 py-2 text-xs text-popover-foreground shadow-lg backdrop-blur-md"
+                              >
+                                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                  Also booked
+                                </p>
+                                <ul className="space-y-0.5">
+                                  {row.otherBookings.map((deal) => (
+                                    <li key={deal} className="whitespace-nowrap">{deal}</li>
+                                  ))}
+                                </ul>
+                              </Tooltip.Content>
+                            </Tooltip.Portal>
+                          </Tooltip.Root>
+                        ) : null
+                      }
                     />
                   </td>
                   <td className="max-w-[8rem]">
@@ -241,14 +272,12 @@ export default function CustomersClient({
                       under={row.plotType ? typeWord(row.plotType) : null}
                     />
                   </td>
-                  <td className="whitespace-nowrap text-right tabular-nums">
-                    {row.closingLoyaltyUsed}/3
-                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        </Tooltip.Provider>
       </div>
     </AppShell>
   );

@@ -23,6 +23,7 @@ import {
   type ActionResult,
 } from "./actions";
 import { newKey, type Dialog, type PersonView } from "./types";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 export function FormDialog({
   title,
@@ -123,7 +124,7 @@ export function AcquisitionDialogs({
           <Input name="reference" required />
         </Field>
         <Field label="Remark">
-          <Input name="remark" />
+          <RemarkSelect presets="paymentGiven" name="remark" />
         </Field>
       </FormDialog>
     );
@@ -174,7 +175,7 @@ export function AcquisitionDialogs({
           <Input name="reference" required />
         </Field>
         <Field label="Reason — compulsory">
-          <Input name="reason" required minLength={3} />
+          <RemarkSelect presets="correctPaymentGiven" name="reason" required />
         </Field>
       </FormDialog>
     );
@@ -199,7 +200,7 @@ export function AcquisitionDialogs({
         }
       >
         <Field label="Remark — compulsory">
-          <Input name="note" required minLength={3} />
+          <RemarkSelect presets="decideDeal" name="note" required kind={dialog.approve ? "Approved" : "Rejected"} />
         </Field>
       </FormDialog>
     );
@@ -240,7 +241,7 @@ export function AcquisitionDialogs({
           <Input name="reference" required />
         </Field>
         <Field label={dialog.early ? "Remarks — compulsory" : "Remarks"}>
-          <Input name="remarks" required={dialog.early} minLength={dialog.early ? 3 : undefined} />
+          <RemarkSelect presets="buyingCommissionPaid" name="remarks" required={dialog.early} />
         </Field>
       </FormDialog>
     );
@@ -259,7 +260,7 @@ export function AcquisitionDialogs({
         }
       >
         <Field label="Reason — compulsory">
-          <Input name="reason" required minLength={3} />
+          <RemarkSelect presets="cancelDeal" name="reason" required />
         </Field>
       </FormDialog>
     );

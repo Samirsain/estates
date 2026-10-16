@@ -7,9 +7,9 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Field, Modal } from "@/components/ui/modal";
 import { resetPortalAccessAction } from "../actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 type Mode = "UNLOCK" | "RESET_PASSWORD";
 
@@ -94,7 +94,7 @@ export default function PortalAccess({
                   : "Sets a new one-time password and signs out every portal session."}
               </p>
               <Field label="Reason — compulsory">
-                <Input name="reason" required minLength={3} />
+                <RemarkSelect presets="portalAccess" name="reason" required />
               </Field>
               {error && <p className="text-xs text-red-700">{error}</p>}
               <div className="flex justify-end gap-2">

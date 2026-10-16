@@ -24,8 +24,16 @@ import {
   changeLandInquiryStatusAction,
   reassignLandInquiryAction,
 } from "./actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 type Kind = "STAGE" | "CLOSE" | "REOPEN" | "REASSIGN" | "ARCHIVE";
+
+const REASON_PRESETS = {
+  STAGE: "inquiryStage",
+  CLOSE: "closeInquiry",
+  REOPEN: "reopenInquiry",
+  ARCHIVE: "archiveInquiry",
+} as const;
 
 const newKey = () => globalThis.crypto.randomUUID();
 
@@ -209,11 +217,21 @@ export default function InquiryActions({
                       : "Reason (compulsory)"
               }
             >
-              <textarea
-                className={`${inputClass} h-16 py-2`}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-              />
+              {open === "REASSIGN" ? (
+                <textarea
+                  className={`${inputClass} h-16 py-2`}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              ) : (
+                <RemarkSelect
+                  key={open}
+                  presets={REASON_PRESETS[open]}
+                  value={reason}
+                  onChange={setReason}
+                  required={!(open === "STAGE" && !stageReasonRequired)}
+                />
+              )}
             </Field>
 
             {error && (

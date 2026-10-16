@@ -41,6 +41,7 @@ import {
   recordHref,
   recordReference,
 } from "@/lib/tasks";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 const VIEWS: { id: TaskView; label: string }[] = [
   { id: "TODAY", label: "Today" },
@@ -603,7 +604,7 @@ function ReviseDialog({
           </select>
         </Field>
         <Field label="Remark (compulsory for extensions and decisions)">
-          <Input name="remark" placeholder="Reason for the new date" />
+          <RemarkSelect presets="reviseTask" name="remark" />
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
@@ -726,7 +727,7 @@ export function AddTaskDialog({
           </div>
         )}
         <Field label="Remark">
-          <Input name="remark" />
+          <RemarkSelect presets="addTask" name="remark" />
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>

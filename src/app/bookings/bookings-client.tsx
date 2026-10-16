@@ -72,6 +72,7 @@ import {
   type PartyInput,
   type ScheduleRowInput,
 } from "./actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 export type BookingRowView = {
   id: string;
@@ -388,6 +389,8 @@ export default function BookingsClient({
     () => Array.from(new Set(rows.map((r) => r.project))).sort(),
     [rows]
   );
+  // The Cancel Booking remark is compulsory only when the reason is Other.
+  const [cancelReason, setCancelReason] = React.useState("");
   const [dialog, setDialog] = React.useState<Dialog>(() => {
     if (startFor && permissions.submit) return { kind: "NEW", personId: startFor };
     // Opened from the Plot's page on one Booking. Only what that Booking's own
@@ -439,6 +442,7 @@ export default function BookingsClient({
    */
   async function openDialog(next: Dialog) {
     setDialog(next);
+    setCancelReason("");
     if (!next || !("row" in next)) return;
     if (detail?.id === next.row.id) return;
     // The row being acted on becomes the open row, so the panel underneath and
@@ -881,7 +885,13 @@ export default function BookingsClient({
           }
         >
           <Field label="Cancellation Reason">
-            <select name="reason" required className={inputClass} defaultValue="">
+            <select
+              name="reason"
+              required
+              className={inputClass}
+              defaultValue=""
+              onChange={(e) => setCancelReason(e.target.value)}
+            >
               <option value="" disabled>
                 Select a reason
               </option>
@@ -893,7 +903,7 @@ export default function BookingsClient({
             </select>
           </Field>
           <Field label="Remark — compulsory for Other">
-            <Input name="remark" />
+            <RemarkSelect presets="cancelBooking" name="remark" required={cancelReason === "Other"} />
           </Field>
         </ActionDialog>
       )}
@@ -934,7 +944,7 @@ export default function BookingsClient({
             <Input name="reference" required />
           </Field>
           <Field label="Remark">
-            <Input name="remark" />
+            <RemarkSelect presets="paymentReceived" name="remark" />
           </Field>
           {/* SSOT §22; CP §15 — recorded for Accounts review when the money did not come from the buyer. */}
           <details className="rounded-md border border-border/60 px-3 py-2 text-sm">
@@ -983,7 +993,7 @@ export default function BookingsClient({
             <Input name="reference" required />
           </Field>
           <Field label="Correction reason — compulsory">
-            <Input name="reason" required minLength={3} />
+            <RemarkSelect presets="correctPayment" name="reason" required />
           </Field>
         </ActionDialog>
       )}
@@ -1018,7 +1028,7 @@ export default function BookingsClient({
           }
         >
           <Field label="Remark — compulsory">
-            <Input name="note" required minLength={3} />
+            <RemarkSelect presets="decideSchedule" name="note" required kind={dialog.approve ? "Approved" : "Rejected"} />
           </Field>
         </ActionDialog>
       )}
@@ -1064,7 +1074,7 @@ export default function BookingsClient({
             />
           </Field>
           <Field label="Reason — compulsory">
-            <Input name="reason" required minLength={3} />
+            <RemarkSelect presets="changePrimary" name="reason" required />
           </Field>
         </ActionDialog>
       )}
@@ -1117,7 +1127,7 @@ export default function BookingsClient({
           }
         >
           <Field label="Remark — compulsory">
-            <Input name="note" required minLength={3} />
+            <RemarkSelect presets="decideSoldBy" name="note" required kind={dialog.approve ? "Approved" : "Rejected"} />
           </Field>
         </ActionDialog>
       )}
@@ -1155,7 +1165,7 @@ export default function BookingsClient({
             <Input name="reference" required />
           </Field>
           <Field label={dialog.early ? "Remarks — compulsory" : "Remarks"}>
-            <Input name="remarks" required={dialog.early} minLength={dialog.early ? 3 : undefined} />
+            <RemarkSelect presets="commissionPaid" name="remarks" required={dialog.early} />
           </Field>
         </ActionDialog>
       )}
@@ -1177,7 +1187,7 @@ export default function BookingsClient({
           }
         >
           <Field label="Approval note — compulsory">
-            <Input name="note" required minLength={3} />
+            <RemarkSelect presets="approvePaidEarly" name="note" required />
           </Field>
         </ActionDialog>
       )}
@@ -1194,7 +1204,7 @@ export default function BookingsClient({
           }
         >
           <Field label="Note — compulsory">
-            <Input name="note" required minLength={3} />
+            <RemarkSelect presets="payBeforeRecovery" name="note" required />
           </Field>
         </ActionDialog>
       )}
@@ -1227,7 +1237,7 @@ export default function BookingsClient({
             <Input name="reference" required />
           </Field>
           <Field label="Reason — compulsory">
-            <Input name="reason" required minLength={3} />
+            <RemarkSelect presets="openRecovery" name="reason" required />
           </Field>
         </ActionDialog>
       )}
@@ -1244,7 +1254,7 @@ export default function BookingsClient({
           }
         >
           <Field label="Reason — compulsory">
-            <Input name="reason" required minLength={3} />
+            <RemarkSelect presets="closeAdjustment" name="reason" required />
           </Field>
         </ActionDialog>
       )}
@@ -1261,7 +1271,7 @@ export default function BookingsClient({
           }
         >
           <Field label="Note — compulsory">
-            <Input name="note" required minLength={3} />
+            <RemarkSelect presets="recoveryRepaid" name="note" required />
           </Field>
         </ActionDialog>
       )}
@@ -1296,7 +1306,7 @@ export default function BookingsClient({
             <Input name="reference" required />
           </Field>
           <Field label="Note — compulsory">
-            <Input name="note" required minLength={3} />
+            <RemarkSelect presets="recoverySetOff" name="note" required />
           </Field>
           <label className="flex items-center gap-2 text-xs">
             <input type="checkbox" name="clears" defaultChecked />
@@ -1322,7 +1332,7 @@ export default function BookingsClient({
           }
         >
           <Field label="Reason — compulsory">
-            <Input name="reason" required minLength={3} />
+            <RemarkSelect presets="requestPaidEarly" name="reason" required />
           </Field>
         </ActionDialog>
       )}
@@ -1341,7 +1351,7 @@ export default function BookingsClient({
           }
         >
           <Field label="Note — compulsory">
-            <Input name="note" required minLength={3} />
+            <RemarkSelect presets="rejectPaidEarly" name="note" required />
           </Field>
         </ActionDialog>
       )}
@@ -1364,7 +1374,7 @@ export default function BookingsClient({
           }
         >
           <Field label="Remark — compulsory">
-            <Input name="note" required minLength={3} />
+            <RemarkSelect presets="decidePrimary" name="note" required kind={dialog.approve ? "Approved" : "Rejected"} />
           </Field>
         </ActionDialog>
       )}
@@ -1436,7 +1446,7 @@ export default function BookingsClient({
           }
         >
           <Field label="Compulsory reason">
-            <Input name="reason" required minLength={3} />
+            <RemarkSelect presets="reopenDelivered" name="reason" required />
           </Field>
         </ActionDialog>
       )}
@@ -2570,7 +2580,7 @@ export function ReviewDialog({
         )}
 
         <Field label="Remark — compulsory">
-          <Input name="note" required minLength={3} />
+          <RemarkSelect presets="verifyBooking" name="note" required key={String(approve)} kind={approve ? "Approved" : "Rejected"} />
         </Field>
 
         <div className="flex justify-end gap-2 pt-2">
@@ -2923,7 +2933,7 @@ export function BookingFormDialog({
         {/* Only a backdated Booking has to say why */}
         {bookingDate < today && (
           <Field label="Reason for the backdated Booking Date — compulsory">
-            <Input className="h-9 text-xs" name="bookingDateReason" required minLength={3} />
+            <RemarkSelect presets="backdatedBooking" name="bookingDateReason" className="h-9 text-xs" required />
           </Field>
         )}
 
@@ -2931,7 +2941,7 @@ export function BookingFormDialog({
 
         {requireReason && (
           <Field label="Reason for replacing this request — compulsory">
-            <Input className="h-9 text-xs" name="reason" required minLength={3} />
+            <RemarkSelect presets="resendBooking" name="reason" className="h-9 text-xs" required />
           </Field>
         )}
 
@@ -3098,7 +3108,7 @@ function ScheduleDialog({
       >
         <ScheduleEditor schedule={schedule} setSchedule={setSchedule} minDate={today} />
         <Field label="Reason — compulsory">
-          <Input name="reason" required minLength={3} />
+          <RemarkSelect presets="reviseSchedule" name="reason" required />
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
@@ -3222,7 +3232,7 @@ function SharesDialog({
           Add Additional Customer
         </Button>
         <Field label="Reason — compulsory">
-          <Input name="reason" required minLength={3} />
+          <RemarkSelect presets="changeShares" name="reason" required />
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
@@ -3351,7 +3361,7 @@ function SoldByForm({
         />
       )}
       <Field label="Reason — compulsory">
-        <Input name="reason" required minLength={3} />
+        <RemarkSelect presets="soldByCorrection" name="reason" required />
       </Field>
       <Field label="Supporting remark — compulsory">
         <Input name="supportingNote" required minLength={3} />
@@ -4217,7 +4227,7 @@ function CancellationDecisionDialog({
         )}
 
         <Field label="Remark — compulsory">
-          <Input name="note" required minLength={3} />
+          <RemarkSelect presets="decideCancellation" name="note" required kind={approve ? "Approved" : "Rejected"} />
         </Field>
 
         <div className="flex justify-end gap-2 pt-2">
@@ -4303,7 +4313,7 @@ function ChangePlotDialog({
           </select>
         </Field>
         <Field label="Remark — compulsory">
-          <Input name="remark" required minLength={3} />
+          <RemarkSelect presets="changePlot" name="remark" required />
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
@@ -4393,7 +4403,7 @@ function ChangePlotDecisionDialog({
         )}
 
         <Field label="Remark — compulsory">
-          <Input name="note" required minLength={3} />
+          <RemarkSelect presets="decideChangePlot" name="note" required kind={approve ? "Approved" : "Rejected"} />
         </Field>
 
         <div className="flex justify-end gap-2 pt-2">

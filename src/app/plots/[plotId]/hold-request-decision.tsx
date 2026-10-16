@@ -6,8 +6,8 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Field, Modal } from "@/components/ui/modal";
+import { RemarkSelect } from "@/components/ui/remark-select";
 import { decideHoldRequestAction } from "../actions";
 
 export default function HoldRequestDecision({ requestId, buyer }: { requestId: string; buyer: string }) {
@@ -62,7 +62,12 @@ export default function HoldRequestDecision({ requestId, buyer }: { requestId: s
             }}
           >
             <Field label="Remark — compulsory">
-              <Input name="note" required minLength={3} />
+              <RemarkSelect
+                presets="decideHoldRequest"
+                name="note"
+                required
+                kind={approve ? "Approved" : "Rejected"}
+              />
             </Field>
             {error && <p className="text-xs text-red-700">{error}</p>}
             <div className="flex justify-end gap-2">

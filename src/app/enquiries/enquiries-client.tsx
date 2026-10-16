@@ -6,7 +6,6 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, ChevronDown, Plus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
-import { Badge } from "@/components/ui/badge";
 import { PersonLink } from "@/components/person-link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -37,6 +36,7 @@ import {
   loadFollowUps,
   type ActionResult,
 } from "./actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 export type EnquiryRowView = {
   id: string;
@@ -69,6 +69,8 @@ export type PlotOption = {
   id: string;
   projectId: string;
   label: string;
+  /** The Plot dropdown groups by this, so the type heads its Plots. */
+  plotType: string;
   status: string;
   widthFt: string;
   lengthFt: string;
@@ -131,7 +133,6 @@ export default function EnquiriesClient({
   people,
   members,
   customers,
-  staff,
   canManage,
   startFor,
   focus,
@@ -152,7 +153,6 @@ export default function EnquiriesClient({
   }>;
   members: Array<{ id: string; label: string }>;
   customers: Array<{ id: string; label: string }>;
-  staff: Array<{ id: string; label: string; isSelf: boolean }>;
   canManage: boolean;
   /** A Person id from ?for=: New Enquiry opens straight away for them. */
   startFor: string | null;
@@ -303,7 +303,6 @@ export default function EnquiriesClient({
                   <th className="w-[7rem] px-3 py-1.5">City</th>
                   <th className="px-3 py-1.5">Project</th>
                   <th className="w-[8rem] px-3 py-1.5">Plot</th>
-                  <th className="w-[6rem] px-3 py-1.5">Status</th>
                   <th className="w-[9.5rem] px-3 py-1.5">Source</th>
                   <th className="w-[8rem] px-3 py-1.5">Follow-up</th>
                   {canManage && <th className="w-[6rem] px-3 py-1.5 text-center">Action</th>}
@@ -344,20 +343,6 @@ export default function EnquiriesClient({
                         </span>
                       ) : (
                         <span className="text-muted-foreground">General</span>
-                      )}
-                    </td>
-                    <td>
-                      <Badge
-                        variant={
-                          e.status === "ACTIVE" ? "info" : e.status === "BOOKED" ? "success" : "outline"
-                        }
-                      >
-                        {humanise(e.status)}
-                      </Badge>
-                      {e.closeReason && (
-                        <span className="block text-[11px] text-muted-foreground">
-                          {e.closeReason}
-                        </span>
                       )}
                     </td>
                     <td>
@@ -433,7 +418,6 @@ export default function EnquiriesClient({
           people={people}
           members={members}
           customers={customers}
-          staff={staff}
           busy={busy}
           onClose={() => setCreating(null)}
           onSubmit={async (input) => {
@@ -470,7 +454,7 @@ export default function EnquiriesClient({
             }}
           >
             <Field label="Close reason — compulsory">
-              <Input name="reason" required minLength={3} />
+              <RemarkSelect presets="closeEnquiry" name="reason" required />
             </Field>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setClosing(null)}>
@@ -560,7 +544,6 @@ function CreateEnquiryDialog({
   people,
   members,
   customers,
-  staff,
   busy,
   onClose,
   onSubmit,
@@ -578,7 +561,6 @@ function CreateEnquiryDialog({
   }>;
   members: Array<{ id: string; label: string }>;
   customers: Array<{ id: string; label: string }>;
-  staff: Array<{ id: string; label: string; isSelf: boolean }>;
   busy: boolean;
   onClose: () => void;
   onSubmit: (input: Parameters<typeof createEnquiryAction>[0]) => void;
@@ -587,12 +569,14 @@ function CreateEnquiryDialog({
   // a blank personId with a name and mobile beside it is a first-time caller.
   const [personId, setPersonId] = React.useState(initialPersonId);
   const [projectId, setProjectId] = React.useState("");
-  const [plotId, setPlotId] = React.useState("");
+  // One choice: a Plot's id, or "TYPE:<plot type>" for an Enquiry about the
+  // type with no particular Plot yet.
+  const [plotChoice, setPlotChoice] = React.useState("");
   const [source, setSource] = React.useState("DIRECT");
-  const [assignedStaffId, setAssignedStaffId] = React.useState(
-    staff.find((s) => s.isSelf)?.id ?? ""
-  );
   const projectPlots = plots.filter((p) => p.projectId === projectId);
+  const projectTypes = [...new Set(projectPlots.map((p) => p.plotType))];
+  const chosenType = plotChoice.startsWith("TYPE:") ? plotChoice.slice(5) : null;
+  const plotId = chosenType ? "" : plotChoice;
   const plot = plots.find((p) => p.id === plotId);
 
   return (
@@ -608,12 +592,12 @@ function CreateEnquiryDialog({
             mobile: String(f.get("mobile") ?? ""),
             city: String(f.get("city") ?? ""),
             projectId,
-            plotId: plotId === "CUSTOM" ? "" : plotId,
-            plotRequirement: String(f.get("plotRequirement") ?? ""),
+            plotId,
+            // A type-only Enquiry keeps the type as what was asked for.
+            plotRequirement: chosenType ? humanise(chosenType) : "",
             source: source as "DIRECT",
             sourceMemberId: source === "BY_MEMBER" ? String(f.get("sourceMemberId") ?? "") : "",
             sourceCustomerId: source === "BY_CUSTOMER" ? String(f.get("sourceCustomerId") ?? "") : "",
-            assignedStaffId,
             nextFollowUpIso: istInstant(String(f.get("date")), FOLLOW_UP_HOUR),
             remark: String(f.get("remark") ?? ""),
           });
@@ -627,7 +611,7 @@ function CreateEnquiryDialog({
               value={projectId}
               onChange={(e) => {
                 setProjectId(e.target.value);
-                setPlotId("");
+                setPlotChoice("");
               }}
             >
               <option value="" disabled>
@@ -641,38 +625,43 @@ function CreateEnquiryDialog({
             </select>
           </Field>
 
-          <Field label="Plot">
+          {/* Owner, 15 Oct 2026 — one list: each Plot type of the Project, and
+              under it that type's Plots. Pick the type, or a Plot under it.
+              No General, no Custom. */}
+          <Field label="Plot Type / Plot">
             <select
               className={inputClass}
+              required
               disabled={!projectId}
-              value={plotId}
-              onChange={(e) => setPlotId(e.target.value)}
+              value={plotChoice}
+              onChange={(e) => setPlotChoice(e.target.value)}
             >
-              <option value="">
-                {projectId ? "General Enquiry — no Plot" : "Select a Project first"}
+              <option value="" disabled>
+                {projectId ? "Select a Plot Type or a Plot" : "Select a Project first"}
               </option>
-              <option value="CUSTOM">Custom — not in inventory</option>
-              {projectPlots.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
+              {/* Every type first, each one pickable on its own… */}
+              {projectTypes.map((type) => (
+                <option key={type} value={`TYPE:${type}`} className="font-semibold">
+                  {humanise(type)}
                 </option>
+              ))}
+              {/* …then the Plots, under a heading per type. */}
+              {projectTypes.map((type) => (
+                <optgroup key={type} label={`${humanise(type)} Plots`}>
+                  {projectPlots
+                    .filter((p) => p.plotType === type)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                </optgroup>
               ))}
             </select>
           </Field>
         </div>
 
-        {plotId === "CUSTOM" && (
-          <Field label="What they asked for — compulsory">
-            <Input
-              name="plotRequirement"
-              className="h-9 text-xs"
-              required
-              placeholder="e.g. 40 × 60 corner, west facing"
-            />
-          </Field>
-        )}
-
-        {plot ? (
+        {plot && (
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl border border-border/60 bg-secondary/60 px-3 py-2 text-xs">
             <dt className="text-muted-foreground">Status</dt>
             <dd className="text-right font-medium">
@@ -687,12 +676,7 @@ function CreateEnquiryDialog({
               {formatQuantity(plot.areaSqFt)} sq ft · {formatQuantity(plot.areaSqM)} sq m
             </dd>
           </dl>
-        ) : plotId === "CUSTOM" ? (
-          <p className="rounded-xl border border-border/60 bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
-            A requirement, not a Plot: it allocates nothing and blocks nothing. Raise a Plot-wise
-            Enquiry once inventory holds one that matches.
-          </p>
-        ) : null}
+        )}
 
         {/* One person, so no bordered card and no section heading: an empty box
             around a single select is the space the Booking form spends on
@@ -776,20 +760,6 @@ function CreateEnquiryDialog({
             </div>
           )}
 
-          <Field label="Assigned to">
-            <select
-              className={inputClass}
-              value={assignedStaffId}
-              onChange={(e) => setAssignedStaffId(e.target.value)}
-            >
-              {staff.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.isSelf ? `${s.label} — you` : s.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-
           <Field label="Next follow-up date">
             <input
               name="date"
@@ -803,7 +773,7 @@ function CreateEnquiryDialog({
           {/* A remark is a sentence, not a field width — it takes the row. */}
           <div className="sm:col-span-2">
             <Field label="Remark">
-              <Input name="remark" className="h-9 text-xs" />
+              <RemarkSelect presets="newEnquiry" name="remark" className="h-9 text-xs" />
             </Field>
           </div>
         </div>
@@ -898,7 +868,7 @@ function FollowUpDialog({
           />
         </Field>
         <Field label="Remark">
-          <Input name="remark" />
+          <RemarkSelect presets="followUp" name="remark" />
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>

@@ -22,6 +22,8 @@ import {
   travelledTripAction,
   type ActionResult,
 } from "../trip-actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
+import type { RemarkPresetKey } from "@/lib/remark-presets";
 
 export type { TripProgrammeView };
 
@@ -287,6 +289,7 @@ export default function TripSection({ role, programmes }: { role: string; progra
         <TextDialog
           title="Trip travelled"
           label="Note"
+          presets="tripTravelled"
           optional
           withDate
           busy={busy}
@@ -361,6 +364,7 @@ function NomineeDialog({ busy, onClose, onSubmit }: { busy: boolean; onClose: ()
 function TextDialog({
   title,
   label,
+  presets,
   optional,
   withDate,
   busy,
@@ -369,6 +373,7 @@ function TextDialog({
 }: {
   title: string;
   label: string;
+  presets?: RemarkPresetKey;
   optional?: boolean;
   withDate?: boolean;
   busy: boolean;
@@ -386,7 +391,11 @@ function TextDialog({
           </Field>
         )}
         <Field label={label}>
-          <input className={inputClass} value={text} onChange={(e) => setText(e.target.value)} />
+          {presets ? (
+            <RemarkSelect presets={presets} value={text} onChange={setText} required={!optional} />
+          ) : (
+            <input className={inputClass} value={text} onChange={(e) => setText(e.target.value)} />
+          )}
         </Field>
         <div className="flex justify-end">
           <Button size="sm" disabled={busy || (!optional && !text.trim())} onClick={() => onSubmit(text, withDate ? on : undefined)}>
@@ -422,7 +431,7 @@ function InviterDialog({
           <input className={inputClass} value={inviter} onChange={(e) => setInviter(e.target.value)} />
         </Field>
         <Field label="Reason (compulsory)">
-          <textarea className={`${inputClass} h-16 py-2`} value={reason} onChange={(e) => setReason(e.target.value)} />
+          <RemarkSelect presets="correctInviter" value={reason} onChange={setReason} required />
         </Field>
         {error && <p className="text-xs text-red-700">{error}</p>}
         <div className="flex justify-end">

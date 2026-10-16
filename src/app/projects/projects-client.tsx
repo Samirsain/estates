@@ -39,6 +39,7 @@ import {
   setProjectStatusAction,
   type ActionResult,
 } from "./actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 type ComponentRow = { category: PlcCategory; threshold: string | null; percent: string; remark?: string | null };
 
@@ -1043,7 +1044,7 @@ function EditProjectDialog({
         <ProjectFieldset row={project} />
 
         <Field label="Reason — compulsory">
-          <Input name="reason" required minLength={3} />
+          <RemarkSelect presets="editProject" name="reason" required />
         </Field>
 
         <div className="flex justify-end gap-2 pt-2">
@@ -1105,13 +1106,7 @@ function PlcDialog({
       >
         <ComponentEditor rows={components} onChange={setComponents} />
         <Field label="Reason — compulsory">
-          <Input
-            name="reason"
-            required
-            minLength={3}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          />
+          <RemarkSelect presets="locationCharge" name="reason" required value={reason} onChange={setReason} />
         </Field>
         <div className="flex flex-wrap justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
@@ -1266,7 +1261,7 @@ function StatusDialog({
           </select>
         </Field>
         <Field label="Reason — compulsory">
-          <Input name="reason" required minLength={3} />
+          <RemarkSelect presets="projectStatus" name="reason" required />
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>

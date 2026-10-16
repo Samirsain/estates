@@ -29,6 +29,8 @@ import {
   type MemberDetail,
 } from "./actions";
 import { PersonPicker } from "@/components/person-picker";
+import { RemarkSelect } from "@/components/ui/remark-select";
+import type { RemarkPresetKey } from "@/lib/remark-presets";
 
 /** Filters sit inline and size to their content, unlike a form field. */
 const filterClass =
@@ -70,14 +72,6 @@ type Permissions = {
   viewFullBank: boolean;
   viewFullIdentity: boolean;
 };
-
-const RERA_LABEL: Record<string, string> = {
-  REGISTERED: "Registered",
-  PENDING: "Pending",
-  EXPIRED: "Expired",
-  NOT_APPLICABLE: "Not Applicable",
-};
-
 
 const PAYMENT_LABEL: Record<string, string> = {
   NOT_PAID: "Not Paid",
@@ -242,13 +236,12 @@ export default function MembersClient({
                 <th className="w-[8rem] px-3 py-1.5">City</th>
                 <th className="w-[11rem] px-3 py-1.5">Invited by</th>
                 <th className="w-[6rem] px-3 py-1.5 text-center">Total Deals</th>
-                <th className="w-[10rem] px-3 py-1.5">RERA</th>
               </tr>
             </thead>
             <tbody>
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={6} className="px-3 py-10 text-center text-sm text-muted-foreground">
                     No Members match these filters.
                   </td>
                 </tr>
@@ -311,22 +304,10 @@ export default function MembersClient({
                         <span className="text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td>
-                      <Badge
-                        variant={
-                          row.reraStatus === "REGISTERED" || row.reraStatus === "NOT_APPLICABLE"
-                            ? "success"
-                            : "destructive"
-                        }
-                        className="whitespace-nowrap"
-                      >
-                        {RERA_LABEL[row.reraStatus] ?? row.reraStatus}
-                      </Badge>
-                    </td>
                   </tr>
                   {openId === row.id && (
                     <tr>
-                      <td colSpan={7} className="px-1 pb-3">
+                      <td colSpan={6} className="px-1 pb-3">
                         <MemberDetailPanel
                           row={row}
                           detail={detail}
@@ -417,6 +398,8 @@ export default function MembersClient({
       {dialog?.kind === "BANK_DECIDE" && (
         <MemberDialog
           title={dialog.approve ? "Verify Bank Details" : "Reject Bank Details"}
+          presets="bankDetails"
+          kind={dialog.approve ? "Verified" : "Rejected"}
           row={dialog.row}
           consequence={
             dialog.approve
@@ -749,11 +732,15 @@ export function MemberDialog({
   title,
   row,
   consequence,
+  presets,
+  kind,
   busy,
   onClose,
   onSubmit,
 }: {
   title: string;
+  presets: RemarkPresetKey;
+  kind: string;
   row: { memberId: string; name: string };
   consequence: string;
   busy: boolean;
@@ -776,7 +763,7 @@ export function MemberDialog({
         }}
       >
         <Field label="Reason — compulsory">
-          <Input name="reason" required minLength={3} />
+          <RemarkSelect presets={presets} kind={kind} name="reason" required />
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
@@ -835,10 +822,10 @@ export function ReraFields({ row }: { row?: MemberRera }) {
       )}
       {status === "NOT_APPLICABLE" && (
         <Field label="Not Applicable reason — compulsory">
-          <Input
+          <RemarkSelect
+            presets="reraNotApplicable"
             name="reraNotApplicableReason"
             required
-            minLength={3}
             defaultValue={row?.reraNotApplicableReason ?? ""}
           />
         </Field>

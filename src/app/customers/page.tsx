@@ -64,7 +64,7 @@ export default async function CustomersPage() {
   // What they actually bought, newest first, and how much else there is.
   /** Their most recent deal — a Customer who bought in two Projects shows that one. */
   const latest = new Map<string, (typeof parties)[number]["booking"]>();
-  const bookingCount = new Map<string, number>();
+  const allDeals = new Map<string, (typeof parties)[number]["booking"][]>();
   for (const party of parties) {
     const newest = latest.get(party.personId);
     const isNewer =
@@ -73,7 +73,7 @@ export default async function CustomersPage() {
       (party.booking.bookingDate.getTime() === newest.bookingDate.getTime() &&
         party.booking.submittedAt > newest.submittedAt);
     if (isNewer) latest.set(party.personId, party.booking);
-    bookingCount.set(party.personId, (bookingCount.get(party.personId) ?? 0) + 1);
+    allDeals.set(party.personId, [...(allDeals.get(party.personId) ?? []), party.booking]);
   }
 
   // v2.1 §21 — Customer-closing Loyalty used, of the lifetime three.
@@ -95,7 +95,10 @@ export default async function CustomersPage() {
     plotNumber: latest.get(c.personId)?.plot.plotNumber ?? null,
     plotType: latest.get(c.personId)?.plot.plotType.replaceAll("_", " ") ?? null,
     plotId: latest.get(c.personId)?.plot.id ?? null,
-    otherBookings: Math.max((bookingCount.get(c.personId) ?? 0) - 1, 0),
+    // Every deal but the one the row shows, read on hover over "+N more booked".
+    otherBookings: (allDeals.get(c.personId) ?? [])
+      .filter((b) => b !== latest.get(c.personId))
+      .map((b) => `${b.project.name} · Plot ${b.plot.plotNumber}`),
     closingLoyaltyUsed: closing.get(c.personId) ?? 0,
   }));
 

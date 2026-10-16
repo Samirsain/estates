@@ -22,6 +22,8 @@ import {
   tokenAvailabilityAction,
   type ActionResult,
 } from "../royalty-actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
+import type { RemarkPresetKey } from "@/lib/remark-presets";
 
 export const REWARD_HOLD_LABEL: Record<string, string> = {
   RECOVERY_OUTSTANDING: "Recovery Outstanding",
@@ -233,6 +235,7 @@ export default function RoyaltyTokens({
         <NoteDialog
           title={`Correct an erroneous redemption of ${dialog.tokens} points`}
           label="Why it was wrong (compulsory). The points return to the balance; the entry stays in history."
+          presets="correctRedemption"
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(reason) => run(() => correctTokenRedemptionAction({ redemptionId: dialog.redemptionId, reason }, newKey()))}
@@ -325,7 +328,7 @@ function RecordDialog({
           )}
         </div>
         <Field label="What was arranged (internal, optional)">
-          <input className={inputClass} value={reference} onChange={(e) => setReference(e.target.value)} />
+          <RemarkSelect presets="recordRedemption" value={reference} onChange={setReference} />
         </Field>
         {problem && <p className="text-xs text-red-700">{problem}</p>}
         <div className="flex justify-end gap-2">
@@ -355,12 +358,14 @@ function RecordDialog({
 function NoteDialog({
   title,
   label,
+  presets,
   busy,
   onClose,
   onSubmit,
 }: {
   title: string;
   label: string;
+  presets: RemarkPresetKey;
   busy: boolean;
   onClose: () => void;
   onSubmit: (note: string) => void;
@@ -369,7 +374,7 @@ function NoteDialog({
   return (
     <Modal title={title} onClose={onClose}>
       <Field label={label}>
-        <textarea className={`${inputClass} h-16 py-2`} value={note} onChange={(e) => setNote(e.target.value)} />
+        <RemarkSelect presets={presets} value={note} onChange={setNote} required />
       </Field>
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="outline" onClick={onClose}>

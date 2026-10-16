@@ -7,8 +7,9 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { Field, Modal } from "@/components/ui/modal";
 import { decideCircumventionAction, type ActionResult } from "./review-actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 export type ReviewRow = {
   id: string;
@@ -122,7 +123,7 @@ export function Reviews({ rows, role }: { rows: ReviewRow[]; role: string }) {
             }}
           >
             <Field label="Reason — compulsory, kept in the audit">
-              <input name="note" required minLength={3} className={inputClass} />
+              <RemarkSelect presets="recoveryLinkCheck" name="note" required kind={deciding.yes ? "Approved" : "Rejected"} />
             </Field>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setDeciding(null)}>

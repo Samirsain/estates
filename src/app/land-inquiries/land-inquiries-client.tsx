@@ -15,16 +15,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  RATE_BASIS_LABEL,
   RECEIVED_FROM_LABEL,
   STAGE_LABEL,
   STAGE_ORDER,
-  inr,
   stageVariant,
   type LandInquiryReceivedFrom,
   type LandInquiryStage,
   type LandInquiryStatus,
-  type LandRateBasis,
 } from "@/lib/domain/land-inquiry";
 import { type StaffRole } from "@/lib/tasks";
 
@@ -42,8 +39,6 @@ export type LandInquiryRowView = {
   location: string | null;
   exactLocation: string | null;
   area: string | null;
-  askingRate: string | null;
-  askingRateBasis: LandRateBasis | null;
   status: LandInquiryStatus;
   stage: LandInquiryStage;
   assignedTo: string | null;
@@ -204,7 +199,6 @@ export default function LandInquiriesClient({
                 <th className="px-3 py-2">Owner</th>
                 <th className="px-3 py-2">Location</th>
                 <th className="px-3 py-2">Land Area</th>
-                <th className="px-3 py-2">Asking Rate</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Stage</th>
                 <th className="px-3 py-2">Assigned To</th>
@@ -213,7 +207,7 @@ export default function LandInquiriesClient({
             <tbody className="divide-y divide-border/50">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-3 py-10 text-center text-muted-foreground">
+                  <td colSpan={9}className="px-3 py-10 text-center text-muted-foreground">
                     No land inquiries found.
                   </td>
                 </tr>
@@ -250,20 +244,6 @@ export default function LandInquiriesClient({
                       )}
                     </td>
                     <td className="px-3 py-2 tabular-nums">{row.area ?? "—"}</td>
-                    <td className="px-3 py-2 tabular-nums">
-                      {row.askingRate ? (
-                        <>
-                          {inr(row.askingRate)}
-                          {row.askingRateBasis && (
-                            <span className="block text-[11px] text-muted-foreground">
-                              {RATE_BASIS_LABEL[row.askingRateBasis]}
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
                     <td className="px-3 py-2">
                       <Badge variant={row.status === "WORKING" ? "info" : "secondary"}>
                         {row.status === "WORKING" ? "Working" : "Closed"}

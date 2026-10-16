@@ -94,7 +94,8 @@ export type CreateEnquiryInput = {
   source: EnquirySource;
   sourceMemberId?: string | null;
   sourceCustomerId?: string | null;
-  assignedStaffId: string;
+  /** Null leaves the Enquiry with the whole CRM team rather than one person. */
+  assignedStaffId: string | null;
   assigneeRole: "CRM" | "MD";
   nextFollowUpAt: Date;
   remark?: string;

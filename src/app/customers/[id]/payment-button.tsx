@@ -13,6 +13,7 @@ import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { istDay, remainingPercent } from "@/lib/tasks";
 import { confirmPaymentReceivedAction } from "@/app/bookings/actions";
 import { PaymentPercentInput } from "@/app/bookings/bookings-client";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 export function PaymentButton({
   bookings,
@@ -105,7 +106,7 @@ export function PaymentButton({
               <Input name="reference" required />
             </Field>
             <Field label="Remark">
-              <Input name="remark" />
+              <RemarkSelect presets="paymentReceived" name="remark" />
             </Field>
             {error && <p className="text-xs text-red-700">{error}</p>}
             <div className="flex justify-end gap-2">

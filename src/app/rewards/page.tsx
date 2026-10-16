@@ -17,7 +17,7 @@ import { REWARD_HOLD_LABEL } from "@/app/members/[id]/royalty-tokens";
 export const dynamic = "force-dynamic";
 
 const TABS = [
-  ["monetary", "Commission & Loyalty Points"],
+  ["monetary", "Commission"],
   ["trip", "Rewards"],
   ["royalty", "Royalty Points"],
   ["recovery", "Recovery"],
@@ -62,7 +62,8 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
                 <tr>
                   <th className={TH}>Beneficiary</th>
                   <th className={TH}>Benefit</th>
-                  <th className={TH}>Source</th>
+                  <th className={TH}>Project</th>
+                  <th className={TH}>Plot</th>
                   <th className={TH}>Eligibility</th>
                   <th className={TH}>Payment</th>
                 </tr>
@@ -77,20 +78,27 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
                           ? "Customer-closing Loyalty Points"
                           : "Repeat-purchase Loyalty Points"
                         : c.type === "DIRECT"
-                          ? "Commission"
-                          : "Buying Commission"}{" "}
+                          ? "Direct"
+                          : "Buying"}{" "}
                       {c.percent.toFixed(2)}%
                     </td>
                     <td className={TD}>
-                      {c.booking ? (
-                        <Link className="text-primary hover:underline" href={`/bookings?booking=${c.booking.id}`}>
-                          {c.booking.bookingNumber} · {c.booking.project.name} {c.booking.plot.plotNumber}
-                        </Link>
-                      ) : (
-                        <Link className="text-primary hover:underline" href={`/acquisitions/${c.acquisition?.id}`}>
-                          {c.acquisition?.acquisitionNo}
-                        </Link>
-                      )}
+                      {c.booking?.project.name ??
+                        c.acquisition?.plot?.project.name ??
+                        c.acquisition?.propertyName ??
+                        "—"}
+                    </td>
+                    <td className={TD}>
+                      {/* The Plot opens the Booking or deal, where the work is done. */}
+                      <Link
+                        className="text-primary hover:underline"
+                        href={c.booking ? `/bookings?booking=${c.booking.id}` : `/acquisitions/${c.acquisition?.id}`}
+                      >
+                        {c.booking?.plot.plotNumber ??
+                          c.acquisition?.plot?.plotNumber ??
+                          c.acquisition?.propertyNumber ??
+                          "—"}
+                      </Link>
                     </td>
                     <td className={TD}>
                       {eligibilityLabel(c.eligibility)}

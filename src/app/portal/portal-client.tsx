@@ -29,6 +29,7 @@ import {
   type ActionResult,
 } from "./actions";
 import { PersonPicker } from "@/components/person-picker";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 /** PRD §23.1 — the only commission wording a Member ever sees. */
 const COMMISSION_LABEL: Record<string, string> = {
@@ -807,7 +808,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
               </select>
             </Field>
             <Field label="Remark">
-              <Input name="remark" className={inputClass} />
+              <RemarkSelect presets="portalEnquiry" name="remark" />
             </Field>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setAddingEnquiry(false)} className="border-border text-foreground">

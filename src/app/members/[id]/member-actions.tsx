@@ -167,6 +167,8 @@ export function MemberActions({
       {dialog?.kind === "STATUS" && (
         <MemberDialog
           title={dialog.active ? "Reactivate Member" : "Deactivate Member"}
+          presets="memberStatus"
+          kind={dialog.active ? "Reactivated" : "Deactivated"}
           row={member}
           consequence={
             dialog.active
@@ -184,6 +186,8 @@ export function MemberActions({
       {dialog?.kind === "HOLD" && (
         <MemberDialog
           title={dialog.hold ? "Apply Commission Hold" : "Remove Commission Hold"}
+          presets="commissionHold"
+          kind={dialog.hold ? "Hold" : "Removed"}
           row={member}
           consequence={
             dialog.hold

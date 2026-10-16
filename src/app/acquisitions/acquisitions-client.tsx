@@ -40,6 +40,7 @@ import {
   type ActionResult,
   type ScheduleRowInput,
 } from "./actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 
 /** The one row button, sized like Inventory's. */
@@ -488,7 +489,7 @@ function NewAcquisitionDialog({
         </section>
 
         <Field label="Remark — compulsory">
-          <Input name="remark" required minLength={3} />
+          <RemarkSelect presets="newDeal" name="remark" required />
         </Field>
 
         {type === "PURCHASE_FOR_RESALE" && (

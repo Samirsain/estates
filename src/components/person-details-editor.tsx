@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Field, Modal } from "@/components/ui/modal";
 import { updatePersonDetailsAction, type PersonDetails } from "@/app/people/actions";
 import { enterBankDetailsAction } from "@/app/members/actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
 
 export function PersonDetailsEditor({
   personId,
@@ -128,7 +129,7 @@ export function PersonDetailsEditor({
             </div>
 
             <Field label="Reason — compulsory, kept in History">
-              <Input name="reason" required minLength={3} placeholder="e.g. Address confirmed at site visit" />
+              <RemarkSelect presets="editPerson" name="reason" required />
             </Field>
 
             <div className="flex justify-end gap-2 pt-1">

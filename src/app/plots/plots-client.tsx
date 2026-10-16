@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, NO_STEPPER } from "@/components/ui/input";
 import { Field, Modal } from "@/components/ui/modal";
+import { RemarkSelect } from "@/components/ui/remark-select";
 import type { SoldByType } from "@prisma/client";
 import { PersonPicker, personLabel } from "@/components/person-picker";
 // ponytail: the two dialogs are imported from the Bookings screen's own module,
@@ -1755,7 +1756,7 @@ export default function PlotsClient({
                 <Input name="reference" required />
               </Field>
               <Field label="Remark">
-                <Input name="remark" />
+                <RemarkSelect presets="paymentReceived" name="remark" />
               </Field>
             </>
           }
@@ -1773,7 +1774,7 @@ export default function PlotsClient({
           onClose={() => setDialog(null)}
           fields={
             <Field label="Reason — compulsory">
-              <Input name="reason" required minLength={3} />
+              <RemarkSelect presets="makeAvailable" name="reason" required />
             </Field>
           }
           onSubmit={async (f) => {
@@ -1797,7 +1798,7 @@ export default function PlotsClient({
           onClose={() => setDialog(null)}
           fields={
             <Field label="Reason — compulsory">
-              <Input name="reason" required minLength={3} />
+              <RemarkSelect presets="cancelHold" name="reason" required />
             </Field>
           }
           onSubmit={(f) =>
@@ -1833,7 +1834,7 @@ export default function PlotsClient({
                 />
               </Field>
               <Field label="Reason — compulsory">
-                <Input name="reason" required minLength={3} />
+                <RemarkSelect presets="holdExtension" name="reason" required />
               </Field>
               <HoldHistory plot={dialog.plot} />
             </>
@@ -1870,7 +1871,11 @@ export default function PlotsClient({
           onClose={() => setDialog(null)}
           fields={
             <Field label="Remark">
-              <Input name="note" />
+              <RemarkSelect
+                presets="decideHoldExtension"
+                name="note"
+                kind={dialog.approve ? "Approved" : "Rejected"}
+              />
             </Field>
           }
           onSubmit={(f) =>
@@ -1910,7 +1915,12 @@ export default function PlotsClient({
             }}
           >
             <Field label="Remark — compulsory">
-              <Input name="note" required minLength={3} />
+              <RemarkSelect
+                presets="decideHoldRequest"
+                name="note"
+                required
+                kind={dialog.approve ? "Approved" : "Rejected"}
+              />
             </Field>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setDialog(null)}>
@@ -2124,10 +2134,11 @@ export function EditPlotDetailsDialog({
             />
           </Field>
           <Field label="Reason for the area">
-            <Input
+            <RemarkSelect
+              presets="plotAreaReason"
               className="h-8"
               value={form.exactAreaReason}
-              onChange={(e) => setForm({ ...form, exactAreaReason: e.target.value })}
+              onChange={(v) => setForm({ ...form, exactAreaReason: v })}
             />
           </Field>
         </div>
@@ -2163,12 +2174,7 @@ export function EditPlotDetailsDialog({
       </div>
 
       <Field label="Reason — compulsory, kept in History">
-        <Input
-          className="h-8"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          minLength={3}
-        />
+        <RemarkSelect presets="editPlot" className="h-8" value={reason} onChange={setReason} required />
       </Field>
 
       <div className="flex justify-end gap-2">

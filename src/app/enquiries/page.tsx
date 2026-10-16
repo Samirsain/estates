@@ -27,7 +27,7 @@ export default async function EnquiriesPage({
     followUps: { orderBy: { at: "desc" as const }, take: 1 },
   };
 
-  const [enquiries, projects, plots, people, members, customers, staff] = await Promise.all([
+  const [enquiries, projects, plots, people, members, customers] = await Promise.all([
     db.enquiry.findMany({ include: enquiryInclude, orderBy: { createdAt: "desc" }, take: 200 }),
     db.project.findMany({ orderBy: { name: "asc" } }),
     db.plot.findMany({
@@ -71,13 +71,6 @@ export default async function EnquiriesPage({
       orderBy: { customerId: "asc" },
       take: 300,
     }),
-    // Assigned CRM (DESIGN §8.2). Only the roles that carry an Enquiry
-    // follow-up task appear, so the picker cannot create an unworkable task.
-    db.staffAccount.findMany({
-      where: { status: "ACTIVE", role: { in: ["CRM", "MD"] } },
-      include: { person: true },
-      orderBy: { staffAccountId: "asc" },
-    }),
   ]);
 
   // The focused Enquiry may be older than the latest 200.
@@ -108,7 +101,7 @@ export default async function EnquiriesPage({
     sourceRefKind: e.sourceMember ? ("member" as const) : e.sourceCustomer ? ("customer" as const) : null,
     status: e.status,
     closeReason: e.closeReason,
-    assignedTo: e.assignedStaff?.person.fullName ?? "Unassigned",
+    assignedTo: e.assignedStaff?.person.fullName ?? "CRM team",
     // The Staff ID is what a reassignment is filed under, and it tells two
     // people with the same name apart — the column filters on it.
     assignedStaffCode: e.assignedStaff?.staffAccountId ?? null,
@@ -127,7 +120,8 @@ export default async function EnquiriesPage({
       plots={plots.map((p) => ({
         id: p.id,
         projectId: p.projectId,
-        label: `${p.plotNumber} · ${p.plotType.replaceAll("_", " ").toLowerCase()}`,
+        label: p.plotNumber,
+        plotType: p.plotType,
         status: p.status,
         widthFt: p.widthFt?.toString() ?? "",
         lengthFt: p.lengthFt?.toString() ?? "",
@@ -143,11 +137,6 @@ export default async function EnquiriesPage({
       }))}
       members={members.map((m) => ({ id: m.id, label: `${m.memberId} · ${m.person.fullName}` }))}
       customers={customers.map((c) => ({ id: c.id, label: `${c.customerId} · ${c.person.fullName}` }))}
-      staff={staff.map((s) => ({
-        id: s.id,
-        label: `${s.person.fullName} · ${s.role}`,
-        isSelf: s.id === actor.accountId,
-      }))}
       canManage={can(actor.role, "ENQUIRY_MANAGE")}
       startFor={startFor && people.some((p) => p.id === startFor) ? startFor : null}
       focus={focusId && rows.some((r) => r.id === focusId) ? focusId : null}

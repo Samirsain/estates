@@ -11,7 +11,17 @@ export async function rewardLists() {
       include: {
         beneficiaryPerson: { select: { id: true, fullName: true } },
         booking: { select: { id: true, bookingNumber: true, project: { select: { name: true } }, plot: { select: { plotNumber: true } } } },
-        acquisition: { select: { id: true, acquisitionNo: true } },
+        // A Purchase for Resale has no Plot until approval, only the outside
+        // property's own name and number.
+        acquisition: {
+          select: {
+            id: true,
+            acquisitionNo: true,
+            propertyName: true,
+            propertyNumber: true,
+            plot: { select: { plotNumber: true, project: { select: { name: true } } } },
+          },
+        },
       },
       orderBy: { updatedAt: "desc" },
       take: 200,

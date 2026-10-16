@@ -16,8 +16,8 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { RemarkSelect } from "@/components/ui/remark-select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -163,11 +163,12 @@ export default function PlotActions({
             </Field>
 
             <Field label="Reason — compulsory, kept in History">
-              <Input
+              <RemarkSelect
+                presets="plotRestriction"
                 className="h-8"
                 value={reason}
-                minLength={3}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={setReason}
+                required
               />
             </Field>
 
