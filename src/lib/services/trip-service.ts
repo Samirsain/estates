@@ -17,6 +17,7 @@ import { recordAudit } from "@/lib/security/audit";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { outstandingRecovery } from "./commission-service";
 import { closeTasksFor, ensureTask } from "./task-service";
+import { formatIstDate } from "@/lib/tasks";
 import { assertIndependent, controlHoldReason } from "./benefit-control-service";
 
 /** CP §65 NT03. */
@@ -322,12 +323,12 @@ export async function evaluateBuckets(tx: Tx, memberProfileId: string, projectId
       }
     } else if (reward.state === "BOOKED") {
       // SSOT §63 — once Booked the Trip Terms govern; a human reviews it.
-      await deficiencyTask(tx, reward.id, memberProfileId, "A credit used by this booked Trip is no longer valid. The Trip Terms govern what happens next.");
+      await deficiencyTask(tx, reward.id, memberProfileId, "A sale for this booked Trip was cancelled. Check the Trip Terms.");
     } else if (reward.state === "EARNED") {
       await tx.tripBucket.update({ where: { id: bucket.id }, data: { state: "DEFICIENT" } });
       await tx.tripReward.update({ where: { id: reward.id }, data: { state: "DEFICIENT" } });
       await event(tx, memberProfileId, { bucketId: bucket.id, rewardId: reward.id }, actorRef, "REWARD_DEFICIENT", "EARNED", "DEFICIENT");
-      await deficiencyTask(tx, reward.id, memberProfileId, "A credit this earned Trip used is no longer valid and no unused credit can replace it.");
+      await deficiencyTask(tx, reward.id, memberProfileId, "A sale for this Trip was cancelled. No other sale can replace it.");
     }
     await refreshTripReward(tx, reward.id, actorRef);
   }
@@ -672,7 +673,9 @@ export async function windDownTripBuckets(tx: Tx, now: Date) {
       title: "Reward Expiry",
       assigneeRole: "CRM",
       dueAt: windDown ?? now,
-      latestResult: `The ${bucket.programmeCode} programme has closed; this open bucket ends ${windDown ? `on its wind-down deadline` : "when its wind-down deadline is set"}.`,
+      latestResult: windDown
+        ? `${bucket.programmeCode} closed. This Trip progress ends on ${formatIstDate(windDown)}.`
+        : `${bucket.programmeCode} closed. End date not set yet.`,
     });
   }
   return changed;

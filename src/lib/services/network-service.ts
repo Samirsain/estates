@@ -424,7 +424,7 @@ export async function setMemberStatus(args: {
             assigneeRole: "CRM",
             dueAt: new Date(),
             urgent: true,
-            latestResult: `${pending} hold request${pending === 1 ? "" : "s"} waiting on CRM.`,
+            latestResult: `Member deactivated. ${pending} Hold Request${pending === 1 ? "" : "s"} to decide.`,
           });
         }
       } else {

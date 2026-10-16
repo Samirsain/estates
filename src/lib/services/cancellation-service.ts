@@ -231,6 +231,7 @@ export async function decideCancellation(args: {
       await cancelCommissionForBooking(tx, args.bookingId, args.actorRef, {
         legallyCompleted: false,
         reason: `Booking cancelled — ${args.note}`,
+        adjustmentCause: `Booking cancelled: ${args.note.trim().replace(/\.$/, "")}.`,
       });
 
       // SSOT §70 — a first Booking cancelled before 100% Payment Received or a

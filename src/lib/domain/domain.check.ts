@@ -1078,16 +1078,16 @@ const conflictOf = (i: CommissionInput) => {
   assert.equal(o.ok, false);
   return o.ok ? "" : o.conflict;
 };
-assert.match(conflictOf({ ...base, buyerIsActiveMember: true, soldByType: "THREE_PERCENT_CLUB", terms: T("3", "1") }), /Active Member/);
-assert.match(conflictOf({ ...base, soldByType: "MEMBER", terms: T("3", "1") }), /names no selling Member/);
-assert.match(conflictOf({ ...base, soldByType: "CUSTOMER", terms: T("3", "1") }), /names no closing Customer/);
+assert.match(conflictOf({ ...base, buyerIsActiveMember: true, soldByType: "THREE_PERCENT_CLUB", terms: T("3", "1") }), /^Buyer is a Member\. Set Sold By to this Member\.$/);
+assert.match(conflictOf({ ...base, soldByType: "MEMBER", terms: T("3", "1") }), /^Sold By is Member, but no Member is chosen\.$/);
+assert.match(conflictOf({ ...base, soldByType: "CUSTOMER", terms: T("3", "1") }), /^Sold By is Customer, but no Customer is chosen\.$/);
 assert.match(
   conflictOf({ ...base, soldByType: "CUSTOMER", soldByPersonId: "buyer", terms: T("3", "1") }),
-  /cannot close their own purchase/
+  /^Buyer cannot be their own Sold By\. Set Sold By to 3% Club\.$/
 );
 assert.match(
   conflictOf({ ...base, soldByType: "MEMBER", soldByPersonId: "seller", terms: null }),
-  /no frozen commission settings/
+  /^No commission rates saved on this Booking\. Send the request again\.$/
 );
 
 /* ---------------------------------------- version validation (v2.1 §13) */

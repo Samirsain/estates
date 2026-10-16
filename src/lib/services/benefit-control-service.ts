@@ -89,8 +89,8 @@ async function circumventionHeld(tx: Tx, personId: string, recordName: string): 
         dueAt: new Date(),
         decision: true,
         latestResult:
-          `Shares ${review.indicators.map((i) => i.replace("_", " ").toLowerCase()).join(", ")} with the Person owing ` +
-          `${recovery.recoveryNo}. Benefits are held, not denied: clear or restrict with a reason.`,
+          `Same ${review.indicators.map((i) => (i === "BANK_ACCOUNT" ? "bank" : i.toLowerCase())).join(", ")} as the ` +
+          `${recovery.recoveryNo} holder. Payout on hold.`,
       });
     }
   }

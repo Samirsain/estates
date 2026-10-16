@@ -372,9 +372,7 @@ export function generateCommission(input: CommissionInput): CommissionOutcome {
   if (!terms) {
     return {
       ok: false,
-      conflict:
-        "This Booking has no frozen commission settings. Send the Booking Request again so it " +
-        "freezes the Project's approved settings.",
+      conflict: "No commission rates saved on this Booking. Send the request again.",
     };
   }
   const v = `V${terms.version}`;
@@ -416,9 +414,7 @@ export function generateCommission(input: CommissionInput): CommissionOutcome {
     if (input.soldByType !== "MEMBER" || input.soldByPersonId !== input.buyerPersonId) {
       return {
         ok: false,
-        conflict:
-          "The buyer holds an Active Member capability, so this is a Member personal purchase and " +
-          "Sold By must name that same Member. Correct Sold By before Accounts approval.",
+        conflict: "Buyer is a Member. Set Sold By to this Member.",
       };
     }
     return settled(direct(input.buyerPersonId, "SELF_PURCHASE"));
@@ -426,21 +422,19 @@ export function generateCommission(input: CommissionInput): CommissionOutcome {
 
   /* v2.1 §19 — a Member closes a third-party sale: Direct at 25%. */
   if (input.soldByType === "MEMBER") {
-    if (!input.soldByPersonId) return { ok: false, conflict: "Sold By Member names no selling Member." };
+    if (!input.soldByPersonId) return { ok: false, conflict: "Sold By is Member, but no Member is chosen." };
     return settled(direct(input.soldByPersonId, "THIRD_PARTY"));
   }
 
   /* v2.1 §22 — a Customer closes for another buyer: Loyalty to the closer. */
   if (input.soldByType === "CUSTOMER") {
     if (!input.soldByPersonId) {
-      return { ok: false, conflict: "Sold By Customer names no closing Customer." };
+      return { ok: false, conflict: "Sold By is Customer, but no Customer is chosen." };
     }
     if (input.soldByPersonId === input.buyerPersonId) {
       return {
         ok: false,
-        conflict:
-          "A Customer cannot close their own purchase as Sold By Customer. A repeat personal " +
-          "purchase is recorded as a 3% Club direct sale.",
+        conflict: "Buyer cannot be their own Sold By. Set Sold By to 3% Club.",
       };
     }
     return settled(loyalty(input.soldByPersonId, "CLOSING_CUSTOMER"));

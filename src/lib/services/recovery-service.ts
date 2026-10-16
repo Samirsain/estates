@@ -102,10 +102,7 @@ export async function openRecovery(
         title: "Recovery Follow-Up",
         assigneeRole: "ACCOUNTS",
         dueAt: dueOn,
-        latestResult:
-          `${recoveryNo} · ${recovery.reference} · due ${formatIst(dueOn)}. New cash payouts to this Person ` +
-          `are held until it is repaid or set off. Unresolved after the deadline, Membership may be ` +
-          `deactivated (SSOT §91).`,
+        latestResult: `${recoveryNo} due ${formatIst(dueOn)}. Payouts held until repaid.`,
       });
       await reassessBenefitsOf(tx, record.beneficiaryPersonId, args.actorRef);
       // SSOT §66, §82 — non-cash fulfilment is held too.

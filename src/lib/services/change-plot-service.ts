@@ -444,8 +444,7 @@ export async function decideChangePlot(args: {
         await raiseAdjustmentTask(
           tx,
           id,
-          `Change Plot approved — the paid amount now follows the final unit's Commissionable Sale Value. ` +
-            `Open a Recovery if it was overpaid, or close this if not.`
+          "Plot changed. Check commission if overpaid: open a Recovery or close."
         );
       }
       await syncPaymentFollowUp(tx, args.bookingId, args.actorRef);

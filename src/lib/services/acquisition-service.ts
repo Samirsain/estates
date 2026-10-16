@@ -556,7 +556,13 @@ export async function correctPaymentGiven(args: {
       }
 
       if (outcome.buyingCommissionMilestoneLost) {
-        await stepBackBuyingCommission(tx, acquisition.id, args.actorRef, outcome.note);
+        const given = progress.toFixed(2);
+        const cause = outcome.managementActionRequired
+          ? `Payment Given is ${given}%, below 20%, and a buyer is waiting.`
+          : outcome.plotStatus === "NOT_AVAILABLE"
+            ? `Payment Given is ${given}% Plot not available.`
+            : "Payment Given less than 100%";
+        await stepBackBuyingCommission(tx, acquisition.id, args.actorRef, outcome.note, cause);
       }
       await refreshStableCompletion(tx, acquisition.id, args.actorRef);
 
@@ -570,7 +576,7 @@ export async function correctPaymentGiven(args: {
           assigneeRole: "MD",
           dueAt: new Date(),
           urgent: true,
-          latestResult: outcome.note,
+          latestResult: `Payment Given is ${progress.toFixed(2)}% and a buyer is waiting. Finish the deal or stop the buyer.`,
         });
       }
 
@@ -862,6 +868,7 @@ export async function decideAcquisition(args: {
           legallyCompleted,
           unwind: "BUYBACK",
           reason: "Buyback approved",
+          adjustmentCause: "Plot bought back.",
         });
         // CR-002 — an Approved Buyback is the alternative milestone that makes
         // the Royalty Linked Member of that first purchase final, without
@@ -1209,7 +1216,7 @@ export async function cancelAcquisitionDeal(args: {
         }
       }
 
-      await stepBackBuyingCommission(tx, acquisition.id, args.actorRef, `Deal cancelled — ${args.reason}`);
+      await stepBackBuyingCommission(tx, acquisition.id, args.actorRef, `Deal cancelled — ${args.reason}`, `Deal cancelled: ${args.reason}.`);
       await refreshStableCompletion(tx, acquisition.id, args.actorRef);
       await closeTasksFor(tx, "Acquisition", acquisition.id, args.actorRef, `Deal cancelled — ${args.reason}`);
       await tx.acquisitionEvent.create({
@@ -1328,14 +1335,15 @@ export async function recordBuyingCommission(args: {
  * milestone — becomes Accounts Adjustment Required with a T21 task (CP §53,
  * §64; UAT BUY-08).
  */
-async function stepBackBuyingCommission(tx: Tx, acquisitionId: string, actorRef: string, reason: string) {
+/** `cause` is the Paid Commission Conflict note, worded on its own (owner, 16 Oct 2026). */
+async function stepBackBuyingCommission(tx: Tx, acquisitionId: string, actorRef: string, reason: string, cause = reason) {
   const record = await tx.commissionRecord.findFirst({
     where: { acquisitionId, isCurrent: true },
   });
   // A record already paid cannot be un-paid silently; Accounts must adjust it.
   const paid = record?.payment === "PAID" || record?.payment === "PAID_EARLY";
   if (!record || (record.eligibility === "MILESTONE_PENDING" && !paid)) return;
-  if (paid) await raiseAdjustmentTask(tx, record.id, reason);
+  if (paid) await raiseAdjustmentTask(tx, record.id, cause);
   await closeTasksFor(tx, "Commission", record.id, actorRef, `Milestone lost — ${reason}`, COMMISSION_PAYMENT_PURPOSE);
   await tx.commissionRecord.update({
     where: { id: record.id },

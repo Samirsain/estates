@@ -812,7 +812,7 @@ async function main() {
   });
   assert.equal(limitTasks.length, 1, "one Customer-closing limit task");
   assert.equal(limitTasks[0].assigneeRole, "CRM");
-  assert.match(limitTasks[0].latestResult ?? "", /Repeat-purchase Loyalty Points remain separately eligible/);
+  assert.match(limitTasks[0].latestResult ?? "", /^3rd closing done\. Make them a Member to sell more\.$/);
   // UAT LOY-08 — with three consumed, the closer can no longer be selected.
   const plotSixth = await makePlot(project.id, "L6");
   const sixthBuyer = await makeEligiblePerson("LoyaltyBuyer6", "9600000160");
@@ -1089,7 +1089,7 @@ async function main() {
   const lowReview = await reviewOf(bookingLow, "BUYBACK_COMMISSION_REVIEW");
   assert.equal(lowReview.length, 1, "one T24");
   assert.equal(`${lowReview[0].title}|${lowReview[0].status}`, "Reward Review — Approved Buyback|PENDING");
-  assert.match(lowReview[0].latestResult ?? "", /20\.00% — 25% reward gate not met/);
+  assert.match(lowReview[0].latestResult ?? "", /^Buyback approved\. Customer paid 20\.00%, no rewards\./);
   // Review Focus 5 — a first purchase carrying no commission still gets the review (UAT BB-01).
   await approveBuybackOn(firstLow, bbLowBuyer.id, "BB4F");
   assert.equal((await reviewOf(firstLow, "BUYBACK_COMMISSION_REVIEW")).length, 1, "T24 with no commission records");

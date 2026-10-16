@@ -234,9 +234,7 @@ async function raiseClosingLimitTask(tx: Tx, personId: string) {
     title: "Membership — Upgrade Customer",
     assigneeRole: "CRM",
     dueAt: new Date(),
-    latestResult:
-      "Third Customer-closing Loyalty Points event earned. Membership is required for future third-party selling. " +
-      "Repeat-purchase Loyalty Points remain separately eligible.",
+    latestResult: "3rd closing done. Make them a Member to sell more.",
   });
 }
 
@@ -461,12 +459,18 @@ async function createRecord(tx: Tx, bookingId: string, component: Component, act
 }
 
 /** PRD §6.9 — old records are superseded, never deleted. */
+/** The Paid Commission Conflict notes for a superseded line (owner, 16 Oct 2026). */
+const SUPERSEDED_CAUSE: Record<string, string> = {
+  "Recalculated after a change to the Booking.": "Booking changed. Paid amount recalculated.",
+  "No longer generated for this Booking.": "This Booking no longer earns this payout.",
+};
+
 async function supersedeRecord(tx: Tx, recordId: string, actorRef: string, reason: string) {
   const record = await tx.commissionRecord.findUniqueOrThrow({ where: { id: recordId } });
 
   // An externally processed record needs an Accounts adjustment, not a silent close.
   const payment = afterAffectingChange(record.payment, "BENEFICIARY_CORRECTED");
-  await adjustmentIfNewlyRequired(tx, recordId, record.payment, payment, `Superseded — ${reason}`);
+  await adjustmentIfNewlyRequired(tx, recordId, record.payment, payment, SUPERSEDED_CAUSE[reason] ?? `Superseded — ${reason}`);
 
   await tx.commissionRecord.update({
     where: { id: recordId },
@@ -571,7 +575,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
             where: { id: record.id },
             data: { payment, closedReason: reason },
           });
-          await adjustmentIfNewlyRequired(tx, record.id, record.payment, payment, reason);
+          await adjustmentIfNewlyRequired(tx, record.id, record.payment, payment, "3 deals closed. Membership needed.");
           await tx.commissionEvent.create({
             data: {
               recordId: record.id,
@@ -609,7 +613,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
         record.id,
         record.payment,
         payment,
-        "The milestone this paid benefit relied on was lost (payment correction or Buyback unwind)."
+        "Payment fell below after commission is paid."
       );
       await tx.commissionEvent.create({
         data: {
@@ -637,7 +641,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
         record.id,
         record.payment,
         payment,
-        "This Direct was paid, and the sale has since fallen below its Payment Received milestone."
+        "Payment fell below after commission is paid."
       );
     }
 
@@ -705,9 +709,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
         assigneeRole: "MD",
         dueAt: new Date(),
         decision: true,
-        latestResult:
-          "The corrected beneficiary has reached the milestone, but the old beneficiary's paid record on " +
-          "this Booking is still to be recovered. Approve to pay now, or wait for the Recovery.",
+        latestResult: "New Sold By is due; old payout not yet recovered. Pay now or wait?",
       });
     } else if (record.holdReason === "OLD_RECOVERY_PENDING") {
       await closeTasksFor(tx, "Commission", record.id, actorRef, "The old beneficiary's Recovery is resolved.", BEFORE_RECOVERY_PURPOSE);
@@ -1165,7 +1167,6 @@ async function bookingRecordName(tx: Tx, bookingId: string) {
  * a stepped-back record was paid.
  */
 export async function raiseBuybackUnwindReview(tx: Tx, bookingId: string, reason: string) {
-  const booking = await tx.booking.findUniqueOrThrow({ where: { id: bookingId } });
   const adjustments = await tx.commissionRecord.count({
     where: { bookingId, isCurrent: true, payment: "ACCOUNTS_ADJUSTMENT_REQUIRED" },
   });
@@ -1178,13 +1179,8 @@ export async function raiseBuybackUnwindReview(tx: Tx, bookingId: string, reason
     assigneeRole: "ACCOUNTS",
     dueAt: new Date(),
     decision: false, // a review: Accounts marks it Done on the Dashboard
-    latestResult:
-      `Buyback unwound — ${reason}. Source Payment Received ` +
-      `${booking.paymentReceivedPercent.toFixed(2)}%; anything the Buyback alone qualified — Loyalty Points, a Royalty ` +
-      `Credit not yet delivered — is stepped back. ` +
-      (adjustments > 0
-        ? `${adjustments} paid record${adjustments === 1 ? "" : "s"} need${adjustments === 1 ? "s" : ""} an Accounts adjustment.`
-        : "No paid record needs adjustment."),
+    // Owner's wording, 16 Oct 2026.
+    latestResult: `Buyback cancelled: ${reason}. Rewards reversed.${adjustments > 0 ? ` ${adjustments} paid amounts to fix.` : ""}`,
   });
 }
 
@@ -1214,6 +1210,8 @@ export async function cancelCommissionForBooking(
   args: {
     legallyCompleted: boolean;
     reason: string;
+    /** The Paid Commission Conflict note, when it reads differently from `reason`. */
+    adjustmentCause?: string;
     /** Defaults to a cancellation; a Buyback says so, because §14.12 differs. */
     unwind?: "CANCELLATION" | "BUYBACK";
   }
@@ -1296,7 +1294,7 @@ export async function cancelCommissionForBooking(
       where: { id: record.id },
       data: { payment, closedReason: args.reason },
     });
-    await adjustmentIfNewlyRequired(tx, record.id, record.payment, payment, args.reason);
+    await adjustmentIfNewlyRequired(tx, record.id, record.payment, payment, args.adjustmentCause ?? args.reason);
     await tx.commissionEvent.create({
       data: {
         recordId: record.id,
@@ -1316,7 +1314,6 @@ export async function cancelCommissionForBooking(
   if (isBuyback && sourceBooking) {
     const received = new D(sourceBooking.paymentReceivedPercent);
     const gateMet = received.gte(new D(BUYBACK_MIN_SOURCE_PAYMENT));
-    const n = `${records.length} commission record${records.length === 1 ? "" : "s"}`;
     await ensureTask(tx, {
       recordKind: "Booking",
       recordId: bookingId,
@@ -1326,13 +1323,12 @@ export async function cancelCommissionForBooking(
       assigneeRole: "ACCOUNTS",
       dueAt: new Date(),
       decision: false, // a review: Accounts marks it Done on the Dashboard
+      // Owner's wording, 16 Oct 2026.
       latestResult:
-        `Source Payment Received ${received.toFixed(2)}% — 25% reward gate ` +
+        `Buyback approved. Customer paid ${received.toFixed(2)}%, ` +
         (gateMet
-          ? "met: Loyalty Points and the Royalty points may qualify by the Buyback; the points post only after Stable Buyback Completion."
-          : "not met: no reward qualifies by the Buyback.") +
-        ` Direct stays on its normal milestone. ` +
-        (remainsEarned ? `${n} still earned; check the written arrangement.` : `${n} reviewed.`),
+          ? `rewards apply.${remainsEarned ? ` Check ${records.length} commission eligibility.` : ""}`
+          : `no rewards.${remainsEarned ? ` Check ${records.length} commission lines.` : ""}`),
     });
   }
 
