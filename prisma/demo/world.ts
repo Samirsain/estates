@@ -79,7 +79,7 @@ function businessParkPlots(): PlotRow[] {
   }));
 }
 
-export const PROJECTS: Record<"SRE" | "AH" | "MBP", ProjectSpec> = {
+export const PROJECTS: Record<string, ProjectSpec> = {
   SRE: {
     code: "SRE",
     name: "Shri Ram Enclave",

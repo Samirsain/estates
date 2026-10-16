@@ -45,23 +45,38 @@ const sqlTime = (ms: number) => new RealDate(ms).toISOString().replace("T", " ")
 
 /**
  * Moves every timestamp in every public table that lies in [from, to] back by
- * `byMs`. The token ledger refuses UPDATEs; its trigger is off only for this
- * statement, and only a timestamp moves.
+ * `byMs`, on rows the step wrote. Where a table has createdAt or updatedAt,
+ * only a row with one of them in the window counts as written: another
+ * record's future date (a Hold expiring right now) can fall in the window too,
+ * and must keep its real value. The token ledger refuses UPDATEs; its trigger
+ * is off only for this statement, and only a timestamp moves.
  */
 export async function shiftWindow(db: PrismaClient, fromMs: number, toMs: number, byMs: number) {
   const by = Math.round(byMs);
   await db.$executeRawUnsafe(`DO $$
-DECLARE r record;
+DECLARE
+  t record;
+  f text := '${sqlTime(fromMs)}';
+  u text := '${sqlTime(toMs)}';
+  iv text := '${by} milliseconds';
+  sets text;
+  hits text;
+  written text;
 BEGIN
   ALTER TABLE "TokenLedgerEntry" DISABLE TRIGGER token_ledger_append_only;
-  FOR r IN
-    SELECT table_name, column_name FROM information_schema.columns
+  FOR t IN
+    SELECT table_name FROM information_schema.columns
     WHERE table_schema = 'public' AND data_type LIKE 'timestamp%' AND table_name <> '_prisma_migrations'
+    GROUP BY table_name
   LOOP
-    EXECUTE format(
-      'UPDATE %I SET %I = %I - interval ''${by} milliseconds'' WHERE %I BETWEEN %L AND %L',
-      r.table_name, r.column_name, r.column_name, r.column_name, '${sqlTime(fromMs)}', '${sqlTime(toMs)}'
-    );
+    SELECT
+      string_agg(format('%I = CASE WHEN %I BETWEEN %L AND %L THEN %I - %L::interval ELSE %I END', column_name, column_name, f, u, column_name, iv, column_name), ', '),
+      string_agg(format('%I BETWEEN %L AND %L', column_name, f, u), ' OR '),
+      string_agg(format('%I BETWEEN %L AND %L', column_name, f, u), ' OR ') FILTER (WHERE column_name IN ('createdAt', 'updatedAt'))
+    INTO sets, hits, written
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = t.table_name AND data_type LIKE 'timestamp%';
+    EXECUTE format('UPDATE %I SET %s WHERE (%s)%s', t.table_name, sets, hits, CASE WHEN written IS NULL THEN '' ELSE ' AND (' || written || ')' END);
   END LOOP;
   ALTER TABLE "TokenLedgerEntry" ENABLE TRIGGER token_ledger_append_only;
 END $$;`);

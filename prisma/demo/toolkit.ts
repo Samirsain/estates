@@ -52,6 +52,15 @@ let mobileSeq = 0;
 let aadhaarSeq = 0;
 let accountSeq = 0;
 
+/**
+ * A second dataset in its own process (prisma/all-cases-seed.ts) starts its
+ * Aadhaar and account numbers well past the demo's, so the two never share an
+ * identity or a bank account by accident.
+ */
+export function startNumbersAt(n: number) {
+  mobileSeq = aadhaarSeq = accountSeq = n;
+}
+
 async function makePerson(k: string, spec: CastSpec): Promise<Who> {
   const n = ++mobileSeq;
   const mobile = spec.mobile ?? `${MOBILE_PREFIX}${String(14000000 + n * 7).padStart(8, "0")}`;
@@ -129,7 +138,7 @@ export const plotId = (number: string) => {
 export const projectIds: Record<string, string> = {};
 
 /** A Project as MD launches it: the record, a published PLC rule set, inventory made Available. */
-export async function project(code: "SRE" | "AH" | "MBP") {
+export async function project(code: string) {
   const spec = PROJECTS[code];
   const created = await db.project.create({
     data: {
