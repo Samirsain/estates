@@ -5,6 +5,7 @@
 // come from the platform rather than from a dependency (DESIGN §18).
 
 import React from "react";
+import { X } from "lucide-react";
 import { NO_STEPPER } from "./input";
 
 export function Modal({
@@ -38,9 +39,19 @@ export function Modal({
         width ?? (wide ? "w-[min(72rem,96vw)]" : "w-[min(40rem,94vw)]")
       } rounded-[20px] border border-border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/40 backdrop:backdrop-blur-xs`}
     >
-      <div className="space-y-3.5 p-5">
+      <div className="relative space-y-3.5 p-5">
+        {/* Every dialog can be closed from its corner, not only by Escape.
+            close() fires the dialog's own close event, so onClose runs once. */}
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={() => ref.current?.close()}
+          className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        >
+          <X className="h-4 w-4" />
+        </button>
         {title && (
-          <div className={centerTitle ? "text-center" : undefined}>
+          <div className={`pr-8 ${centerTitle ? "pl-8 text-center" : ""}`}>
             <h2 className="text-base font-semibold">{title}</h2>
             {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
           </div>

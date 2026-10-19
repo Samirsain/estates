@@ -53,7 +53,9 @@ export type LandDevelopmentPotential =
   | "COMMERCIAL"
   | "WAREHOUSE"
   | "AGRICULTURE"
-  | "OTHER";
+  | "OTHER"
+  | "INDUSTRIAL"
+  | "FARMHOUSE";
 
 export type LandDocumentType =
   | "JAMABANDI"
@@ -294,7 +296,9 @@ export function planStageChange(args: {
   }
 
   const step = stageIndex(args.to) - stageIndex(args.from);
-  const reasonRequired = step !== 1;
+  // Approving is the one skip with nothing to say: the list's Status drop-down
+  // approves a Working inquiry in one go.
+  const reasonRequired = step !== 1 && !(step > 0 && args.to === "APPROVED_FOR_ACQUISITION");
   if (reasonRequired && !reason) {
     return {
       ok: false,

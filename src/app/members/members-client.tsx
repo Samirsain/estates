@@ -77,7 +77,7 @@ const PAYMENT_LABEL: Record<string, string> = {
   NOT_PAID: "Not Paid",
   PAID: "Paid",
   PAID_EARLY: "Paid Early",
-  ACCOUNTS_ADJUSTMENT_REQUIRED: "Accounts Adjustment Required",
+  ACCOUNTS_ADJUSTMENT_REQUIRED: "Recovery Pending",
   CANCELLED: "Cancelled",
 };
 
@@ -289,12 +289,12 @@ export default function MembersClient({
                           <span className="block font-semibold text-primary group-hover:underline">
                             {row.invitedBy.memberId}
                           </span>
-                          <span className="block text-[11px] text-muted-foreground">
+                          <span className="block font-semibold text-foreground group-hover:underline">
                             {row.invitedBy.name}
                           </span>
                         </Link>
                       ) : (
-                        "—"
+                        <span className="font-semibold">3% Club</span>
                       )}
                     </td>
                     <td className="text-center tabular-nums">

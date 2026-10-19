@@ -9,7 +9,6 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
-import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
@@ -51,8 +50,8 @@ function Section({
 }) {
   return (
     <section className="rounded-2xl border border-border/60 bg-card p-4">
-      <h2 className="mb-2 text-sm font-semibold">
-        <span className="mr-2 tabular-nums text-muted-foreground">{index}.</span>
+      <h2 className="mb-2 text-sm font-semibold text-primary">
+        <span className="mr-2 tabular-nums">{index}.</span>
         {title}
       </h2>
       {children}
@@ -72,11 +71,6 @@ export default async function LandInquiryDetailPage({
   // response never says a hidden one exists.
   if (!inquiry) notFound();
 
-  const staff = await db.staffAccount.findMany({
-    where: { status: "ACTIVE" },
-    select: { id: true, staffAccountId: true, role: true, person: { select: { fullName: true } } },
-    orderBy: { staffAccountId: "asc" },
-  });
 
   const primary = inquiry.owners.find((o) => o.isPrimary) ?? inquiry.owners[0] ?? null;
   const metric = inquiry.areaSqM ? metricViews(Number(inquiry.areaSqM)) : null;
@@ -107,10 +101,7 @@ export default async function LandInquiryDetailPage({
           <p className="mt-1 text-xs text-muted-foreground">
             {formatIstDate(inquiry.inquiryDate)} · {RECEIVED_FROM_LABEL[inquiry.receivedFrom]} ·{" "}
             {sourceLabel} · {primary?.ownerName ?? "no owner recorded"} ·{" "}
-            {[inquiry.district, inquiry.tehsil].filter(Boolean).join(" / ") || "no location"} ·{" "}
-            {inquiry.assignedTo
-              ? `${inquiry.assignedTo.staffAccountId} · ${inquiry.assignedTo.person.fullName}`
-              : "unassigned"}
+            {[inquiry.district, inquiry.tehsil].filter(Boolean).join(" / ") || "no location"}
           </p>
         </header>
 
@@ -119,16 +110,10 @@ export default async function LandInquiryDetailPage({
           version={inquiry.version}
           status={inquiry.status}
           stage={inquiry.stage}
-          assignedToId={inquiry.assignedToId}
           archived={inquiry.archivedAt !== null}
           canManage={can(actor.role, "LAND_INQUIRY_MANAGE", actor.extraPermissions)}
           canReopen={can(actor.role, "LAND_INQUIRY_REOPEN", actor.extraPermissions)}
           canArchive={can(actor.role, "LAND_INQUIRY_ARCHIVE", actor.extraPermissions)}
-          canReassign={can(actor.role, "WORK_REASSIGN", actor.extraPermissions)}
-          staff={staff.map((s) => ({
-            id: s.id,
-            label: `${s.staffAccountId} · ${s.person.fullName} · ${s.role}`,
-          }))}
         />
 
         <Section index={1} title="Inquiry Details">
@@ -158,14 +143,6 @@ export default async function LandInquiryDetailPage({
           />
           <Row label="Status" value={inquiry.status === "WORKING" ? "Working" : "Closed"} />
           <Row label="Inquiry Stage" value={STAGE_LABEL[inquiry.stage]} />
-          <Row
-            label="Assigned To"
-            value={
-              inquiry.assignedTo
-                ? `${inquiry.assignedTo.staffAccountId} · ${inquiry.assignedTo.person.fullName}`
-                : "—"
-            }
-          />
         </Section>
 
         <Section index={2} title="Land Owner Details">
@@ -245,7 +222,7 @@ export default async function LandInquiryDetailPage({
             }
           />
           <Row
-            label="Road Width"
+            label="Approach Road Width"
             value={
               inquiry.roadWidthValue
                 ? `${Number(inquiry.roadWidthValue)} ${inquiry.roadWidthUnit === "MTR" ? "Mtr" : "Ft"}`

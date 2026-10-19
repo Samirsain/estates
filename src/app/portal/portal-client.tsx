@@ -43,7 +43,7 @@ const PAYMENT_LABEL: Record<string, string> = {
   NOT_PAID: "Not Paid",
   PAID: "Paid",
   PAID_EARLY: "Paid Early",
-  ACCOUNTS_ADJUSTMENT_REQUIRED: "Accounts Adjustment Required",
+  ACCOUNTS_ADJUSTMENT_REQUIRED: "Recovery Pending",
   CANCELLED: "Cancelled",
 };
 
@@ -644,7 +644,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                       <th className="pb-2">Plot</th>
                       <th className="pb-2">Type</th>
                       <th className="pb-2 text-right">%</th>
-                      <th className="pb-2 text-right">Milestone</th>
+                      <th className="pb-2 text-right">Payment</th>
                       <th className="pb-2 pl-4">Status</th>
                     </tr>
                   </thead>

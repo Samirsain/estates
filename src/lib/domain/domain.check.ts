@@ -1843,8 +1843,18 @@ assert.equal(experienceSince(new Date("2026-09-01"), new Date("2026-08-21")), nu
 assert.deepEqual(experienceSince(new Date("2026-08-21"), new Date("2026-08-21")), {
   years: 0,
   months: 0,
+  days: 0,
   label: "Less than a month",
+  ago: "Today",
 });
+
+// The Member profile reads down to the day.
+assert.equal(experienceSince(new Date("2025-05-18"), new Date("2026-08-21"))?.ago, "1 year 3 months 3 days ago");
+assert.equal(experienceSince(new Date("2026-06-16"), new Date("2026-08-21"))?.ago, "2 months 5 days ago");
+assert.equal(experienceSince(new Date("2026-08-20"), new Date("2026-08-21"))?.ago, "1 day ago");
+assert.equal(experienceSince(new Date("2025-08-21"), new Date("2026-08-21"))?.ago, "1 year ago");
+// A 31st counts its month from the shorter month's last day.
+assert.equal(experienceSince(new Date("2026-01-31"), new Date("2026-03-01"))?.ago, "1 month 1 day ago");
 
 assert.equal(
   experienceSince(new Date("2025-07-21"), new Date("2026-08-21"))?.label,
@@ -2480,6 +2490,10 @@ assert.equal(isValidStatusStage("WORKING", "REJECTED_CLOSED"), false);
   const skip = planStageChange({ status: "WORKING", from: "NEW", to: "NEGOTIATION", reason: "" });
   assert.ok(!skip.ok && /Skipping a stage/.test(skip.error));
   assert.ok(planStageChange({ status: "WORKING", from: "NEW", to: "NEGOTIATION", reason: "Arrived advanced" }).ok);
+  // Approving skips the ladder with nothing said; moving back out of it still needs a reason.
+  const approve = planStageChange({ status: "WORKING", from: "NEW", to: "APPROVED_FOR_ACQUISITION", reason: "" });
+  assert.ok(approve.ok && !approve.reasonRequired);
+  assert.ok(!planStageChange({ status: "WORKING", from: "APPROVED_FOR_ACQUISITION", to: "NEW", reason: "" }).ok);
 
   const back = planStageChange({ status: "WORKING", from: "NEGOTIATION", to: "SITE_VISIT", reason: "" });
   assert.ok(!back.ok && /back a stage/.test(back.error));

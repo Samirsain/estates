@@ -9,6 +9,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
+import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -18,6 +19,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Modal } from "@/components/ui/modal";
 import { MemberDialog, ReraFields } from "../members-client";
+import PortalAccessDialog, { type PortalMode } from "./portal-access";
+import { InviterDialog } from "./trip-section";
+import { correctInviterAction } from "../trip-actions";
 import {
   generateMemberAutoLoginLinkAction,
   setCommissionHoldAction,
@@ -43,25 +47,33 @@ type Dialog =
   | { kind: "STATUS"; active: boolean }
   | { kind: "HOLD"; hold: boolean }
   | { kind: "RERA" }
+  | { kind: "INVITER" }
+  | { kind: "PORTAL"; mode: PortalMode }
   | null;
 
 export function MemberActions({
   member,
   canActivate,
   canDeactivate,
+  canCorrectInviter,
+  portal,
 }: {
   member: MemberActionsView;
   canActivate: boolean;
   canDeactivate: boolean;
+  canCorrectInviter: boolean;
+  /** The portal account, when there is one and this actor may manage it. */
+  portal: { locked: boolean } | null;
 }) {
   const router = useRouter();
   const [dialog, setDialog] = React.useState<Dialog>(null);
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<{ ok: boolean; text: string } | null>(null);
+  const [copied, setCopied] = React.useState(false);
 
   const active = member.status === "ACTIVE";
   // Nothing in the menu is available to a reader, so the trigger is not either.
-  if (!active && !canDeactivate && !canActivate) return null;
+  if (!active && !canDeactivate && !canActivate && !canCorrectInviter) return null;
 
   async function run(action: () => Promise<ActionResult>) {
     if (busy) return;
@@ -83,10 +95,9 @@ export function MemberActions({
    * login stands in when the signed link cannot be issued.
    */
   async function copyInviteLink() {
-    setBusy(true);
+    setNotice(null);
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const result = await generateMemberAutoLoginLinkAction(member.memberId);
-    setBusy(false);
 
     const link =
       result.ok && result.linkPath
@@ -108,7 +119,9 @@ export function MemberActions({
 
     try {
       await navigator.clipboard.writeText(text);
-      setNotice({ ok: true, text: `Invite for ${member.memberId} copied to the clipboard.` });
+      // Just the icon turning into a tick — nothing printed on the page.
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
     } catch {
       // A denied clipboard is not a failed action — the link exists either way.
       setNotice({ ok: false, text: "Could not reach the clipboard. Try again from a focused tab." });
@@ -126,13 +139,39 @@ export function MemberActions({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {active && (
-              <DropdownMenuItem onSelect={() => void copyInviteLink()}>
-                Copy invite link
+              // The menu stays open so the tick can show the copy worked.
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  void copyInviteLink();
+                }}
+              >
+                {copied ? (
+                  <Check className="mr-1.5 h-3.5 w-3.5 text-emerald-700" />
+                ) : (
+                  <Copy className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                {copied ? "Copied" : "Copy invite link"}
               </DropdownMenuItem>
             )}
             {canActivate && (
               <DropdownMenuItem onSelect={() => setDialog({ kind: "RERA" })}>
                 Update RERA
+              </DropdownMenuItem>
+            )}
+            {canCorrectInviter && (
+              <DropdownMenuItem onSelect={() => setDialog({ kind: "INVITER" })}>
+                Correct inviter
+              </DropdownMenuItem>
+            )}
+            {portal?.locked && (
+              <DropdownMenuItem onSelect={() => setDialog({ kind: "PORTAL", mode: "UNLOCK" })}>
+                Unlock portal account
+              </DropdownMenuItem>
+            )}
+            {portal && (
+              <DropdownMenuItem onSelect={() => setDialog({ kind: "PORTAL", mode: "RESET_PASSWORD" })}>
+                Reset portal password
               </DropdownMenuItem>
             )}
             {canDeactivate && (
@@ -199,6 +238,26 @@ export function MemberActions({
           onSubmit={(f) =>
             run(() => setCommissionHoldAction(member.id, dialog.hold, String(f.get("reason")), newKey()))
           }
+        />
+      )}
+
+      {dialog?.kind === "INVITER" && (
+        <InviterDialog
+          busy={busy}
+          error={notice && !notice.ok ? notice.text : null}
+          onClose={() => setDialog(null)}
+          onSubmit={(inviterMemberId, reason) =>
+            void run(() => correctInviterAction({ memberProfileId: member.id, inviterMemberId, reason }, newKey()))
+          }
+        />
+      )}
+
+      {dialog?.kind === "PORTAL" && (
+        <PortalAccessDialog
+          memberProfileId={member.id}
+          memberId={member.memberId}
+          mode={dialog.mode}
+          onClose={() => setDialog(null)}
         />
       )}
 

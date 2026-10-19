@@ -68,7 +68,7 @@ export default async function PortalPage() {
     experience: experienceSince(profile.activationDate)?.label ?? null,
     invitedBy: profile.invitedByMember
       ? `${profile.invitedByMember.memberId} · ${profile.invitedByMember.person.fullName}`
-      : null,
+      : "3% Club",
     invitedMembers: profile.invitedMembers.map((m) => ({
       memberId: m.memberId,
       name: m.person.fullName,

@@ -4,21 +4,15 @@
 // (spec §26.5). The capability is still re-checked when the inquiry is saved:
 // this list is a convenience, not the authorisation.
 
-import { db } from "@/lib/db";
 import { personLabel } from "@/lib/domain/person-search";
 import { maskMobile } from "@/lib/security/identity";
 import { searchLandInquirySourcePeople } from "@/lib/services/land-inquiry-service";
 import type { FormOptions } from "./land-inquiry-form";
 
 export async function loadFormOptions(): Promise<FormOptions> {
-  const [members, customers, staff] = await Promise.all([
+  const [members, customers] = await Promise.all([
     searchLandInquirySourcePeople("MEMBER"),
     searchLandInquirySourcePeople("CUSTOMER"),
-    db.staffAccount.findMany({
-      where: { status: "ACTIVE" },
-      select: { id: true, staffAccountId: true, role: true, person: { select: { fullName: true } } },
-      orderBy: { staffAccountId: "asc" },
-    }),
   ]);
 
   return {
@@ -42,10 +36,6 @@ export async function loadFormOptions(): Promise<FormOptions> {
         memberId: p.memberProfile?.memberId ?? null,
         customerId: p.customerProfile?.customerId ?? null,
       }),
-    })),
-    staff: staff.map((s) => ({
-      id: s.id,
-      label: `${s.staffAccountId} · ${s.person.fullName} · ${s.role}`,
     })),
   };
 }

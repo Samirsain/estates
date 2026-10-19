@@ -14,8 +14,12 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+/// relationJoins: an `include` loads in the same SQL query (a JOIN) instead of
+/// one more round trip per level. The database is ~100ms away, and the profile
+/// pages nest three or four levels deep, so this is most of their load time.
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
 }
 
 enum StaffRole {
@@ -2466,12 +2470,15 @@ enum LandCheckState {
   NO
 }
 
+/// OTHER stays for inquiries already saved with it; the form no longer offers it.
 enum LandDevelopmentPotential {
   RESIDENTIAL
   COMMERCIAL
   WAREHOUSE
   AGRICULTURE
   OTHER
+  INDUSTRIAL
+  FARMHOUSE
 }
 
 /// Spec §18 — "the inquiry record says this item was received". Not an upload,

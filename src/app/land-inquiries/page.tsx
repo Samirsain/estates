@@ -6,7 +6,6 @@
 
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
-import { db } from "@/lib/db";
 import { formatIstDate } from "@/lib/tasks";
 import {
   DEFAULT_PAGE_SIZE,
@@ -34,24 +33,14 @@ export default async function LandInquiriesPage({
     district: one(params.district),
     tehsil: one(params.tehsil),
     khasraNo: one(params.khasraNo),
-    receivedFrom: one(params.receivedFrom) as LandInquiryListFilters["receivedFrom"],
     status: one(params.status) as LandInquiryListFilters["status"],
-    stage: one(params.stage) as LandInquiryListFilters["stage"],
-    assignedToId: one(params.assignedToId),
     page: Number(one(params.page) ?? 1) || 1,
     pageSize: DEFAULT_PAGE_SIZE,
     // Spec §25 — only MD and Admin may look past the archive.
     includeArchived: admin && one(params.archived) === "1",
   };
 
-  const [list, staff] = await Promise.all([
-    listLandInquiries(filters),
-    db.staffAccount.findMany({
-      where: { status: "ACTIVE" },
-      select: { id: true, staffAccountId: true, role: true, person: { select: { fullName: true } } },
-      orderBy: { staffAccountId: "asc" },
-    }),
-  ]);
+  const list = await listLandInquiries(filters);
 
   const rows: LandInquiryRowView[] = list.rows.map((row) => {
     const primary = row.owners.find((o) => o.isPrimary) ?? row.owners[0] ?? null;
@@ -78,9 +67,7 @@ export default async function LandInquiriesPage({
       area: areaLabel(row),
       status: row.status,
       stage: row.stage,
-      assignedTo: row.assignedTo
-        ? `${row.assignedTo.staffAccountId} · ${row.assignedTo.person.fullName}`
-        : null,
+      version: row.version,
       archived: row.archivedAt !== null,
     };
   });
@@ -91,15 +78,12 @@ export default async function LandInquiriesPage({
       actorName={actor.name}
       staffAccountId={actor.staffAccountId}
       canManage={can(actor.role, "LAND_INQUIRY_MANAGE", actor.extraPermissions)}
+      canReopen={can(actor.role, "LAND_INQUIRY_REOPEN", actor.extraPermissions)}
       canSeeArchived={admin}
       rows={rows}
       page={list.page}
       totalPages={list.totalPages}
       totalRows={list.totalRows}
-      staff={staff.map((s) => ({
-        id: s.id,
-        label: `${s.staffAccountId} · ${s.person.fullName} · ${s.role}`,
-      }))}
     />
   );
 }

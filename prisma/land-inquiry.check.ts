@@ -372,10 +372,11 @@ async function main() {
       actorRole: "CRM",
       id: edited.id,
       version,
-      stage: "APPROVED_FOR_ACQUISITION",
+      stage: "NEGOTIATION",
       reason: "",
     })
   );
+  // Approving is the one skip with nothing to say — the list's Status drop-down.
   const skipped = await changeLandInquiryStage({
     idempotencyKey: key(),
     actorRef: CRM,
@@ -383,7 +384,7 @@ async function main() {
     id: edited.id,
     version,
     stage: "APPROVED_FOR_ACQUISITION",
-    reason: "Land arrived already verified.",
+    reason: "",
   });
   version = (skipped as { version: number }).version;
   assert.equal(

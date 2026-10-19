@@ -132,7 +132,14 @@ export function anniversaryDay(activationDay: string, year: number): string {
  * Null means there is nothing to show yet: an unactivated Member, or an
  * activation dated in the future.
  */
-export type ExperienceSince = { years: number; months: number; label: string };
+export type ExperienceSince = {
+  years: number;
+  months: number;
+  days: number;
+  label: string;
+  /** Down to the day, for the Member profile: "1 year 3 months 3 days ago". */
+  ago: string;
+};
 
 export function experienceSince(
   activationDate: Date | string | null | undefined,
@@ -156,17 +163,27 @@ export function experienceSince(
   let months = (nowYear - annYear) * 12 + (nowMonth - annMonth);
   if (nowDayOfMonth < annDayOfMonth) months--;
 
+  // Whole days since the month mark just passed; a 31st falls back to the
+  // month's last day, the way a 29 February anniversary does.
+  const markIndex = annMonth - 1 + months;
+  const markYear = annYear + Math.floor(markIndex / 12);
+  const markMonth = markIndex % 12;
+  const markDay = Math.min(annDayOfMonth, new Date(Date.UTC(markYear, markMonth + 1, 0)).getUTCDate());
+  const days = Math.round(
+    (Date.UTC(nowYear, nowMonth - 1, nowDayOfMonth) - Date.UTC(markYear, markMonth, markDay)) / 86_400_000
+  );
+
+  const unit = (n: number, word: string) => (n > 0 ? `${n} ${word}${n === 1 ? "" : "s"}` : null);
   const label =
     years === 0 && months === 0
       ? "Less than a month"
-      : [
-          years > 0 ? `${years} year${years === 1 ? "" : "s"}` : null,
-          months > 0 ? `${months} month${months === 1 ? "" : "s"}` : null,
-        ]
-          .filter(Boolean)
-          .join(" ");
+      : [unit(years, "year"), unit(months, "month")].filter(Boolean).join(" ");
+  const ago =
+    years === 0 && months === 0 && days === 0
+      ? "Today"
+      : `${[unit(years, "year"), unit(months, "month"), unit(days, "day")].filter(Boolean).join(" ")} ago`;
 
-  return { years, months, label };
+  return { years, months, days, label, ago };
 }
 
 /* --------------------------------------- historical classification (AC-01) */
@@ -459,7 +476,7 @@ export type EligibilityState = "MILESTONE_PENDING" | "READY" | "ON_HOLD";
 export function eligibilityLabel(state: string): string {
   switch (state) {
     case "MILESTONE_PENDING":
-      return "Milestone Pending";
+      return "Payment Pending";
     case "READY":
       return "Ready";
     case "ON_HOLD":

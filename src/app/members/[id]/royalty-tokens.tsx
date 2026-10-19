@@ -26,7 +26,7 @@ import { RemarkSelect } from "@/components/ui/remark-select";
 import type { RemarkPresetKey } from "@/lib/remark-presets";
 
 export const REWARD_HOLD_LABEL: Record<string, string> = {
-  RECOVERY_OUTSTANDING: "Recovery Outstanding",
+  RECOVERY_OUTSTANDING: "Recovery Pending",
   MEMBER_DEACTIVATED: "Member Deactivated",
   BUYBACK_STABLE_COMPLETION_PENDING: "Waiting for Stable Buyback Completion",
   REWARD_DEFICIENT: "Reward Deficient",
@@ -51,8 +51,8 @@ const REDEMPTION_STATE: Record<string, { label: string; variant: "success" | "wa
 
 const AWARD_STATE: Record<string, { label: string; variant: "success" | "warning" | "outline" | "info" }> = {
   PENDING: { label: "Pending", variant: "warning" },
-  RELEASED: { label: "Posted", variant: "success" },
-  REVERSED: { label: "Reversed", variant: "outline" },
+  RELEASED: { label: "Earned", variant: "success" },
+  REVERSED: { label: "Cancelled", variant: "outline" },
 };
 
 // The profile's own table look (Bookings sold).

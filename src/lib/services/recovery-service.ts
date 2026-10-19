@@ -68,7 +68,7 @@ export async function openRecovery(
       const open = await tx.recovery.findFirst({
         where: { commissionRecordId: record.id, status: "OUTSTANDING" },
       });
-      if (open) blocked(`Recovery ${open.recoveryNo} is already outstanding on this benefit.`);
+      if (open) blocked(`Recovery ${open.recoveryNo} is already pending on this benefit.`);
 
       const dueOn = new Date(args.noticeOn.getTime() + RECOVERY_DAYS * 86_400_000);
       const recoveryNo = await nextReference(tx, "REC", "Recovery");
@@ -375,7 +375,7 @@ export async function setOffRecovery(
       const reached =
         record.eligibility === "READY" ||
         (record.eligibility === "ON_HOLD" && record.holdReason === "RECOVERY_OUTSTANDING");
-      if (!reached) blocked("This benefit has not reached its milestone, so there is nothing to set off yet.");
+      if (!reached) blocked("This benefit is still Payment Pending, so there is nothing to set off yet.");
 
       const note = args.note.trim();
       const reference = await createCommissionReference(tx, args.reference, args.setOffOn, args.actorRef);
@@ -411,7 +411,7 @@ export async function setOffRecovery(
             recordId: recovery.commissionRecordId,
             actorRef: args.actorRef,
             action: "RECOVERY_PART_SET_OFF",
-            reason: `Part set off against a later benefit; ${recovery.recoveryNo} stays outstanding — ${note}`,
+            reason: `Part set off against a later benefit; ${recovery.recoveryNo} stays pending — ${note}`,
           },
         });
       }

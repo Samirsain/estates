@@ -38,9 +38,9 @@
     --secondary-foreground: 240 6% 12%;
 
     --muted: 240 20% 98%; /* pearl #fafafc */
-    /* #6e6e6e: 5.1:1 on white, 4.7:1 on --secondary. #7a7a7a was 4.3:1, below
-       WCAG AA for the 11px helper text this ink is used for everywhere. */
-    --muted-foreground: 0 0% 43%;
+    /* Labels and helper text in the body ink: the owner found the #6e6e6e grey
+       too faint to read. Size and weight carry the hierarchy now. */
+    --muted-foreground: 240 6% 12%;
 
     --accent: 240 9% 96%;
     --accent-foreground: 16 76% 43%;
@@ -55,9 +55,9 @@
 
     /*
      * Hint text inside a field, and nothing else. It cannot share
-     * --muted-foreground: that grey is the label and helper-text ink, and at
-     * 5.1:1 on white a placeholder wearing it reads as a value somebody already
-     * typed — the login field offered "STF-0001" and looked answered. Every
+     * --muted-foreground: that is the label and helper-text ink, and a
+     * placeholder wearing it reads as a value somebody already typed — the
+     * login field offered "STF-0001" and looked answered. Every
      * field here carries a real <label>, so the placeholder is an example
      * rather than the only naming, and it can sit lighter than body copy.
      */

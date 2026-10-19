@@ -14,7 +14,6 @@ import { Input } from "@/components/ui/input";
 import { Field, inputClass } from "@/components/ui/modal";
 import { PersonPicker, type PickerOption } from "@/components/person-picker";
 import {
-  RATE_BASIS_LABEL,
   RECEIVED_FROM_LABEL,
   humanise,
   metricViews,
@@ -27,20 +26,9 @@ import { createLandInquiryAction, updateLandInquiryAction } from "./actions";
 export type FormOptions = {
   members: PickerOption[];
   customers: PickerOption[];
-  staff: Array<{ id: string; label: string }>;
 };
 
-const CHECK_STATES = ["UNKNOWN", "YES", "NO"] as const;
-const APPROVAL_STATES = [
-  "UNKNOWN",
-  "NOT_APPLICABLE",
-  "NOT_STARTED",
-  "PENDING",
-  "APPROVED",
-  "REJECTED",
-] as const;
-const CATEGORIES = ["RESIDENTIAL", "COMMERCIAL", "INDUSTRIAL", "AGRICULTURAL", "OTHER"] as const;
-const POTENTIAL = ["RESIDENTIAL", "COMMERCIAL", "WAREHOUSE", "AGRICULTURE", "OTHER"] as const;
+const POTENTIAL = ["RESIDENTIAL", "COMMERCIAL", "INDUSTRIAL", "AGRICULTURE", "FARMHOUSE", "WAREHOUSE"] as const;
 const DOCUMENTS = [
   "JAMABANDI",
   "REGISTRY",
@@ -53,12 +41,6 @@ const DOCUMENTS = [
   "SITE_PHOTOS",
   "LOCATION_MAP",
 ] as const;
-const EVALUATIONS = [
-  "SITE_VISIT_REQUIRED",
-  "LEGAL_VERIFICATION_REQUIRED",
-  "REVENUE_VERIFICATION_REQUIRED",
-] as const;
-const RATE_BASES = ["TOTAL", "PER_BIGHA", "PER_BISWA", "PER_HECTARE", "PER_SQ_M", "PER_SQ_FT"] as const;
 
 /** Spec §11 — the metric units, and how many decimals each one reads to. */
 const METRIC_FIELDS = [
@@ -81,8 +63,8 @@ function Section({
   return (
     <section className="rounded-2xl border border-border/60 bg-card p-4">
       <header className="mb-3">
-        <h2 className="text-sm font-semibold">
-          <span className="mr-2 text-muted-foreground tabular-nums">{index}.</span>
+        <h2 className="text-sm font-semibold text-primary">
+          <span className="mr-2 tabular-nums">{index}.</span>
           {title}
         </h2>
         {hint && <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>}
@@ -140,12 +122,17 @@ function CheckboxGroup<T extends string>({
   onChange: (next: T[]) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-x-5 gap-y-2">
+    // Even tiles, the same height as the inputs, so a row of choices lines up
+    // with the fields around it; a ticked tile picks up the primary edge.
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
       {options.map((option) => (
-        <label key={option} className="flex items-center gap-2 text-xs">
+        <label
+          key={option}
+          className="flex h-9 cursor-pointer select-none items-center gap-2 rounded-lg border border-input bg-card px-3 text-xs font-medium transition-colors hover:bg-secondary has-[:checked]:border-primary/50 has-[:checked]:bg-primary/5"
+        >
           <input
             type="checkbox"
-            className="h-3.5 w-3.5 rounded border-input"
+            className="h-3.5 w-3.5 rounded border-input accent-primary"
             checked={selected.includes(option)}
             onChange={(e) =>
               onChange(
@@ -315,20 +302,6 @@ export default function LandInquiryForm({
               </div>
             </Field>
           )}
-          <Field label="Assigned To">
-            <select
-              className={inputClass}
-              value={form.assignedToId ?? ""}
-              onChange={(e) => set("assignedToId", e.target.value || null)}
-            >
-              <option value="">Unassigned</option>
-              {options.staff.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </Field>
         </Grid>
         {form.receivedFrom === "ANOTHER_DEALER" && (
           <p className="mt-2 text-[11px] text-muted-foreground">
@@ -576,7 +549,7 @@ export default function LandInquiryForm({
                 </select>
               </div>
             </Field>
-            <Field label="Road Width">
+            <Field label="Approach Road Width">
               <div className="flex gap-2">
                 <Input className="h-9" value={form.roadWidthValue} onChange={(e) => set("roadWidthValue", e.target.value)} />
                 <select
@@ -594,189 +567,35 @@ export default function LandInquiryForm({
       </Section>
 
       {/* 6 */}
-      <Section index={6} title="Land Category / Use">
-        <Grid>
-          <Choice
-            label="Category"
-            value={form.landCategory}
-            options={CATEGORIES}
-            onChange={(v) => set("landCategory", v)}
-            allowBlank
+      <Section index={6} title="Development Potential">
+        <div className="space-y-4">
+          <CheckboxGroup
+            options={POTENTIAL}
+            selected={form.developmentPotential}
+            onChange={(v) => set("developmentPotential", v)}
           />
-          <Field label="Current Land Use">
-            <Input className="h-9" value={form.currentLandUse} onChange={(e) => set("currentLandUse", e.target.value)} />
-          </Field>
-          <Field label="Master Plan / Zonal Use">
-            <Input
-              className="h-9"
-              value={form.masterPlanZonalUse}
-              onChange={(e) => set("masterPlanZonalUse", e.target.value)}
-            />
-          </Field>
-        </Grid>
-      </Section>
-
-      {/* 7 */}
-      <Section index={7} title="Conversion / Approval">
-        <Grid>
-          <Choice label="90A Status" value={form.status90A} options={APPROVAL_STATES} onChange={(v) => set("status90A", v ?? "UNKNOWN")} />
-          <Choice label="Land Conversion Status" value={form.landConversionStatus} options={APPROVAL_STATES} onChange={(v) => set("landConversionStatus", v ?? "UNKNOWN")} />
-          <Choice label="Change of Land Use Status" value={form.changeLandUseStatus} options={APPROVAL_STATES} onChange={(v) => set("changeLandUseStatus", v ?? "UNKNOWN")} />
-          <Choice label="Patta / Lease Status" value={form.pattaLeaseStatus} options={APPROVAL_STATES} onChange={(v) => set("pattaLeaseStatus", v ?? "UNKNOWN")} />
-        </Grid>
-      </Section>
-
-      {/* 8 */}
-      <Section index={8} title="Legal Check">
-        <Grid>
-          <Choice label="Registry / Sale Deed Available" value={form.registrySaleDeedAvailable} options={CHECK_STATES} onChange={(v) => set("registrySaleDeedAvailable", v ?? "UNKNOWN")} />
-          <Choice label="Mutation Complete" value={form.mutationComplete} options={CHECK_STATES} onChange={(v) => set("mutationComplete", v ?? "UNKNOWN")} />
-          <Choice label="Mortgage / Bank Charge" value={form.mortgageBankCharge} options={CHECK_STATES} onChange={(v) => set("mortgageBankCharge", v ?? "UNKNOWN")} />
-          <Choice label="Court Case / Stay" value={form.courtCaseStay} options={CHECK_STATES} onChange={(v) => set("courtCaseStay", v ?? "UNKNOWN")} />
-          <Choice label="Family Dispute" value={form.familyDispute} options={CHECK_STATES} onChange={(v) => set("familyDispute", v ?? "UNKNOWN")} />
-          <Choice label="Acquisition Notice" value={form.acquisitionNotice} options={CHECK_STATES} onChange={(v) => set("acquisitionNotice", v ?? "UNKNOWN")} />
-          <Choice label="Government Restriction" value={form.governmentRestriction} options={CHECK_STATES} onChange={(v) => set("governmentRestriction", v ?? "UNKNOWN")} />
-        </Grid>
-      </Section>
-
-      {/* 9 */}
-      <Section index={9} title="Access &amp; Site Condition">
-        <Grid>
-          <Choice label="Approach Road" value={form.approachRoad} options={CHECK_STATES} onChange={(v) => set("approachRoad", v ?? "UNKNOWN")} />
-          <Field label="Road Type">
-            <Input className="h-9" value={form.roadType} onChange={(e) => set("roadType", e.target.value)} />
-          </Field>
-          <Choice label="Electricity" value={form.electricity} options={CHECK_STATES} onChange={(v) => set("electricity", v ?? "UNKNOWN")} />
-          <Choice label="Water" value={form.water} options={CHECK_STATES} onChange={(v) => set("water", v ?? "UNKNOWN")} />
-          <Choice label="Sewerage" value={form.sewerage} options={CHECK_STATES} onChange={(v) => set("sewerage", v ?? "UNKNOWN")} />
-          <Choice label="Existing Construction" value={form.existingConstruction} options={CHECK_STATES} onChange={(v) => set("existingConstruction", v ?? "UNKNOWN")} />
-          <Choice label="Encroachment" value={form.encroachment} options={CHECK_STATES} onChange={(v) => set("encroachment", v ?? "UNKNOWN")} />
-          <Field label="Possession Status">
-            <Input className="h-9" value={form.possessionStatus} onChange={(e) => set("possessionStatus", e.target.value)} />
-          </Field>
-        </Grid>
-      </Section>
-
-      {/* 10 */}
-      <Section index={10} title="Commercial Details">
-        <Grid>
-          <Field label="Owner Asking Rate (₹)">
-            <div className="flex gap-2">
-              <Input className="h-9" value={form.ownerAskingRate} onChange={(e) => set("ownerAskingRate", e.target.value)} />
-              <select
-                className={`${inputClass} w-36`}
-                value={form.ownerAskingRateBasis ?? ""}
-                onChange={(e) => set("ownerAskingRateBasis", (e.target.value || null) as never)}
-              >
-                <option value="">Basis…</option>
-                {RATE_BASES.map((b) => (
-                  <option key={b} value={b}>
-                    {RATE_BASIS_LABEL[b]}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </Field>
-          <Field label="Total Asking Value (₹)">
-            <Input
-              className="h-9"
-              value={form.totalAskingValue}
-              onChange={(e) => set("totalAskingValue", e.target.value)}
-              placeholder="As stated by the owner"
-            />
-          </Field>
-          <Field label="DLC Rate (₹)">
-            <div className="flex gap-2">
-              <Input className="h-9" value={form.dlcRate} onChange={(e) => set("dlcRate", e.target.value)} />
-              <select
-                className={`${inputClass} w-36`}
-                value={form.dlcRateBasis ?? ""}
-                onChange={(e) => set("dlcRateBasis", (e.target.value || null) as never)}
-              >
-                <option value="">Basis…</option>
-                {RATE_BASES.map((b) => (
-                  <option key={b} value={b}>
-                    {RATE_BASIS_LABEL[b]}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </Field>
-          <Field label="Expected Purchase Rate (₹)">
-            <div className="flex gap-2">
+          <Grid>
+            <Field label="Current Land Use">
+              <Input className="h-9" value={form.currentLandUse} onChange={(e) => set("currentLandUse", e.target.value)} />
+            </Field>
+            <Field label="Master Plan / Zonal Use">
               <Input
                 className="h-9"
-                value={form.expectedPurchaseRate}
-                onChange={(e) => set("expectedPurchaseRate", e.target.value)}
+                value={form.masterPlanZonalUse}
+                onChange={(e) => set("masterPlanZonalUse", e.target.value)}
               />
-              <select
-                className={`${inputClass} w-36`}
-                value={form.expectedPurchaseRateBasis ?? ""}
-                onChange={(e) => set("expectedPurchaseRateBasis", (e.target.value || null) as never)}
-              >
-                <option value="">Basis…</option>
-                {RATE_BASES.map((b) => (
-                  <option key={b} value={b}>
-                    {RATE_BASIS_LABEL[b]}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </Field>
-          <Field label="Negotiable">
-            <select
-              className={inputClass}
-              value={form.negotiable === null ? "" : form.negotiable ? "YES" : "NO"}
-              onChange={(e) =>
-                set("negotiable", e.target.value === "" ? null : e.target.value === "YES")
-              }
-            >
-              <option value="">Unknown</option>
-              <option value="YES">Yes</option>
-              <option value="NO">No</option>
-            </select>
-          </Field>
-        </Grid>
-        <div className="mt-3">
-          <Field label="Payment Expectation">
-            <textarea
-              className={`${inputClass} h-16 py-2`}
-              value={form.paymentExpectation}
-              onChange={(e) => set("paymentExpectation", e.target.value)}
-              placeholder="Token expectation, balance timeline, registry-linked payment…"
-            />
-          </Field>
+            </Field>
+          </Grid>
         </div>
       </Section>
 
-      {/* 11 */}
-      <Section index={11} title="Development Potential">
-        <CheckboxGroup
-          options={POTENTIAL}
-          selected={form.developmentPotential}
-          onChange={(v) => set("developmentPotential", v)}
-        />
-      </Section>
-
-      {/* 12 */}
-      <Section index={12} title="Documents Received">
+      {/* 7 */}
+      <Section index={7} title="Documents Received">
         <CheckboxGroup
           options={DOCUMENTS}
           selected={form.documentsReceived}
           onChange={(v) => set("documentsReceived", v)}
         />
-      </Section>
-
-      {/* 13 */}
-      <Section index={13} title="Evaluation">
-        <CheckboxGroup options={EVALUATIONS} selected={form.evaluation} onChange={(v) => set("evaluation", v)} />
-      </Section>
-
-      {/* 14 */}
-      <Section index={14} title="Inquiry Stage">
-        <p className="text-xs text-muted-foreground">
-          {mode === "create" ? "Working · New" : "Managed on the inquiry screen."}
-        </p>
       </Section>
 
       {error && (

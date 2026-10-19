@@ -664,9 +664,10 @@ export async function closeDeactivatedReviewIfDone(tx: Tx, memberId: string, act
 }
 
 /** DESIGN §9.3 — the queue, with each request's position for its Plot. */
-export async function listPendingHoldRequests() {
+/** The queue positions count per Plot, so narrowing to one Plot keeps them. */
+export async function listPendingHoldRequests(plotId?: string) {
   const rows = await db.holdRequest.findMany({
-    where: { status: "PENDING" },
+    where: { status: "PENDING", ...(plotId ? { plotId } : {}) },
     include: {
       plot: { include: { project: true } },
       person: true,

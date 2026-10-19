@@ -38,7 +38,7 @@ export const REMARK_PRESETS = {
   ],
   decideHoldRequest: [
     "Approved — Buyer details checked",
-    "Approved — Plot is free and Member is active",
+    "Approved — Plot is Available and Member is active",
     "Rejected — Plot is already held for another buyer",
     "Rejected — buyer details incomplete",
     "Rejected — duplicate request",
@@ -154,7 +154,7 @@ export const REMARK_PRESETS = {
     "Customer wants a better location in the Project",
   ],
   decideChangePlot: [
-    "Approved — new Plot is free and the price is checked",
+    "Approved — new Plot is Available and the price is checked",
     "Approved — price difference agreed with the customer",
     "Rejected — new Plot is not available",
     "Rejected — price difference not settled",
@@ -398,11 +398,14 @@ export const REMARK_PRESETS = {
     "Rejected — land not suitable",
   ],
   closeInquiry: [
-    "Owner not interested now",
-    "Price too high",
-    "Legal or title problem",
-    "Land not suitable for a project",
-    "Owner sold to someone else",
+    "Mutation Pending",
+    "Bank Mortgage",
+    "Court Case / Stay",
+    "Family Dispute",
+    "Government Restriction",
+    "Approach Road Issue",
+    "Unreasonable Asking Rate",
+    "Master Plan Issue",
   ],
   reopenInquiry: [
     "Owner contacted us again",

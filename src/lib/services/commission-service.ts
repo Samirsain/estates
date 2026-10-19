@@ -1061,7 +1061,7 @@ export async function markCommissionPaid(args: {
       const owed = await outstandingRecovery(tx, record.beneficiaryPersonId);
       if (owed) {
         blocked(
-          `This beneficiary has Recovery ${owed.recoveryNo} outstanding. Set this commission off against it, ` +
+          `This beneficiary has Recovery ${owed.recoveryNo} pending. Set this commission off against it, ` +
             `or clear the Recovery first.`
         );
       }
@@ -1281,7 +1281,7 @@ export async function cancelCommissionForBooking(
           toState: record.payment,
           reason:
             `${args.reason}. This record had already reached its ` +
-            `${record.milestonePercent.toFixed(0)}% Payment Received milestone before the ` +
+            `${record.milestonePercent.toFixed(0)}% Payment Received before the ` +
             `Buyback, so it stays earned. A Buyback never accelerates Direct and never ` +
             `un-earns it either (v2.1 §20).`,
         },

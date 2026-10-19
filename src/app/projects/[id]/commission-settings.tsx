@@ -114,14 +114,14 @@ function Terms({ v, plotNo }: { v: CommissionVersionView; plotNo: (id: string) =
         <Row label="Commission Rate %">
           <span className="font-medium">{direct(v)}</span>
         </Row>
-        {v.directEnabled && <Row label="Milestone">25% Payment Received · self-purchase 100%</Row>}
+        {v.directEnabled && <Row label="Payment">25% Payment Received · self-purchase 100%</Row>}
       </Section>
       <Section n={2} title="Loyalty Points">
         <Row label="Loyalty Points Enabled">{yesNo(v.loyaltyEnabled)}</Row>
         <Row label="Loyalty Points Rate %">
           <span className="font-medium">{loyalty(v)}</span>
         </Row>
-        {v.loyaltyEnabled && <Row label="Milestone">100% Payment Received</Row>}
+        {v.loyaltyEnabled && <Row label="Payment">100% Payment Received</Row>}
         {v.loyaltyExceptionReason && <Row label="MD commercial exception">{v.loyaltyExceptionReason}</Row>}
       </Section>
       <Section n={3} title="Rewards">

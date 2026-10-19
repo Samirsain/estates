@@ -252,7 +252,7 @@ const HOLD_SENTENCE: Record<string, string> = {
   PAYMENT_PENDING: "Payment Pending on the acquisition",
   CLOSER_KYC_PENDING: "Closer KYC Pending — a Customer closer's Aadhaar must be Verified",
   CUSTOMER_TERMS_PENDING: "Customer Terms Pending — the closer has not accepted Customer Terms",
-  RECOVERY_OUTSTANDING: "Recovery Outstanding — new cash payouts wait until it is repaid or set off",
+  RECOVERY_OUTSTANDING: "Recovery Pending — new cash payouts wait until it is repaid or set off",
   OLD_RECOVERY_PENDING: "Waiting for the old beneficiary's Recovery on this Booking, unless MD approves",
   RECOVERY_CIRCUMVENTION_REVIEW: "Recovery circumvention review — shares bank, mobile or address with an unresolved Recovery",
 };
@@ -1027,7 +1027,7 @@ export default function CalculatorClient({
                           record.holdReason
                             ? (HOLD_SENTENCE[record.holdReason] ?? humanise(record.holdReason))
                             : null,
-                          `payment ${humanise(record.payment)}`,
+                          `payment ${record.payment === "ACCOUNTS_ADJUSTMENT_REQUIRED" ? "Recovery Pending" : humanise(record.payment)}`,
                           `as the ${humanise(record.beneficiaryRole)}`,
                         ]
                           .filter(Boolean)

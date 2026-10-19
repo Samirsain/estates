@@ -1,14 +1,14 @@
 // Plot detail page — /plots/[plotId]
 //
 // Built to system/Plot_Profile_Revised_Requirements.md, top to bottom: Header ›
-// Dimensions › Boundaries › Layout › Current Allocation · Booking › Completion ›
-// Past Deals › History. Removed on purpose: Details Locked, the Location Charge
-// (PLC %) and everything about its version and snapshot, and the Hold details
-// section — the Hold actions stay, through the buttons at the top.
+// Layout (drawing + Dimensions) › PLC › Completion › Past Deals › History.
+// Removed on purpose: Details Locked, and the Hold and Booking allocation cards
+// — only whose name the Plot is in stays, in the Customer card; the rest is the
+// Booking page's, and the actions stay through the buttons at the top.
 //
 // Laid out like the Customer and Member profiles: actions on the top line, a
-// header card, then cards of the same shape. Payment schedule and commission
-// are the Booking page's; this page shows the percentage received and links there.
+// header card, then cards of the same shape. Payment schedule, Payment Received
+// and commission detail are the Booking page's; Open Booking links there.
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -16,9 +16,6 @@ import {
   ArrowLeft,
   Calculator,
   CheckCircle2,
-  Clock,
-  Lock as LockIcon,
-  FileText,
   History,
   Layers,
   MapPin,
@@ -50,7 +47,7 @@ import { listPendingHoldRequests } from "@/lib/services/hold-service";
 import { plcRules } from "@/lib/services/plc-service";
 import { requireStaff } from "@/lib/security/current-actor";
 import { maskMobile } from "@/lib/security/identity";
-import { can } from "@/lib/security/permissions";
+import { can, canViewField } from "@/lib/security/permissions";
 import { formatIst, formatIstDateTime, formatPlotSize, formatQuantity } from "@/lib/tasks";
 import { newestFirst, type HistoryItem } from "@/lib/profile-history";
 import { eligibilityLabel } from "@/lib/domain/commission";
@@ -105,7 +102,7 @@ const PAYMENT_LABEL: Record<string, string> = {
   PAID: "Paid",
   PAID_EARLY: "Paid Early",
   CANCELLED: "Cancelled",
-  ACCOUNTS_ADJUSTMENT_REQUIRED: "Accounts Adjustment Required",
+  ACCOUNTS_ADJUSTMENT_REQUIRED: "Recovery Pending",
 };
 
 /** The Bookings that still hold the Plot. Anything else is a past deal. */
@@ -222,22 +219,36 @@ function PlotShape({
         ))}
         <text
           x={cx}
-          y={cy - 8}
+          y={cy}
           textAnchor="middle"
           dominantBaseline="middle"
           className="fill-current text-[15px] font-bold"
         >
           {plotNumber}
         </text>
-        <text
-          x={cx}
-          y={cy + 10}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          className="fill-current text-[11px] font-medium"
-        >
-          {formatPlotSize(widthFt, lengthFt)}
-        </text>
+        {/* Width along the north and south edges, length along east and west,
+            just inside the lines they measure. */}
+        {(
+          [
+            [cx, y + 14, 0, widthFt],
+            [cx, y2 - 14, 0, widthFt],
+            [x + 14, cy, -90, lengthFt],
+            [x2 - 14, cy, 90, lengthFt],
+          ] as const
+        ).map(([tx, ty, rotate, ft], i) => (
+          <text
+            key={i}
+            x={tx}
+            y={ty}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            transform={rotate ? `rotate(${rotate} ${tx} ${ty})` : undefined}
+            className="text-[11px] font-medium tabular-nums text-foreground/75"
+            fill="currentColor"
+          >
+            {formatQuantity(ft)} ft
+          </text>
+        ))}
         {/* The compass letter on each side, and what that side abuts just
             beyond it. The drawing now has the card's full width, so the
             viewBox is scaled up rather than down and this text renders larger
@@ -320,13 +331,13 @@ function correctionDetail(before: Record<string, unknown>, after: Record<string,
 export default async function PlotDetailPage({ params }: { params: Promise<{ plotId: string }> }) {
   const actor = await requireStaff();
   const { plotId } = await params;
-  const plot = await getPlot(plotId);
-  if (!plot) notFound();
-
-  const [bookings, movedAway, acquisitions, enquiries, corrections, pendingRequests, plcCorrections] =
+  // The Plot and everything about it load in one wave: each query needs only
+  // the id from the URL, not the Plot row.
+  const [plot, bookings, movedAway, acquisitions, enquiries, corrections, requests, plcCorrections] =
     await Promise.all([
+    getPlot(plotId),
     db.booking.findMany({
-      where: { plotId: plot.id },
+      where: { plotId },
       include: {
         primaryPerson: { include: { customerProfile: { select: { customerId: true } } } },
         soldByPerson: {
@@ -357,7 +368,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
     }),
     // A Booking that moved to another Plot through Change Plot leaves only this.
     db.changePlotRequest.findMany({
-      where: { fromPlotId: plot.id, status: "APPROVED" },
+      where: { fromPlotId: plotId, status: "APPROVED" },
       include: {
         booking: {
           select: {
@@ -372,7 +383,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
       orderBy: { requestedAt: "desc" },
     }),
     db.acquisition.findMany({
-      where: { plotId: plot.id },
+      where: { plotId },
       include: {
         sellerPerson: { include: { customerProfile: { select: { customerId: true } } } },
         // Buying Commission hangs off the Acquisition, not a Booking.
@@ -381,7 +392,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
       orderBy: { submittedAt: "desc" },
     }),
     db.enquiry.findMany({
-      where: { plotId: plot.id, status: "ACTIVE" },
+      where: { plotId, status: "ACTIVE" },
       include: {
         person: {
           include: {
@@ -394,16 +405,17 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
     }),
     // The Plot event says a correction happened; the audit row holds old and new.
     db.auditEvent.findMany({
-      where: { entity: "Plot", entityId: plot.id, action: "PLOT_DETAILS_CORRECTED" },
+      where: { entity: "Plot", entityId: plotId, action: "PLOT_DETAILS_CORRECTED" },
       orderBy: { at: "desc" },
       take: 50,
     }),
-    listPendingHoldRequests(),
+    // The same queue Plot Inventory reads, so the #1, #2 here match the row there.
+    listPendingHoldRequests(plotId),
     // A corrected PLC is a new snapshot superseding the old one, with the
     // compulsory reason on it (PLC spec §11.1) — not a PLOT_DETAILS_CORRECTED
     // audit row, so the history has to read it from the snapshots themselves.
     db.plcSnapshot.findMany({
-      where: { plotId: plot.id, supersededById: { not: null } },
+      where: { plotId, supersededById: { not: null } },
       include: {
         supersededBy: { include: { ruleVersion: { select: { version: true } } } },
         ruleVersion: { select: { version: true } },
@@ -412,9 +424,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
       take: 50,
     }),
   ]);
+  if (!plot) notFound();
 
-  // The same queue Plot Inventory reads, so the #1, #2 here match the row there.
-  const requests = pendingRequests.filter((r) => r.plotId === plot.id);
   const canReviewRequests = can(actor.role, "HOLD_REQUEST_REVIEW", actor.extraPermissions);
 
   const now = Date.now();
@@ -613,32 +624,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
     ),
   ]);
 
-  /** A person as every screen prints one: the id leads, the name under it. */
-  const person = (
-    p: { id: string; fullName: string; primaryMobile?: string; customerProfile: { customerId: string } | null },
-    options: { mobile?: boolean } = {}
-  ) => (
-    <>
-      <PersonLink personId={p.id} name={p.customerProfile?.customerId ?? p.fullName} />
-      {p.customerProfile && <span className={SUB}>{p.fullName}</span>}
-      {options.mobile && p.primaryMobile && <span className={SUB}>{maskMobile(p.primaryMobile)}</span>}
-    </>
-  );
-
-  const shareTotal = current
-    ? current.parties.reduce(
-        (sum, p) => sum + (p.sharePercent ? Number(p.sharePercent) : current.parties.length === 1 ? 100 : 0),
-        0
-      )
-    : 0;
-
-  const paymentGiven = liveAcquisition ? (
-    <Link href={`/acquisitions/${liveAcquisition.id}`} className="text-primary hover:underline">
-      <span className="tabular-nums">{liveAcquisition.paymentGivenPercent.toFixed(2)}%</span>
-      <span className={SUB}>{TYPE_LABEL[liveAcquisition.type] ?? "Buyback / Resale"}</span>
-    </Link>
-  ) : null;
-
   const pastDeals = [
     ...earlier.map((b) => ({
       id: b.id,
@@ -671,35 +656,17 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
      badge already says Available; the cards only repeated it. */
   const hasDeal = Boolean(current || liveAcquisition);
 
-  /* PRD §10.2 — the Hold, read in full. */
+  /* The Hold, for the PLC it froze. */
   const hold = plot.holds[0] ?? null;
-  const nowMs = Date.now();
-  /* A frozen Hold's clock is stopped: what is left is the figure banked when
-     the Booking Request was raised, not the wall clock (PRD §10.5). */
-  const holdRemainingMs = hold
-    ? (hold.frozenRemainingMs ?? hold.expiresAt.getTime() - nowMs)
-    : 0;
-  const spanWords = (ms: number) => {
-    if (ms <= 0) return "expired";
-    const hours = Math.floor(ms / 3_600_000);
-    if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
-    return `${hours}h ${Math.floor((ms % 3_600_000) / 60_000)}m`;
-  };
-
+  // MD reads the number whole, as on the Customer profile; everyone else masked.
+  const contact = (value: string) =>
+    canViewField(actor.role, "MOBILE_FULL") ? value : maskMobile(value);
   /* The PLC frozen on whatever holds the Plot now, against what the sides
      would earn today. Only worth a line when the two differ — a Plot whose
      rules have not moved says nothing. */
   const frozen = current?.plcSnapshot ?? hold?.plcSnapshot ?? null;
   const frozenPercent = frozen ? frozen.totalPercent.toFixed(2) : null;
   const frozenDiffers = Boolean(plc && frozenPercent && frozenPercent !== plc.total);
-
-  /* Plot details are the Plot's own facts until something commits them
-     (inventory.ts: canEditPlotDetails). The page says which thing. */
-  const lockReason = canEditPlotDetails(plot.status)
-    ? null
-    : current
-      ? `${STATUS_LABEL[plot.status] ?? plot.status} — the Booking holds these details.`
-      : "A committed Plot's details are frozen.";
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
@@ -885,14 +852,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               </p>
             )}
 
-          </div>
-        </Section>
-
-        {/* 3 Dimensions · PLC · Position — what the Plot measures, what its
-            sides earn, and the sentence they add up to. Its own card, beneath
-            the drawing it describes. */}
-        <Section title="Dimensions · PLC" icon={<Ruler className="h-3.5 w-3.5" />}>
-          <div className="min-w-0">
+          {/* What the Plot measures, in the same card as the drawing of it. */}
+          <div className="mt-3 min-w-0 border-t border-border/60 pt-3">
             <SubHeading>Dimensions</SubHeading>
             <Row
               label="Width × Length"
@@ -940,9 +901,12 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             )}
             {plot.exactAreaReason && <Row label="Override reason" value={plot.exactAreaReason} />}
           </div>
+          </div>
+        </Section>
 
-          <div className="mt-3 min-w-0 border-t border-border/60 pt-3">
-            <SubHeading>PLC</SubHeading>
+        {/* 3 PLC · Position — what the sides earn, and the sentence they add up to. */}
+        <Section title="PLC" icon={<Percent className="h-3.5 w-3.5" />}>
+          <div className="min-w-0">
             {plc ? (
               <>
                 {plc.components.map((c) => (
@@ -976,62 +940,49 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
         </div>
 
         <div className="space-y-4">
-          {/* Why editing is closed. Only when it is — an editable Plot has
-              nothing to explain. */}
-          {lockReason && (
-            <Section title="Details locked" icon={<LockIcon className="h-3.5 w-3.5" />}>
-              <p className="text-xs text-muted-foreground">{lockReason}</p>
-            </Section>
-          )}
-
-          {/* PRD §10.2 — the Hold, in full: who it is for, who got it done, how
-              long is left on it and who is answerable for it. */}
-          {hold && (
-            <Section title="Current Allocation · Hold" icon={<Clock className="h-3.5 w-3.5" />}>
-              <Row label="Held for" value={person(hold.person, { mobile: true })} />
-              <Row
-                label="Sourced by"
-                value={
-                  hold.sourcedByPerson
-                    ? (hold.sourcedByPerson.memberProfile?.memberId ??
-                      hold.sourcedByPerson.fullName)
-                    : "3% Club"
-                }
-                hint={hold.sourcedByPerson?.fullName}
-              />
-              <Row label="Created" value={formatIstDateTime(hold.startsAt)} />
-              <Row
-                label="Expires"
-                value={formatIstDateTime(hold.expiresAt)}
-                hint={hold.frozenAt ? undefined : spanWords(holdRemainingMs)}
-              />
-              {/* PRD §10.5 — a Booking Request stops the clock, and the figure
-                  banked here is restored exactly if Accounts reject it. */}
-              {hold.frozenAt && (
-                <Row
-                  label="Frozen"
-                  value={spanWords(holdRemainingMs)}
-                  hint={`Stopped ${formatIstDateTime(hold.frozenAt)} for the Booking Request`}
-                />
-              )}
-              <Row label="Hold age" value={spanWords(nowMs - hold.startsAt.getTime())} />
-              <Row
-                label="Extensions"
-                value={hold.extensionCount === 0 ? "None" : String(hold.extensionCount)}
-              />
-              <Row label="Responsible CRM" value={hold.responsibleStaffId ?? "—"} />
-              {hold.plcSnapshot && (
-                <Row
-                  label="PLC snapshot"
-                  value={
-                    <span className="tabular-nums">
-                      {hold.plcSnapshot.totalPercent.toFixed(2)}%
-                    </span>
-                  }
-                  hint={`Version ${hold.plcSnapshot.ruleVersion.version} · frozen ${formatIst(
-                    hold.plcSnapshot.frozenAt
-                  )}`}
-                />
+          {/* Whose name the Plot is in: the Booking's customers with their
+              shares, else the seller on a live Buyback / Resale, else whoever
+              it is held for. The rest of the deal is on the Booking page. */}
+          {(current || liveAcquisition || hold) && (
+            <Section title="Customer" icon={<Users className="h-3.5 w-3.5" />}>
+              {current ? (
+                current.parties.map((p) => (
+                  <Row
+                    key={p.id}
+                    label={p.role === "PRIMARY" ? "Primary Customer" : "Additional Customer"}
+                    value={
+                      <>
+                        <PersonLink
+                          personId={p.personId}
+                          name={p.person.customerProfile?.customerId ?? p.person.fullName}
+                        />
+                        {p.person.customerProfile && <span className={SUB}>{p.person.fullName}</span>}
+                        <span className={SUB}>{contact(p.person.primaryMobile)}</span>
+                      </>
+                    }
+                    hint={
+                      current.parties.length > 1 && p.sharePercent
+                        ? `${Number(p.sharePercent).toFixed(2)}% share`
+                        : undefined
+                    }
+                  />
+                ))
+              ) : (
+                (() => {
+                  const who = liveAcquisition?.sellerPerson ?? hold!.person;
+                  return (
+                    <Row
+                      label={liveAcquisition ? "Seller" : "Held for"}
+                      value={
+                        <>
+                          <PersonLink personId={who.id} name={who.customerProfile?.customerId ?? who.fullName} />
+                          {who.customerProfile && <span className={SUB}>{who.fullName}</span>}
+                          <span className={SUB}>{contact(who.primaryMobile)}</span>
+                        </>
+                      }
+                    />
+                  );
+                })()
               )}
             </Section>
           )}
@@ -1053,84 +1004,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               />
             </Section>
           )}
-
-          <Section title="Current Allocation · Booking" icon={<FileText className="h-3.5 w-3.5" />}>
-            {current ? (
-              <>
-                <Row label="Customer" value={person(current.primaryPerson, { mobile: true })} />
-                <Row
-                  label={current.bookingNumber ? "Booking" : "Request"}
-                  value={
-                    <Link href={`/bookings/${current.id}`} className="text-primary hover:underline">
-                      {current.bookingNumber ?? current.requestNo}
-                    </Link>
-                  }
-                  hint={current.bookingNumber ? undefined : "Waiting approval"}
-                />
-                <Row label="Booking Date" value={formatIst(current.bookingDate)} />
-                <Row
-                  label="Sold By"
-                  value={
-                    current.soldByType === "THREE_PERCENT_CLUB" || !current.soldByPerson ? (
-                      "3% Club"
-                    ) : (
-                      <>
-                        <PersonLink
-                          personId={current.soldByPerson.id}
-                          name={
-                            (current.soldByType === "MEMBER"
-                              ? current.soldByPerson.memberProfile?.memberId
-                              : current.soldByPerson.customerProfile?.customerId) ?? current.soldByPerson.fullName
-                          }
-                          as={current.soldByType === "MEMBER" ? "member" : undefined}
-                        />
-                        <span className={SUB}>{current.soldByPerson.fullName}</span>
-                      </>
-                    )
-                  }
-                />
-                <Row
-                  label="Ownership"
-                  value={
-                    <>
-                      {current.parties.map((p) => (
-                        <span key={p.id} className="block">
-                          <PersonLink
-                            personId={p.personId}
-                            name={p.person.customerProfile?.customerId ?? p.person.fullName}
-                          />
-                          <span className="font-normal text-muted-foreground">
-                            {" · "}
-                            {p.role === "PRIMARY" ? "Primary" : "Additional"} ·{" "}
-                          </span>
-                          <span className="tabular-nums">
-                            {p.sharePercent ? `${Number(p.sharePercent).toFixed(2)}%` : "100%"}
-                          </span>
-                        </span>
-                      ))}
-                    </>
-                  }
-                  hint={
-                    current.parties.length > 1 && shareTotal !== 100 ? (
-                      <span className="text-amber-800">Shares total {shareTotal.toFixed(2)}%, not 100%</span>
-                    ) : undefined
-                  }
-                />
-                <Row
-                  label="Payment Received"
-                  value={<span className="tabular-nums">{current.paymentReceivedPercent.toFixed(2)}%</span>}
-                />
-                {paymentGiven && <Row label="Payment Given" value={paymentGiven} />}
-              </>
-            ) : liveAcquisition ? (
-              <>
-                <Row label="Seller" value={person(liveAcquisition.sellerPerson, { mobile: true })} />
-                <Row label="Payment Given" value={paymentGiven} />
-              </>
-            ) : (
-              <p className="text-xs text-muted-foreground">No Booking on this Plot.</p>
-            )}
-          </Section>
 
           <Section title="Completion" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
             {completion ? (
@@ -1309,7 +1182,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                           </span>
                           {c.holdReason && (
                             <span className="block text-[11px] text-amber-700">
-                              {humanise(c.holdReason)}
+                              {c.holdReason === "RECOVERY_OUTSTANDING" ? "Recovery Pending" : humanise(c.holdReason)}
                             </span>
                           )}
                         </span>

@@ -31,35 +31,41 @@ export default async function CustomersPage() {
    *
    * Read as one query over the listed people rather than one per row, and
    * through BookingParty so an Additional Customer counts as a buyer too, not
-   * only the Primary Customer.
+   * only the Primary Customer. It and the Loyalty count need only the
+   * listed people, so the two load together.
    */
-  const parties = await db.bookingParty.findMany({
-    where: {
-      personId: { in: customers.map((c) => c.personId) },
-      kind: "COMMERCIAL",
-      booking: { bookingNumber: { not: null } },
-    },
-    select: {
-      personId: true,
-      booking: {
-        select: {
-          bookingDate: true,
-          // Two Bookings can share a date, so the later submission breaks the
-          // tie and the Project column names one deal, not whichever row the
-          // database happened to return first.
-          submittedAt: true,
-          // End User or Investor is decided per purchase, on the Booking. The
-          // CustomerProfile column of the same name is written by nothing, so
-          // the list reads the deal it is showing rather than a blank field.
-          customerType: true,
-          project: { select: { name: true } },
-          plot: {
-            select: { id: true, plotNumber: true, plotType: true },
+  const personIds = customers.map((c) => c.personId);
+  const [parties, closing] = await Promise.all([
+    db.bookingParty.findMany({
+      where: {
+        personId: { in: personIds },
+        kind: "COMMERCIAL",
+        booking: { bookingNumber: { not: null } },
+      },
+      select: {
+        personId: true,
+        booking: {
+          select: {
+            bookingDate: true,
+            // Two Bookings can share a date, so the later submission breaks the
+            // tie and the Project column names one deal, not whichever row the
+            // database happened to return first.
+            submittedAt: true,
+            // End User or Investor is decided per purchase, on the Booking. The
+            // CustomerProfile column of the same name is written by nothing, so
+            // the list reads the deal it is showing rather than a blank field.
+            customerType: true,
+            project: { select: { name: true } },
+            plot: {
+              select: { id: true, plotNumber: true, plotType: true },
+            },
           },
         },
       },
-    },
-  });
+    }),
+    // v2.1 §21 — Customer-closing Loyalty used, of the lifetime three.
+    closingLoyaltyUsed(personIds),
+  ]);
 
   // What they actually bought, newest first, and how much else there is.
   /** Their most recent deal — a Customer who bought in two Projects shows that one. */
@@ -75,9 +81,6 @@ export default async function CustomersPage() {
     if (isNewer) latest.set(party.personId, party.booking);
     allDeals.set(party.personId, [...(allDeals.get(party.personId) ?? []), party.booking]);
   }
-
-  // v2.1 §21 — Customer-closing Loyalty used, of the lifetime three.
-  const closing = await closingLoyaltyUsed(customers.map((c) => c.personId));
 
   const rows: CustomerRowView[] = customers.map((c) => ({
     id: c.id,

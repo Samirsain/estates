@@ -266,7 +266,9 @@ export default function DashboardClient({
               </colgroup>
               <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                 <tr className="border-b border-border">
-                  <th className="py-2 pl-3 pr-2 font-semibold">Project</th>
+                  {/* The same clear left border the rows carry, so the
+                      heading starts where the Project under it does. */}
+                  <th className="border-l-4 border-l-transparent py-2 pl-3 pr-2 font-semibold">Project</th>
                   <th className="px-2 py-2 font-semibold">Plot</th>
                   <th className="px-2 py-2 font-semibold">Booking No.</th>
                   <th className="px-2 py-2 font-semibold">Member / Customer</th>
@@ -371,16 +373,23 @@ export default function DashboardClient({
                         )}
                       </td>
                       {/* The date alone — the clock time is not what anyone
-                          scans this column for — and under it whether that date
-                          has already gone by. */}
+                          scans this column for. An overdue or urgent date is
+                          itself the red or yellow pill, so the row keeps its
+                          height; the word stays on hover and for screen readers. */}
                       <td className="whitespace-nowrap px-2 py-2 text-muted-foreground">
-                        <span className="block text-foreground">{formatIstDate(task.dueAt)}</span>
-                        {state.label && (
-                          <span className="mt-1 block">
-                            <Badge variant={state.label === "Overdue" ? "destructive" : "warning"}>
-                              {state.label}
-                            </Badge>
-                          </span>
+                        {state.label ? (
+                          // Pulled out by its own padding and border, so the
+                          // date sits under the heading and on the row's line.
+                          <Badge
+                            variant={state.label === "Overdue" ? "destructive" : "warning"}
+                            title={state.label}
+                            className="-my-[3px] -ml-2 px-2"
+                          >
+                            {formatIstDate(task.dueAt)}
+                            <span className="sr-only"> · {state.label}</span>
+                          </Badge>
+                        ) : (
+                          <span className="block text-foreground">{formatIstDate(task.dueAt)}</span>
                         )}
                         {task.revisions > 0 && (
                           <span className="block text-[11px]">Revised ×{task.revisions}</span>

@@ -89,7 +89,7 @@ const PAYMENT_LABEL: Record<string, string> = {
   PAID: "Paid",
   PAID_EARLY: "Paid Early",
   CANCELLED: "Cancelled",
-  ACCOUNTS_ADJUSTMENT_REQUIRED: "Accounts Adjustment Required",
+  ACCOUNTS_ADJUSTMENT_REQUIRED: "Recovery Pending",
 };
 
 /** One table header style for every table on the page. */
@@ -433,13 +433,16 @@ export default async function CustomerDetailPage({
           </div>
         </div>
 
-        {/* Header and Summary — who they are, then four answers on one line. */}
+        {/* Header and Summary — who they are, and the answers beside it on the
+            same row, laid out as the Member profile lays out its own. */}
         <Card className="p-4 md:p-5">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <User className="h-6 w-6" />
             </div>
-            <div className="min-w-0">
+            {/* Never narrower than the name and ID: with five answers beside
+                it, a shrinkable block broke "Vikas Bansal" over two lines. */}
+            <div className="min-w-fit flex-1">
               <h1 className="text-2xl font-bold tracking-tight">{customer.person.fullName}</h1>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span className="text-sm text-muted-foreground">{customer.customerId}</span>
@@ -454,63 +457,65 @@ export default async function CustomerDetailPage({
                 )}
               </div>
             </div>
+
+            {/* Five answers where the Member has two, so a tighter gap: each
+                Stat already pads itself apart. */}
+            <dl className="flex flex-wrap gap-x-2 gap-y-3">
+              <Stat label="Customer for" value={experience?.label ?? "—"} />
+              {/* CP §69 — a Customer closer can owe a Recovery too; a safe indicator only. */}
+              <Stat
+                label="Recovery"
+                value={openRecoveries.length ? `${openRecoveries.length} pending` : "None"}
+                hint={openRecoveries[0] ? `${openRecoveries[0].recoveryNo} due ${formatIst(openRecoveries[0].dueOn)}` : undefined}
+              />
+              <Stat label="Properties" value={`${bookedCount} booked · ${deliveredCount} delivered`} />
+              <Stat
+                label="Closing Loyalty Points"
+                value={`${closingUsed.length} of ${CUSTOMER_CLOSING_LOYALTY_LIMIT} used`}
+                hint={closingUsed.length >= CUSTOMER_CLOSING_LOYALTY_LIMIT ? "Membership needed for more" : undefined}
+              />
+              {/* CR-002 — the Member who was Sold By on the first qualifying
+                  purchase; CR-003's nobody when that purchase was sold by the 3%
+                  Club or a Customer.
+
+                  Shaped like the Member profile's "Invited by", which answers the
+                  same question on that side: a short value and the person's name
+                  under it. It used to carry a sentence for a value and a hint
+                  that wrapped onto a second line, which left this one column
+                  taller than the three beside it. Where the link stands and which
+                  position it took moved down to Loyalty Points & commission — that block
+                  is already about exactly this and has the room. */}
+              {customer.royaltyLinkedMember ? (
+                <Stat
+                  label="Royalty linked to"
+                  value={
+                    <Link
+                      href={`/members/${customer.royaltyLinkedMember.id}`}
+                      className="text-primary hover:underline"
+                    >
+                      {customer.royaltyLinkedMember.memberId}
+                    </Link>
+                  }
+                  // An unconfirmed link can still move to a different Member, so
+                  // that is the fact worth the one line here — the name is on the
+                  // Member's own page, the standing is not.
+                  hint={
+                    customer.royaltyLinkFinalAt
+                      ? customer.royaltyLinkedMember.person.fullName
+                      : "Provisional"
+                  }
+                />
+              ) : customer.royaltyLinkFirstBookingId ? (
+                <Stat
+                  label="Royalty linked to"
+                  value="None"
+                  hint="Not sold by a Member"
+                />
+              ) : (
+                <Stat label="Royalty linked to" value="—" hint="No qualifying purchase" />
+              )}
+            </dl>
           </div>
-
-          <dl className="mt-4 grid grid-cols-2 gap-y-4 border-t border-border/60 pt-4 md:grid-cols-4 md:divide-x md:divide-border/60">
-            <Stat label="Customer for" value={experience?.label ?? "—"} />
-            {/* CP §69 — a Customer closer can owe a Recovery too; a safe indicator only. */}
-            <Stat
-              label="Recovery"
-              value={openRecoveries.length ? `${openRecoveries.length} outstanding` : "None"}
-              hint={openRecoveries[0] ? `${openRecoveries[0].recoveryNo} due ${formatIst(openRecoveries[0].dueOn)}` : undefined}
-            />
-            <Stat label="Properties" value={`${bookedCount} booked · ${deliveredCount} delivered`} />
-            <Stat
-              label="Closing Loyalty Points"
-              value={`${closingUsed.length} of ${CUSTOMER_CLOSING_LOYALTY_LIMIT} used`}
-              hint={closingUsed.length >= CUSTOMER_CLOSING_LOYALTY_LIMIT ? "Membership needed for more" : undefined}
-            />
-            {/* CR-002 — the Member who was Sold By on the first qualifying
-                purchase; CR-003's nobody when that purchase was sold by the 3%
-                Club or a Customer.
-
-                Shaped like the Member profile's "Invited by", which answers the
-                same question on that side: a short value and the person's name
-                under it. It used to carry a sentence for a value and a hint
-                that wrapped onto a second line, which left this one column
-                taller than the three beside it. Where the link stands and which
-                position it took moved down to Loyalty Points & commission — that block
-                is already about exactly this and has the room. */}
-            {customer.royaltyLinkedMember ? (
-              <Stat
-                label="Royalty linked to"
-                value={
-                  <Link
-                    href={`/members/${customer.royaltyLinkedMember.id}`}
-                    className="text-primary hover:underline"
-                  >
-                    {customer.royaltyLinkedMember.memberId}
-                  </Link>
-                }
-                // An unconfirmed link can still move to a different Member, so
-                // that is the fact worth the one line here — the name is on the
-                // Member's own page, the standing is not.
-                hint={
-                  customer.royaltyLinkFinalAt
-                    ? customer.royaltyLinkedMember.person.fullName
-                    : "Provisional"
-                }
-              />
-            ) : customer.royaltyLinkFirstBookingId ? (
-              <Stat
-                label="Royalty linked to"
-                value="None"
-                hint="Not sold by a Member"
-              />
-            ) : (
-              <Stat label="Royalty linked to" value="—" hint="No qualifying purchase" />
-            )}
-          </dl>
         </Card>
 
         {/* Alerts — only when something is due. */}
@@ -637,7 +642,7 @@ export default async function CustomerDetailPage({
                   <Row label="IFSC" value={b.ifsc} />
                   <Row label="Bank" value={b.bankName} />
                   <Row label="Branch" value={b.branchName ?? "—"} />
-                  <Row label="Holder" value={b.accountHolder} />
+                  <Row label="Holder name" value={b.accountHolder} />
                 </div>
               ))
             )}
@@ -947,7 +952,7 @@ export default async function CustomerDetailPage({
                       <td className={TD}>
                         {eligibilityLabel(c.eligibility)}
                         {c.holdReason && (
-                          <span className="block text-[11px] text-amber-700">{words(c.holdReason)}</span>
+                          <span className="block text-[11px] text-amber-700">{c.holdReason === "RECOVERY_OUTSTANDING" ? "Recovery Pending" : words(c.holdReason)}</span>
                         )}
                       </td>
                       <td className={`${TD} pr-0`}>

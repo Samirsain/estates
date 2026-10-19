@@ -103,7 +103,7 @@ export function Reviews({ rows, role }: { rows: ReviewRow[]; role: string }) {
       {deciding && (
         <Modal
           title={`${deciding.yes ? "Approve" : "Reject"} — ${deciding.row.person}`}
-          description="Approve releases the benefit. Reject keeps this Person's benefits held while the linked Recovery is outstanding. Nobody is denied automatically."
+          description="Approve releases the benefit. Reject keeps this Person's benefits held while the linked Recovery is pending. Nobody is denied automatically."
           onClose={() => setDeciding(null)}
         >
           <form

@@ -161,7 +161,7 @@ async function reverseAward(tx: Tx, awardId: string, actorRef: string, reason: s
     await tx.customerProfile.update({ where: { id: award.customerProfileId }, data: { royaltyOpportunityConsumedAt: null } });
   }
   await awardEvent(tx, awardId, actorRef, "REVERSED", award.state, "REVERSED", reason);
-  await closeTasksFor(tx, AWARD_RECORD_KIND, awardId, actorRef, `Reversed — ${reason}`);
+  await closeTasksFor(tx, AWARD_RECORD_KIND, awardId, actorRef, `Cancelled — ${reason}`);
   // The voided allocations left a gap; other free tokens fill it first.
   if (award.state === "RELEASED") await settleMember(tx, award.memberProfileId);
 }
@@ -395,12 +395,13 @@ export type TokenPosition = {
 
 /** docss/11 §1 — the three figures from the ledger, and what can be spent now. */
 export async function tokenPosition(tx: Tx, memberProfileId: string): Promise<TokenPosition> {
-  const member = await tx.memberProfile.findUniqueOrThrow({
-    where: { id: memberProfileId },
-    select: { status: true, personId: true, person: { select: { mergeStatus: true } } },
-  });
   const live = { where: { voidedAt: null }, select: { tokens: true } } as const;
-  const [ledger, awards, redemptions] = await Promise.all([
+  // One wave: the Member and their ledger do not depend on each other.
+  const [member, ledger, awards, redemptions] = await Promise.all([
+    tx.memberProfile.findUniqueOrThrow({
+      where: { id: memberProfileId },
+      select: { status: true, personId: true, person: { select: { mergeStatus: true } } },
+    }),
     tx.tokenLedgerEntry.findMany({ where: { memberProfileId }, select: { kind: true, tokens: true } }),
     tx.royaltyAward.findMany({ where: { memberProfileId, state: "RELEASED" }, include: { allocations: live } }),
     tx.tokenRedemption.findMany({ where: { memberProfileId, state: "RECORDED" }, include: { allocations: live } }),
@@ -426,7 +427,7 @@ export async function tokenPosition(tx: Tx, memberProfileId: string): Promise<To
 }
 
 const HOLD_WORDS: Record<string, string> = {
-  RECOVERY_OUTSTANDING: "an outstanding Recovery",
+  RECOVERY_OUTSTANDING: "a pending Recovery",
   MEMBER_DEACTIVATED: "the Member being Deactivated",
   BUYBACK_STABLE_COMPLETION_PENDING: "a Buyback not yet stably complete",
   RECOVERY_CIRCUMVENTION_REVIEW: "a Recovery circumvention review",
@@ -437,7 +438,7 @@ export function tokenBlockers(p: TokenPosition): string[] {
   const out: string[] = [];
   if (p.memberHold === "MERGED_AWAY") out.push("This identity was merged into another; record spending on the surviving Member.");
   if (p.memberHold === "MEMBER_DEACTIVATED") out.push("The Member is Deactivated: spending is blocked until reactivation. The balance is kept.");
-  if (p.memberHold === "RECOVERY_OUTSTANDING") out.push("The Member has an outstanding Recovery: spending is blocked until it is cleared. The balance is kept.");
+  if (p.memberHold === "RECOVERY_OUTSTANDING") out.push("The Member has a pending Recovery: spending is blocked until it is cleared. The balance is kept.");
   if (p.available < 0) out.push(`The balance is below zero by ${-p.available} points; points earned next cover it first.`);
   if (p.restricted > 0) {
     out.push(`${p.restricted} points are restricted while their source is held (${p.restrictions.map((r) => HOLD_WORDS[r] ?? r).join(", ")}).`);
@@ -646,28 +647,35 @@ const dayOf = (d: Date) => d.toISOString().slice(0, 10);
  * the balance (as history, never as wallets) and what can be recorded now.
  */
 export async function memberTokenView(memberProfileId: string, audience: "STAFF" | "MEMBER") {
-  const position = await tokenPosition(db, memberProfileId);
-  const figures = { earned: position.earned, spent: position.spent, balance: position.balance };
-  const recorded = await db.tokenRedemption.findMany({
-    where: { memberProfileId, state: "RECORDED" },
-    orderBy: [{ redeemedOn: "desc" }, { recordedAt: "desc" }],
-    select: { tokens: true, redeemedOn: true },
-  });
-  const redemptions = recorded.map((r) => ({ tokens: r.tokens, redeemedOn: dayOf(r.redeemedOn) }));
-  if (audience === "MEMBER") return { figures, redemptions, notice: memberNotice(position), staff: null };
-
-  const [all, awards] = await Promise.all([
-    db.tokenRedemption.findMany({ where: { memberProfileId }, orderBy: [{ recordedAt: "desc" }] }),
-    db.royaltyAward.findMany({
-      where: { memberProfileId },
-      include: {
-        customerProfile: { select: { customerId: true, person: { select: { fullName: true } } } },
-        triggerBooking: { select: { id: true, bookingNumber: true } },
-        project: { select: { name: true } },
-      },
-      orderBy: { qualifiedAt: "desc" },
+  // Everything here reads independently, so it loads in one wave rather than
+  // one round trip after another.
+  const [position, recorded, staffRows] = await Promise.all([
+    tokenPosition(db, memberProfileId),
+    db.tokenRedemption.findMany({
+      where: { memberProfileId, state: "RECORDED" },
+      orderBy: [{ redeemedOn: "desc" }, { recordedAt: "desc" }],
+      select: { tokens: true, redeemedOn: true },
     }),
+    audience === "STAFF"
+      ? Promise.all([
+          db.tokenRedemption.findMany({ where: { memberProfileId }, orderBy: [{ recordedAt: "desc" }] }),
+          db.royaltyAward.findMany({
+            where: { memberProfileId },
+            include: {
+              customerProfile: { select: { customerId: true, person: { select: { fullName: true } } } },
+              triggerBooking: { select: { id: true, bookingNumber: true } },
+              project: { select: { name: true } },
+            },
+            orderBy: { qualifiedAt: "desc" },
+          }),
+        ])
+      : null,
   ]);
+  const figures = { earned: position.earned, spent: position.spent, balance: position.balance };
+  const redemptions = recorded.map((r) => ({ tokens: r.tokens, redeemedOn: dayOf(r.redeemedOn) }));
+  if (!staffRows) return { figures, redemptions, notice: memberNotice(position), staff: null };
+
+  const [all, awards] = staffRows;
   return {
     figures,
     redemptions,

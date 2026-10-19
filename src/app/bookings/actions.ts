@@ -548,7 +548,7 @@ export async function setOffRecoveryAction(
       ok: true,
       message: result.cleared
         ? "Set off — the benefit is Paid against the Recovery, and the Recovery is cleared."
-        : "Set off — the benefit is Paid against the Recovery, which stays outstanding for the rest.",
+        : "Set off — the benefit is Paid against the Recovery, which stays Recovery Pending for the rest.",
     };
   } catch (error) {
     return toResult(error);

@@ -22,11 +22,10 @@ import {
   archiveLandInquiryAction,
   changeLandInquiryStageAction,
   changeLandInquiryStatusAction,
-  reassignLandInquiryAction,
 } from "./actions";
 import { RemarkSelect } from "@/components/ui/remark-select";
 
-type Kind = "STAGE" | "CLOSE" | "REOPEN" | "REASSIGN" | "ARCHIVE";
+type Kind = "STAGE" | "CLOSE" | "REOPEN" | "ARCHIVE";
 
 const REASON_PRESETS = {
   STAGE: "inquiryStage",
@@ -42,25 +41,19 @@ export default function InquiryActions({
   version,
   status,
   stage,
-  assignedToId,
   archived,
   canManage,
   canReopen,
   canArchive,
-  canReassign,
-  staff,
 }: {
   id: string;
   version: number;
   status: LandInquiryStatus;
   stage: LandInquiryStage;
-  assignedToId: string | null;
   archived: boolean;
   canManage: boolean;
   canReopen: boolean;
   canArchive: boolean;
-  canReassign: boolean;
-  staff: Array<{ id: string; label: string }>;
 }) {
   const router = useRouter();
   const [open, setOpen] = React.useState<Kind | null>(null);
@@ -68,7 +61,6 @@ export default function InquiryActions({
   const [error, setError] = React.useState<string | null>(null);
   const [reason, setReason] = React.useState("");
   const [nextStage, setNextStage] = React.useState<LandInquiryStage>(stage);
-  const [assignee, setAssignee] = React.useState(assignedToId ?? "");
 
   function close() {
     setOpen(null);
@@ -124,11 +116,6 @@ export default function InquiryActions({
           Reopen
         </Button>
       )}
-      {canReassign && (
-        <Button size="sm" variant="ghost" onClick={() => setOpen("REASSIGN")}>
-          Reassign
-        </Button>
-      )}
       {canArchive && (
         <Button size="sm" variant="ghost" onClick={() => setOpen("ARCHIVE")}>
           Archive
@@ -150,9 +137,7 @@ export default function InquiryActions({
                 ? "Close Inquiry"
                 : open === "REOPEN"
                   ? "Reopen Inquiry"
-                  : open === "REASSIGN"
-                    ? "Reassign Inquiry"
-                    : "Archive Inquiry"
+                  : "Archive Inquiry"
           }
           onClose={close}
         >
@@ -189,49 +174,22 @@ export default function InquiryActions({
               </Field>
             )}
 
-            {open === "REASSIGN" && (
-              <Field label="Assign to">
-                <select
-                  className={inputClass}
-                  value={assignee}
-                  onChange={(e) => setAssignee(e.target.value)}
-                >
-                  <option value="">Unassigned</option>
-                  {staff.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-
             <Field
               label={
                 open === "CLOSE"
                   ? "Close reason (compulsory)"
                   : open === "STAGE" && !stageReasonRequired
                     ? "Reason (optional for a single step forward)"
-                    : open === "REASSIGN"
-                      ? "Reason (optional)"
-                      : "Reason (compulsory)"
+                    : "Reason (compulsory)"
               }
             >
-              {open === "REASSIGN" ? (
-                <textarea
-                  className={`${inputClass} h-16 py-2`}
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                />
-              ) : (
-                <RemarkSelect
-                  key={open}
-                  presets={REASON_PRESETS[open]}
-                  value={reason}
-                  onChange={setReason}
-                  required={!(open === "STAGE" && !stageReasonRequired)}
-                />
-              )}
+              <RemarkSelect
+                key={open}
+                presets={REASON_PRESETS[open]}
+                value={reason}
+                onChange={setReason}
+                required={!(open === "STAGE" && !stageReasonRequired)}
+              />
             </Field>
 
             {error && (
@@ -274,14 +232,6 @@ export default function InquiryActions({
                           reason,
                           restoredStage: WORKING_STAGES.includes(nextStage) ? nextStage : "NEW",
                         },
-                        newKey()
-                      )
-                    );
-                  }
-                  if (open === "REASSIGN") {
-                    return run(() =>
-                      reassignLandInquiryAction(
-                        { id, version, assignedToId: assignee || null, reason },
                         newKey()
                       )
                     );

@@ -4,7 +4,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Box, Info, Layers, Map, MoreVertical, Pencil, Plus, Share, X } from "lucide-react";
+import { Box, Info, Layers, Map, MoreVertical, Pencil, Plus, Share } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -428,10 +428,11 @@ function ProjectInfoDialog({
     // scrollbar: everything about one Project fits on one sheet.
     <Modal title="" onClose={onClose} width="w-[min(50rem,94vw)]">
       <div className="space-y-4">
-        {/* The heading and the two actions share one row: the sheet's whole
+        {/* The heading and Share share one row: the sheet's whole
             budget is the screen it has to fit on, and a title that took three
             rows spent it on nothing. */}
-        <div className="flex items-start justify-between gap-4">
+        {/* pr-8 keeps Share clear of the Modal's own corner close. */}
+        <div className="flex items-start justify-between gap-4 pr-8">
           <div className="min-w-0">
             <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
               {[
@@ -491,15 +492,6 @@ function ProjectInfoDialog({
               <Share className="h-3.5 w-3.5" />
             </span>
           </Button>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="rounded-full transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-[0.9]"
-            onClick={onClose}
-            aria-label="Close"
-          >
-              <X className="h-4 w-4" />
-            </Button>
           </div>
         </div>
 

@@ -17,7 +17,6 @@ import type { TripProgrammeView } from "@/lib/trip-view";
 import { REWARD_HOLD_LABEL } from "./royalty-tokens";
 import {
   bookTripAction,
-  correctInviterAction,
   recordTripNomineeAction,
   travelledTripAction,
   type ActionResult,
@@ -44,9 +43,9 @@ const CREDIT_STATE: Record<string, string> = {
   QUALIFIED: "Qualified",
   ALLOCATED: "In an earned Trip",
   USED: "Used — travelled",
-  HELD: "Held — Member deactivated",
+  HELD: "Hold — Member deactivated",
   EXPIRED: "Expired",
-  REVERSED: "Reversed",
+  REVERSED: "Cancelled",
 };
 
 type TripState = TripProgrammeView["rewards"][number]["state"];
@@ -154,7 +153,7 @@ export default function TripSection({ role, programmes }: { role: string; progra
                 value={p.nearestExpiry ? formatIst(p.nearestExpiry) : "—"}
                 hint={p.expired ? `${p.expired} expired` : undefined}
               />
-              <Stat label="Held" value={p.held} hint={p.held ? "Member deactivated" : undefined} />
+              <Stat label="Hold" value={p.held} hint={p.held ? "Member deactivated" : undefined} />
             </dl>
 
             {p.rewards.length > 0 && (
@@ -301,36 +300,6 @@ export default function TripSection({ role, programmes }: { role: string; progra
   );
 }
 
-/** SSOT §38 — Admin or MD corrects who invited this Member, until it freezes. */
-export function CorrectInviterButton({ memberProfileId }: { memberProfileId: string }) {
-  const router = useRouter();
-  const [open, setOpen] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  return (
-    <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-        Correct inviter
-      </Button>
-      {open && (
-        <InviterDialog
-          busy={busy}
-          error={error}
-          onClose={() => setOpen(false)}
-          onSubmit={async (inviterMemberId, reason) => {
-            setBusy(true);
-            const result = await correctInviterAction({ memberProfileId, inviterMemberId, reason }, newKey());
-            setBusy(false);
-            if (!result.ok) return setError(result.error);
-            setOpen(false);
-            router.refresh();
-          }}
-        />
-      )}
-    </>
-  );
-}
-
 function NomineeDialog({ busy, onClose, onSubmit }: { busy: boolean; onClose: () => void; onSubmit: (r: (typeof RECIPIENTS)[number][0], name: string) => void }) {
   const [recipient, setRecipient] = React.useState<(typeof RECIPIENTS)[number][0]>("SELF");
   const [name, setName] = React.useState("");
@@ -351,7 +320,10 @@ function NomineeDialog({ busy, onClose, onSubmit }: { busy: boolean; onClose: ()
             <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
         )}
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={onClose}>
+            Back
+          </Button>
           <Button size="sm" disabled={busy || (recipient !== "SELF" && !name.trim())} onClick={() => onSubmit(recipient, name)}>
             Save
           </Button>
@@ -397,7 +369,10 @@ function TextDialog({
             <input className={inputClass} value={text} onChange={(e) => setText(e.target.value)} />
           )}
         </Field>
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={onClose}>
+            Back
+          </Button>
           <Button size="sm" disabled={busy || (!optional && !text.trim())} onClick={() => onSubmit(text, withDate ? on : undefined)}>
             Save
           </Button>
@@ -407,7 +382,10 @@ function TextDialog({
   );
 }
 
-function InviterDialog({
+const CLUB = "3% Club";
+
+/** SSOT §38 — MD corrects who invited this Member, until it freezes. Opened from the Update menu. */
+export function InviterDialog({
   busy,
   error,
   onClose,
@@ -418,24 +396,33 @@ function InviterDialog({
   onClose: () => void;
   onSubmit: (inviter: string, reason: string) => void;
 }) {
-  const [inviter, setInviter] = React.useState("");
+  const [inviter, setInviter] = React.useState(CLUB);
   const [reason, setReason] = React.useState("");
   return (
-    <Modal
-      title="Correct the inviter"
-      description="Allowed only until this Member's first Reference-eligible Booking Request is submitted (SSOT §38). A refused attempt is recorded."
-      onClose={onClose}
-    >
+    <Modal title="Correct the inviter" onClose={onClose}>
       <div className="space-y-3">
-        <Field label="Inviting Member ID — blank for none">
-          <input className={inputClass} value={inviter} onChange={(e) => setInviter(e.target.value)} />
+        <Field label="Invited by">
+          <input
+            className={inputClass}
+            placeholder={CLUB}
+            value={inviter}
+            onChange={(e) => setInviter(e.target.value)}
+          />
         </Field>
         <Field label="Reason (compulsory)">
           <RemarkSelect presets="correctInviter" value={reason} onChange={setReason} required />
         </Field>
         {error && <p className="text-xs text-red-700">{error}</p>}
-        <div className="flex justify-end">
-          <Button size="sm" disabled={busy || !reason.trim()} onClick={() => onSubmit(inviter, reason)}>
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={onClose}>
+            Back
+          </Button>
+          {/* The 3% Club goes to the server as blank — no inviting Member. */}
+          <Button
+            size="sm"
+            disabled={busy || !reason.trim()}
+            onClick={() => onSubmit(inviter.trim().toLowerCase() === CLUB.toLowerCase() ? "" : inviter, reason)}
+          >
             Save
           </Button>
         </div>

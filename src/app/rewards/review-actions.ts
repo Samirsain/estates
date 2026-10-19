@@ -31,7 +31,7 @@ export async function decideCircumventionAction(reviewId: string, clear: boolean
       ok: true,
       message: clear
         ? "Approved. Held benefits are released if nothing else holds them."
-        : "Rejected. Benefits stay held while the Recovery is outstanding.",
+        : "Rejected. Benefits stay held while the Recovery is pending.",
     };
   } catch (error) {
     return toResult(error);

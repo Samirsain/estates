@@ -383,7 +383,7 @@ on("2026-07-10", "TN-05 and TN-50 cancelled after their Directs were paid; two C
 on("2026-07-11", "Change Plots approved", async () => {
   const schedule = SCHEDULES.standard();
   await decideChangePlot({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", bookingId: B["TN-61"], approve: true, note: "Approved — price difference agreed with the customer", appliedPercent: "30", schedule });
-  await decideChangePlot({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", bookingId: B["TN-25"], approve: true, note: "Approved — new Plot is free and the price is checked", appliedPercent: "30", schedule: SCHEDULES.standard() });
+  await decideChangePlot({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", bookingId: B["TN-25"], approve: true, note: "Approved — new Plot is Available and the price is checked", appliedPercent: "30", schedule: SCHEDULES.standard() });
   B["TN-55"] = B["TN-61"];
   B["TN-26"] = B["TN-25"];
   kase(RAJAT, "TN-25 → TN-26", "Change Plot approved", "Properties; Booking History.");
@@ -465,7 +465,7 @@ on("2026-08-01", "Points spent; Rajat's 3rd and 4th closings; Vijay's August sal
   await submit("TN-49", "TM01", { member: "TM01" });
   await approve("TN-49");
   await pay("TN-49", "30");
-  kase(VIJAY, "TN-49", "Buys a Plot for himself: his Direct waits for 100%, so Milestone Pending at 30%", "Commission; he is also a Customer.");
+  kase(VIJAY, "TN-49", "Buys a Plot for himself: his Direct waits for 100%, so Payment Pending at 30%", "Commission; he is also a Customer.");
   await sale("TN-44", "HC", {}, "30");
 
   for (const [i, land] of LAND.entries()) {
@@ -643,7 +643,7 @@ on("2026-10-01", "TN-27 Buyback paid in full — Vijay's Buying Commission Ready
   await createHold({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", plotId: plotId("TN-C09"), personId: P("HC").id, remark: "Customer is arranging the booking amount" });
   await sale("TN-10", nextBuyer(), { member: "TM01" }, "10");
   kase(VIJAY, "TN-27", "Arranged Rajat's Buyback: 1% Buying Commission Ready (task Verify — Buying Commission)", "Commission; Buyback / Resale deal page.");
-  kase(VIJAY, "TN-10", "Direct Milestone Pending (only 10% paid)", "Commission.");
+  kase(VIJAY, "TN-10", "Direct Payment Pending (only 10% paid)", "Commission.");
   kase(RAJAT, "TN-C09", "Hold expired after 72 hours", "Plot History.");
 });
 on("2026-10-03", "Vijay's Booking Request on TN-C02 waits more than 7 days", async () => {
@@ -718,7 +718,7 @@ on("2026-10-15", "Vijay's portal Hold Requests", async () => {
   const req = async (plot: string, who: string) =>
     submitHoldRequest({ idempotencyKey: key(), actorRef: `MEMBER:${vijay.memberId}`, memberProfileId: vijay.id, personId: (await customer(who)).id, plotId: plotId(plot) });
   const approved = await req("TN-59", "h8");
-  await decideHoldRequest({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", requestId: approved.holdRequestId, approve: true, note: "Approved — Plot is free and Member is active" });
+  await decideHoldRequest({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", requestId: approved.holdRequestId, approve: true, note: "Approved — Plot is Available and Member is active" });
   const rejected = await req("TN-C13", "h7");
   await decideHoldRequest({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", requestId: rejected.holdRequestId, approve: false, note: "Rejected — duplicate request" });
   const withdrawn = await req("TN-C14", "e7");

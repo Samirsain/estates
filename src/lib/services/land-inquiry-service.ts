@@ -90,7 +90,7 @@ function validate(input: LandInquiryInput) {
     ["Biswa", input.areaBiswa],
     ["the metric area", input.areaSourceValue],
     ["Frontage", input.frontageValue],
-    ["Road Width", input.roadWidthValue],
+    ["Approach Road Width", input.roadWidthValue],
   ] as const) {
     if (value.trim() && !isPositiveDecimal(value)) blocked(`${label} must be a positive number.`);
   }
@@ -99,7 +99,7 @@ function validate(input: LandInquiryInput) {
     blocked("Say which metric unit the area was measured in.");
   }
   if (input.frontageValue.trim() && !input.frontageUnit) blocked("Frontage needs a unit.");
-  if (input.roadWidthValue.trim() && !input.roadWidthUnit) blocked("Road Width needs a unit.");
+  if (input.roadWidthValue.trim() && !input.roadWidthUnit) blocked("Approach Road Width needs a unit.");
 }
 
 /**

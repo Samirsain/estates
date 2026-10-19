@@ -569,20 +569,25 @@ export async function refuseInviteLoop(tx: Tx, memberProfileId: string, inviterI
   }
 }
 
+/** SSOT §38 — once the Member's first Reference-eligible Booking Request is in, the inviter is final. */
+export async function inviterCutOffReached(personId: string) {
+  const count = await db.booking.count({
+    where: {
+      soldByType: "MEMBER",
+      soldByPersonId: personId,
+      primaryPersonId: { not: personId },
+      commissionVersion: { tripEnabled: true },
+    },
+  });
+  return count > 0;
+}
+
 export async function correctInviter(args: Actor & { memberProfileId: string; invitedByMemberId: string | null; reason: string }) {
   if (args.actorRole !== "MD") blocked("Only MD may correct an inviter.");
   if (!args.reason.trim()) blocked("A compulsory reason is required.");
   const member = await db.memberProfile.findUnique({ where: { id: args.memberProfileId } });
   if (!member) blocked("That Member no longer exists.");
-  const cutOff = await db.booking.count({
-    where: {
-      soldByType: "MEMBER",
-      soldByPersonId: member.personId,
-      primaryPersonId: { not: member.personId },
-      commissionVersion: { tripEnabled: true },
-    },
-  });
-  if (cutOff > 0) {
+  if (await inviterCutOffReached(member.personId)) {
     await recordAudit({
       actorRef: args.actorRef,
       actorRole: args.actorRole,

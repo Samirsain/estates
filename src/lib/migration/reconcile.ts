@@ -304,7 +304,7 @@ async function commissionIntegrity(): Promise<RuleResult> {
     if (record.payment === "PAID" && record.eligibility === "MILESTONE_PENDING") {
       exceptions.push({
         record: label,
-        detail: `${record.type} is Paid while its milestone is still pending — eligibility and payment must stay a separate pair`,
+        detail: `${record.type} is Paid while it is still Payment Pending — eligibility and payment must stay a separate pair`,
       });
     }
 

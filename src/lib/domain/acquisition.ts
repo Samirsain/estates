@@ -218,7 +218,7 @@ export function resolvePaymentGivenCorrection(args: {
       newSaleCommissionOnHold: true,
       note:
         `Payment Given fell from 100% to ${next.toFixed(2)}%. Payment Pending is shown again and the ` +
-        `Buying Commission returns to Milestone Pending.`,
+        `Buying Commission returns to Payment Pending.`,
     };
   }
 

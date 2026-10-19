@@ -217,7 +217,7 @@ const PAYMENT_LABEL: Record<string, string> = {
   NOT_PAID: "Not Paid",
   PAID: "Paid",
   PAID_EARLY: "Paid Early",
-  ACCOUNTS_ADJUSTMENT_REQUIRED: "Accounts Adjustment Required",
+  ACCOUNTS_ADJUSTMENT_REQUIRED: "Recovery Pending",
   CANCELLED: "Cancelled",
 };
 
@@ -234,7 +234,7 @@ const HOLD_LABEL: Record<string, string> = {
   PAYMENT_PENDING: "Payment Pending",
   CLOSER_KYC_PENDING: "Closer KYC Pending",
   CUSTOMER_TERMS_PENDING: "Customer Terms Pending",
-  RECOVERY_OUTSTANDING: "Recovery Outstanding",
+  RECOVERY_OUTSTANDING: "Recovery Pending",
   OLD_RECOVERY_PENDING: "Waiting for the old beneficiary's Recovery",
   RECOVERY_CIRCUMVENTION_REVIEW: "Recovery circumvention review",
 };
@@ -1092,7 +1092,7 @@ export default function BookingsClient({
             </p>
             <p className="mt-1 text-muted-foreground">
               On approval the old commission records are superseded and new valid ones are created.
-              Anything already Paid or Paid Early becomes Accounts Adjustment Required.
+              Anything already Paid or Paid Early becomes Recovery Pending.
             </p>
           </div>
           <SoldByForm
@@ -1115,7 +1115,7 @@ export default function BookingsClient({
           row={dialog.row}
           consequence={
             dialog.approve
-              ? "The attribution moves, old commission records are superseded and new valid ones are created. Paid and Paid Early records become Accounts Adjustment Required. Booking and Payment history are unchanged."
+              ? "The attribution moves, old commission records are superseded and new valid ones are created. Paid and Paid Early records become Recovery Pending. Booking and Payment history are unchanged."
               : "The attribution and every commission record stay exactly as they are."
           }
           busy={busy}
@@ -1138,7 +1138,7 @@ export default function BookingsClient({
           row={dialog.row}
           consequence={
             dialog.early
-              ? `${dialog.label}. Eligibility is not Ready, so this is Paid Early: MD has approved it, remarks are compulsory, eligibility keeps updating separately, and no second payment task is raised at the normal milestone. It can never be marked Paid again.`
+              ? `${dialog.label}. Eligibility is not Ready, so this is Paid Early: MD has approved it, remarks are compulsory, eligibility keeps updating separately, and no second payment task is raised when the required payment is received. It can never be marked Paid again.`
               : `${dialog.label}. The record is Ready and is recorded as Paid against the reference below.`
           }
           busy={busy}
@@ -1213,7 +1213,7 @@ export default function BookingsClient({
         <ActionDialog
           title="Open Recovery"
           row={dialog.row}
-          consequence={`${dialog.label}. A Recovery Outstanding is opened, due 15 calendar days after the notice date. New cash payouts to this Person are held until it is repaid or set off. No amount is recorded in the CRM.`}
+          consequence={`${dialog.label}. A Recovery is opened as Recovery Pending, due 15 calendar days after the notice date. New cash payouts to this Person are held until it is repaid or set off. No amount is recorded in the CRM.`}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1246,7 +1246,7 @@ export default function BookingsClient({
         <ActionDialog
           title="Close adjustment without Recovery"
           row={dialog.row}
-          consequence={`${dialog.label}. Nothing is to be recovered — for example the milestone was restored, or the new Plot did not lower the amount. The reason is kept.`}
+          consequence={`${dialog.label}. Nothing is to be recovered — for example the required payment was received again, or the new Plot did not lower the amount. The reason is kept.`}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1959,7 +1959,7 @@ function BookingDetailPanel({
                     <th className="w-[8rem] py-1.5 pr-3">Type</th>
                     <th className="py-1.5 pr-3">Beneficiary</th>
                     <th className="w-[4.5rem] py-1.5 pr-3 text-right">Rate</th>
-                    <th className="w-[6rem] py-1.5 pr-3 text-right">Milestone</th>
+                    <th className="w-[6rem] py-1.5 pr-3 text-right">Payment</th>
                     <th className="w-[10rem] py-1.5 pr-3">Eligibility</th>
                     <th className="w-[12rem] py-1.5 pr-3">Payment</th>
                     <th className="w-[7rem] py-1.5 text-right">Action</th>
@@ -2056,7 +2056,7 @@ function BookingDetailPanel({
                           <span key={rec.id} className="block text-[11px] text-amber-800">
                             {rec.recoveryNo} · {rec.reference} ·{" "}
                             {rec.status === "OUTSTANDING"
-                              ? `Outstanding, due ${formatIst(rec.dueOn)}`
+                              ? `Pending, due ${formatIst(rec.dueOn)}`
                               : `Cleared — ${rec.clearedHow === "SET_OFF" ? "set off" : "repaid"}`}
                           </span>
                         ))}
