@@ -34,6 +34,7 @@ export type LandInquiryRowView = {
   date: string;
   receivedFrom: LandInquiryReceivedFrom;
   source: string;
+  sourcePersonId: string | null;
   primaryOwner: string | null;
   additionalOwners: number;
   location: string | null;
@@ -198,11 +199,21 @@ export default function LandInquiriesClient({
                     {/* Who it came from leads, and what they are sits under it.
                         A 3% Club inquiry has no person, so it prints once. */}
                     <td className="px-3 py-2.5">
-                      <span className="block truncate" title={row.source}>
-                        {row.source}
-                      </span>
+                      {row.sourcePersonId ? (
+                        <Link
+                          href={`/people/${row.sourcePersonId}`}
+                          className="block truncate text-primary hover:underline"
+                          title={row.source}
+                        >
+                          {row.source}
+                        </Link>
+                      ) : (
+                        <span className="block truncate" title={row.source}>
+                          {row.source}
+                        </span>
+                      )}
                       {row.source !== RECEIVED_FROM_LABEL[row.receivedFrom] && (
-                        <span className="block truncate text-[11px] text-muted-foreground">
+                        <span className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                           {RECEIVED_FROM_LABEL[row.receivedFrom]}
                         </span>
                       )}

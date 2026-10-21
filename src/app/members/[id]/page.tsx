@@ -72,7 +72,7 @@ const bornOn = (d: Date | null) =>
 /** BOOKED → Booked, PAYMENT_COMPLETED → Payment completed. */
 const words = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
 
-/** 1 Hold Request, 2 Hold Requests. */
+/** 1 Hold, 2 Holds. */
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** RESIDENTIAL → Residential. */
@@ -1004,9 +1004,9 @@ export default async function MemberDetailPage({
           <div className="mt-4 border-t border-border/60 pt-3">
             <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
               <p className="text-sm font-semibold text-foreground">
-                In progress
+                Booking &amp; Enquiry Requests
                 <span className="ml-2 text-[11px] font-normal text-muted-foreground">
-                  {count(bookingRequests.length, "Booking Request")} · {count(holdRequests.length, "Hold Request")} ·{" "}
+                  {count(bookingRequests.length, "Booking")} · {count(holdRequests.length, "Hold")} ·{" "}
                   {count(enquiries.length, "Enquiry", "Enquiries")}
                 </span>
               </p>

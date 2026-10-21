@@ -58,6 +58,7 @@ export default async function LandInquiriesPage({
           ? [row.anotherDealerName, row.anotherDealerMobile].filter(Boolean).join(" · ")
           : "3% Club") ||
         "—",
+      sourcePersonId: row.sourcePerson?.id ?? null,
       primaryOwner: primary?.ownerName ?? null,
       additionalOwners: Math.max(row.owners.length - 1, 0),
       location: [row.district, row.tehsil].filter(Boolean).join(" / ") || null,
