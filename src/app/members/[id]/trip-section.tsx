@@ -1,24 +1,28 @@
 "use client";
 
-// A Member's Rewards (the Sales & Reference Trip) — SSOT §40, §47, §54, §56,
-// §65; Change Pack §68. Per programme: progress toward the next Trip, the
-// credits behind it, and each earned Trip with its fulfilment. CRM or MD
-// record the traveller (family or not), the booking and the travel. Non-cash:
-// there is no value to show.
+// A Member's Rewards — SSOT §40, §47, §54, §56, §65; Change Pack §68. One row
+// per Project programme the Member has a qualifying sale in, with Self,
+// References and the progress toward the next Reward, each counted on
+// that programme alone. "Show credit" lists the sales behind a row; the earned
+// Rewards follow with their fulfilment. CRM or MD record the traveller (family
+// or not), the booking and the travel. Non-cash: there is no value to show.
+//
+// What staff read says "Reward", never "Trip"; the internal names (TripCredit,
+// tripProgrammes, the actions) keep the old word.
 
 import React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatIst, istDay } from "@/lib/tasks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
-import { Stat } from "@/components/record-section";
+import { creditStatus } from "@/lib/domain/trip";
 import type { TripProgrammeView } from "@/lib/trip-view";
 import { REWARD_HOLD_LABEL } from "./royalty-tokens";
 import {
   bookTripAction,
   recordTripNomineeAction,
-  travelledTripAction,
   type ActionResult,
 } from "../trip-actions";
 import { RemarkSelect } from "@/components/ui/remark-select";
@@ -37,16 +41,8 @@ const RECIPIENTS = [
 
 const newKey = () => `trp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-/** SSOT §47–§64 — a credit's life, in staff words. */
-const CREDIT_STATE: Record<string, string> = {
-  PENDING: "Waiting for 100% payment",
-  QUALIFIED: "Qualified",
-  ALLOCATED: "In an earned Trip",
-  USED: "Used — travelled",
-  HELD: "Hold — Member deactivated",
-  EXPIRED: "Expired",
-  REVERSED: "Cancelled",
-};
+/** The three on-screen credit statuses, coloured as the owner approved them. */
+const STATUS_TONE = { Pending: "text-amber-700", Counted: "text-emerald-700", "Not Counted": "text-red-700" } as const;
 
 type TripState = TripProgrammeView["rewards"][number]["state"];
 const TRIP_STATE: Record<TripState, { label: string; variant: "success" | "destructive" | "info" | "outline" }> = {
@@ -57,6 +53,24 @@ const TRIP_STATE: Record<TripState, { label: string; variant: "success" | "destr
   CANCELLED: { label: "Cancelled", variant: "outline" },
 };
 
+/** "The Member", "Sunita (Spouse)", or a name alone when not family. */
+function traveller(r: TripProgrammeView["rewards"][number]) {
+  if (!r.recipient) return "No traveller yet";
+  if (r.recipient === "SELF") return "The Member";
+  const relation = r.recipient === "NON_FAMILY" ? null : RECIPIENTS.find(([v]) => v === r.recipient)?.[1];
+  return relation ? `${r.recipientName} (${relation})` : r.recipientName;
+}
+
+/** CP §68 — what counts toward the next Reward: Self, plus References up to their maximum. */
+function progress(p: TripProgrammeView) {
+  const countedRef = p.rules ? Math.min(p.qualifiedReference, p.rules.maxRef) : p.qualifiedReference;
+  return p.qualifiedOwn + countedRef;
+}
+
+/** The credits behind the row's Self and References: qualified and not yet in
+ *  an earned Reward. Waiting, cancelled, expired and used ones stay out. */
+const counting = (p: TripProgrammeView) => p.credits.filter((c) => c.state === "QUALIFIED" && !c.bucketId);
+
 // The profile's own table look (Bookings sold).
 const TH = "pb-2 pr-4 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
 const TD = "py-2.5 pr-4 align-top";
@@ -64,14 +78,16 @@ const SUB = "block text-[11px] text-muted-foreground";
 
 type Dialog =
   | { kind: "NOMINEE"; rewardId: string }
-  | { kind: "BOOK"; rewardId: string }
-  | { kind: "TRAVELLED"; rewardId: string };
+  | { kind: "BOOK"; rewardId: string };
 
 export default function TripSection({ role, programmes }: { role: string; programmes: TripProgrammeView[] }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
   const [dialog, setDialog] = React.useState<Dialog | null>(null);
+  // The programme whose credits are open under its row.
+  const [open, setOpen] = React.useState<string | null>(null);
+  const [showEarned, setShowEarned] = React.useState(false);
   const fulfils = role === "CRM" || role === "MD";
 
   async function run(action: () => Promise<ActionResult>) {
@@ -88,182 +104,138 @@ export default function TripSection({ role, programmes }: { role: string; progra
   if (programmes.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">
-        No progress yet. It starts with a qualifying sale in a Project with Rewards.
+        No qualifying sale yet. Rewards start with a sale that reaches 100% payment in a Project with Rewards.
       </p>
     );
   }
+
+  // Two programmes in one Project (an old one winding down) are counted apart,
+  // so their rows need the programme code to tell them apart.
+  const shared = (project: string) => programmes.filter((p) => p.project === project).length > 1;
+  // A Reward's References are the Reference credits filed in its bucket.
+  const earned = programmes.flatMap((p) =>
+    p.rewards.map((r) => ({
+      ...r,
+      project: p.project,
+      refs: p.credits.filter((c) => c.bucketId === r.bucketId && c.type === "REFERENCE" && c.via).map((c) => c.via!),
+    }))
+  );
 
   return (
     <div className="space-y-4 text-xs">
       {notice && <p className={notice.ok ? "text-emerald-700" : "text-red-700"}>{notice.ok ? notice.message : notice.error}</p>}
 
-      {programmes.map((p) => {
-        // CP §68 — what counts toward the next Trip: Own, plus Reference up to its maximum.
-        const countedRef = p.rules ? Math.min(p.qualifiedReference, p.rules.maxRef) : p.qualifiedReference;
-        const counted = p.qualifiedOwn + countedRef;
-        const pct = p.rules ? Math.min(100, Math.round((counted / p.rules.target) * 100)) : 0;
-        const plotsOf = (bucketId: string) =>
-          p.credits
-            .filter((c) => c.bucketId === bucketId)
-            .map((c) => c.plot ?? "?")
-            .join(", ");
-        return (
-          <div key={p.key} className="space-y-3 rounded-xl border border-border/70 p-3">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-sm font-semibold text-foreground">{p.project}</p>
-                <p className={SUB}>
-                  {p.code}
-                  {p.rules ? ` · Terms ${p.rules.termsRef}` : ""}
-                  {p.open ? ` · counting since ${formatIst(p.open.openedAt)}` : ""}
-                </p>
-              </div>
-              {p.rules && (
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary">
-                  {p.rewards.length > 0 ? "Next Trip " : ""}
-                  {counted} / {p.rules.target}
-                </span>
-              )}
-            </div>
-
-            {p.rules && (
-              <div className="space-y-1">
-                <div
-                  className="h-2 overflow-hidden rounded-full bg-muted"
-                  role="progressbar"
-                  aria-label={`${p.project} Rewards progress`}
-                  aria-valuemin={0}
-                  aria-valuemax={p.rules.target}
-                  aria-valuenow={counted}
-                >
-                  <div className="h-full rounded-full bg-emerald-600" style={{ width: `${pct}%` }} />
-                </div>
-                <p className={SUB}>
-                  {p.rules.target} credits earn a Trip · at least {p.rules.minOwn} own sales · at most {p.rules.maxRef} from
-                  references{p.open ? "" : " · the next qualifying sale starts the count"}
-                </p>
-              </div>
-            )}
-
-            <dl className="grid grid-cols-2 gap-y-3 md:grid-cols-4 md:divide-x md:divide-border/60">
-              <Stat label="Own sales" value={p.qualifiedOwn} hint={p.pendingOwn ? `${p.pendingOwn} waiting for payment` : undefined} />
-              <Stat label="References" value={countedRef} hint={p.banked ? `${p.banked} kept for a later Trip` : undefined} />
-              <Stat
-                label="Next expiry"
-                value={p.nearestExpiry ? formatIst(p.nearestExpiry) : "—"}
-                hint={p.expired ? `${p.expired} expired` : undefined}
-              />
-              <Stat label="Hold" value={p.held} hint={p.held ? "Member deactivated" : undefined} />
-            </dl>
-
-            {p.rewards.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[40rem]">
-                  <thead className="border-b border-border/50">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[26rem]">
+          <thead className="border-b border-border/50">
+            <tr>
+              <th className={TH}>Project</th>
+              <th className={`${TH} text-right`}>Self</th>
+              <th className={`${TH} text-right`}>References</th>
+              <th className={`${TH} pr-0`}>Reward</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/40">
+            {programmes.map((p) => {
+              const total = progress(p);
+              return (
+                <React.Fragment key={p.key}>
+                  <tr>
+                    <td className={TD}>
+                      <span className="font-semibold text-foreground">{p.project}</span>
+                      {shared(p.project) && <span className={SUB}>{p.code}</span>}
+                      {p.rules && (
+                        <span className={SUB}>
+                          Need {p.rules.target} sales · max {p.rules.maxRef} Reference
+                          {p.rules.maxRef === 1 ? "" : "s"}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="mt-1 text-[11px] font-medium text-primary hover:underline"
+                        aria-expanded={open === p.key}
+                        onClick={() => setOpen(open === p.key ? null : p.key)}
+                      >
+                        {open === p.key ? "▾" : "▸"} Show credit ({counting(p).length})
+                      </button>
+                    </td>
+                    <td className={`${TD} text-right tabular-nums`}>{p.qualifiedOwn}</td>
+                    <td className={`${TD} text-right tabular-nums`}>
+                      {p.qualifiedReference}
+                      {p.banked > 0 && <span className={SUB}>{p.banked} kept for later</span>}
+                    </td>
+                    <td className={`${TD} pr-0`}>
+                      {p.rules ? (
+                        <>
+                          <span className="font-semibold tabular-nums text-primary">
+                            {total} / {p.rules.target}
+                          </span>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                  {open === p.key && (
                     <tr>
-                      <th className={TH}>Trip</th>
-                      <th className={TH}>Traveller</th>
-                      <th className={TH}>Travel booking</th>
-                      <th className={`${TH} pr-0`} />
+                      <td colSpan={4} className="pb-3">
+                        <CreditList programme={p} />
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/40">
-                    {p.rewards.map((r) => (
-                      <tr key={r.id}>
-                        <td className={TD}>
-                          <span className="flex flex-wrap items-center gap-1.5">
-                            <Badge variant={TRIP_STATE[r.state].variant}>{TRIP_STATE[r.state].label}</Badge>
-                            {r.holdReason && <Badge variant="warning">{REWARD_HOLD_LABEL[r.holdReason] ?? r.holdReason}</Badge>}
-                          </span>
-                          <span className={SUB}>
-                            Earned {formatIst(r.earnedAt)}
-                            {plotsOf(r.bucketId) ? ` · ${plotsOf(r.bucketId)}` : ""}
-                          </span>
-                        </td>
-                        <td className={TD}>
-                          {r.recipient ? (r.recipient === "SELF" ? "The Member" : r.recipientName) : "—"}
-                        </td>
-                        <td className={TD}>
-                          {r.bookingReference ?? "—"}
-                          {(r.bookedAt || r.travelledAt) && (
-                            <span className={SUB}>
-                              {[r.bookedAt && `Booked ${formatIst(r.bookedAt)}`, r.travelledAt && `Travelled ${formatIst(r.travelledAt)}`]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </span>
-                          )}
-                        </td>
-                        <td className={`${TD} pr-0`}>
-                          <span className="flex justify-end gap-1">
-                            {fulfils && r.state === "EARNED" && (
-                              <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "NOMINEE", rewardId: r.id })}>
-                                {r.recipient ? "Change traveller" : "Add traveller"}
-                              </Button>
-                            )}
-                            {fulfils && r.state === "EARNED" && r.recipient && !r.holdReason && (
-                              <Button size="xs" onClick={() => setDialog({ kind: "BOOK", rewardId: r.id })}>
-                                Mark booked
-                              </Button>
-                            )}
-                            {fulfils && r.state === "BOOKED" && !r.holdReason && (
-                              <Button size="xs" onClick={() => setDialog({ kind: "TRAVELLED", rewardId: r.id })}>
-                                Mark travelled
-                              </Button>
-                            )}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
-            {p.credits.length > 0 && (
-              <details>
-                <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
-                  Show credits ({p.credits.length})
-                </summary>
-                <div className="mt-2 overflow-x-auto">
-                  <table className="w-full min-w-[40rem]">
-                    <thead className="border-b border-border/50">
-                      <tr>
-                        <th className={TH}>Sale</th>
-                        <th className={TH}>Type</th>
-                        <th className={TH}>Status</th>
-                        <th className={TH}>Qualified</th>
-                        <th className={`${TH} pr-0`}>Expires</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/40">
-                      {p.credits.map((c) => (
-                        <tr key={c.id}>
-                          <td className={TD}>
-                            {c.booking ?? "—"} · {c.plot ?? "—"}
-                            {c.via && <span className={SUB}>first sale of {c.via}</span>}
-                          </td>
-                          <td className={TD}>{c.type === "REFERENCE" ? "Reference" : "Own sale"}</td>
-                          <td className={TD}>
-                            {CREDIT_STATE[c.state] ?? c.state}
-                            {c.reversalReason && <span className={SUB}>{c.reversalReason}</span>}
-                          </td>
-                          <td className={TD}>
-                            {c.qualifiedAt ? formatIst(c.qualifiedAt) : "—"}
-                            {c.route && (
-                              <span className={SUB}>{c.route === "APPROVED_BUYBACK" ? "Approved Buyback" : "100% payment"}</span>
-                            )}
-                          </td>
-                          <td className={`${TD} pr-0`}>{c.expiresAt && !c.bucketId ? formatIst(c.expiresAt) : "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-            )}
-          </div>
-        );
-      })}
+      {earned.length > 0 && (
+        <div>
+          <button
+            type="button"
+            className="text-[11px] font-medium text-primary hover:underline"
+            aria-expanded={showEarned}
+            onClick={() => setShowEarned(!showEarned)}
+          >
+            {showEarned ? "▾" : "▸"} Show earned Rewards ({earned.length})
+          </button>
+          {showEarned && (
+          <ul className="divide-y divide-border/40">
+            {earned.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  {/* Only who gets it and when. What the Reward is is never
+                      shown, and a state says something only when it went wrong. */}
+                  <span className="text-foreground">{traveller(r)}</span>
+                  <span className="text-muted-foreground">
+                    · {programmes.length > 1 && `${r.project} · `}
+                    {formatIst(r.earnedAt)}
+                    {r.refs.length > 0 && ` · Ref: ${r.refs.join(", ")}`}
+                  </span>
+                  {(r.state === "DEFICIENT" || r.state === "CANCELLED") && (
+                    <Badge variant={TRIP_STATE[r.state].variant}>{TRIP_STATE[r.state].label}</Badge>
+                  )}
+                  {r.holdReason && <Badge variant="warning">{REWARD_HOLD_LABEL[r.holdReason] ?? r.holdReason}</Badge>}
+                </span>
+                <span className="flex gap-1">
+                  {fulfils && r.state === "EARNED" && (
+                    <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "NOMINEE", rewardId: r.id })}>
+                      {r.recipient ? "Change traveller" : "Add traveller"}
+                    </Button>
+                  )}
+                  {fulfils && r.state === "EARNED" && r.recipient && !r.holdReason && (
+                    <Button size="xs" onClick={() => setDialog({ kind: "BOOK", rewardId: r.id })}>
+                      Mark booked
+                    </Button>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+          )}
+        </div>
+      )}
 
       {dialog?.kind === "NOMINEE" && (
         <NomineeDialog
@@ -276,7 +248,7 @@ export default function TripSection({ role, programmes }: { role: string; progra
       )}
       {dialog?.kind === "BOOK" && (
         <TextDialog
-          title="Trip booked"
+          title="Mark booked"
           label="Travel booking reference"
           withDate
           busy={busy}
@@ -284,17 +256,58 @@ export default function TripSection({ role, programmes }: { role: string; progra
           onSubmit={(ref, on) => run(() => bookTripAction({ rewardId: dialog.rewardId, bookingReference: ref, bookedOn: on! }, newKey()))}
         />
       )}
-      {dialog?.kind === "TRAVELLED" && (
-        <TextDialog
-          title="Trip travelled"
-          label="Note"
-          presets="tripTravelled"
-          optional
-          withDate
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(_note, on) => run(() => travelledTripAction({ rewardId: dialog.rewardId, travelledOn: on! }, newKey()))}
-        />
+    </div>
+  );
+}
+
+/** The credits behind one row, opened in place under it: Project · Plot, the
+ *  credit's state with why it stands there, and the Booking to open. Credits
+ *  have no staff action of their own (the system moves them). */
+function CreditList({ programme: p }: { programme: TripProgrammeView }) {
+  const rows = counting(p);
+  const CELL = "py-1.5 pr-4 align-top";
+  return (
+    <div className="rounded-lg bg-muted/40 px-3 py-2">
+      {rows.length === 0 ? (
+        <p className="text-muted-foreground">No Self or Reference credit is counting toward a Reward right now.</p>
+      ) : (
+        // globals.css sets every table to 14px; this nested list sits a step
+        // below the row it opens from, at the card's own 12px.
+        <table className="mt-1 w-full text-xs">
+          <thead className="border-b border-border/50">
+            <tr>
+              <th className={TH}>Project · Plot</th>
+              <th className={TH}>Status</th>
+              <th className={`${TH} pr-0 text-right`}>Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/40">
+            {rows.map((c) => {
+              const { status, reason } = creditStatus(c);
+              return (
+                <tr key={c.id}>
+                  <td className={CELL}>
+                    <span className="text-muted-foreground">{p.project} · </span>
+                    <span className="font-semibold text-foreground">{c.plot ?? "—"}</span>
+                  </td>
+                  <td className={CELL}>
+                    <span className={`font-medium ${STATUS_TONE[status]}`}>{status}</span>
+                    <span className={SUB}>{reason}</span>
+                  </td>
+                  <td className={`${CELL} pr-0 text-right`}>
+                    {c.bookingId ? (
+                      <Link href={`/bookings/${c.bookingId}`} className="font-medium text-primary hover:underline">
+                        View Booking
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       )}
     </div>
   );

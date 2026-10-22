@@ -9,7 +9,7 @@ import Link from "next/link";
 import { PersonLink } from "@/components/person-link";
 import { AlertTriangle, ChevronDown, Plus, CheckCircle2 } from "lucide-react";
 import { addTaskAction, assignableStaffAction, completeTaskAction, reviseTaskAction, type ActionResult } from "./actions";
-import { AppShell } from "@/components/app-shell";
+import { AppShell, SALES_LINKS } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -65,6 +65,9 @@ const RECORD_KINDS: { kind: RecordKind; label: string }[] = [
   { kind: "Member", label: "Member" },
   { kind: "Acquisition", label: "Buyback / Resale" },
 ];
+
+/** Stored kinds that read differently: the Reward records keep their old internal name. */
+const KIND_READS: Record<string, string> = { "Trip Reward": "Reward", "Trip Bucket": "Reward Progress" };
 
 /** Both row buttons are one size, as they are on every other list. */
 const taskButton = "w-20";
@@ -144,11 +147,19 @@ export default function DashboardClient({
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
       <div className="mx-auto max-w-7xl space-y-4">
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          </div>
-          <div className="flex items-center gap-3">
+        {/* Three columns at md: the heading, Plots & Sales centred on the
+            page, and the actions. The outer two share the leftover width
+            equally, so the middle stays centred whatever sits beside it. */}
+        <header className="flex flex-wrap items-center justify-between gap-3 md:grid md:grid-cols-[1fr_auto_1fr]">
+          <h1 className="text-2xl font-bold tracking-tight">Task List</h1>
+          <nav aria-label="Plots & Sales" className="flex flex-wrap justify-center gap-1.5">
+            {SALES_LINKS.map((link) => (
+              <Button key={link.href} asChild size="sm" variant="default">
+                <Link href={link.href}>{link.label}</Link>
+              </Button>
+            ))}
+          </nav>
+          <div className="flex items-center gap-3 md:justify-end">
             {seesAllWork && (
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <input
@@ -528,7 +539,7 @@ function TaskDetailsDialog({ task, onClose }: { task: Task; onClose: () => void 
           ["Reference", s?.plot ?? "—"],
         ] as [string, string][])
       : ([
-          ["Record", `${task.record.kind} · ${recordReference(task.record) ?? task.record.name}`],
+          ["Record", `${KIND_READS[task.record.kind] ?? task.record.kind} · ${recordReference(task.record) ?? task.record.name}`],
           ["Reference", s?.reference ?? "—"],
         ] as [string, string][])),
     ["Project", s?.project ?? "—"],

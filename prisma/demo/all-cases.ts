@@ -659,7 +659,7 @@ on("2026-10-08", "Rajat enters a joint bank account with Neha", async () => {
   kase(RAJAT, "—", "Joint bank account with Neha waiting for Accounts (task Check Joint Bank Account — Approval)", "Bank; History; Dashboard (Accounts).");
 });
 on("2026-10-10", "Trip programme closes (settings version 2); Rajat's TN-23 request", async () => {
-  await settings(projectIds[C], { ...base, directEnabled: true, directPercent: "3", loyaltyEnabled: true, loyaltyPercent: "1", royaltyTokensPerAward: 10, reason: "Trip added / removed", trip: trip(new Date("2026-10-12T00:00:00+05:30"), new Date("2026-12-31T23:59:00+05:30")) });
+  await settings(projectIds[C], { ...base, directEnabled: true, directPercent: "3", loyaltyEnabled: true, loyaltyPercent: "1", royaltyTokensPerAward: 10, reason: "Reward added / removed", trip: trip(new Date("2026-10-12T00:00:00+05:30"), new Date("2026-12-31T23:59:00+05:30")) });
   await submit("TN-23", "HC");
   kase(VIJAY, "TN-20, TN-15", "Trip 3: open with 2 credits when the programme closed (task Reward Expiry)", "Rewards section; Dashboard.");
 });

@@ -19,6 +19,8 @@ export type ActionResult = { ok: true; message?: string } | { ok: false; error: 
 
 export type PersonDetails = {
   fullName: string;
+  /** Member profile only; left out on a Customer's page, so it is untouched there. */
+  nickname?: string;
   mobile: string;
   altMobile: string;
   email: string;
@@ -31,6 +33,7 @@ export type PersonDetails = {
 /** The columns the audit compares, so before and after read the same way. */
 const snapshot = (p: {
   fullName: string;
+  nickname: string | null;
   primaryMobile: string;
   altMobile: string | null;
   email: string | null;
@@ -39,6 +42,7 @@ const snapshot = (p: {
   dateOfBirth: Date | null;
 }) => ({
   fullName: p.fullName,
+  nickname: p.nickname,
   primaryMobile: p.primaryMobile,
   altMobile: p.altMobile,
   email: p.email,
@@ -99,6 +103,7 @@ export async function updatePersonDetailsAction(
           where: { id: personId },
           data: {
             fullName,
+            nickname: input.nickname === undefined ? undefined : input.nickname.trim() || null,
             primaryMobile,
             altMobile: input.altMobile.replace(/\s/g, "") || null,
             email: input.email.trim() || null,

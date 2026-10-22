@@ -54,7 +54,7 @@ export default function Error({
         <div className="flex gap-2">
           <Button onClick={reset}>Try again</Button>
           <Button variant="outline" onClick={() => (window.location.href = "/dashboard")}>
-            Back to Dashboard
+            Back to Task List
           </Button>
         </div>
       </Card>

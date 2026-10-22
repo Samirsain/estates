@@ -478,13 +478,13 @@ export function useCommercialRewardsDraft(
             <Input inputMode="numeric" value={maxRef} onChange={(e) => setMaxRef(e.target.value)} />
           </Field>
           <Field label="Rewards Code">
-            <Input placeholder="TRIP-A" value={code} onChange={(e) => setCode(e.target.value)} />
+            <Input placeholder="RWD-A" value={code} onChange={(e) => setCode(e.target.value)} />
           </Field>
           <Field label="Rewards Version">
-            <Input placeholder="TRIP-A-2026-01" value={versionRef} onChange={(e) => setVersionRef(e.target.value)} />
+            <Input placeholder="RWD-A-2026-01" value={versionRef} onChange={(e) => setVersionRef(e.target.value)} />
           </Field>
           <Field label="Terms Version">
-            <Input placeholder="TRIP-TERMS-1.0" value={termsRef} onChange={(e) => setTermsRef(e.target.value)} />
+            <Input placeholder="RWD-TERMS-1.0" value={termsRef} onChange={(e) => setTermsRef(e.target.value)} />
           </Field>
           <Field label="Cut-off (optional)">
             <Input type="datetime-local" value={cutOff} onChange={(e) => setCutOff(e.target.value)} />
@@ -515,7 +515,7 @@ export function useCommercialRewardsDraft(
           )}
           <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground md:col-span-2">
             <input type="checkbox" checked={economicsReviewed} onChange={(e) => setEconomicsReviewed(e.target.checked)} />
-            Rewards economics reviewed (Trip cost and Own + Reference exposure against margin)
+            Rewards economics reviewed (Reward cost and Own + Reference exposure against margin)
           </label>
         </>
       )}

@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 import { notFutureDated } from "@/lib/domain/booking";
 import { BUYBACK_MIN_SOURCE_PAYMENT } from "@/lib/domain/commission";
 import { createsInviteCycle } from "@/lib/domain/network";
-import { allocate, creditExpiry, type AllocatableCredit } from "@/lib/domain/trip";
+import { allocate, CREDIT_REASON, creditExpiry, type AllocatableCredit } from "@/lib/domain/trip";
 import { recordAudit } from "@/lib/security/audit";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { outstandingRecovery } from "./commission-service";
@@ -115,7 +115,7 @@ export async function syncTripForBooking(tx: Tx, bookingId: string, actorRef: st
   const rule = v?.tripInventoryRules.find((r) => r.plotId === booking.plotId);
   const creditPlotId = rule?.parentCreditPoolPlotId ?? booking.plotId;
   let why: string | null = null;
-  if (!booking.bookingNumber || !booking.approvedAt || CLOSED_BOOKING.includes(booking.status)) why = "The Booking is not a live approved sale.";
+  if (!booking.bookingNumber || !booking.approvedAt || CLOSED_BOOKING.includes(booking.status)) why = CREDIT_REASON.BOOKING_NOT_LIVE;
   else if (!v?.tripEnabled) why = "The frozen Project settings have Rewards Disabled.";
   else if (v.tripCutOffAt && booking.approvedAt > v.tripCutOffAt) why = "Approved after the programme cut-off (SSOT §48).";
   else if (!owner) why = "Not Sold By a Member, so no Own-Sale Credit (SSOT §60).";
@@ -144,7 +144,7 @@ export async function syncTripForBooking(tx: Tx, bookingId: string, actorRef: st
   } else {
     if (live && live.memberProfileId !== owner!.id) {
       touched.add(live.memberProfileId);
-      await invalidate(tx, live, actorRef, "Sold By corrected to another Member (CP §59).");
+      await invalidate(tx, live, actorRef, CREDIT_REASON.SOLD_BY_CORRECTED);
       live = null;
     }
     if (live && live.creditPlotId !== creditPlotId) {
@@ -323,12 +323,12 @@ export async function evaluateBuckets(tx: Tx, memberProfileId: string, projectId
       }
     } else if (reward.state === "BOOKED") {
       // SSOT §63 — once Booked the Trip Terms govern; a human reviews it.
-      await deficiencyTask(tx, reward.id, memberProfileId, "A sale for this booked Trip was cancelled. Check the Trip Terms.");
+      await deficiencyTask(tx, reward.id, memberProfileId, "A sale for this booked Reward was cancelled. Check the Reward Terms.");
     } else if (reward.state === "EARNED") {
       await tx.tripBucket.update({ where: { id: bucket.id }, data: { state: "DEFICIENT" } });
       await tx.tripReward.update({ where: { id: reward.id }, data: { state: "DEFICIENT" } });
       await event(tx, memberProfileId, { bucketId: bucket.id, rewardId: reward.id }, actorRef, "REWARD_DEFICIENT", "EARNED", "DEFICIENT");
-      await deficiencyTask(tx, reward.id, memberProfileId, "A sale for this Trip was cancelled. No other sale can replace it.");
+      await deficiencyTask(tx, reward.id, memberProfileId, "A sale for this Reward was cancelled. No other sale can replace it.");
     }
     await refreshTripReward(tx, reward.id, actorRef);
   }
@@ -424,7 +424,7 @@ export async function refreshTripReward(tx: Tx, rewardId: string, actorRef: stri
       title: "Reward Earned",
       assigneeRole: "CRM",
       dueAt: new Date(),
-      latestResult: "Trip Reward earned. Record the traveller/nominee, the booking, then the travel.",
+      latestResult: "Reward earned. Record the traveller/nominee, the booking, then the travel.",
     });
   }
 }
@@ -466,12 +466,12 @@ export async function refreshTripOfBooking(tx: Tx, bookingId: string, actorRef: 
 type Actor = { idempotencyKey: string; actorRef: string; actorRole: string };
 
 function fulfilmentRole(role: string) {
-  if (role !== "CRM" && role !== "MD") blocked("Only CRM or MD records Trip fulfilment.");
+  if (role !== "CRM" && role !== "MD") blocked("Only CRM or MD records Reward fulfilment.");
 }
 
 async function lockedReward(tx: Tx, rewardId: string) {
   const found = await tx.tripReward.findUnique({ where: { id: rewardId }, select: { memberProfileId: true } });
-  if (!found) blocked("That Trip Reward no longer exists.");
+  if (!found) blocked("That Reward no longer exists.");
   await lockKey(tx, `trip-reward:${rewardId}`);
   return tx.tripReward.findUniqueOrThrow({ where: { id: rewardId } });
 }
@@ -484,7 +484,7 @@ export async function recordTripNominee(args: Actor & { rewardId: string; recipi
     { idempotencyKey: args.idempotencyKey, operation: "TRIP_NOMINEE", actorRef: args.actorRef, actorRole: args.actorRole, payload: { rewardId: args.rewardId, recipient: args.recipient } },
     async (tx) => {
       const reward = await lockedReward(tx, args.rewardId);
-      if (reward.state !== "EARNED") blocked("The traveller can only be recorded before the Trip is booked.");
+      if (reward.state !== "EARNED") blocked("The traveller can only be recorded before the Reward is booked.");
       const name = args.recipient === "SELF" ? null : args.recipientName.trim();
       await tx.tripReward.update({ where: { id: reward.id }, data: { recipient: args.recipient, recipientName: name } });
       await event(tx, reward.memberProfileId, { rewardId: reward.id }, args.actorRef, "NOMINEE_RECORDED", null, args.recipient, name ?? undefined);
@@ -497,7 +497,7 @@ export async function recordTripNominee(args: Actor & { rewardId: string; recipi
 /** CP §58, §78 — the Trip's owner, for the independent-processor check. */
 async function tripOwner(rewardId: string) {
   const reward = await db.tripReward.findUnique({ where: { id: rewardId }, select: { memberProfile: { select: { personId: true } } } });
-  if (!reward) blocked("That Trip Reward no longer exists.");
+  if (!reward) blocked("That Reward no longer exists.");
   return reward.memberProfile.personId;
 }
 
@@ -512,7 +512,7 @@ export async function bookTripReward(args: Actor & { rewardId: string; bookingRe
     { idempotencyKey: args.idempotencyKey, operation: "TRIP_BOOK", actorRef: args.actorRef, actorRole: args.actorRole, payload: { rewardId: args.rewardId } },
     async (tx) => {
       const reward = await lockedReward(tx, args.rewardId);
-      if (reward.state !== "EARNED") blocked("Only an Earned Trip can be booked.");
+      if (reward.state !== "EARNED") blocked("Only an Earned Reward can be booked.");
       if (!reward.recipient) blocked("Record who travels before booking (SSOT §65).");
       await refreshTripReward(tx, reward.id, args.actorRef);
       const now = await tx.tripReward.findUniqueOrThrow({ where: { id: reward.id } });
@@ -537,7 +537,7 @@ export async function markTripTravelled(args: Actor & { rewardId: string; travel
     { idempotencyKey: args.idempotencyKey, operation: "TRIP_TRAVELLED", actorRef: args.actorRef, actorRole: args.actorRole, payload: { rewardId: args.rewardId } },
     async (tx) => {
       const reward = await lockedReward(tx, args.rewardId);
-      if (reward.state !== "BOOKED") blocked("Only a booked Trip can be marked travelled.");
+      if (reward.state !== "BOOKED") blocked("Only a booked Reward can be marked travelled.");
       await refreshTripReward(tx, reward.id, args.actorRef);
       const now = await tx.tripReward.findUniqueOrThrow({ where: { id: reward.id } });
       if (now.holdReason) blocked(`Fulfilment is on hold: ${now.holdReason.replaceAll("_", " ").toLowerCase()}.`);
@@ -679,7 +679,7 @@ export async function windDownTripBuckets(tx: Tx, now: Date) {
       assigneeRole: "CRM",
       dueAt: windDown ?? now,
       latestResult: windDown
-        ? `${bucket.programmeCode} closed. This Trip progress ends on ${formatIstDate(windDown)}.`
+        ? `${bucket.programmeCode} closed. This Reward progress ends on ${formatIstDate(windDown)}.`
         : `${bucket.programmeCode} closed. End date not set yet.`,
     });
   }

@@ -91,7 +91,7 @@ const BOUNDARY_KIND_LABEL: Record<string, string> = {
 /** What became of an earlier Booking, in the words the Booking screens use. */
 const OUTCOME_LABEL: Record<string, string> = {
   REQUEST_REJECTED: "Request rejected",
-  REQUEST_CANCELLED: "Request withdrawn",
+  REQUEST_CANCELLED: "Request cancelled",
   CANCELLED: "Cancelled",
   BUYBACK_COMPLETED: "Bought back",
   REFUND_PENDING: "Refund pending",

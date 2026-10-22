@@ -77,6 +77,7 @@ export function PersonDetailsEditor({
                 personId,
                 {
                   fullName: get("fullName"),
+                  nickname: person.nickname === undefined ? undefined : get("nickname"),
                   mobile: get("mobile"),
                   altMobile: get("altMobile"),
                   email: get("email"),
@@ -99,6 +100,11 @@ export function PersonDetailsEditor({
             <Field label="Full Name">
               <Input name="fullName" required defaultValue={person.fullName} />
             </Field>
+            {person.nickname !== undefined && (
+              <Field label="Nickname">
+                <Input name="nickname" defaultValue={person.nickname} />
+              </Field>
+            )}
 
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Primary Mobile">

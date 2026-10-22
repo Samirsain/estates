@@ -363,7 +363,7 @@ export const REMARK_PRESETS = {
     "New rates for the launch",
     "Rates revised by MD",
     "Offer for a limited time",
-    "Trip added / removed",
+    "Reward added / removed",
     "Correction",
   ],
   mdException: ["Launch offer for early buyers", "Limited-time offer", "MD decision for this Project"],
@@ -379,7 +379,7 @@ export const REMARK_PRESETS = {
   tripTravelled: [
     "Nominee travelled instead of the Member",
     "Travel date changed by the Member",
-    "Trip completed",
+    "Reward completed",
   ],
   correctRedemption: [
     "Entered for the wrong Member",

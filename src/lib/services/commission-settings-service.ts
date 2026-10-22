@@ -110,7 +110,7 @@ async function writeInventory(tx: Tx, versionId: string, projectId: string, inpu
   const { excludedPlotIds, sharedPools } = input.trip;
   const plotIds = [...new Set([...excludedPlotIds, ...sharedPools.flatMap((p) => [p.plotId, p.parentPlotId])])];
   const found = await tx.plot.count({ where: { id: { in: plotIds }, projectId } });
-  if (found !== plotIds.length) blocked("Every Trip inventory Plot must belong to this Project.");
+  if (found !== plotIds.length) blocked("Every Reward inventory Plot must belong to this Project.");
   for (const pool of sharedPools) {
     if (pool.plotId === pool.parentPlotId) blocked("A Plot cannot share its own credit pool.");
     if (sharedPools.some((p) => p.plotId === pool.parentPlotId)) blocked("A parent Plot cannot itself be a child in a shared pool.");

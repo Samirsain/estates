@@ -5,6 +5,7 @@
 // survivor's legacy list.
 
 import { validateMergeRequest } from "@/lib/domain/completion";
+import { CREDIT_REASON } from "@/lib/domain/trip";
 import type { CustomerProfile, MemberProfile, TripCredit } from "@prisma/client";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { consumedClosingEvents } from "./commission-service";
@@ -12,7 +13,7 @@ import { refreshBenefitsOfPerson } from "./recovery-service";
 import { reverseLiveAward } from "./royalty-service";
 import { evaluateBuckets, invalidate } from "./trip-service";
 
-const MERGE_REASON = "Person merge — one real person keeps one entitlement history (SSOT §100).";
+const MERGE_REASON = CREDIT_REASON.PERSON_MERGE;
 
 /**
  * CP §87; SSOT §100; UAT COR-08 — after a merge nothing the two identities

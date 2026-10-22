@@ -51,10 +51,6 @@ export default async function CustomersPage() {
             // tie and the Project column names one deal, not whichever row the
             // database happened to return first.
             submittedAt: true,
-            // End User or Investor is decided per purchase, on the Booking. The
-            // CustomerProfile column of the same name is written by nothing, so
-            // the list reads the deal it is showing rather than a blank field.
-            customerType: true,
             project: { select: { name: true } },
             plot: {
               select: { id: true, plotNumber: true, plotType: true },
@@ -93,7 +89,6 @@ export default async function CustomersPage() {
       ? c.person.primaryMobile
       : maskMobile(c.person.primaryMobile),
     city: c.person.city ?? "—",
-    customerType: latest.get(c.personId)?.customerType ?? null,
     project: latest.get(c.personId)?.project.name ?? null,
     plotNumber: latest.get(c.personId)?.plot.plotNumber ?? null,
     plotType: latest.get(c.personId)?.plot.plotType.replaceAll("_", " ") ?? null,

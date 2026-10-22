@@ -461,7 +461,7 @@ async function businessModelV2(): Promise<RuleResult> {
   });
   for (const c of travelledOnBuyback) {
     if (c.sourceBooking.paymentReceivedPercent.lt(100) && !(await stable(c.sourceBookingId))) {
-      add(c.sourceBooking.bookingNumber ?? c.id, "Buyback-qualified Trip credit used before Stable Completion (§28.12)");
+      add(c.sourceBooking.bookingNumber ?? c.id, "Buyback-qualified Reward credit used before Stable Completion (§28.12)");
     }
   }
 
@@ -475,7 +475,7 @@ async function businessModelV2(): Promise<RuleResult> {
     where: { state: "USED", creditType: "REFERENCE", introducedMember: { referenceOpportunityConsumedAt: null } },
     select: { introducedMember: { select: { memberId: true } } },
   });
-  for (const c of reopenedRefs) add(c.introducedMember?.memberId ?? "?", "Travelled Trip's Reference opportunity reopened (§28.14)");
+  for (const c of reopenedRefs) add(c.introducedMember?.memberId ?? "?", "Travelled Reward's Reference opportunity reopened (§28.14)");
 
   // docss/11 §2 — the token ledger and its allocations agree: no award funds more
   // than it holds, no redemption is over-funded, every posting reverses at most

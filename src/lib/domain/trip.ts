@@ -54,7 +54,7 @@ export function validateTripSettings(t: TripSettingsInput): Check {
   }
   if (!t.tripProgrammeCode?.trim()) return fail("Enter the Rewards code, e.g. TRIP-A.");
   if (!t.tripProgrammeVersionRef?.trim()) return fail("Enter the Rewards Version reference.");
-  if (!t.tripTermsVersionRef?.trim()) return fail("Enter the Trip Terms version.");
+  if (!t.tripTermsVersionRef?.trim()) return fail("Enter the Reward Terms version.");
   if (t.tripWindDownAt && !t.tripCutOffAt) return fail("A final wind-down deadline needs a programme cut-off.");
   if (t.tripWindDownAt && t.tripCutOffAt && t.tripWindDownAt < t.tripCutOffAt) {
     return fail("The final wind-down deadline cannot be before the programme cut-off.");
@@ -105,4 +105,41 @@ export function allocate(pool: readonly AllocatableCredit[], rule: Composition, 
     total++;
   }
   return total >= rule.target ? added : null;
+}
+
+/** The cancel reasons the screens tell apart; every other one reads Not Eligible. */
+export const CREDIT_REASON = {
+  BOOKING_NOT_LIVE: "The Booking is not a live approved sale.",
+  SOLD_BY_CORRECTED: "Sold By corrected to another Member (CP §59).",
+  PERSON_MERGE: "Person merge — one real person keeps one entitlement history (SSOT §100).",
+} as const;
+
+/**
+ * Owner-approved 21 Oct 2026 — the seven credit states read on screen as three
+ * statuses, each with one short reason. The states and their rules are
+ * unchanged; only the words staff read are.
+ */
+export function creditStatus(c: { state: string; route: string | null; reversalReason: string | null }): {
+  status: "Pending" | "Counted" | "Not Counted";
+  reason: string;
+} {
+  switch (c.state) {
+    case "PENDING":
+      return { status: "Pending", reason: "Payment Pending" };
+    case "HELD":
+      return { status: "Pending", reason: "Member Deactivated" };
+    case "QUALIFIED":
+    case "ALLOCATED":
+      return { status: "Counted", reason: c.route === "APPROVED_BUYBACK" ? "Buyback Approved" : "Payment Paid" };
+    case "USED":
+      return { status: "Counted", reason: "Reward Completed" };
+    case "EXPIRED":
+      return { status: "Not Counted", reason: "Time Expired" };
+  }
+  // REVERSED — four reasons stand for the nine the services write.
+  if (c.reversalReason === CREDIT_REASON.BOOKING_NOT_LIVE) return { status: "Not Counted", reason: "Booking Cancelled" };
+  if (c.reversalReason === CREDIT_REASON.SOLD_BY_CORRECTED || c.reversalReason === CREDIT_REASON.PERSON_MERGE) {
+    return { status: "Not Counted", reason: "Record Corrected" };
+  }
+  return { status: "Not Counted", reason: "Not Eligible" };
 }

@@ -7,7 +7,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Wallet } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Plus, Wallet } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { PersonLink } from "@/components/person-link";
@@ -46,6 +46,10 @@ import { RemarkSelect } from "@/components/ui/remark-select";
 /** The one row button, sized like Inventory's. */
 const rowButton = "h-7 px-2 text-[11px]";
 
+/** Filters sit inline and size to their content, unlike a form field. */
+const filterClass =
+  "h-9 w-auto rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+
 /** New Buyback is the list's own dialog; every other one is shared. */
 type ListDialog = Dialog | { kind: "NEW" };
 
@@ -72,6 +76,19 @@ export default function AcquisitionsClient({
   const [dialog, setDialog] = React.useState<ListDialog | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<{ ok: boolean; text: string } | null>(null);
+  const [typeFilter, setTypeFilter] = React.useState("ALL");
+  const [statusFilter, setStatusFilter] = React.useState("ALL");
+  const [search, setSearch] = React.useState("");
+
+  const visible = rows.filter(
+    (r) =>
+      (typeFilter === "ALL" || r.type === typeFilter) &&
+      (statusFilter === "ALL" || r.status === statusFilter) &&
+      (search.trim() === "" ||
+        `${r.plotNumber} ${r.project} ${r.seller} ${r.arrangedBy}`
+          .toLowerCase()
+          .includes(search.trim().toLowerCase()))
+  );
 
   async function run(action: () => Promise<ActionResult>) {
     setBusy(true);
@@ -86,103 +103,148 @@ export default function AcquisitionsClient({
 
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold">Buyback / Resale</h1>
-          </div>
+      {/* Plot Inventory's layout: heading and action, filters, then the
+          table ruled by hairlines rather than boxed in a card. */}
+      <div className="mx-auto max-w-6xl space-y-4">
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <h1 className="text-2xl font-bold tracking-tight">Buyback / Resale</h1>
           {permissions.create && (
             <Button size="sm" variant="gradient" onClick={() => setDialog({ kind: "NEW" })}>
-              <Plus className="mr-2 h-3.5 w-3.5" /> New Buyback
+              <Plus className="mr-1 h-4 w-4" /> New Buyback
             </Button>
           )}
+        </header>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className={filterClass}
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            aria-label="Filter by deal"
+          >
+            <option value="ALL">All deals</option>
+            {Object.entries(TYPE_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <select
+            className={filterClass}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            aria-label="Filter by status"
+          >
+            <option value="ALL">All statuses</option>
+            {Object.entries(STATUS_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <Input
+            className="h-9 w-56"
+            placeholder="Search Plot, Project, Seller or Arranged by"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
 
         {notice && (
           <Card
-            className={`p-4 text-sm ${
-              notice.ok ? "border-emerald-500/40 text-emerald-700" : "border-red-500/40 text-red-700"
+            className={`p-4 ${
+              notice.ok ? "border-emerald-500/40 bg-emerald-500/5" : "border-destructive/40 bg-destructive/5"
             }`}
           >
-            {notice.text}
+            <p
+              role="status"
+              className={`flex items-start gap-2 text-sm ${notice.ok ? "text-emerald-700" : "text-destructive"}`}
+            >
+              {notice.ok ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              ) : (
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              )}
+              <span>{notice.text}</span>
+            </p>
           </Card>
         )}
 
-        {rows.length === 0 ? (
-          <Card className="p-4 text-sm text-muted-foreground">
-            Nothing here yet. A Buyback takes back a Booking we sold; a Purchase for Resale brings
-            an outside property into inventory.
+        {visible.length === 0 ? (
+          <Card className="p-10 text-center">
+            <p className="text-sm font-semibold">
+              {rows.length === 0 ? "No Buyback or Resale yet." : "No deals match these filters."}
+            </p>
+            <p className="mt-1 text-xs font-medium text-foreground">
+              {rows.length === 0
+                ? "A Buyback takes back a Booking we sold; a Purchase for Resale brings an outside property into inventory."
+                : "Clear a filter to see more deals."}
+            </p>
           </Card>
         ) : (
-          <Card className="overflow-hidden">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-secondary text-muted-foreground">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[62rem] border-collapse text-sm">
+              <thead className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Deal</th>
-                  <th className="px-4 py-3 font-medium">Project</th>
-                  <th className="px-4 py-3 font-medium">Plot No.</th>
-                  <th className="px-4 py-3 font-medium">Seller</th>
-                  <th className="px-4 py-3 font-medium">Arranged by</th>
-                  <th className="px-4 py-3 font-medium">Payment Given</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium text-center">Actions</th>
+                  <th className="px-3 py-1">Plot</th>
+                  <th className="px-3 py-1">Deal</th>
+                  <th className="px-3 py-1">Seller</th>
+                  <th className="px-3 py-1">Arranged by</th>
+                  <th className="px-3 py-1 text-center">Payment Given</th>
+                  <th className="px-3 py-1 text-center">Status</th>
+                  <th className="px-3 py-1 text-center">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
+                {visible.map((row) => (
                   <React.Fragment key={row.id}>
-                    <tr className="h-14 border-t border-border/40">
-                      {/* The deal itself is the link to the deal. Everything
+                    <tr className="h-14 border-b border-border/60 align-middle transition-colors hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-2">
+                      {/* As on Plot Inventory: the Plot leads, with its Project
+                          and type under it. It opens the deal — everything
                           that used to unfold under this row now has a page. */}
-                      <td className="px-4 py-3">
+                      <td>
                         <Link
                           href={`/acquisitions/${row.id}`}
-                          className="font-medium text-primary hover:underline"
+                          className="font-semibold text-primary hover:underline"
                         >
-                          {TYPE_LABEL[row.type] ?? row.type}
+                          {row.plotNumber}
                         </Link>
+                        <span className="block text-[11px] font-medium text-foreground">
+                          {row.project}
+                          {row.plotType && (
+                            <span className="text-muted-foreground">
+                              {" · "}
+                              {row.plotType.replaceAll("_", " ").toLowerCase()}
+                            </span>
+                          )}
+                        </span>
                       </td>
-                      <td className="px-4 py-3">
-                        {row.project}
-                        {row.location && <div className="text-muted-foreground">{row.location}</div>}
-                      </td>
-                      <td className="px-4 py-3">
-                        {row.plotId ? (
-                          <Link
-                            href={`/plots/${row.plotId}`}
-                            className="block font-medium text-primary hover:underline"
-                          >
-                            {row.plotNumber}
-                          </Link>
-                        ) : (
-                          <div className="font-medium text-foreground">{row.plotNumber}</div>
-                        )}
-                        {row.plotType && (
-                          <div className="text-muted-foreground">
-                            {row.plotType.replaceAll("_", " ").toLowerCase()}
-                          </div>
+                      <td>
+                        {TYPE_LABEL[row.type] ?? row.type}
+                        {row.location && (
+                          <span className="block text-[11px] text-muted-foreground">{row.location}</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td>
                         <PersonLink personId={row.sellerPersonId} name={row.seller} />
                       </td>
                       {/* Two people, two columns. Stacked in one cell with a
                           "via" in front, the arranger read as a footnote on the
                           seller rather than the other party to the deal. */}
-                      <td className="px-4 py-3">
+                      <td>
                         <PersonLink
                           personId={row.arrangedByPersonId}
                           name={row.arrangedBy}
                           as={row.arrangedByType === "MEMBER" ? "member" : undefined}
                         />
                       </td>
-                      <td className="px-4 py-3 tabular-nums">
+                      <td className="text-center tabular-nums">
                         {row.paymentGivenPercent}%
                         {Number(row.paymentGivenPercent) < 100 && row.status === "APPROVED" && (
-                          <div className="text-amber-700">Payment Pending</div>
+                          <span className="block text-[11px] text-amber-700">Payment Pending</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="text-center">
                         <Badge
                           variant={
                             row.status === "APPROVED"
@@ -199,7 +261,7 @@ export default function AcquisitionsClient({
                           reading a list. Approve, Reject, Cancel and the
                           commission need the record in front of you, so they
                           are on the deal's own page. */}
-                      <td className="px-4 py-3">
+                      <td>
                         <div className="flex justify-center gap-1.5">
                           {permissions.confirmGiven &&
                           (row.status === "PENDING_APPROVAL" || row.status === "APPROVED") ? (
@@ -220,7 +282,7 @@ export default function AcquisitionsClient({
                 ))}
               </tbody>
             </table>
-          </Card>
+          </div>
         )}
       </div>
 

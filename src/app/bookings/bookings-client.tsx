@@ -627,7 +627,7 @@ export default function BookingsClient({
           />
         </div>
       ) : (
-      <div className="mx-auto max-w-6xl space-y-3">
+      <div className="mx-auto max-w-6xl space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Bookings</h1>
@@ -679,34 +679,35 @@ export default function BookingsClient({
 
         {noticeCard}
 
-        {/* Same table as Customers and Enquiries: a rule between rows, no
-            block of colour behind each one. The Booking Number is the page it
-            opens, not a column of its own. */}
+        {/* Plot Inventory's table: a rule between rows, no block of colour
+            behind each one. The Booking Number is the page it opens, not a
+            column of its own. */}
+        {visible.length === 0 ? (
+          <Card className="p-10 text-center">
+            <p className="text-sm font-semibold">No Bookings match these filters.</p>
+            <p className="mt-1 text-xs font-medium text-foreground">
+              Start one from an Available Plot or a live Hold.
+            </p>
+          </Card>
+        ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[52rem] border-collapse text-xs">
-            <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-              <tr className="border-b border-border">
-                <th className="px-3 py-1.5">Project</th>
-                <th className="w-[9rem] px-3 py-1.5">Plot No.</th>
-                <th className="w-[10rem] px-3 py-1.5 text-center">Size (W × L)</th>
-                <th className="px-3 py-1.5">Customer</th>
-                <th className="px-3 py-1.5">Sold By</th>
-                <th className="w-[14rem] px-3 py-1.5">Status</th>
-                <th className="w-[8rem] px-3 py-1.5 text-right">Payment</th>
+          <table className="w-full min-w-[52rem] border-collapse text-sm">
+            <thead className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-3 py-1">Project</th>
+                <th className="w-[9rem] px-3 py-1">Plot No.</th>
+                <th className="w-[10rem] px-3 py-1 text-center">Size (W × L)</th>
+                <th className="px-3 py-1">Customer</th>
+                <th className="px-3 py-1">Sold By</th>
+                <th className="w-[14rem] px-3 py-1">Status</th>
+                <th className="w-[8rem] px-3 py-1 text-right">Payment</th>
               </tr>
             </thead>
             <tbody>
-              {visible.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">
-                    No Bookings match these filters. Start one from an Available Plot or a live Hold.
-                  </td>
-                </tr>
-              )}
               {visible.map((row) => (
                 <tr
                   key={row.id}
-                  className="h-14 border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1"
+                  className="h-14 border-b border-border/60 align-middle transition-colors hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-2"
                 >
                   <td>{row.project}</td>
                   {/* The Plot number is the way into the Booking, and its type
@@ -802,6 +803,7 @@ export default function BookingsClient({
             </tbody>
           </table>
         </div>
+        )}
       </div>
       )}
 
@@ -839,7 +841,6 @@ export default function BookingsClient({
                   soldByPersonId: form.soldByPersonId,
                   bookingDate: form.bookingDate,
                   bookingDateReason: form.bookingDateReason,
-                  customerType: form.customerType,
                   remark: form.remark,
                   schedule: form.schedule,
                   reason: form.reason ?? "",
@@ -1940,7 +1941,7 @@ function BookingDetailPanel({
                     {r.kind} · {r.member}
                   </span>
                   <span className="text-muted-foreground">
-                    {r.state.toLowerCase()} · {r.detail}
+                    {r.state} · {r.detail}
                   </span>
                 </li>
               ))}
@@ -2341,7 +2342,6 @@ type SubmittedSnapshot = {
     totalPercent: string | null;
     components?: Array<{ label: string; percent: string; category: string; evidence: string }>;
   } | null;
-  customerType?: string | null;
   remark?: string | null;
   /** v2.1 §16 — the commission version this request version froze. */
   commissionTerms?: {
@@ -2448,12 +2448,9 @@ function SubmittedSnapshotView({
         </ul>
       </section>
 
-      {(snapshot.customerType || snapshot.remark) && (
+      {snapshot.remark && (
         <section className="space-y-0.5 border-t border-border/50 pt-3 text-muted-foreground">
-          {snapshot.customerType && (
-            <p>Customer Type: {snapshot.customerType.replaceAll("_", " ")}</p>
-          )}
-          {snapshot.remark && <p>Remark: {snapshot.remark}</p>}
+          <p>Remark: {snapshot.remark}</p>
         </section>
       )}
     </div>
@@ -2607,7 +2604,6 @@ export type FormOut = {
   soldByPersonId: string;
   bookingDate: string;
   bookingDateReason: string;
-  customerType: string;
   remark: string;
   schedule: ScheduleRowInput[];
   reason?: string;
@@ -2689,7 +2685,6 @@ export function BookingFormDialog({
             soldByPersonId: String(f.get("soldByPersonId") ?? ""),
             bookingDate,
             bookingDateReason: String(f.get("bookingDateReason") ?? ""),
-            customerType: String(f.get("customerType") ?? ""),
             remark: "",
             schedule,
             reason: String(f.get("reason") ?? ""),
@@ -2911,15 +2906,7 @@ export function BookingFormDialog({
               onChange={(e) => setBookingDate(e.target.value)}
             />
           </Field>
-          <Field label="Customer Type">
-            <select name="customerType" className={inputClass} defaultValue="END_USER" required>
-              <option value="END_USER">End User</option>
-              <option value="INVESTOR">Investor</option>
-            </select>
-          </Field>
-          {soldByType === "THREE_PERCENT_CLUB" ? (
-            <div aria-hidden className="hidden sm:block" />
-          ) : (
+          {soldByType !== "THREE_PERCENT_CLUB" && (
             <SoldByPicker
               key={soldByType}
               name="soldByPersonId"

@@ -160,8 +160,8 @@ const TRIP_HOLD_LABEL: Record<string, string> = {
 };
 
 const TRIP_STATE_LABEL: Record<string, string> = {
-  EARNED: "Trip earned — the team will contact you to book it",
-  BOOKED: "Trip booked",
+  EARNED: "Reward earned — the team will contact you to book it",
+  BOOKED: "Reward booked",
   TRAVELLED: "Travelled",
   DEFICIENT: "Under Review",
   CANCELLED: "Cancelled",
@@ -472,7 +472,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
             </h3>
             {data.trip.length === 0 ? (
               <p className="text-muted-foreground">
-                Trip progress starts with a qualifying sale in a Project with Rewards. Joining alone earns no credit.
+                Reward progress starts with a qualifying sale in a Project with Rewards. Joining alone earns no credit.
               </p>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
@@ -493,7 +493,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                         </div>
                         {rules && (
                           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary">
-                            {t.rewards.length > 0 ? "Next Trip " : ""}
+                            {t.rewards.length > 0 ? "Reward " : ""}
                             {counted} / {rules.target}
                           </span>
                         )}
@@ -503,7 +503,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                           <div
                             className="h-2 overflow-hidden rounded-full bg-muted"
                             role="progressbar"
-                            aria-label={`${t.project} Trip progress`}
+                            aria-label={`${t.project} Reward progress`}
                             aria-valuemin={0}
                             aria-valuemax={rules.target}
                             aria-valuenow={counted}

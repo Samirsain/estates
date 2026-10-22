@@ -31,6 +31,7 @@ import {
 } from "@/lib/services/booking-service";
 import { db } from "@/lib/db";
 import { locationChargeLabel } from "@/lib/domain/inventory";
+import { creditStatus } from "@/lib/domain/trip";
 import { decideCancellation } from "@/lib/services/cancellation-service";
 import { plcSnapshotHistory } from "@/lib/services/project-service";
 import { decideChangePlot, submitChangePlot } from "@/lib/services/change-plot-service";
@@ -113,7 +114,6 @@ export async function submitBookingRequestAction(
     soldByPersonId: string;
     bookingDate: string;
     bookingDateReason: string;
-    customerType: string;
     remark: string;
     schedule: ScheduleRowInput[];
   },
@@ -133,7 +133,6 @@ export async function submitBookingRequestAction(
       soldByPersonId: input.soldByPersonId || null,
       bookingDate: new Date(input.bookingDate),
       bookingDateReason: input.bookingDateReason || null,
-      customerType: input.customerType || null,
       remark: input.remark || null,
       schedule: toSchedule(input.schedule),
     });
@@ -157,7 +156,6 @@ export async function reviseBookingRequestAction(
     soldByPersonId: string;
     bookingDate: string;
     bookingDateReason: string;
-    customerType: string;
     remark: string;
     schedule: ScheduleRowInput[];
     reason: string;
@@ -176,7 +174,6 @@ export async function reviseBookingRequestAction(
       soldByPersonId: input.soldByPersonId || null,
       bookingDate: new Date(input.bookingDate),
       bookingDateReason: input.bookingDateReason || null,
-      customerType: input.customerType || null,
       remark: input.remark || null,
       schedule: toSchedule(input.schedule),
       reason: input.reason,
@@ -1002,12 +999,16 @@ export async function loadBookingDetail(bookingId: string) {
           include: { memberProfile: { select: { memberId: true } } },
           orderBy: { createdAt: "asc" },
         })
-      ).map((t) => ({
-        kind: t.creditType === "OWN_SALE" ? "Own-Sale Trip Credit" : "Reference Credit",
-        member: t.memberProfile.memberId,
-        state: t.state,
-        detail: `${t.programmeCode}${t.qualificationRoute === "APPROVED_BUYBACK" ? " · by Buyback" : ""}${t.reversalReason ? ` · ${t.reversalReason}` : ""}`,
-      })),
+      ).map((t) => {
+        // Owner-approved 21 Oct 2026: Pending / Counted / Not Counted, one short reason.
+        const { status, reason } = creditStatus({ state: t.state, route: t.qualificationRoute, reversalReason: t.reversalReason });
+        return {
+          kind: t.creditType === "OWN_SALE" ? "Own-Sale Reward Credit" : "Reference Credit",
+          member: t.memberProfile.memberId,
+          state: status,
+          detail: reason,
+        };
+      }),
       ...(
         await db.royaltyAward.findMany({
           where: { triggerBookingId: bookingId },
@@ -1016,7 +1017,7 @@ export async function loadBookingDetail(bookingId: string) {
       ).map((r) => ({
         kind: "Royalty Points",
         member: r.memberProfile.memberId,
-        state: r.state,
+        state: r.state.toLowerCase(),
         detail: `${r.tokens} points${r.holdReason ? ` · ${r.holdReason.replaceAll("_", " ").toLowerCase()}` : ""}${r.reversalReason && r.state === "REVERSED" ? ` · ${r.reversalReason}` : ""}`,
       })),
     ],

@@ -216,6 +216,7 @@ const SERIES = {
   Member: { table: "MemberProfile", column: "memberId" },
   Acquisition: { table: "Acquisition", column: "acquisitionNo" },
   Recovery: { table: "Recovery", column: "recoveryNo" },
+  PotentialInvestor: { table: "PotentialInvestor", column: "investorNo" },
   // Land Inquiry spec §6 — a sequence, never MAX+1: two people taking a land
   // call at the same moment must not be handed the same Inquiry No.
   LandInquiry: { table: "LandInquiry", column: "inquiryNo", sequence: "land_inquiry_no_seq" },

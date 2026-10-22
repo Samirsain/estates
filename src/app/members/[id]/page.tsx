@@ -3,7 +3,8 @@
 // Built to system/change-requests/Member_Profile_Revised_Requirements.md, top to
 // bottom: Header › Summary › Contact & Identity › RERA › Bank › Bookings &
 // Benefits (every Booking this Member sold and all it earned them) › Indirect
-// Benefits (Trip, Royalty Points, linked Customers, invited Members). History
+// Benefits (Rewards with invited Members, Royalty Points with linked Customers,
+// side by side; then Commission from other Bookings). History
 // opens from the top bar; long lists show their first rows behind "Show more". A profile and a place to manage the
 // Member — deliberately not an alert dashboard, so there is no Alerts section,
 // no RERA countdown and no Terms version on the page.
@@ -49,6 +50,7 @@ import {
   Banknote,
   Check,
   ChevronDown,
+  Coins,
   ListFilter,
   FileText,
   Gift,
@@ -88,17 +90,6 @@ const RERA_LABEL: Record<string, string> = {
   PENDING: "Pending",
   EXPIRED: "Expired",
   NOT_APPLICABLE: "Not Applicable",
-};
-/** A Trip credit's state in the Reward column. Qualified, Allocated and Used
- *  all mean the credit has gone towards a reward; Rewards (Trip) shows which. */
-const TRIP_WORDS: Record<string, string> = {
-  PENDING: "Waiting for payment",
-  QUALIFIED: "Reward",
-  ALLOCATED: "Reward",
-  USED: "Reward",
-  HELD: "Hold",
-  REVERSED: "Cancelled",
-  EXPIRED: "Expired",
 };
 
 /** Hold reasons whose stored name reads badly as words; the rest go through words(). */
@@ -314,9 +305,8 @@ export default async function MemberDetailPage({
         qualifiedAt: true,
         createdAt: true,
         reversalReason: true,
-        sourceBookingId: true,
-        sourceBooking: { select: { bookingNumber: true, plot: { select: { plotNumber: true } } } },
-        introducedMember: { select: { memberId: true } },
+        sourceBooking: { select: { id: true, bookingNumber: true, plot: { select: { plotNumber: true } } } },
+        introducedMember: { select: { memberId: true, person: { select: { fullName: true } } } },
       },
     }),
     db.tripBucket.findMany({
@@ -357,7 +347,7 @@ export default async function MemberDetailPage({
   const REQUEST_WORDS: Record<string, string> = {
     REQUEST_PENDING: "Waiting approval",
     REQUEST_REJECTED: "Rejected",
-    REQUEST_CANCELLED: "Withdrawn",
+    REQUEST_CANCELLED: "Cancelled",
   };
 
   const requestsAndEnquiries = [
@@ -381,7 +371,7 @@ export default async function MemberDetailPage({
       project: r.plot.project.name,
       buyer: r.person.fullName,
       buyerId: r.person.id,
-      condition: words(r.status),
+      condition: r.status === "WITHDRAWN" ? "Cancelled" : words(r.status),
       ref: null,
       at: r.createdAt,
     })),
@@ -451,9 +441,9 @@ export default async function MemberDetailPage({
   };
   const commissionHref = (type: string | null) => filterHref({ ctype: type });
 
-  /* Booking Commission — every Booking this Member sold, with what each one
-     earned them: its current commission lines (under the type filter) and any
-     Trip credit or Royalty Points it brought. */
+  /* Booking Commission — every Booking this Member sold, with the commission
+     lines each one earned them (under the type filter). Reward credit and
+     Royalty Points stay in their own cards below, not repeated here. */
   const soldIds = new Set(soldBookings.map((b) => b.id));
   // A Buyback or Resale of a Booking carries its Buying Commission on the
   // Acquisition; it reads on the row of the Booking it came from.
@@ -464,19 +454,6 @@ export default async function MemberDetailPage({
     return id !== null && soldIds.has(id);
   };
   const linesOn = (bookingId: string) => shownCommissions.filter((c) => bookingOf(c) === bookingId);
-  const AWARD_WORDS: Record<string, string> = { PENDING: "Pending", RELEASED: "Earned", REVERSED: "Cancelled" };
-  // The Trip credit reads as its state alone ("Reward"): a "Trip ·" on every
-  // row only repeated itself down the column.
-  const benefitsOn = (bookingId: string) => [
-    ...new Set(
-      tripCredits
-        .filter((t) => t.sourceBookingId === bookingId)
-        .map((t) => TRIP_WORDS[t.state] ?? words(t.state))
-    ),
-    ...(tokens.staff?.awards ?? [])
-      .filter((a) => a.bookingId === bookingId)
-      .map((a) => `${a.tokens} Points · ${AWARD_WORDS[a.state] ?? a.state}`),
-  ];
   // Commission that is not on a Booking this Member sold: a Buyback or Resale
   // they handled belongs with their deals; a line on someone else's Booking
   // (a Reference, Loyalty) is an indirect benefit.
@@ -503,7 +480,6 @@ export default async function MemberDetailPage({
     status: string;
     payment: string;
     lines: Line[];
-    benefits: string[];
   };
   const dealRows: DealRow[] = [
     ...shownBookings.map((b) => ({
@@ -520,7 +496,6 @@ export default async function MemberDetailPage({
       status: statusWords(b.status),
       payment: `${b.paymentReceivedPercent.toFixed(2)}% received`,
       lines: linesOn(b.id),
-      benefits: benefitsOn(b.id),
     })),
     ...acquisitionLines.map((c) => {
       const a = c.acquisition!;
@@ -538,7 +513,6 @@ export default async function MemberDetailPage({
         status: `${TYPE_LABEL[a.type] ?? "Buyback / Resale"} · ${statusWords(a.status)}`,
         payment: `${a.paymentGivenPercent.toFixed(2)}% given`,
         lines: [c],
-        benefits: [],
       };
     }),
   ].sort((x, y) => y.at.getTime() - x.at.getTime());
@@ -620,8 +594,7 @@ export default async function MemberDetailPage({
             <th className={TH}>Customer</th>
             <th className={TH}>Status</th>
             <th className={TH}>Payment</th>
-            <th className={TH}>{oneDealType ? `${words(oneDealType)} Commission` : "Commission"}</th>
-            <th className={`${TH} pr-0`}>Reward</th>
+            <th className={`${TH} pr-0`}>{oneDealType ? `${words(oneDealType)} Commission` : "Commission"}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/40">
@@ -656,20 +629,9 @@ export default async function MemberDetailPage({
               </td>
               <td className={`${TD} font-medium`}>{d.status}</td>
               <td className={`${TD} tabular-nums`}>{d.payment}</td>
-              <td className={TD}>
+              <td className={`${TD} pr-0`}>
                 {d.lines.length ? (
                   d.lines.map((c) => lineWords(c, !oneDealType))
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </td>
-              <td className={`${TD} pr-0`}>
-                {d.benefits.length ? (
-                  d.benefits.map((text) => (
-                    <span key={text} className="block">
-                      {text}
-                    </span>
-                  ))
                 ) : (
                   <span className="text-muted-foreground">—</span>
                 )}
@@ -753,6 +715,7 @@ export default async function MemberDetailPage({
                 canEnterBank={can(actor.role, "BANK_DETAILS_ENTER", actor.extraPermissions)}
                 person={{
                   fullName: member.person.fullName,
+                  nickname: member.person.nickname ?? "",
                   mobile: member.person.primaryMobile,
                   altMobile: member.person.altMobile ?? "",
                   email: member.person.email ?? "",
@@ -833,6 +796,7 @@ export default async function MemberDetailPage({
         {/* 3 Contact & Identity · 4 RERA · 5 Bank */}
         <div className="grid gap-4 md:grid-cols-3">
           <Section fill title="Contact" icon={<UserCheck className="h-3.5 w-3.5" />}>
+            <Row label="Nickname" value={member.person.nickname ?? "—"} />
             <Row label="Mobile" value={contact(member.person.primaryMobile)} />
             {member.person.altMobile && (
               <Row label="Alternate Mobile" value={contact(member.person.altMobile)} />
@@ -932,7 +896,7 @@ export default async function MemberDetailPage({
         </div>
 
         {/* 6 Booking Commission — every Booking this Member sold, and all it
-            earned them: commission, Trip credit, Royalty Points. */}
+            earned them in commission. */}
         <Section
           title={`Booking Commission (${realBookings.length})`}
           icon={<FileText className="h-3.5 w-3.5" />}
@@ -1071,107 +1035,114 @@ export default async function MemberDetailPage({
           </div>
         </Section>
 
-        {/* 7 Indirect Benefits — what comes to this Member from others: Trip
-            rewards, Royalty Points, the Customers linked to them and the
-            Members they invited. */}
-        <Section title="Indirect Benefits" icon={<Gift className="h-3.5 w-3.5" />}>
+        {/* 7 Indirect Benefits — two cards side by side, as Contact & Identity.
+            Each holds its benefit and the people who feed it: invited Members
+            bring the Reward's References, linked Customers bring the Points. */}
+        {/* gap-y-0 at md: the two cards share three subgrid rows (title, body,
+            list), so the hairline above each list sits at the same height. */}
+        <div className="grid gap-4 md:grid-cols-2 md:gap-y-0">
           {/* SSOT §40, §65; CP §68 — the Sales & Reference Trip Reward. */}
-          <p className="pb-2 text-sm font-semibold text-foreground">Rewards (Trip)</p>
-          <TripSection role={actor.role} programmes={await tripProgrammes(tripCredits, tripBuckets)} />
+          <Section
+            title="Rewards"
+            icon={<Gift className="h-3.5 w-3.5" />}
+            below={
+              <>
+                <p className="text-sm font-semibold text-foreground">
+                  Members invited ({member.invitedMembers.length})
+                </p>
+                {member.invitedMembers.length === 0 ? (
+                  <p className="pt-1 text-xs text-muted-foreground">None yet.</p>
+                ) : (
+                  <ShortList
+                    items={member.invitedMembers}
+                    first={5}
+                    render={(m) => (
+                      <NetworkRow
+                        key={m.id}
+                        href={`/members/${m.id}`}
+                        code={m.memberId}
+                        name={m.person.fullName}
+                        note={
+                          <>
+                            {/* SSOT §38 — each invited Member's one Reference opportunity. */}
+                            <Badge variant={m.referenceOpportunityConsumedAt ? "outline" : "info"}>
+                              {m.referenceOpportunityConsumedAt
+                                ? ["Reference used", referenceWins.find((b) => b.id === m.referenceWinningBookingId)?.bookingNumber]
+                                    .filter(Boolean)
+                                    .join(" · ")
+                                : "Reference unused"}
+                            </Badge>
+                            {m.status !== "ACTIVE" && <Badge variant="destructive">Deactivated</Badge>}
+                          </>
+                        }
+                      />
+                    )}
+                  />
+                )}
+              </>
+            }
+          >
+            <TripSection role={actor.role} programmes={await tripProgrammes(tripCredits, tripBuckets)} />
+          </Section>
 
           {/* docss/11 — Royalty Tokens: one pooled, non-cash balance. */}
-          <div className="mt-4 border-t border-border/60 pt-3">
-            <p className="pb-2 text-sm font-semibold text-foreground">Points</p>
+          <Section
+            title="Royalty Points"
+            icon={<Coins className="h-3.5 w-3.5" />}
+            below={
+              <>
+                <p className="text-sm font-semibold text-foreground">
+                  Royalty Customers ({royaltyLinkedCustomers.length})
+                </p>
+                {royaltyLinkedCustomers.length === 0 ? (
+                  <p className="pt-1 text-xs text-muted-foreground">None yet.</p>
+                ) : (
+                  <>
+                    {/* CP §68 — a link earns once it is final, and only once. */}
+                    <p className="pb-1 text-[11px] text-muted-foreground">
+                      {linkedFinal.length} final · {canStillEarn} can still earn points ·{" "}
+                      {royaltyLinkedCustomers.length - linkedFinal.length} waiting for full payment
+                    </p>
+                    <ShortList
+                      items={royaltyLinkedCustomers}
+                      first={5}
+                      render={(c) => (
+                        <NetworkRow
+                          key={c.id}
+                          href={`/customers/${c.id}`}
+                          code={c.customerId}
+                          name={c.person.fullName}
+                          note={
+                            !c.royaltyLinkFinalAt ? (
+                              <Badge variant="warning">Waiting for full payment</Badge>
+                            ) : c.royaltyOpportunityConsumedAt ? (
+                              <Badge variant="outline">Points used</Badge>
+                            ) : (
+                              <Badge variant="info">Can earn points</Badge>
+                            )
+                          }
+                        />
+                      )}
+                    />
+                  </>
+                )}
+              </>
+            }
+          >
             <RoyaltyTokens
               role={actor.role}
               memberProfileId={member.id}
               view={tokens}
               openOpportunities={canStillEarn}
             />
-          </div>
+          </Section>
+        </div>
 
-          <div className="mt-4 grid gap-6 border-t border-border/60 pt-3 md:grid-cols-2">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">
-                Royalty linked Customers ({royaltyLinkedCustomers.length})
-              </p>
-              {royaltyLinkedCustomers.length === 0 ? (
-                <p className="pt-1 text-xs text-muted-foreground">None yet.</p>
-              ) : (
-                <>
-                  {/* CP §68 — a link earns once it is final, and only once. */}
-                  <p className="pb-1 text-[11px] text-muted-foreground">
-                    {linkedFinal.length} final · {canStillEarn} can still earn points ·{" "}
-                    {royaltyLinkedCustomers.length - linkedFinal.length} waiting for full payment
-                  </p>
-                  <ShortList
-                    items={royaltyLinkedCustomers}
-                    first={5}
-                    render={(c) => (
-                      <NetworkRow
-                        key={c.id}
-                        href={`/customers/${c.id}`}
-                        code={c.customerId}
-                        name={c.person.fullName}
-                        note={
-                          !c.royaltyLinkFinalAt ? (
-                            <Badge variant="warning">Waiting for full payment</Badge>
-                          ) : c.royaltyOpportunityConsumedAt ? (
-                            <Badge variant="outline">Points used</Badge>
-                          ) : (
-                            <Badge variant="info">Can earn points</Badge>
-                          )
-                        }
-                      />
-                    )}
-                  />
-                </>
-              )}
-            </div>
-
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">
-                Members invited ({member.invitedMembers.length})
-              </p>
-              {member.invitedMembers.length === 0 ? (
-                <p className="pt-1 text-xs text-muted-foreground">None yet.</p>
-              ) : (
-                <ShortList
-                  items={member.invitedMembers}
-                  first={5}
-                  render={(m) => (
-                    <NetworkRow
-                      key={m.id}
-                      href={`/members/${m.id}`}
-                      code={m.memberId}
-                      name={m.person.fullName}
-                      note={
-                        <>
-                          {/* SSOT §38 — each invited Member's one Reference opportunity. */}
-                          <Badge variant={m.referenceOpportunityConsumedAt ? "outline" : "info"}>
-                            {m.referenceOpportunityConsumedAt
-                              ? ["Reference used", referenceWins.find((b) => b.id === m.referenceWinningBookingId)?.bookingNumber]
-                                  .filter(Boolean)
-                                  .join(" · ")
-                              : "Reference unused"}
-                          </Badge>
-                          {m.status !== "ACTIVE" && <Badge variant="destructive">Deactivated</Badge>}
-                        </>
-                      }
-                    />
-                  )}
-                />
-              )}
-            </div>
-          </div>
-
-          {otherBookingLines.length > 0 && (
-            <div className="mt-4 border-t border-border/60 pt-3">
-              <p className="pb-1 text-sm font-semibold text-foreground">Commission from other Bookings</p>
-              <ShortList items={otherBookingLines} first={5} render={commissionRow} />
-            </div>
-          )}
-        </Section>
+        {otherBookingLines.length > 0 && (
+          <Section title="Commission from other Bookings" icon={<Banknote className="h-3.5 w-3.5" />}>
+            <ShortList items={otherBookingLines} first={5} render={commissionRow} />
+          </Section>
+        )}
       </div>
     </AppShell>
   );

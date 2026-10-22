@@ -12,7 +12,7 @@ export default function NotFound() {
           Member IDs stay searchable, so try searching for the reference instead.
         </p>
         <a href="/dashboard" className="text-xs text-primary hover:underline">
-          Back to Dashboard
+          Back to Task List
         </a>
       </Card>
     </main>

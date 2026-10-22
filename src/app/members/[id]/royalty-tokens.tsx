@@ -1,10 +1,10 @@
 "use client";
 
-// A Member's Royalty Tokens — docss/11. The three figures a Member also sees,
-// every redemption recorded against the one pooled balance, and — for staff
-// only — the awards behind it (history, never wallets) and why spending is
-// blocked now. CRM or MD record spending arranged outside the CRM, for any
-// recipient; MD corrects an erroneous entry.
+// A Member's Royalty Tokens — docss/11. The four figures, and behind two
+// buttons the redemptions recorded against the one pooled balance and — for
+// staff only — the awards behind it (history, never wallets). CRM or MD record
+// spending arranged outside the CRM, for any recipient; MD corrects an
+// erroneous entry. Kept as plain as the Rewards list: who, how many, when.
 // No cash, no rupee value, no expiry.
 
 import React from "react";
@@ -55,10 +55,10 @@ const AWARD_STATE: Record<string, { label: string; variant: "success" | "warning
   REVERSED: { label: "Cancelled", variant: "outline" },
 };
 
-// The profile's own table look (Bookings sold).
-const TH = "pb-2 pr-4 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
-const TD = "py-2.5 pr-4 align-top";
-const SUB = "block text-[11px] text-muted-foreground";
+// The Rewards list's look: a toggle, then one plain line per entry.
+const TOGGLE = "text-[11px] font-medium text-primary hover:underline";
+const ROW = "flex flex-wrap items-center justify-between gap-2 py-2";
+const LINE = "flex min-w-0 flex-wrap items-center gap-1.5";
 
 const newKey = () => `tok-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const signed = (n: number) => (n < 0 ? `−${Math.abs(n)}` : String(n));
@@ -83,6 +83,8 @@ export default function RoyaltyTokens({
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
   const [dialog, setDialog] = React.useState<Dialog | null>(null);
+  const [showSpent, setShowSpent] = React.useState(false);
+  const [showAwards, setShowAwards] = React.useState(false);
   const staff = view.staff!;
   const records = role === "CRM" || role === "MD";
   const corrects = role === "MD";
@@ -107,125 +109,73 @@ export default function RoyaltyTokens({
         <Stat
           label="Balance"
           value={<span className={view.figures.balance < 0 ? "text-red-700" : undefined}>{signed(view.figures.balance)}</span>}
-          hint="One balance, every Project"
         />
-        <Stat label="Can still earn" value={openOpportunities} hint="linked Customers" />
+        <Stat label="Can still earn" value={openOpportunities} />
       </dl>
 
-      {staff.blockers.length > 0 && (
-        <ul className="space-y-0.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-amber-800">
-          {staff.blockers.map((b) => (
-            <li key={b}>{b}</li>
+      {notice && <p className={notice.ok ? "text-emerald-700" : "text-red-700"}>{notice.ok ? notice.message : notice.error}</p>}
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        {staff.redemptions.length > 0 && (
+          <button type="button" className={TOGGLE} aria-expanded={showSpent} onClick={() => setShowSpent(!showSpent)}>
+            {showSpent ? "▾" : "▸"} Show spent ({staff.redemptions.length})
+          </button>
+        )}
+        {staff.awards.length > 0 && (
+          <button type="button" className={TOGGLE} aria-expanded={showAwards} onClick={() => setShowAwards(!showAwards)}>
+            {showAwards ? "▾" : "▸"} Show where points came from ({staff.awards.length})
+          </button>
+        )}
+        {records && (
+          <Button size="xs" variant="outline" className="ml-auto" onClick={() => setDialog({ kind: "RECORD" })}>
+            Record redemption
+          </Button>
+        )}
+      </div>
+
+      {/* A state badge says something only when it is not the normal one. */}
+      {showSpent && (
+        <ul className="divide-y divide-border/40">
+          {staff.redemptions.map((r) => (
+            <li key={r.id} className={ROW}>
+              <span className={LINE}>
+                <span className="text-foreground">
+                  {r.recipient === "SELF" ? "The Member" : `${r.recipientName} (${r.recipient.toLowerCase().replace("_", "-")})`}
+                </span>
+                <span className="text-muted-foreground">
+                  · {r.tokens} points · {formatIst(r.redeemedOn)}
+                </span>
+                {r.state !== "RECORDED" && (
+                  <Badge variant={REDEMPTION_STATE[r.state]?.variant ?? "outline"}>{REDEMPTION_STATE[r.state]?.label ?? r.state}</Badge>
+                )}
+              </span>
+              {corrects && r.state === "RECORDED" && (
+                <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "CORRECT", redemptionId: r.id, tokens: r.tokens })}>
+                  Correct
+                </Button>
+              )}
+            </li>
           ))}
         </ul>
       )}
 
-      {notice && <p className={notice.ok ? "text-emerald-700" : "text-red-700"}>{notice.ok ? notice.message : notice.error}</p>}
-
-      <div>
-        <div className="flex items-center justify-between gap-2 pb-2">
-          <p className="text-sm font-semibold text-foreground">Spent</p>
-          {records && (
-            <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "RECORD" })}>
-              Record redemption
-            </Button>
-          )}
-        </div>
-        {staff.redemptions.length === 0 ? (
-          <p className="text-muted-foreground">Nothing spent yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[36rem]">
-              <thead className="border-b border-border/50">
-                <tr>
-                  <th className={TH}>Date</th>
-                  <th className={TH}>Points</th>
-                  <th className={TH}>For</th>
-                  <th className={TH}>Status</th>
-                  <th className={`${TH} pr-0`} />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/40">
-                {staff.redemptions.map((r) => (
-                  <tr key={r.id}>
-                    <td className={TD}>{formatIst(r.redeemedOn)}</td>
-                    <td className={`${TD} font-semibold tabular-nums`}>{r.tokens}</td>
-                    <td className={TD}>
-                      {r.recipient === "SELF" ? "The Member" : `${r.recipientName} (${r.recipient.toLowerCase().replace("_", "-")})`}
-                      <span className={SUB}>
-                        {r.reference ? `${r.reference} · ` : ""}by {r.recordedByRef}
-                      </span>
-                      {r.decisionNote && <span className={SUB}>MD: {r.decisionNote}</span>}
-                      {r.correctionReason && <span className={SUB}>Corrected: {r.correctionReason}</span>}
-                    </td>
-                    <td className={TD}>
-                      <Badge variant={REDEMPTION_STATE[r.state]?.variant ?? "outline"}>{REDEMPTION_STATE[r.state]?.label ?? r.state}</Badge>
-                    </td>
-                    <td className={`${TD} pr-0`}>
-                      <span className="flex justify-end gap-1">
-                        {corrects && r.state === "RECORDED" && (
-                          <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "CORRECT", redemptionId: r.id, tokens: r.tokens })}>
-                            Correct
-                          </Button>
-                        )}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
       {/* Internal history: where the points came from. Never a balance per Project. */}
-      {staff.awards.length > 0 && (
-        <details>
-          <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
-            Where the points came from ({staff.awards.length})
-          </summary>
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full min-w-[40rem]">
-              <thead className="border-b border-border/50">
-                <tr>
-                  <th className={TH}>Customer</th>
-                  <th className={TH}>Booking</th>
-                  <th className={TH}>Points</th>
-                  <th className={`${TH} pr-0`}>Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/40">
-                {staff.awards.map((a) => (
-                  <tr key={a.id}>
-                    <td className={TD}>
-                      {a.customerId}
-                      <span className={SUB}>{a.customerName}</span>
-                    </td>
-                    <td className={TD}>
-                      <a className="font-semibold text-primary hover:underline" href={`/bookings?booking=${a.bookingId}`}>
-                        {a.bookingNumber}
-                      </a>
-                      <span className={SUB}>
-                        {a.project} · {a.route === "PAYMENT_100" ? "100% payment" : "Approved Buyback"} · {formatIst(a.qualifiedAt)}
-                      </span>
-                    </td>
-                    <td className={`${TD} font-semibold tabular-nums`}>
-                      {a.tokens}
-                      {a.consumed && <span className={SUB}>used</span>}
-                    </td>
-                    <td className={`${TD} pr-0`}>
-                      <span className="flex flex-wrap gap-1">
-                        <Badge variant={AWARD_STATE[a.state].variant}>{AWARD_STATE[a.state].label}</Badge>
-                        {a.holdReason && <Badge variant="warning">{REWARD_HOLD_LABEL[a.holdReason] ?? a.holdReason}</Badge>}
-                      </span>
-                      {a.reversalReason && a.state === "REVERSED" && <span className={SUB}>{a.reversalReason}</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
+      {showAwards && (
+        <ul className="divide-y divide-border/40">
+          {staff.awards.map((a) => (
+            <li key={a.id} className={ROW}>
+              <span className={LINE}>
+                {/* Read like an earned Reward: what, when, then Ref as ID and first name. */}
+                <span className="text-foreground">{a.tokens} points</span>
+                <span className="text-muted-foreground">
+                  · {formatIst(a.qualifiedAt)} · Ref: {a.customerId} {a.customerName.trim().split(/\s+/)[0]}
+                </span>
+                {a.state !== "RELEASED" && <Badge variant={AWARD_STATE[a.state].variant}>{AWARD_STATE[a.state].label}</Badge>}
+                {a.holdReason && <Badge variant="warning">{REWARD_HOLD_LABEL[a.holdReason] ?? a.holdReason}</Badge>}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
 
       {dialog?.kind === "RECORD" && (

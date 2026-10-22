@@ -21,6 +21,7 @@ export function Section({
   icon,
   aside,
   fill,
+  below,
   children,
 }: {
   title: string;
@@ -31,10 +32,19 @@ export function Section({
    *  can centre itself in the height. Off by default: a short card next to a
    *  long one stays short rather than ending in empty space. */
   fill?: boolean;
+  /** A second part under a hairline. Cards side by side share their rows
+   *  (subgrid), so the hairline sits at the same height in each of them. */
+  below?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <Card className={cn("p-4 md:p-5", fill && "flex h-full flex-col")}>
+    <Card
+      className={cn(
+        "p-4 md:p-5",
+        fill && "flex h-full flex-col",
+        below !== undefined && "md:row-span-3 md:grid md:grid-rows-subgrid md:gap-y-0"
+      )}
+    >
       <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-2.5">
         <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
           {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
@@ -43,6 +53,7 @@ export function Section({
         {aside}
       </div>
       <div className={cn("mt-3 min-w-0", fill && "flex-1")}>{children}</div>
+      {below !== undefined && <div className="mt-4 min-w-0 border-t border-border/60 pt-3">{below}</div>}
     </Card>
   );
 }

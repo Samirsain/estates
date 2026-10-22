@@ -66,6 +66,8 @@ enum MergeStatus {
 model Person {
   id            String    @id @default(uuid())
   fullName      String
+  /// What the Member is called day to day. Printed on the Member profile only.
+  nickname      String?
   /// main-PRD §18.2 — part of the final buyer details collected before
   /// Allotment or Registry. Never a document upload.
   dateOfBirth   DateTime?
@@ -271,6 +273,22 @@ model MemberProfile {
   tripRewards            TripReward[]
   sourcedEnquiries       Enquiry[]          @relation("MemberSourcedEnquiries")
   holdRequests           HoldRequest[]
+}
+
+/// Someone who may invest later — a name, a mobile and a city, nothing more.
+/// Not a Person: no Booking, Hold or commission hangs off it, so it stays out
+/// of the identity, merge and Aadhaar machinery.
+model PotentialInvestor {
+  id           String   @id @default(uuid())
+  /// PI-000001. Never reused.
+  investorNo   String   @unique
+  fullName     String
+  mobile       String
+  city         String?
+  createdByRef String
+  createdAt    DateTime @default(now())
+
+  @@index([mobile])
 }
 
 model StaffAccount {

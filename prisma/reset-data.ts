@@ -80,6 +80,7 @@ async function main() {
   await db.landInquiryOwner.deleteMany({});
   await db.landInquiryJamabandiEntry.deleteMany({});
   await db.landInquiry.deleteMany({});
+  await db.potentialInvestor.deleteMany({});
 
   await db.taskEvent.deleteMany({});
   await db.task.deleteMany({});

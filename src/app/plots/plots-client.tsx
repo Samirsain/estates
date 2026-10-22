@@ -1071,9 +1071,11 @@ export default function PlotsClient({
             aria-label="Filter by status"
           >
             <option value="ALL">All statuses</option>
-            {Object.entries(STATUS_LABEL).map(([value, label]) => (
+            {/* Inventory statuses only. Waiting Approval onwards is a Booking's
+                state, and the Bookings page filters by it. */}
+            {(["AVAILABLE", "NOT_AVAILABLE", "HOLD"] as const).map((value) => (
               <option key={value} value={value}>
-                {label}
+                {STATUS_LABEL[value]}
               </option>
             ))}
           </select>

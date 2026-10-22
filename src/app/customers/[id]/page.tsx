@@ -67,7 +67,7 @@ function statusWord(status: string): string | undefined {
 /** BOOKED → Booked, PAYMENT_COMPLETED → Payment completed. */
 const words = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
 
-/** END_USER → End User, RESIDENTIAL → Residential. */
+/** RESIDENTIAL → Residential. */
 const titleWords = (v: string) =>
   v.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -265,11 +265,6 @@ export default async function CustomerDetailPage({
   ).length;
   const deliveredCount = deals.filter((b) => b.status === "DELIVERED").length;
 
-  // End User or Investor is decided per purchase. The profile column of the
-  // same name is written by nothing, so the latest deal answers first — the
-  // way the Customers list reads it.
-  const customerType = deals[0]?.customerType ?? customer.customerType;
-
   const firstBookingDate = bookings.at(-1)?.submittedAt ?? null;
   const experience = experienceSince(firstBookingDate);
 
@@ -309,22 +304,6 @@ export default async function CustomerDetailPage({
 
   /* --------------------------------------------------------------- history */
 
-  // Customer Type is recorded per Booking, so a change is one deal answering
-  // differently from the deal before it.
-  const typeChanges: HistoryItem[] = [];
-  let lastType: string | null = null;
-  for (const b of [...deals].reverse()) {
-    if (!b.customerType) continue;
-    if (lastType && b.customerType !== lastType) {
-      typeChanges.push({
-        at: b.approvedAt ?? b.submittedAt,
-        title: "Customer type changed",
-        detail: `${titleWords(lastType)} → ${titleWords(b.customerType)} on ${b.bookingNumber}`,
-      });
-    }
-    lastType = b.customerType;
-  }
-
   const history = newestFirst([
     { at: customer.createdAt, title: `Customer profile created · ${customer.customerId}` },
     ...auditHistory(audit, contact),
@@ -351,7 +330,6 @@ export default async function CustomerDetailPage({
           .join(" — "),
       by: p.actorRef,
     })),
-    ...typeChanges,
   ]);
 
   const hasAlerts = detailsDue.length + blockedPayouts.length + expiringHolds.length > 0;
@@ -446,7 +424,6 @@ export default async function CustomerDetailPage({
               <h1 className="text-2xl font-bold tracking-tight">{customer.person.fullName}</h1>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span className="text-sm text-muted-foreground">{customer.customerId}</span>
-                {customerType && <Badge variant="outline">{titleWords(customerType)}</Badge>}
                 {/* The same Person, filed as a Member too. */}
                 {customer.person.memberProfile && (
                   <Link href={`/members/${customer.person.memberProfile.id}`}>

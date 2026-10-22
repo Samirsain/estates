@@ -56,7 +56,7 @@ export async function bookTripAction(input: { rewardId: string; bookingReference
         bookingReference: input.bookingReference,
         bookedOn: new Date(input.bookedOn),
       }),
-    "Trip booked."
+    "Marked booked."
   );
 }
 
@@ -70,7 +70,7 @@ export async function travelledTripAction(input: { rewardId: string; travelledOn
         rewardId: input.rewardId,
         travelledOn: new Date(input.travelledOn),
       }),
-    "Trip travelled. The credits it used stay consumed."
+    "Marked travelled. The credits it used stay consumed."
   );
 }
 

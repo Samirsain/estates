@@ -210,7 +210,7 @@ export default function EnquiriesClient({
 
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="mx-auto max-w-6xl space-y-3">
+      <div className="mx-auto max-w-6xl space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Enquiries</h1>
@@ -281,7 +281,7 @@ export default function EnquiriesClient({
         {visible.length === 0 ? (
           <Card className="p-10 text-center">
             <p className="text-sm font-semibold">No Enquiries in this view.</p>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-xs font-medium text-foreground">
               {canManage ? "Use New Enquiry to capture one." : "Nothing to show for this filter."}
             </p>
           </Card>
@@ -294,18 +294,18 @@ export default function EnquiriesClient({
                 it is, where they are, what they asked about — rather than two
                 facts stacked in one cell. Only the Plot keeps a second line,
                 for the type it is. */}
-            <table className="w-full min-w-[64rem] border-collapse text-xs">
-              <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                <tr className="border-b border-border">
-                  <th className="w-[5.5rem] px-3 py-1.5">Date</th>
-                  <th className="px-3 py-1.5">Name</th>
-                  <th className="w-[6.5rem] px-3 py-1.5">Mobile</th>
-                  <th className="w-[7rem] px-3 py-1.5">City</th>
-                  <th className="px-3 py-1.5">Project</th>
-                  <th className="w-[8rem] px-3 py-1.5">Plot</th>
-                  <th className="w-[9.5rem] px-3 py-1.5">Source</th>
-                  <th className="w-[8rem] px-3 py-1.5">Follow-up</th>
-                  {canManage && <th className="w-[6rem] px-3 py-1.5 text-center">Action</th>}
+            <table className="w-full min-w-[64rem] border-collapse text-sm">
+              <thead className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="w-[6rem] px-3 py-1">Date</th>
+                  <th className="px-3 py-1">Name</th>
+                  <th className="w-[7.5rem] px-3 py-1">Mobile</th>
+                  <th className="w-[7rem] px-3 py-1">City</th>
+                  <th className="px-3 py-1">Project</th>
+                  <th className="w-[8rem] px-3 py-1">Plot</th>
+                  <th className="w-[9.5rem] px-3 py-1">Source</th>
+                  <th className="w-[8rem] px-3 py-1">Follow-up</th>
+                  {canManage && <th className="w-[6rem] px-3 py-1 text-center">Action</th>}
                 </tr>
               </thead>
               <tbody>
@@ -313,7 +313,7 @@ export default function EnquiriesClient({
                   <tr
                     key={e.id}
                     id={`enq-${e.id}`}
-                    className={`${e.id === focus ? "bg-primary/10 " : ""}h-14 border-b border-border/60 align-middle leading-tight last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1`}
+                    className={`${e.id === focus ? "bg-primary/10 " : ""}h-14 border-b border-border/60 align-middle transition-colors hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-2`}
                   >
                     <td className="whitespace-nowrap tabular-nums text-muted-foreground">
                       {formatIstDate(e.createdAt)}

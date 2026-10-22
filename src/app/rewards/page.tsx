@@ -117,7 +117,7 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
                 <tr>
                   <th className={TH}>Member</th>
                   <th className={TH}>Programme</th>
-                  <th className={TH}>Trip</th>
+                  <th className={TH}>Reward</th>
                   <th className={TH}>Earned</th>
                 </tr>
               </thead>

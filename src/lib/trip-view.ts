@@ -29,7 +29,9 @@ export type TripProgrammeView = {
     expiresAt: string | null;
     bucketId: string | null;
     booking: string | null;
+    bookingId: string | null;
     plot: string | null;
+    /** A Reference credit's introduced Member: "MEM-000017 Vijay" (ID, first name). */
     via: string | null;
     reversalReason: string | null;
   }>;
@@ -48,6 +50,9 @@ export type TripProgrammeView = {
     travelledAt: string | null;
   }>;
 };
+
+/** Credit states a sale only reaches once it qualified; PENDING and REVERSED never did. */
+const QUALIFYING = new Set(["QUALIFIED", "ALLOCATED", "USED", "HELD", "EXPIRED"]);
 
 /** Reads and groups everything for one Member. */
 export async function tripOfMember(memberProfileId: string) {
@@ -76,8 +81,8 @@ export async function tripProgrammes(
     qualifiedAt?: Date | null;
     createdAt?: Date;
     reversalReason?: string | null;
-    sourceBooking?: { bookingNumber: string | null; plot: { plotNumber: string } };
-    introducedMember?: { memberId: string } | null;
+    sourceBooking?: { id: string; bookingNumber: string | null; plot: { plotNumber: string } };
+    introducedMember?: { memberId: string; person?: { fullName: string } } | null;
   }[],
   buckets: Array<{
     id: string;
@@ -102,7 +107,15 @@ export async function tripProgrammes(
     } | null;
   }>
 ): Promise<TripProgrammeView[]> {
-  const keys = [...new Set([...credits, ...buckets].map((x) => `${x.projectId}|${x.programmeCode}`))];
+  // Only programmes with a qualifying sale: a credit that reached 100% payment
+  // (or an Approved Buyback) at some point, or an earned Reward. A Project with
+  // nothing but sales still waiting for payment, or cancelled ones, stays out.
+  const keys = [
+    ...new Set([
+      ...credits.filter((c) => QUALIFYING.has(c.state)).map((c) => `${c.projectId}|${c.programmeCode}`),
+      ...buckets.filter((b) => b.reward).map((b) => `${b.projectId}|${b.programmeCode}`),
+    ]),
+  ];
   const projects = await db.project.findMany({
     where: { id: { in: keys.map((k) => k.split("|")[0]) } },
     select: { id: true, name: true },
@@ -149,8 +162,13 @@ export async function tripProgrammes(
           expiresAt: c.expiresAt?.toISOString() ?? null,
           bucketId: c.bucketId,
           booking: c.sourceBooking?.bookingNumber ?? null,
+          bookingId: c.sourceBooking?.id ?? null,
           plot: c.sourceBooking?.plot.plotNumber ?? null,
-          via: c.introducedMember?.memberId ?? null,
+          via: c.introducedMember
+            ? [c.introducedMember.memberId, c.introducedMember.person?.fullName.trim().split(/\s+/)[0]]
+                .filter(Boolean)
+                .join(" ")
+            : null,
           reversalReason: c.reversalReason ?? null,
         })),
       held: mine.filter((c) => c.state === "HELD").length,

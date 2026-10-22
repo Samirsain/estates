@@ -8,7 +8,6 @@ import React from "react";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
-  Building2,
   Calculator,
   Gift,
   LandPlot,
@@ -16,6 +15,7 @@ import {
   Network,
   Search,
   Settings,
+  TrendingUp,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,23 +24,20 @@ import { NotificationBell } from "@/components/notification-bell";
 import { signOut } from "@/app/login/actions";
 import type { StaffRole } from "@/lib/security/permissions";
 
+/** Plots & Sales — the buttons at the head of the Task List. The owner took
+ *  the group out of the sidebar once these were there. */
+export const SALES_LINKS = [
+  { label: "Projects", href: "/projects", phase: null },
+  { label: "Plot Inventory", href: "/plots", phase: null },
+  { label: "Enquiries", href: "/enquiries", phase: null },
+  { label: "Bookings", href: "/bookings", phase: null },
+  { label: "Buyback / Resale", href: "/acquisitions", phase: null },
+] as const;
+
 const NAV = [
-  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard", phase: null },
-  {
-    label: "Plots & Sales",
-    icon: Building2,
-    href: "/plots",
-    phase: null,
-    children: [
-      { label: "Projects", href: "/projects", phase: null },
-      { label: "Plot Inventory", href: "/plots", phase: null },
-      { label: "Enquiries", href: "/enquiries", phase: null },
-      { label: "Bookings", href: "/bookings", phase: null },
-      { label: "Buyback / Resale", href: "/acquisitions", phase: null },
-    ],
-  },
+  { label: "Task List", icon: LayoutDashboard, href: "/dashboard", phase: null },
   // Land Inquiry spec §23.1 asks for its own navigation entry. It sat under
-  // Plots & Sales to avoid widening DESIGN §3.1's top-level list; the owner
+  // the old Plots & Sales group to avoid widening DESIGN §3.1's top-level list; the owner
   // asked for it at the top level, so here it is — recorded the same way the
   // Calculator below is, rather than left to look like a slip. Pre-acquisition
   // sourcing is its own stage of the business and reads oddly filed under the
@@ -48,6 +45,7 @@ const NAV = [
   { label: "Land Inquiries", icon: LandPlot, href: "/land-inquiries", phase: null },
   { label: "Customers", icon: Users, href: "/customers", phase: null },
   { label: "Members", icon: Network, href: "/members", phase: null },
+  { label: "Potential Investors", icon: TrendingUp, href: "/potential-investors", phase: null },
   // CP §90 — Monetary Benefits, Trip Rewards, Royalty Tokens and Recovery in one place.
   { label: "Rewards", icon: Gift, href: "/rewards", phase: null },
   // DESIGN §3.1 lists six top-level areas and §1 says not to reintroduce a
@@ -128,15 +126,11 @@ export function AppShell({
         <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col md:overflow-y-auto md:overflow-x-hidden">
           {NAV.filter((item) => !("admin" in item && item.admin) || canAdminister).map(
             (item) => {
+              const on = (href: string) => pathname === href || pathname.startsWith(href + "/");
+              // The Plots & Sales pages are reached from the Task List's
+              // buttons, so the Task List stays lit while one is open.
               const active =
-                Boolean(item.href && (pathname === item.href || pathname.startsWith(item.href + "/"))) ||
-                ("children" in item &&
-                  Boolean(
-                    item.children?.some(
-                      (child) =>
-                        child.href && (pathname === child.href || pathname.startsWith(child.href + "/"))
-                    )
-                  ));
+                on(item.href) || (item.href === "/dashboard" && SALES_LINKS.some((link) => on(link.href)));
               return (
                 <div key={item.label} className="min-w-max md:min-w-0">
                   <a
@@ -187,43 +181,6 @@ export function AppShell({
                       </span>
                     )}
                   </a>
-                  {"children" in item && item.children && (
-                    // No icon of their own, so nothing to show on the rail —
-                    // these appear with the labels or not at all.
-                    <ul
-                      className={`hidden md:block md:overflow-hidden ${
-                        menuOpen ? "md:h-auto" : "md:h-0"
-                      }`}
-                    >
-                      {item.children.map((child) => {
-                        const childActive =
-                          Boolean(child.href && (pathname === child.href || pathname.startsWith(child.href + "/")));
-                        return (
-                          <li key={child.label}>
-                            <a
-                              href={child.href ?? undefined}
-                              aria-disabled={!child.href}
-                              aria-current={childActive ? "page" : undefined}
-                              className={`flex items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs transition-colors ${
-                                childActive
-                                  ? "font-semibold text-primary bg-primary/10"
-                                  : child.href
-                                    ? "text-muted-foreground hover:bg-accent"
-                                    : "cursor-default text-muted-foreground"
-                              }`}
-                            >
-                              <span>{child.label}</span>
-                              {child.phase && (
-                                <span className="ml-auto rounded-md border border-border/60 px-1.5 py-0.5 text-[9px]">
-                                  {child.phase}
-                                </span>
-                              )}
-                            </a>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
                 </div>
               );
             }

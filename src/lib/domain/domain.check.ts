@@ -149,7 +149,7 @@ import {
   validateChangePlot,
 } from "./acquisition.ts";
 import { istDay, formatIst, formatIstDateTime } from "../tasks.ts";
-import { allocate, creditExpiry, validateTripSettings, type AllocatableCredit } from "./trip.ts";
+import { allocate, CREDIT_REASON, creditExpiry, creditStatus, validateTripSettings, type AllocatableCredit } from "./trip.ts";
 import { MAX_TOKENS, allocate as allocateTokens, tokenFigures, validateBusinessDay, validateTokenQuantity } from "./tokens.ts";
 import { createsInviteCycle } from "./network.ts";
 
@@ -2832,5 +2832,21 @@ const inviterOf = (id: string) => invitedUp.get(id) ?? null;
 assert.ok(createsInviteCycle("A", "C", inviterOf));
 assert.ok(createsInviteCycle("A", "A", inviterOf));
 assert.ok(!createsInviteCycle("D", "C", inviterOf));
+
+/* ===== Credit status on screen — owner-approved 21 Oct 2026 ===== */
+const shown = (state: string, route: string | null = null, reversalReason: string | null = null) => {
+  const { status, reason } = creditStatus({ state, route, reversalReason });
+  return `${status} · ${reason}`;
+};
+assert.equal(shown("PENDING"), "Pending · Payment Pending");
+assert.equal(shown("HELD"), "Pending · Member Deactivated");
+assert.equal(shown("QUALIFIED", "PAYMENT_100"), "Counted · Payment Paid");
+assert.equal(shown("ALLOCATED", "APPROVED_BUYBACK"), "Counted · Buyback Approved");
+assert.equal(shown("USED", "PAYMENT_100"), "Counted · Reward Completed");
+assert.equal(shown("EXPIRED", "PAYMENT_100"), "Not Counted · Time Expired");
+assert.equal(shown("REVERSED", null, CREDIT_REASON.BOOKING_NOT_LIVE), "Not Counted · Booking Cancelled");
+assert.equal(shown("REVERSED", null, CREDIT_REASON.SOLD_BY_CORRECTED), "Not Counted · Record Corrected");
+assert.equal(shown("REVERSED", null, CREDIT_REASON.PERSON_MERGE), "Not Counted · Record Corrected");
+assert.equal(shown("REVERSED", null, "Approved after the programme cut-off (SSOT §48)."), "Not Counted · Not Eligible");
 
 console.log("domain.check.ts OK");

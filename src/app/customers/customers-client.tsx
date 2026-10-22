@@ -22,7 +22,6 @@ const SORTS = {
   customerId: "Customer ID",
   name: "Name",
   city: "City",
-  customerType: "Type",
   project: "Project",
   closingLoyaltyUsed: "Closing Loyalty Points",
 } as const;
@@ -34,7 +33,6 @@ export type CustomerRowView = {
   name: string;
   mobileMasked: string;
   city: string;
-  customerType: string | null;
   project: string | null;
   plotNumber: string | null;
   plotType: string | null;
@@ -73,7 +71,7 @@ function Cell({
   );
 }
 
-/** RESIDENTIAL → Residential, END_USER → End User. A type is a word, not a shout. */
+/** RESIDENTIAL → Residential. A type is a word, not a shout. */
 function typeWord(value: string): string {
   return value
     .replaceAll("_", " ")
@@ -96,17 +94,15 @@ export default function CustomersClient({
 }) {
   const router = useRouter();
   const [search, setSearch] = React.useState("");
-  const [typeFilter, setTypeFilter] = React.useState("ALL");
   const [sortBy, setSortBy] = React.useState<keyof typeof SORTS>("customerId");
 
   const visible = rows
     .filter(
       (r) =>
-        (typeFilter === "ALL" || (r.customerType ?? "") === typeFilter) &&
-        (search.trim() === "" ||
-          `${r.customerId} ${r.name} ${r.city} ${r.project ?? ""} ${r.plotNumber ?? ""}`
-            .toLowerCase()
-            .includes(search.trim().toLowerCase()))
+        search.trim() === "" ||
+        `${r.customerId} ${r.name} ${r.city} ${r.project ?? ""} ${r.plotNumber ?? ""}`
+          .toLowerCase()
+          .includes(search.trim().toLowerCase())
     )
     // filter() already returned a fresh array, so sorting it in place is safe.
     .sort((a, b) => {
@@ -128,16 +124,6 @@ export default function CustomersClient({
         </header>
 
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            className={filterClass}
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            aria-label="Filter by Customer Type"
-          >
-            <option value="ALL">All Customer Types</option>
-            <option value="END_USER">End User</option>
-            <option value="INVESTOR">Investor</option>
-          </select>
           <select
             className={filterClass}
             value={sortBy}

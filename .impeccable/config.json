@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/app/dashboard/dashboard-client.tsx"
+        ],
+        "createdAt": "2026-10-22T11:32:37.925Z",
+        "reason": "project spec: design.md §4.1 (cited in the file header) sets overdue red / urgent yellow left-border task rows; L287 is the transparent twin that aligns the header; both predate this session"
+      }
+    ]
+  }
+}
