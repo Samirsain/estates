@@ -214,7 +214,7 @@ export default function AcquisitionsClient({
                           {row.plotType && (
                             <span className="text-muted-foreground">
                               {" · "}
-                              {row.plotType.replaceAll("_", " ").toLowerCase()}
+                              {row.plotType.charAt(0) + row.plotType.slice(1).toLowerCase().replaceAll("_", " ")}
                             </span>
                           )}
                         </span>

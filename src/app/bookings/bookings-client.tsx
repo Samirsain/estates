@@ -7,7 +7,7 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, ChevronLeft, Plus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, Plus, Wallet } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { PersonLink } from "@/components/person-link";
@@ -174,6 +174,7 @@ type Permissions = {
 // One width and one height for every action in the Booking header, so three
 // buttons on a line read as three of the same thing.
 const headerButton = "h-8 w-[9rem]";
+const rowButton = "h-7 px-2 text-[11px]";
 
 /** DIRECT, INVITE_OVERRIDE — read as words, not as constants. */
 const humanise = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
@@ -589,7 +590,7 @@ export default function BookingsClient({
                 )}
               </div>
               <p className="mt-1 text-sm">
-                {focusRow.project} · {focusRow.plotNumber}
+                {focusRow.plotNumber} · {focusRow.project} · {humanise(focusRow.plotType)}
               </p>
               <p className="mt-1 text-[11px] text-muted-foreground">
                 {focusRow.bookingNumber
@@ -670,7 +671,7 @@ export default function BookingsClient({
             ))}
           </select>
           <Input
-            className="h-9 w-64"
+            className="h-9 w-96"
             placeholder="Search Booking Number, Request ID, Plot or Customer"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -691,16 +692,16 @@ export default function BookingsClient({
           </Card>
         ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[52rem] border-collapse text-sm">
+          <table className="w-full min-w-[58rem] border-collapse text-sm">
             <thead className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th className="px-3 py-1">Project</th>
-                <th className="w-[9rem] px-3 py-1">Plot No.</th>
-                <th className="w-[10rem] px-3 py-1 text-center">Size (W × L)</th>
+                <th className="px-3 py-1">Plot No.</th>
+                <th className="px-3 py-1 text-center">Size (W × L)</th>
                 <th className="px-3 py-1">Customer</th>
                 <th className="px-3 py-1">Sold By</th>
-                <th className="w-[14rem] px-3 py-1">Status</th>
-                <th className="w-[8rem] px-3 py-1 text-right">Payment</th>
+                <th className="px-3 py-1 text-center">Status</th>
+                <th className="px-3 py-1 text-center">Payment</th>
+                <th className="px-3 py-1 text-center">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -709,9 +710,8 @@ export default function BookingsClient({
                   key={row.id}
                   className="h-14 border-b border-border/60 align-middle transition-colors hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-2"
                 >
-                  <td>{row.project}</td>
-                  {/* The Plot number is the way into the Booking, and its type
-                      qualifies it rather than competing with it. */}
+                  {/* As on Plot Inventory: the Plot number is the way into the
+                      Booking, with its Project and type under it. */}
                   <td>
                     <button
                       type="button"
@@ -720,8 +720,12 @@ export default function BookingsClient({
                     >
                       {row.plotNumber}
                     </button>
-                    <span className="block text-[11px] text-muted-foreground">
-                      {humanise(row.plotType)}
+                    <span className="block text-[11px] font-medium text-foreground">
+                      {row.project}
+                      <span className="text-muted-foreground">
+                        {" · "}
+                        {humanise(row.plotType)}
+                      </span>
                     </span>
                   </td>
                   {/* An irregular Plot has no width and length to print, only
@@ -787,7 +791,7 @@ export default function BookingsClient({
                       </span>
                     )}
                   </td>
-                  <td title={statusTooltip(row)}>
+                  <td className="text-center" title={statusTooltip(row)}>
                     <Badge variant={statusVariant(row.status)} className="whitespace-nowrap">
                       {STATUS_LABEL[row.status] ?? row.status}
                     </Badge>
@@ -797,7 +801,25 @@ export default function BookingsClient({
                       </span>
                     )}
                   </td>
-                  <td className="text-right tabular-nums">{row.paymentReceivedPercent}%</td>
+                  <td className="text-center tabular-nums">{row.paymentReceivedPercent}%</td>
+                  {/* As on Acquisitions: Payment is the one action taken from
+                      the list, gated exactly like Confirm Payment on the
+                      Booking's page. The rest need the record in front of you. */}
+                  <td className="text-center">
+                    {["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
+                    permissions.confirmPayment &&
+                    Number(remainingPercent(row.paymentReceivedPercent)) > 0 ? (
+                      <Button
+                        className={rowButton}
+                        variant="outline"
+                        onClick={() => openDialog({ kind: "PAY", row })}
+                      >
+                        <Wallet className="mr-1 h-3 w-3" /> Payment
+                      </Button>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1515,8 +1537,8 @@ function BookingDetailPanel({
         <div className="space-y-4">
           {row.status === "REQUEST_PENDING" && (
             <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
-              Submitted values are locked while Accounts reviews them. To change one, cancel this
-              request and submit a revised one.
+              Submitted values are locked while Accounts reviews them. To change one, use{" "}
+              <span className="font-semibold">Revise request</span> — it replaces this request and keeps the old one in History.
             </p>
           )}
           {pendingCustomerChange && (
@@ -1609,14 +1631,14 @@ function BookingDetailPanel({
               {["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
                 permissions.raiseCustomerChange &&
                 !pendingCustomerChange && (
-                  <Button size="sm" variant="ghost" onClick={() => onAction({ kind: "CUSTOMER_CHANGE", row })}>
+                  <Button size="sm" variant="outline" onClick={() => onAction({ kind: "CUSTOMER_CHANGE", row })}>
                     Change Primary Customer
                   </Button>
                 )}
               {["BOOKED", "PAYMENT_COMPLETED", "DELIVERED"].includes(row.status) &&
                 permissions.raiseSoldBy &&
                 !pendingSoldBy && (
-                  <Button size="sm" variant="ghost" onClick={() => onAction({ kind: "SOLD_BY", row })}>
+                  <Button size="sm" variant="outline" onClick={() => onAction({ kind: "SOLD_BY", row })}>
                     Sold By Correction
                   </Button>
                 )}
@@ -1827,12 +1849,12 @@ function BookingDetailPanel({
               <table className="w-full min-w-[34rem] text-xs">
                 <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <tr>
-                    <th className="py-1">#</th>
+                    <th className="w-[3rem] py-1">#</th>
                     <th className="py-1 text-right">Scheduled %</th>
                     <th className="py-1 text-right">Received %</th>
                     <th className="py-1 text-right">Remaining %</th>
-                    <th className="py-1">Due date</th>
-                    <th className="py-1">Status</th>
+                    <th className="py-1 text-center">Due date</th>
+                    <th className="py-1 text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1842,8 +1864,8 @@ function BookingDetailPanel({
                       <td className="py-1 text-right tabular-nums">{i.scheduled}</td>
                       <td className="py-1 text-right tabular-nums">{i.received}</td>
                       <td className="py-1 text-right tabular-nums">{i.remaining}</td>
-                      <td className="py-1">{formatIst(i.dueDate)}</td>
-                      <td className="py-1">
+                      <td className="py-1 text-center tabular-nums">{formatIst(i.dueDate)}</td>
+                      <td className="py-1 text-center">
                         <Badge
                           variant={
                             i.status === "RECEIVED"

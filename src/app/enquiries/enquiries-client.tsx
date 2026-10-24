@@ -293,7 +293,7 @@ export default function EnquiriesClient({
             {/* A sheet: every fact under its own heading — when it came in, who
                 it is, where they are, what they asked about — rather than two
                 facts stacked in one cell. Only the Plot keeps a second line,
-                for the type it is. */}
+                for its Project and type, as on Plot Inventory. */}
             <table className="w-full min-w-[64rem] border-collapse text-sm">
               <thead className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
@@ -301,8 +301,7 @@ export default function EnquiriesClient({
                   <th className="px-3 py-1">Name</th>
                   <th className="w-[7.5rem] px-3 py-1">Mobile</th>
                   <th className="w-[7rem] px-3 py-1">City</th>
-                  <th className="px-3 py-1">Project</th>
-                  <th className="w-[8rem] px-3 py-1">Plot</th>
+                  <th className="px-3 py-1">Plot</th>
                   <th className="w-[9.5rem] px-3 py-1">Source</th>
                   <th className="w-[8rem] px-3 py-1">Follow-up</th>
                   {canManage && <th className="w-[6rem] px-3 py-1 text-center">Action</th>}
@@ -323,26 +322,29 @@ export default function EnquiriesClient({
                     </td>
                     <td className="whitespace-nowrap">{e.mobileMasked}</td>
                     <td>{e.city || "—"}</td>
-                    <td>{e.project || "—"}</td>
                     <td>
                       {/* Three kinds of interest, and the column says which:
                           a Plot in inventory, something asked for that is not
                           in it yet, or the Project itself. */}
                       {e.plot !== "General" ? (
-                        <>
-                          <span className="block font-semibold">{e.plot}</span>
-                          {e.plotType && (
-                            <span className="block text-[11px] text-muted-foreground">
-                              {humanise(e.plotType)}
-                            </span>
-                          )}
-                        </>
+                        <span className="block font-semibold">{e.plot}</span>
                       ) : e.plotRequirement ? (
-                        <span className="italic" title={e.plotRequirement}>
+                        <span className="block italic" title={e.plotRequirement}>
                           {e.plotRequirement}
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">General</span>
+                        <span className="block text-muted-foreground">General</span>
+                      )}
+                      {e.project && (
+                        <span className="block text-[11px] font-medium text-foreground">
+                          {e.project}
+                          {e.plotType && (
+                            <span className="text-muted-foreground">
+                              {" · "}
+                              {humanise(e.plotType)}
+                            </span>
+                          )}
+                        </span>
                       )}
                     </td>
                     <td>

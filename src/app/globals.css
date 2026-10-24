@@ -90,6 +90,8 @@
        fetched, which also keeps the Content-Security-Policy tight. */
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
       "Segoe UI", Roboto, sans-serif;
+    /* A short tab drops the scrollbar and the whole page jumped sideways. */
+    scrollbar-gutter: stable;
   }
 
   body {

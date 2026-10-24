@@ -56,6 +56,7 @@ import {
   Gift,
   ShieldCheck,
   UserCheck,
+  Wallet,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -324,6 +325,8 @@ export default async function MemberDetailPage({
 
   const experience = experienceSince(member.activationDate);
   const canManage = can(actor.role, "MEMBER_ACTIVATE", actor.extraPermissions);
+  const canConfirmPayment = can(actor.role, "PAYMENT_RECEIVED_CONFIRM", actor.extraPermissions);
+  const canStartBooking = can(actor.role, "BOOKING_REQUEST_SUBMIT", actor.extraPermissions);
 
   // The account that is current: the verified one, or the one waiting when
   // nothing is verified yet. Replaced accounts are in History.
@@ -1113,10 +1116,25 @@ export default async function MemberDetailPage({
                           code={c.customerId}
                           name={c.person.fullName}
                           note={
+                            // A status with a next step is that step's button:
+                            // paying off the first purchase makes the link final,
+                            // and a final link earns on the Customer's next one.
                             !c.royaltyLinkFinalAt ? (
-                              <Badge variant="warning">Waiting for full payment</Badge>
+                              c.royaltyLinkFirstBooking && canConfirmPayment ? (
+                                <Button size="xs" variant="outline" title="Waiting for full payment" asChild>
+                                  <Link href={`/bookings/${c.royaltyLinkFirstBooking.id}`}>
+                                    <Wallet className="mr-1 h-3 w-3" /> Payment
+                                  </Link>
+                                </Button>
+                              ) : (
+                                <Badge variant="warning">Waiting for full payment</Badge>
+                              )
                             ) : c.royaltyOpportunityConsumedAt ? (
                               <Badge variant="outline">Points used</Badge>
+                            ) : canStartBooking ? (
+                              <Button size="xs" variant="outline" title="Can earn points" asChild>
+                                <Link href={`/bookings?for=${c.person.id}`}>Start Booking</Link>
+                              </Button>
                             ) : (
                               <Badge variant="info">Can earn points</Badge>
                             )
