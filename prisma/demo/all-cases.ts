@@ -29,7 +29,7 @@ import { clearRecovery, closeAdjustmentWithoutRecovery, openRecovery, setOffReco
 import { setMemberStatus, updateMemberRera } from "@/lib/services/network-service";
 import { enterBankDetails } from "@/lib/services/bank-service";
 import { correctTokenRedemption, recordTokenRedemption } from "@/lib/services/royalty-service";
-import { bookTripReward, correctInviter, markTripTravelled, recordTripNominee } from "@/lib/services/trip-service";
+import { correctInviter, markTripTravelled } from "@/lib/services/trip-service";
 import { requestPersonMerge } from "@/lib/services/merge-service";
 import { closeEnquiry, recordFollowUp } from "@/lib/services/enquiry-service";
 import { archiveLandInquiry, changeLandInquiryStage, createLandInquiry, reassignLandInquiry, setLandInquiryStatus } from "@/lib/services/land-inquiry-service";
@@ -249,14 +249,14 @@ on("2026-04-03", "MD corrects Vijay's inviter", async () => {
   note("TM03", "Was entered as Vijay Rathore's inviter by mistake.");
 });
 
-/* ------------------------------------------------------- Trip 1: travelled */
+/* ------------------------------------------------ the Reward: delivered */
 
 on("2026-04-05", "Vijay sells TN-01 and TN-02 (100%)", async () => {
   for (const plot of ["TN-01", "TN-02"]) await sale(plot, nextBuyer(), { member: "TM01" }, "100", "full");
 });
 on("2026-04-06", "Rohit Jain (invited by Vijay) sells TN-03 — Vijay's Reference Credit", async () => {
   await sale("TN-03", nextBuyer(), { member: "TM04" }, "100", "full");
-  kase(VIJAY, "TN-01, TN-02, TN-03", "Trip 1: two own sales + Rohit Jain's first sale (Reference) → earned → traveller → booked → travelled", "Rewards section; Members invited.");
+  kase(VIJAY, "TN-01, TN-02, TN-03", "Reward: two own sales + Rohit Jain's first sale (Reference) → earned → Mark Delivered", "Rewards section; Members invited.");
   note("TM04", "Invited by Vijay Rathore; his first sale TN-03 gave Vijay a Reference Credit.");
 });
 
@@ -278,12 +278,12 @@ on("2026-04-30", "April payout", async () => {
   for (const plot of ["TN-01", "TN-02", "TN-20"]) await payRecord(plot);
 }, "17:00");
 
-/* -------------------------------------- Trip 2: booked, then a sale is lost */
+/* ------------------- after the Reward: one per Project, so nothing more counts */
 
 on("2026-05-05", "Vijay sells TN-04, TN-05; Kavita Rao sells TN-06 (100%)", async () => {
   for (const plot of ["TN-04", "TN-05"]) await sale(plot, nextBuyer(), { member: "TM01" }, "100", "full");
   await sale("TN-06", nextBuyer(), { member: "TM05" }, "100", "full");
-  note("TM05", "Invited by Vijay Rathore; her first sale TN-06 gave Vijay his second Reference Credit.");
+  note("TM05", "Invited by Vijay Rathore; her first sale TN-06 used her Reference, but Vijay already has his Reward in Test Nagar.");
 });
 
 on("2026-05-08", "Rajat pays 35% on TN-20; a second Accounts user corrects it to 30%", async () => {
@@ -299,10 +299,7 @@ on("2026-05-10", "Rajat buys TN-27 (100%) and TN-24 (30%) direct", async () => {
   kase(RAJAT, "TN-27", "Repeat purchase: Loyalty Points to Rajat himself", "Loyalty Points & commission.");
 });
 
-on("2026-05-20", "Trip 1 traveller and booking; TN-27 Registry", async () => {
-  const [first] = await rewardsOfVijay();
-  await recordTripNominee({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: first.id, recipient: "SPOUSE", recipientName: "Sunita Rathore" });
-  await bookTripReward({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: first.id, bookingReference: "MMT-TN-1001 · Udaipur 3N/4D", bookedOn: new Date() });
+on("2026-05-20", "TN-27 Registry", async () => {
   await finalBuyers("TN-27", [["HC", null]]);
   await complete("TN-27", "REGISTRY", "HC");
 });
@@ -338,11 +335,10 @@ on("2026-06-15", "Rajat closes TN-41; buys TN-28, TN-29", async () => {
   await sale("TN-28", "HC", {}, "30");
   await sale("TN-29", "HC", {}, "30");
 });
-on("2026-06-20", "Trip 1 travelled; Trip 2 traveller and booking; TN-20 shares 50/50 → 60/40", async () => {
-  const [first, second] = await rewardsOfVijay();
-  await markTripTravelled({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: first.id, travelledOn: new Date() });
-  await recordTripNominee({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: second.id, recipient: "SELF", recipientName: "" });
-  await bookTripReward({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: second.id, bookingReference: "MMT-TN-2002 · Goa 4N/5D", bookedOn: new Date() });
+on("2026-06-20", "Vijay's Reward delivered; TN-20 shares 50/50 → 60/40", async () => {
+  // One Reward per Project (owner, 27 Oct 2026): Vijay has only this one.
+  const [reward] = await rewardsOfVijay();
+  await markTripTravelled({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: reward.id, travelledOn: new Date() });
   const b = await db.booking.findUniqueOrThrow({ where: { id: B["TN-20"] }, include: { parties: { where: { kind: "COMMERCIAL" } } } });
   const [primary, extra] = [b.parties.find((p) => p.role === "PRIMARY")!, b.parties.find((p) => p.role === "ADDITIONAL")!];
   await changeOwnershipShares({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-20"], parties: [
@@ -378,7 +374,7 @@ on("2026-07-10", "TN-05 and TN-50 cancelled after their Directs were paid; two C
   await cancelAndRefund("TN-50", "Loan Denied");
   await submitChangePlot({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-61"], toPlotId: plotId("TN-55"), remark: "Customer wants a smaller Plot because of budget" });
   await submitChangePlot({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-25"], toPlotId: plotId("TN-26"), remark: "Customer wants a better location in the Project" });
-  kase(VIJAY, "TN-04, TN-05, TN-06", "Trip 2: earned → booked → TN-05 cancelled, so a booked Trip lost a sale (task Reward Sale Cancelled)", "Rewards section; Dashboard.");
+  kase(VIJAY, "TN-04, TN-05, TN-06", "Sold after his Reward: no second Reward in Test Nagar (1 per Project); TN-05 cancelled later", "Rewards section; Members invited.");
 });
 on("2026-07-11", "Change Plots approved", async () => {
   const schedule = SCHEDULES.standard();
@@ -442,23 +438,22 @@ const LAND = [
 ];
 
 on("2026-08-01", "Points spent; Rajat's 3rd and 4th closings; Vijay's August sales; Land Inquiries", async () => {
-  await spend(6, "SELF", "", "Gift voucher");
-  await spend(2, "NON_FAMILY", "Ramesh Vyas (friend)", "Gift item from the catalogue");
-  const wrong = (await spend(1, "SELF", "", "Gift item from the catalogue")) as { redemptionId?: string } | undefined;
+  // Used For is a Gift or a Voucher, for the Member (owner, 27 Oct 2026).
+  await spend(6, "SELF", "", "Voucher");
+  await spend(2, "SELF", "", "Gift");
+  const wrong = (await spend(1, "SELF", "", "Gift")) as { redemptionId?: string } | undefined;
   const wrongId = wrong?.redemptionId ?? (await db.tokenRedemption.findFirstOrThrow({ where: { memberProfileId: VIJAY_ID() }, orderBy: { recordedAt: "desc" } })).id;
   await correctTokenRedemption({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", redemptionId: wrongId, reason: "Entered twice" });
   kase(VIJAY, "—", "Royalty Points spent: 6 for himself, 2 for a friend; one wrong entry corrected by MD", "Royalty Points.");
 
-  // Both sent while only two closings are consumed (sold-by.ts refuses a fourth
-  // request once three are), so the third reaches the limit and the fourth's
-  // Loyalty is cancelled when it qualifies.
+  // No cap on Customer closings (owner, 27 Oct 2026): the third and fourth earn too.
   await submit("TN-42", nextBuyer(), { customer: "HC" }, { schedule: "full" });
   await submit("TN-43", nextBuyer(), { customer: "HC" }, { schedule: "full" });
   for (const plot of ["TN-42", "TN-43"]) {
     await approve(plot);
     await pay(plot, "100");
   }
-  kase(RAJAT, "TN-40…TN-43", "Closer limit: 2 closings paid, 3rd reaches the limit (task Membership — Upgrade Customer), 4th Loyalty cancelled", "Loyalty Points & commission; Dashboard.");
+  kase(RAJAT, "TN-40…TN-43", "Four Customer closings, each earning Loyalty Points — no lifetime limit", "Loyalty Points & commission.");
 
   for (const plot of ["TN-11", "TN-12", "TN-14", "TN-15", "TN-31", "TN-32"]) await sale(plot, nextBuyer(), { member: "TM01" }, "30");
   for (const plot of ["TN-16", "TN-17"]) await sale(plot, nextBuyer(), { member: "TM01" }, "10");
@@ -661,7 +656,7 @@ on("2026-10-08", "Rajat enters a joint bank account with Neha", async () => {
 on("2026-10-10", "Trip programme closes (settings version 2); Rajat's TN-23 request", async () => {
   await settings(projectIds[C], { ...base, directEnabled: true, directPercent: "3", loyaltyEnabled: true, loyaltyPercent: "1", royaltyTokensPerAward: 10, reason: "Reward added / removed", trip: trip(new Date("2026-10-12T00:00:00+05:30"), new Date("2026-12-31T23:59:00+05:30")) });
   await submit("TN-23", "HC");
-  kase(VIJAY, "TN-20, TN-15", "Trip 3: open with 2 credits when the programme closed (task Reward Expiry)", "Rewards section; Dashboard.");
+  kase(VIJAY, "TN-20, TN-15", "Programme closed; with his Reward already earned, these do not count and no task is raised", "Rewards section.");
 });
 on("2026-10-11", "Rajat's TN-23 request corrected and sent again", async () => {
   await reviseBookingRequest({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-23"], parties: [{ personId: P("HC").id, role: "PRIMARY", sharePercent: null }], soldByType: "THREE_PERCENT_CLUB", soldByPersonId: null, bookingDate: new Date(), customerType: "INVESTOR", schedule: SCHEDULES.standard(), reason: "Payment schedule corrected as Accounts asked" });

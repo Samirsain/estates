@@ -6,9 +6,7 @@
 // one (booking-service already imports hold-service).
 
 import type { SoldByType } from "@prisma/client";
-import { CUSTOMER_CLOSING_LOYALTY_LIMIT } from "@/lib/domain/commission";
 import { blocked, type Tx } from "./command";
-import { consumedClosingEvents } from "./commission-service";
 
 /**
  * PRD §6.7 — when a Person holds an Active Member capability the closing action
@@ -65,9 +63,7 @@ export async function validateSoldBy(
 
     // CP §17, §56.2; SSOT §26, §93 — the stricter closer rule: verified KYC and
     // accepted Customer Terms before they can be selected at all (UAT LOY-02,
-    // LOY-03), and fewer than three consumed closing events (SSOT §27). A
-    // request already sent when the third event qualifies is not blocked here;
-    // its Loyalty is cancelled at qualification instead (UAT LOY-08).
+    // LOY-03). No limit on how many closings (owner, 27 Oct 2026).
     if (person.aadhaarStatus !== "VERIFIED") {
       blocked("A Sold By Customer needs verified KYC. Verify their Aadhaar on their Customer page first.");
     }
@@ -76,12 +72,6 @@ export async function validateSoldBy(
     });
     if (terms === 0) {
       blocked("A Sold By Customer must have accepted Customer Terms. Record the acceptance on their Customer page first.");
-    }
-    if ((await consumedClosingEvents(tx, soldByPersonId)) >= CUSTOMER_CLOSING_LOYALTY_LIMIT) {
-      blocked(
-        "This Customer has already earned three Customer-closing Loyalty Points events, the lifetime limit. " +
-          "Membership is required to earn from further third-party sales."
-      );
     }
   }
 }

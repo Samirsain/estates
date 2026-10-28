@@ -60,17 +60,12 @@ export async function bookTripAction(input: { rewardId: string; bookingReference
   );
 }
 
-export async function travelledTripAction(input: { rewardId: string; travelledOn: string }, key: string) {
+/** "Mark Delivered" on the Member's Rewards: delivered today, by the server's clock. */
+export async function deliverRewardAction(rewardId: string, key: string) {
   return act(
     (a) =>
-      markTripTravelled({
-        idempotencyKey: key,
-        actorRef: a.ref,
-        actorRole: a.role,
-        rewardId: input.rewardId,
-        travelledOn: new Date(input.travelledOn),
-      }),
-    "Marked travelled. The credits it used stay consumed."
+      markTripTravelled({ idempotencyKey: key, actorRef: a.ref, actorRole: a.role, rewardId, travelledOn: new Date() }),
+    "Marked delivered."
   );
 }
 

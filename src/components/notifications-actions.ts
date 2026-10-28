@@ -36,7 +36,6 @@ const LIST_PAGE: Record<string, string> = {
   HoldRequest: "/enquiries",
   HoldExtensionRequest: "/enquiries",
   Recovery: "/rewards?tab=recovery",
-  TripReward: "/rewards?tab=trip",
   Task: "/dashboard",
   StaffAccount: "/administration",
 };

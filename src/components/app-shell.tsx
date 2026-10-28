@@ -11,7 +11,6 @@ import {
   Calculator,
   Gift,
   LandPlot,
-  LayoutDashboard,
   Network,
   Search,
   Settings,
@@ -24,9 +23,11 @@ import { NotificationBell } from "@/components/notification-bell";
 import { signOut } from "@/app/login/actions";
 import type { StaffRole } from "@/lib/security/permissions";
 
-/** Plots & Sales — the buttons at the head of the Task List. The owner took
- *  the group out of the sidebar once these were there. */
-export const SALES_LINKS = [
+/** Task List and Plots & Sales — solid buttons in the top bar of every page,
+ *  so any of them is one click from anywhere. The owner took the Plots & Sales
+ *  group out of the sidebar once these were there. */
+const TOP_LINKS = [
+  { label: "Task List", href: "/dashboard", phase: null },
   { label: "Projects", href: "/projects", phase: null },
   { label: "Plot Inventory", href: "/plots", phase: null },
   { label: "Enquiries", href: "/enquiries", phase: null },
@@ -34,28 +35,27 @@ export const SALES_LINKS = [
   { label: "Buyback / Resale", href: "/acquisitions", phase: null },
 ] as const;
 
+// Task List is not here: the owner wants it only in the top bar (TOP_LINKS).
+// The first four are in the order the owner set on 28 Oct 2026.
 const NAV = [
-  { label: "Task List", icon: LayoutDashboard, href: "/dashboard", phase: null },
+  { label: "Members", icon: Network, href: "/members", phase: null },
+  { label: "Customers", icon: Users, href: "/customers", phase: null },
+  { label: "Investor Leads", icon: TrendingUp, href: "/potential-investors", phase: null },
   // Land Inquiry spec §23.1 asks for its own navigation entry. It sat under
   // the old Plots & Sales group to avoid widening DESIGN §3.1's top-level list; the owner
-  // asked for it at the top level, so here it is — recorded the same way the
-  // Calculator below is, rather than left to look like a slip. Pre-acquisition
+  // asked for it at the top level, so here it is — recorded rather than left
+  // to look like a slip. Pre-acquisition
   // sourcing is its own stage of the business and reads oddly filed under the
   // Plots it does not have yet.
   { label: "Land Inquiries", icon: LandPlot, href: "/land-inquiries", phase: null },
-  { label: "Customers", icon: Users, href: "/customers", phase: null },
-  { label: "Members", icon: Network, href: "/members", phase: null },
-  { label: "Potential Investors", icon: TrendingUp, href: "/potential-investors", phase: null },
   // CP §90 — Monetary Benefits, Trip Rewards, Royalty Tokens and Recovery in one place.
   { label: "Rewards", icon: Gift, href: "/rewards", phase: null },
-  // DESIGN §3.1 lists six top-level areas and §1 says not to reintroduce a
-  // standalone calculator. The owner asked for it at the top level anyway, so
-  // this is a deliberate seventh — recorded here rather than left to look like
-  // a slip. It reads Plot dimensions and stores nothing.
-  { label: "Calculator", icon: Calculator, href: "/calculator", phase: null },
+  // Calculator is not here: the owner wants it only as the top-bar button.
   { label: "Reports", icon: BarChart3, href: "/reports", phase: null },
   { label: "Administration", icon: Settings, href: "/administration", phase: null, admin: true },
 ] as const;
+
+const isOn = (pathname: string, href: string) => pathname === href || pathname.startsWith(href + "/");
 
 export function AppShell({
   role,
@@ -126,11 +126,7 @@ export function AppShell({
         <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col md:overflow-y-auto md:overflow-x-hidden">
           {NAV.filter((item) => !("admin" in item && item.admin) || canAdminister).map(
             (item) => {
-              const on = (href: string) => pathname === href || pathname.startsWith(href + "/");
-              // The Plots & Sales pages are reached from the Task List's
-              // buttons, so the Task List stays lit while one is open.
-              const active =
-                on(item.href) || (item.href === "/dashboard" && SALES_LINKS.some((link) => on(link.href)));
+              const active = isOn(pathname, item.href);
               return (
                 <div key={item.label} className="min-w-max md:min-w-0">
                   <a
@@ -189,29 +185,65 @@ export function AppShell({
       </aside>
 
       <div className="flex min-w-0 flex-col">
-        <header className="chrome-surface sticky top-0 z-40 flex flex-wrap items-center gap-3 border-b border-border/50 px-5 py-3">
-          <div className="relative min-w-[12rem] flex-1">
-            <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder="Search Plot, Customer ID, Member ID, Booking Number…"
-              aria-label="Search records"
-            />
+        <header className="chrome-surface sticky top-0 z-40 border-b border-border/50">
+          <div className="flex flex-wrap items-center gap-3 px-5 pt-3">
+            <div className="relative min-w-[12rem] flex-1">
+              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Search Plot, Customer ID, Member ID, Booking Number…"
+                aria-label="Search records"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <NotificationBell />
+              <a href="/account" className="text-right hover:opacity-80" title="My Account">
+                <p className="text-xs font-semibold leading-tight">{actorName}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {staffAccountId} · {role}
+                </p>
+              </a>
+              <form action={signOut}>
+                <Button type="submit" variant="outline" size="sm">
+                  Sign out
+                </Button>
+              </form>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <NotificationBell />
-            <a href="/account" className="text-right hover:opacity-80" title="My Account">
-              <p className="text-xs font-semibold leading-tight">{actorName}</p>
-              <p className="text-[10px] text-muted-foreground">
-                {staffAccountId} · {role}
-              </p>
-            </a>
-            <form action={signOut}>
-              <Button type="submit" variant="outline" size="sm">
-                Sign out
-              </Button>
-            </form>
-          </div>
+          {/* Tabs, not solid buttons: solid pills are what actions look like
+              (Deliver, Payment, Prepare Inventory), and a row of them read as
+              six more actions. Left-aligned with the search and the page
+              heading; the current page is the one underlined. Below md it
+              scrolls sideways instead of wrapping, so the sticky bar keeps
+              its height. Calculator, after them, is the one solid pill: the
+              owner asked for it as a call to action, not another tab.
+              DESIGN §1 says not to reintroduce a standalone calculator; the
+              owner asked for it anyway. It reads Plot dimensions and stores
+              nothing. */}
+          <nav aria-label="Task List, Plots & Sales" className="flex gap-1 overflow-x-auto px-5 pt-1">
+            {TOP_LINKS.map((link) => {
+              const active = isOn(pathname, link.href);
+              return (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  aria-current={active ? "page" : undefined}
+                  className={`shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors ${
+                    active
+                      ? "border-primary font-semibold text-primary"
+                      : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                  }`}
+                >
+                  {link.label}
+                </a>
+              );
+            })}
+            <Button asChild size="sm" className="ml-2 shrink-0 self-center">
+              <a href="/calculator" aria-current={isOn(pathname, "/calculator") ? "page" : undefined}>
+                <Calculator className="mr-1 h-4 w-4" /> Calculator
+              </a>
+            </Button>
+          </nav>
         </header>
 
         <main className="min-w-0 flex-1 px-4 py-6 md:px-5">{children}</main>

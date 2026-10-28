@@ -16,7 +16,7 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { can, canViewField } from "@/lib/security/permissions";
 import { maskAadhaar, maskMobile, maskPan } from "@/lib/security/identity";
 import { isLocked } from "@/lib/security/auth";
-import { eligibilityLabel, experienceSince } from "@/lib/domain/commission";
+import { eligibilityLabel, experienceSince, payoutStep } from "@/lib/domain/commission";
 import { formatIst, formatIstDateTime, istDay } from "@/lib/tasks";
 import { auditHistory, mergeHistory, newestFirst } from "@/lib/profile-history";
 import { TYPE_LABEL } from "@/app/acquisitions/types";
@@ -34,8 +34,10 @@ import { AddTaskButton } from "./add-task-button";
 import RoyaltyTokens from "./royalty-tokens";
 import { memberTokenView } from "@/lib/services/royalty-service";
 import TripSection from "./trip-section";
+import { PayoutCell } from "./payout-button";
 import { tripProgrammes } from "@/lib/trip-view";
 import HistoryButton from "./history-button";
+import { BankAccounts } from "@/app/customers/[id]/bank-accounts";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -56,7 +58,6 @@ import {
   Gift,
   ShieldCheck,
   UserCheck,
-  Wallet,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -95,7 +96,7 @@ const RERA_LABEL: Record<string, string> = {
 
 /** Hold reasons whose stored name reads badly as words; the rest go through words(). */
 const HOLD_LABEL: Record<string, string> = {
-  RECOVERY_CIRCUMVENTION_REVIEW: "Linked to recovery pending",
+  RECOVERY_CIRCUMVENTION_REVIEW: "Recovery Review",
   RECOVERY_OUTSTANDING: "Recovery Pending",
 };
 const PAYMENT_LABEL: Record<string, string> = {
@@ -106,10 +107,15 @@ const PAYMENT_LABEL: Record<string, string> = {
   ACCOUNTS_ADJUSTMENT_REQUIRED: "Recovery Pending",
 };
 
-/** One table style for every table on the page. */
-const TH = "pb-2 pr-4 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
-const TD = "py-2.5 pr-4 align-top";
+/** One table style for every table on the page: each column centred under its heading (owner, 28 Oct 2026). */
+const TH = "px-2 pb-2 text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
+const TD = "px-2 py-2.5 text-center align-middle";
 const SUB = "block text-[11px] text-muted-foreground";
+// Members Invited: three columns matching the Rewards table (trip-section.tsx).
+const INVITED_GRID = "grid grid-cols-[1fr_auto_1fr] items-start gap-x-2";
+const INVITED_SLOT = "inline-block w-24 text-center";
+// TH without its right padding and left alignment, which would push the columns off.
+const INVITED_TH = "pb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
 
 
 /**
@@ -137,30 +143,65 @@ function ShortList<T>({
   );
 }
 
-/** One row of a network list: the id, the name under it, the band opposite. */
-function NetworkRow({
-  href,
-  code,
-  name,
-  note,
+/**
+ * A network list (Members Invited, Royalty Customers): who, with their name
+ * under the ID; their first purchase, the Plot with its Project; and one
+ * status or nothing. Lined up with the Rewards table above: the sides share
+ * the width, so the middle is centred, and Status sits in the same right slot.
+ */
+function NetworkList({
+  who,
+  rows,
 }: {
-  href: string;
-  code: string;
-  name: string;
-  note?: React.ReactNode;
+  who: string;
+  rows: {
+    id: string;
+    href: string;
+    code: string;
+    name: string;
+    sale: { id: string; plot: string; project: string } | null;
+    status: React.ReactNode;
+  }[];
 }) {
   return (
-    <li className="flex items-center justify-between gap-3 py-2.5">
-      <span className="min-w-0">
-        <Link href={href} className="font-semibold text-primary hover:underline">
-          {code}
-        </Link>
-        <span className={SUB}>{name}</span>
-      </span>
-      <span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-muted-foreground">
-        {note}
-      </span>
-    </li>
+    <>
+      <div className={`${INVITED_GRID} border-b border-border/50 pt-2`}>
+        <span className={INVITED_TH}>{who}</span>
+        <span className={INVITED_TH + " text-center"}>Plot</span>
+        <span className={INVITED_TH + " text-right"}>
+          <span className={INVITED_SLOT}>Status</span>
+        </span>
+      </div>
+      <ShortList
+        items={rows}
+        first={5}
+        render={(r) => (
+          <li key={r.id} className={`${INVITED_GRID} py-2.5`}>
+            <span className="min-w-0">
+              <Link href={r.href} className="font-semibold text-primary hover:underline">
+                {r.code}
+              </Link>
+              <span className="block text-[11px] font-medium text-foreground">{r.name}</span>
+            </span>
+            <span className="whitespace-nowrap text-center">
+              {r.sale ? (
+                <>
+                  <Link href={`/bookings/${r.sale.id}`} className="font-semibold text-primary hover:underline">
+                    {r.sale.plot}
+                  </Link>
+                  <span className="block text-[11px] font-medium text-foreground">{r.sale.project}</span>
+                </>
+              ) : (
+                "—"
+              )}
+            </span>
+            <span className="text-right">
+              <span className={`${INVITED_SLOT} font-medium text-emerald-700`}>{r.status}</span>
+            </span>
+          </li>
+        )}
+      />
+    </>
   );
 }
 
@@ -241,7 +282,9 @@ export default async function MemberDetailPage({
       include: {
         person: true,
         // CP §68 — the first purchase that made the relationship.
-        royaltyLinkFirstBooking: { select: { id: true, bookingNumber: true, requestNo: true, plot: { select: { plotNumber: true } } } },
+        royaltyLinkFirstBooking: { select: { id: true, plot: { select: { plotNumber: true } }, project: { select: { name: true } } } },
+        // The points this Member earned through the Customer, for Royalty Customers.
+        royaltyAwards: { where: { memberProfileId: member.id, state: { not: "REVERSED" } }, select: { tokens: true, state: true } },
       },
       orderBy: { royaltyLinkFinalAt: "asc" },
     }),
@@ -307,7 +350,8 @@ export default async function MemberDetailPage({
         createdAt: true,
         reversalReason: true,
         sourceBooking: { select: { id: true, bookingNumber: true, plot: { select: { plotNumber: true } } } },
-        introducedMember: { select: { memberId: true, person: { select: { fullName: true } } } },
+        introducedMember: { select: { id: true, memberId: true, person: { select: { fullName: true } } } },
+        settingsVersion: { select: { tripTotalTarget: true, tripMinOwnCredits: true, tripMaxReferenceCredits: true, tripTermsVersionRef: true } },
       },
     }),
     db.tripBucket.findMany({
@@ -315,21 +359,51 @@ export default async function MemberDetailPage({
       include: { reward: true },
       orderBy: { openedAt: "desc" },
     }),
-    // SSOT §49 — the Booking that used each invited Member's Reference opportunity.
+    // Each invited Member's first sale for Members Invited: the Booking that
+    // used their Reference opportunity (SSOT §49), else their earliest live sale.
     db.booking.findMany({
-      where: { id: { in: member.invitedMembers.map((m) => m.referenceWinningBookingId).filter((b): b is string => !!b) } },
-      select: { id: true, bookingNumber: true },
+      where: {
+        OR: [
+          { id: { in: member.invitedMembers.map((m) => m.referenceWinningBookingId).filter((b): b is string => !!b) } },
+          {
+            soldByType: "MEMBER",
+            soldByPersonId: { in: member.invitedMembers.map((m) => m.personId) },
+            status: { in: ["BOOKED", "PAYMENT_COMPLETED", "DELIVERED", "BUYBACK_COMPLETED"] },
+          },
+        ],
+      },
+      select: { id: true, soldByPersonId: true, plot: { select: { plotNumber: true } }, project: { select: { name: true } } },
+      orderBy: { bookingDate: "asc" },
     }),
     db.recovery.findMany({ where: { personId, status: "OUTSTANDING" }, orderBy: { dueOn: "asc" } }),
   ]);
 
+  // Royalty Customers shows only those who acted after their first purchase:
+  // bought again themselves, or sold a Plot to someone (Sold By Customer).
+  const customerActivity = await db.booking.findMany({
+    where: {
+      approvedAt: { not: null },
+      status: { notIn: ["CANCELLED", "REQUEST_REJECTED", "REQUEST_CANCELLED"] },
+      OR: [
+        { primaryPersonId: { in: royaltyLinkedCustomers.map((c) => c.personId) } },
+        { soldByType: "CUSTOMER", soldByPersonId: { in: royaltyLinkedCustomers.map((c) => c.personId) } },
+      ],
+    },
+    select: { id: true, primaryPersonId: true, soldByType: true, soldByPersonId: true },
+  });
+
   const experience = experienceSince(member.activationDate);
+  const canPayCommission = can(actor.role, "COMMISSION_PROCESS", actor.extraPermissions);
   const canManage = can(actor.role, "MEMBER_ACTIVATE", actor.extraPermissions);
-  const canConfirmPayment = can(actor.role, "PAYMENT_RECEIVED_CONFIRM", actor.extraPermissions);
-  const canStartBooking = can(actor.role, "BOOKING_REQUEST_SUBMIT", actor.extraPermissions);
+
+  // An invited Member's first sale: the one that used their Reference, else
+  // their earliest (the list arrives oldest first).
+  const firstSale = (m: { personId: string; referenceWinningBookingId: string | null }) =>
+    referenceWins.find((b) => b.id === m.referenceWinningBookingId) ??
+    referenceWins.find((b) => b.soldByPersonId === m.personId);
 
   // The account that is current: the verified one, or the one waiting when
-  // nothing is verified yet. Replaced accounts are in History.
+  // nothing is verified yet. The Bank card opens on it.
   const bank =
     banks.find((b) => b.status === "VERIFIED") ?? banks.find((b) => b.status === "PENDING") ?? null;
 
@@ -481,6 +555,8 @@ export default async function MemberDetailPage({
     person: { id: string; fullName: string; customerProfile: { customerId: string } | null };
     personRole: string | null;
     status: string;
+    /** A Buyback or Resale's own status ("Approved"), on the line under it. */
+    statusSub?: string;
     payment: string;
     lines: Line[];
   };
@@ -513,7 +589,8 @@ export default async function MemberDetailPage({
         plotType: a.plot?.plotType ?? null,
         person: a.sellerPerson,
         personRole: "Seller",
-        status: `${TYPE_LABEL[a.type] ?? "Buyback / Resale"} · ${statusWords(a.status)}`,
+        status: TYPE_LABEL[a.type] ?? "Buyback / Resale",
+        statusSub: statusWords(a.status),
         payment: `${a.paymentGivenPercent.toFixed(2)}% given`,
         lines: [c],
       };
@@ -531,8 +608,31 @@ export default async function MemberDetailPage({
   ].join(" · ");
 
   /* Indirect Benefits — who this Member brought in. */
-  const linkedFinal = royaltyLinkedCustomers.filter((c) => c.royaltyLinkFinalAt);
-  const canStillEarn = linkedFinal.filter((c) => !c.royaltyOpportunityConsumedAt).length;
+  const royaltyActive = royaltyLinkedCustomers.filter((c) =>
+    customerActivity.some(
+      (b) =>
+        (b.primaryPersonId === c.personId && b.id !== c.royaltyLinkFirstBookingId) ||
+        (b.soldByType === "CUSTOMER" && b.soldByPersonId === c.personId)
+    )
+  );
+  // A Royalty Customer's status, on every row: the points earned through them
+  // ("10 Points") with Earned under it once posted; otherwise Pending — an
+  // award not yet posted, or none yet.
+  const pointsFrom = (awards: { tokens: number; state: string }[]) => {
+    const released = awards.filter((a) => a.state === "RELEASED").reduce((n, a) => n + a.tokens, 0);
+    const pending = awards.filter((a) => a.state === "PENDING").reduce((n, a) => n + a.tokens, 0);
+    const n = released || pending;
+    return (
+      <>
+        {n > 0 && <span className="block font-semibold text-foreground">{n} {n === 1 ? "Point" : "Points"}</span>}
+        {released ? (
+          <span className="block text-emerald-700">Earned</span>
+        ) : (
+          <span className="block text-amber-700">Pending</span>
+        )}
+      </>
+    );
+  };
 
   type Line = (typeof shownCommissions)[number];
   // When every line in the Booking Commission table is one kind, the heading
@@ -540,7 +640,8 @@ export default async function MemberDetailPage({
   const dealTypes = new Set(dealRows.flatMap((d) => d.lines.map((l) => l.type)));
   const oneDealType = dealTypes.size === 1 ? [...dealTypes][0] : null;
   /** One commission line: "Direct 3.00% at 25% paid", then "Ready · Paid 12/08/2026". */
-  const lineWords = (c: Line, showType = true) => (
+  // Where a Payout column stands beside it, the payment state is said there.
+  const lineWords = (c: Line, showType = true, showPayment = true) => (
     <span key={c.id} className="block">
       {showType && (
         <>
@@ -550,10 +651,15 @@ export default async function MemberDetailPage({
       <span className="font-semibold tabular-nums text-foreground">{c.percent.toFixed(2)}%</span>
       <span className="text-muted-foreground"> at {c.milestonePercent.toFixed(0)}% paid</span>
       <span className="block">
-        {eligibilityLabel(c.eligibility)} ·{" "}
-      {PAYMENT_LABEL[c.payment] ?? c.payment}
-      {c.paidOn && ` ${formatIst(c.paidOn)}`}
-      {!c.isCurrent && " · Not valid"}
+        {eligibilityLabel(c.eligibility)}
+        {showPayment && (
+          <>
+            {" · "}
+            {PAYMENT_LABEL[c.payment] ?? c.payment}
+            {c.paidOn && ` ${formatIst(c.paidOn)}`}
+          </>
+        )}
+        {!c.isCurrent && " · Not valid"}
       </span>
       {c.holdReason && (
         <span className="block text-[11px] text-amber-700">{HOLD_LABEL[c.holdReason] ?? words(c.holdReason)}</span>
@@ -597,7 +703,9 @@ export default async function MemberDetailPage({
             <th className={TH}>Customer</th>
             <th className={TH}>Status</th>
             <th className={TH}>Payment</th>
-            <th className={`${TH} pr-0`}>{oneDealType ? `${words(oneDealType)} Commission` : "Commission"}</th>
+            <th className={TH}>{oneDealType ? `${words(oneDealType)} Commission` : "Commission"}</th>
+            {/* The Member's commission payout; "Payment" above is the buyer's. */}
+            <th className={TH}>Payout</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/40">
@@ -630,14 +738,34 @@ export default async function MemberDetailPage({
                   {[d.person.customerProfile ? d.person.fullName : null, d.personRole].filter(Boolean).join(" · ")}
                 </span>
               </td>
-              <td className={`${TD} font-medium`}>{d.status}</td>
+              <td className={`${TD} font-medium`}>
+                {d.status}
+                {d.statusSub && <span className={SUB}>{d.statusSub}</span>}
+              </td>
               <td className={`${TD} tabular-nums`}>{d.payment}</td>
-              <td className={`${TD} pr-0`}>
+              <td className={TD}>
                 {d.lines.length ? (
-                  d.lines.map((c) => lineWords(c, !oneDealType))
+                  d.lines.map((c) => lineWords(c, !oneDealType, false))
                 ) : (
                   <span className="text-muted-foreground">—</span>
                 )}
+              </td>
+              {/* One payout per commission line: Paid with its date, else the
+                  next step this viewer can take, else what it waits for. */}
+              <td className={TD}>
+                {d.lines.length === 0 && <span className="text-muted-foreground">—</span>}
+                {d.lines.map((c) => (
+                  <PayoutCell
+                    key={c.id}
+                    payment={c.payment}
+                    paidOn={c.paidOn}
+                    step={payoutStep(c, actor.role, canPayCommission)}
+                    awaitingMd={!!c.earlyRequestedAt && !c.earlyApprovedAt}
+                    recordId={c.id}
+                    buying={!!c.acquisition}
+                    label={`${words(c.type)} ${c.percent.toFixed(2)}% · ${d.ref} · ${d.plotNumber}`}
+                  />
+                ))}
               </td>
             </tr>
           ))}
@@ -872,30 +1000,35 @@ export default async function MemberDetailPage({
             />
           </Section>
 
-          <Section fill title="Bank" icon={<Banknote className="h-3.5 w-3.5" />}>
-            {bank ? (
-              <>
-                {/* No status line: bank details are verified as they are
-                    entered, so it only ever said "Verified". */}
-                <Row
-                  label="Account"
-                  value={
-                    <AccountNumber
-                      bankDetailId={bank.id}
-                      lastFour={bank.accountLastFour}
-                      canReveal={canViewField(actor.role, "BANK_FULL")}
-                    />
-                  }
-                />
-                <Row label="IFSC" value={bank.ifsc} />
-                <Row label="Bank" value={bank.bankName} />
-                <Row label="Branch" value={bank.branchName ?? "—"} />
-                <Row label="Holder name" value={bank.accountHolder} />
-              </>
-            ) : (
-              <p className="text-xs text-muted-foreground">No bank details recorded.</p>
-            )}
-          </Section>
+          {/* The current account first; the others open under "Show N more",
+              as on the Customer profile. No status line on a Verified one:
+              bank details are verified as they are entered, so it only ever
+              said "Verified". Any other status is named, so a replaced
+              account never reads as the current one. */}
+          <BankAccounts
+            accounts={[...(bank ? [bank] : []), ...banks.filter((b) => b !== bank)].map((b) => ({
+              id: b.id,
+              body: (
+                <>
+                  <Row
+                    label="Account"
+                    value={
+                      <AccountNumber
+                        bankDetailId={b.id}
+                        lastFour={b.accountLastFour}
+                        canReveal={canViewField(actor.role, "BANK_FULL")}
+                      />
+                    }
+                    hint={b.status === "VERIFIED" ? undefined : words(b.status)}
+                  />
+                  <Row label="IFSC" value={b.ifsc} />
+                  <Row label="Bank" value={b.bankName} />
+                  <Row label="Branch" value={b.branchName ?? "—"} />
+                  <Row label="Holder name" value={b.accountHolder} />
+                </>
+              ),
+            }))}
+          />
         </div>
 
         {/* 6 Booking Commission — every Booking this Member sold, and all it
@@ -1051,41 +1184,34 @@ export default async function MemberDetailPage({
             below={
               <>
                 <p className="text-sm font-semibold text-foreground">
-                  Members invited ({member.invitedMembers.length})
+                  Members Invited ({member.invitedMembers.length})
                 </p>
                 {member.invitedMembers.length === 0 ? (
                   <p className="pt-1 text-xs text-muted-foreground">None yet.</p>
                 ) : (
-                  <ShortList
-                    items={member.invitedMembers}
-                    first={5}
-                    render={(m) => (
-                      <NetworkRow
-                        key={m.id}
-                        href={`/members/${m.id}`}
-                        code={m.memberId}
-                        name={m.person.fullName}
-                        note={
-                          <>
-                            {/* SSOT §38 — each invited Member's one Reference opportunity. */}
-                            <Badge variant={m.referenceOpportunityConsumedAt ? "outline" : "info"}>
-                              {m.referenceOpportunityConsumedAt
-                                ? ["Reference used", referenceWins.find((b) => b.id === m.referenceWinningBookingId)?.bookingNumber]
-                                    .filter(Boolean)
-                                    .join(" · ")
-                                : "Reference unused"}
-                            </Badge>
-                            {m.status !== "ACTIVE" && <Badge variant="destructive">Deactivated</Badge>}
-                          </>
-                        }
-                      />
-                    )}
+                  // SSOT §38 — only a Reference that was used says so; otherwise blank.
+                  <NetworkList
+                    who="Member"
+                    rows={member.invitedMembers.map((m) => {
+                      const sale = firstSale(m);
+                      return {
+                        id: m.id,
+                        href: `/members/${m.id}`,
+                        code: m.memberId,
+                        name: m.person.fullName,
+                        sale: sale ? { id: sale.id, plot: sale.plot.plotNumber, project: sale.project.name } : null,
+                        status: m.referenceOpportunityConsumedAt ? "Reference Used" : "",
+                      };
+                    })}
                   />
                 )}
               </>
             }
           >
-            <TripSection role={actor.role} programmes={await tripProgrammes(tripCredits, tripBuckets)} />
+            <TripSection
+              programmes={await tripProgrammes(tripCredits, tripBuckets)}
+              canDeliver={actor.role === "CRM" || actor.role === "MD"}
+            />
           </Section>
 
           {/* docss/11 — Royalty Tokens: one pooled, non-cash balance. */}
@@ -1094,55 +1220,28 @@ export default async function MemberDetailPage({
             icon={<Coins className="h-3.5 w-3.5" />}
             below={
               <>
-                <p className="text-sm font-semibold text-foreground">
-                  Royalty Customers ({royaltyLinkedCustomers.length})
-                </p>
-                {royaltyLinkedCustomers.length === 0 ? (
+                <p className="text-sm font-semibold text-foreground">Royalty Customers ({royaltyActive.length})</p>
+                {royaltyActive.length === 0 ? (
                   <p className="pt-1 text-xs text-muted-foreground">None yet.</p>
                 ) : (
-                  <>
-                    {/* CP §68 — a link earns once it is final, and only once. */}
-                    <p className="pb-1 text-[11px] text-muted-foreground">
-                      {linkedFinal.length} final · {canStillEarn} can still earn points ·{" "}
-                      {royaltyLinkedCustomers.length - linkedFinal.length} waiting for full payment
-                    </p>
-                    <ShortList
-                      items={royaltyLinkedCustomers}
-                      first={5}
-                      render={(c) => (
-                        <NetworkRow
-                          key={c.id}
-                          href={`/customers/${c.id}`}
-                          code={c.customerId}
-                          name={c.person.fullName}
-                          note={
-                            // A status with a next step is that step's button:
-                            // paying off the first purchase makes the link final,
-                            // and a final link earns on the Customer's next one.
-                            !c.royaltyLinkFinalAt ? (
-                              c.royaltyLinkFirstBooking && canConfirmPayment ? (
-                                <Button size="xs" variant="outline" title="Waiting for full payment" asChild>
-                                  <Link href={`/bookings/${c.royaltyLinkFirstBooking.id}`}>
-                                    <Wallet className="mr-1 h-3 w-3" /> Payment
-                                  </Link>
-                                </Button>
-                              ) : (
-                                <Badge variant="warning">Waiting for full payment</Badge>
-                              )
-                            ) : c.royaltyOpportunityConsumedAt ? (
-                              <Badge variant="outline">Points used</Badge>
-                            ) : canStartBooking ? (
-                              <Button size="xs" variant="outline" title="Can earn points" asChild>
-                                <Link href={`/bookings?for=${c.person.id}`}>Start Booking</Link>
-                              </Button>
-                            ) : (
-                              <Badge variant="info">Can earn points</Badge>
-                            )
+                  // CP §68 — a link earns once: the points, Earned or Pending.
+                  <NetworkList
+                    who="Customer"
+                    rows={royaltyActive.map((c) => ({
+                      id: c.id,
+                      href: `/customers/${c.id}`,
+                      code: c.customerId,
+                      name: c.person.fullName,
+                      sale: c.royaltyLinkFirstBooking
+                        ? {
+                            id: c.royaltyLinkFirstBooking.id,
+                            plot: c.royaltyLinkFirstBooking.plot.plotNumber,
+                            project: c.royaltyLinkFirstBooking.project.name,
                           }
-                        />
-                      )}
-                    />
-                  </>
+                        : null,
+                      status: pointsFrom(c.royaltyAwards),
+                    }))}
+                  />
                 )}
               </>
             }
@@ -1151,7 +1250,6 @@ export default async function MemberDetailPage({
               role={actor.role}
               memberProfileId={member.id}
               view={tokens}
-              openOpportunities={canStillEarn}
             />
           </Section>
         </div>

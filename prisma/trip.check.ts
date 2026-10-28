@@ -18,7 +18,7 @@ import { decideChangePlot, submitChangePlot } from "@/lib/services/change-plot-s
 import { cancelAcquisitionDeal, confirmPaymentGiven, createAcquisition, decideAcquisition } from "@/lib/services/acquisition-service";
 import { setMemberStatus } from "@/lib/services/network-service";
 import { bookTripReward, correctInviter, markTripTravelled, recordTripNominee } from "@/lib/services/trip-service";
-import { runTripCreditExpiry, runTripWindDown } from "@/lib/jobs";
+import { runTripWindDown } from "@/lib/jobs";
 import { encryptSensitive } from "@/lib/security/identity";
 
 const db = new PrismaClient();
@@ -239,7 +239,7 @@ async function main() {
   await pay(a01, "60", "A01-60");
   own = await ownOf(a01);
   assert.equal(`${own!.state}|${own!.qualificationRoute}`, "QUALIFIED|PAYMENT_100", "TRP-14 — Qualified at 100%");
-  assert.equal(own!.expiresAt!.getFullYear(), own!.qualifiedAt!.getFullYear() + 1, "expires 12 months on");
+  assert.equal(own!.expiresAt, null, "credits do not expire (owner, 27 Oct 2026)");
 
   /* ===== TRP-12, TRP-06 — a subdivided unit shares one pool per Member ===== */
 
@@ -291,7 +291,12 @@ async function main() {
     allocated.map((c) => `${c.creditType}:${c.state}`).sort(),
     ["OWN_SALE:ALLOCATED", "OWN_SALE:ALLOCATED", "OWN_SALE:ALLOCATED", "REFERENCE:ALLOCATED", "REFERENCE:ALLOCATED"]
   );
-  assert.equal(await db.task.count({ where: { recordId: reward.id, purpose: "TRIP_REWARD_FULFILMENT", status: "PENDING" } }), 1, "TSK-09 — one NT03");
+  // Owner, 27 Oct 2026 — the NT03 task closes as the Reward is earned, and says only that.
+  assert.deepEqual(
+    (await db.task.findMany({ where: { recordId: reward.id, purpose: "TRIP_REWARD_FULFILMENT" } })).map((t) => `${t.status}:${t.latestResult}`),
+    ["COMPLETED:Reward earned."],
+    "TSK-09 — one NT03, closed on earning"
+  );
 
   // Fulfilment to Travelled; the credits are then Used forever (TRP-19, TRP-26).
   await assert.rejects(
@@ -334,7 +339,7 @@ async function main() {
   await correctInviter({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", memberProfileId: m11.member.id, invitedByMemberId: m7.member.id, reason: "Wrong inviter keyed." });
   assert.equal((await db.memberProfile.findUniqueOrThrow({ where: { id: m11.member.id } })).invitedByMemberId, m7.member.id, "REF-12");
 
-  /* ===== Project D (3/2/1): backfill, deficiency, Buyback, Change Plot, jobs ===== */
+  /* ===== Project D (3/2/1): one Reward, locked sales, Buyback, Change Plot, wind-down ===== */
 
   const D = await project("D");
   for (const label of ["D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08", "D09"]) await plot(D.id, label);
@@ -352,20 +357,17 @@ async function main() {
   }
   const rewardX = await db.tripReward.findFirstOrThrow({ where: { memberProfileId: x.member.id } });
   assert.equal(rewardX.state, "EARNED");
-  assert.equal((await ownOf(entries["D04:booking"]))?.bucketId, null, "D04 is banked, not allocated");
+  assert.equal((await ownOf(entries["D04:booking"]))?.bucketId, null, "D04 is not allocated");
+  // Owner, 27 Oct 2026 — one Reward per Project: no second bucket opens for D04.
+  assert.equal(await db.tripBucket.count({ where: { memberProfileId: x.member.id, state: "OPEN" } }), 0, "max 1 Reward per Project");
 
-  // TRP-24 — a used credit loses its qualification; the spare backfills it.
+  // Owner, 27 Oct 2026 — a sale locked into an earned Reward stays: the Reward
+  // does not change, nothing is backfilled and no task is raised.
   await correctPaymentReceived({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", entryId: entries.D01, percent: "90", paidOn: today, reference: `${TAG} D01-90`, reason: "Short." });
-  assert.equal((await ownOf(entries["D01:booking"]))?.state, "PENDING", "SSOT §99 — back to Pending");
-  assert.equal((await db.tripReward.findUniqueOrThrow({ where: { id: rewardX.id } })).state, "EARNED", "backfilled");
-  assert.equal((await ownOf(entries["D04:booking"]))?.bucketId, rewardX.bucketId, "with the banked D04");
-
-  // TRP-25 — another one goes and nothing is left: Deficient, NT04.
-  await correctPaymentReceived({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", entryId: entries.D02, percent: "90", paidOn: today, reference: `${TAG} D02-90`, reason: "Short." });
-  assert.equal((await db.tripReward.findUniqueOrThrow({ where: { id: rewardX.id } })).state, "DEFICIENT");
-  assert.equal(await db.task.count({ where: { recordId: rewardX.id, purpose: "TRIP_REWARD_DEFICIENCY", status: "PENDING" } }), 1, "NT04");
-  await pay(entries["D02:booking"], "10", "D02-10");
-  assert.equal((await db.tripReward.findUniqueOrThrow({ where: { id: rewardX.id } })).state, "EARNED", "whole again once it re-qualifies");
+  assert.equal((await ownOf(entries["D01:booking"]))?.state, "ALLOCATED", "the locked sale stays in the Reward");
+  assert.equal((await db.tripReward.findUniqueOrThrow({ where: { id: rewardX.id } })).state, "EARNED", "the Reward is unchanged");
+  assert.equal((await ownOf(entries["D04:booking"]))?.bucketId, null, "nothing backfills");
+  assert.equal(await db.task.count({ where: { recordId: rewardX.id, status: "PENDING" } }), 0, "no task");
 
   // BB-02, BB-08 — an Approved Buyback after 25% qualifies; its unwind takes it back.
   const y = await member("Y");
@@ -416,17 +418,7 @@ async function main() {
   assert.equal((await ownOf(d06))?.state, "REVERSED", "TRP-10");
   assert.equal((await db.tripBucket.findFirstOrThrow({ where: { memberProfileId: z.member.id } })).state, "CLOSED", "TRP-22");
 
-  // TRP-20, SYS-01 — expiry at 12 months, exactly once.
-  const spare = await sell("D07", await buyer("D07"), y.person.id);
-  await pay(spare, "100", "D07-100");
-  const spareCredit = (await ownOf(spare))!;
-  await db.tripCredit.update({ where: { id: spareCredit.id }, data: { expiresAt: day(-1) } });
-  await runTripCreditExpiry();
-  await runTripCreditExpiry();
-  assert.equal((await ownOf(spare))!.state, "EXPIRED", "TRP-20");
-  assert.equal(await db.tripEvent.count({ where: { creditId: spareCredit.id, action: "CREDIT_EXPIRED" } }), 1, "SYS-01 — once");
-
-  // TRP-23, TSK-11, SYS-02 — the programme closes: no post-cut-off credit, one NT05, expiry at the deadline.
+  // TRP-23 — the programme closes: no post-cut-off credit, no task, expiry at the deadline.
   await approveTrip(
     D.id,
     terms({ tripTotalTarget: 3, tripMinOwnCredits: 2, tripMaxReferenceCredits: 1, tripProgrammeCode: "TRIP-D", tripTermsVersionRef: "TRIP-D-2", tripCutOffAt: day(-1), tripWindDownAt: day(5) })
@@ -436,7 +428,7 @@ async function main() {
   const yBucket = await db.tripBucket.findFirstOrThrow({ where: { memberProfileId: y.member.id, state: "OPEN" } });
   await runTripWindDown();
   await runTripWindDown();
-  assert.equal(await db.task.count({ where: { recordId: yBucket.id, purpose: "TRIP_BUCKET_WIND_DOWN" } }), 1, "SYS-02 — one NT05");
+  assert.equal(await db.task.count({ where: { recordId: yBucket.id } }), 0, "no Reward Expiry task (owner, 27 Oct 2026)");
   await db.projectCommissionVersion.updateMany({ where: { projectId: D.id, status: "ACTIVE" }, data: { tripWindDownAt: day(-1) } });
   await runTripWindDown();
   assert.equal((await db.tripBucket.findUniqueOrThrow({ where: { id: yBucket.id } })).state, "EXPIRED", "past the deadline");

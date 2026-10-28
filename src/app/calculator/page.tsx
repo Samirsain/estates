@@ -30,8 +30,8 @@ import { buildPlcSnapshot, locationChargeLabel } from "@/lib/domain/inventory";
 import { personLabel } from "@/lib/domain/person-search";
 import { maskMobile } from "@/lib/security/identity";
 import { plcRules } from "@/lib/services/plc-service";
-import { CUSTOMER_CLOSING_LOYALTY_LIMIT, DIRECT_MILESTONE, FULL_MILESTONE } from "@/lib/domain/commission";
-import { closingLoyaltyUsed, termsOf } from "@/lib/services/commission-service";
+import { DIRECT_MILESTONE, FULL_MILESTONE } from "@/lib/domain/commission";
+import { termsOf } from "@/lib/services/commission-service";
 import CalculatorClient, {
   type CalcCommissionTypeView,
   type CalcDealRecordView,
@@ -166,7 +166,6 @@ export default async function CalculatorPage({
 
   const banked = new Set(verifiedBanks.map((b) => b.personId));
   const bought = new Set(purchases.map((b) => b.primaryPersonId));
-  const closing = await closingLoyaltyUsed(people.map((p) => p.id));
 
   const peopleRows: CalcPersonView[] = people.map((p) => {
     const member = p.memberProfile;
@@ -199,7 +198,6 @@ export default async function CalculatorPage({
         ? {
             customerId: customer.customerId,
             termsAccepted: customer.termsAcceptances.length > 0,
-            closingLoyaltyUsed: closing.get(p.id) ?? 0,
           }
         : null,
     };
@@ -302,8 +300,7 @@ export default async function CalculatorPage({
       label: "Loyalty Points",
       milestonePercent: FULL_MILESTONE,
       note:
-        `to the closing Customer (${CUSTOMER_CLOSING_LOYALTY_LIMIT} for life), or to the buyer on a ` +
-        "3% Club repeat purchase",
+        "to the closing Customer, or to the buyer on a 3% Club repeat purchase",
     },
   ];
 

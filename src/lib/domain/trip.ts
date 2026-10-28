@@ -6,14 +6,7 @@ import type { Check } from "./booking.ts";
 const ok: Check = { ok: true };
 const fail = (reason: string): Check => ({ ok: false, reason });
 
-/** SSOT §56; CP §35 — unused Qualified Trip Credits expire 12 months after qualification. */
-export const TRIP_CREDIT_LIFE_MONTHS = 12;
-
-export function creditExpiry(qualifiedAt: Date): Date {
-  const at = new Date(qualifiedAt);
-  at.setMonth(at.getMonth() + TRIP_CREDIT_LIFE_MONTHS);
-  return at;
-}
+// Credits do not expire (owner, 27 Oct 2026; SSOT §56's 12 months removed).
 
 export type TripSettingsInput = {
   tripEnabled: boolean;

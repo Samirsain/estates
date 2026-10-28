@@ -105,15 +105,14 @@ import {
   type Check,
 } from "./booking.ts";
 import {
+  payoutStep,
   BUYBACK_MIN_SOURCE_PAYMENT,
-  CUSTOMER_CLOSING_LOYALTY_LIMIT,
   afterAffectingChange,
   anniversaryDay,
   buybackAccelerates,
   buybackMilestoneMet,
   canMarkPaid,
   classifyApprovedBooking,
-  closingLoyaltyQualifies,
   countsAsUnpaid,
   experienceSince,
   generateCommission,
@@ -149,7 +148,7 @@ import {
   validateChangePlot,
 } from "./acquisition.ts";
 import { istDay, formatIst, formatIstDateTime } from "../tasks.ts";
-import { allocate, CREDIT_REASON, creditExpiry, creditStatus, validateTripSettings, type AllocatableCredit } from "./trip.ts";
+import { allocate, CREDIT_REASON, creditStatus, validateTripSettings, type AllocatableCredit } from "./trip.ts";
 import { MAX_TOKENS, allocate as allocateTokens, tokenFigures, validateBusinessDay, validateTokenQuantity } from "./tokens.ts";
 import { createsInviteCycle } from "./network.ts";
 
@@ -1134,11 +1133,24 @@ assert.equal(needsLoyaltyException(termsIn({ loyaltyPercent: "2.9999" })), false
 assert.equal(rateLabel("3.0000"), "3");
 assert.equal(rateLabel("2.5000"), "2.5");
 
-/* ------------------------- Customer-closing lifetime limit (v2.1 §21, §25) */
+/* ------------------------------ Payout steps on a profile (owner, 27 Oct 2026) */
 
-assert.equal(CUSTOMER_CLOSING_LOYALTY_LIMIT, 3);
-assert.ok(closingLoyaltyQualifies(0) && closingLoyaltyQualifies(2));
-assert.ok(!closingLoyaltyQualifies(3), "the fourth successful event does not qualify");
+{
+  const line = (eligibility: string, holdReason: string | null = null, requested = false) => ({
+    payment: "NOT_PAID",
+    eligibility,
+    holdReason,
+    earlyRequestedAt: requested ? new Date() : null,
+    earlyApprovedAt: null,
+  });
+  assert.equal(payoutStep(line("READY"), "ACCOUNTS", true), "PAY");
+  assert.equal(payoutStep(line("MILESTONE_PENDING"), "MD", true), "PAY_EARLY", "MD pays early straight away");
+  assert.equal(payoutStep(line("MILESTONE_PENDING"), "ACCOUNTS", true), "REQUEST", "Accounts asks MD first");
+  assert.equal(payoutStep(line("MILESTONE_PENDING", null, true), "ACCOUNTS", true), null, "then waits for MD");
+  assert.equal(payoutStep(line("ON_HOLD", "RECOVERY_CIRCUMVENTION_REVIEW"), "MD", true), "PAY_EARLY", "a Recovery Review may be paid early");
+  assert.equal(payoutStep(line("ON_HOLD", "BANK_VERIFICATION_PENDING"), "MD", true), null, "other holds clear first");
+  assert.equal(payoutStep(line("READY"), "CRM", false), null, "only who may process commission");
+}
 
 /* ----------------------------------- Buyback (v2.1 §20, §41) — Loyalty only */
 
@@ -2787,8 +2799,6 @@ assert.equal(
   null,
   "a Reference cannot backfill a missing Own-Sale Credit, nor go past the Maximum"
 );
-// SSOT §56 — twelve months after qualification.
-assert.equal(creditExpiry(new Date("2026-03-15T10:00:00Z")).toISOString(), "2027-03-15T10:00:00.000Z");
 
 /* ---------------------------------------------- Royalty Tokens (docss/11) */
 assert.ok(validateTokenQuantity("Tokens", 12).ok);

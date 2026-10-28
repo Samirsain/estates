@@ -762,7 +762,7 @@ async function main() {
   assert.equal((await currentRecords(none)).length, 0, "no records and no conflict");
   assert.equal((await db.booking.findUniqueOrThrow({ where: { id: none } })).status, "BOOKED");
 
-  /* ====== v2.1 §21, §22, §25 — Customer-closing Loyalty: three for life ====== */
+  /* ====== v2.1 §21, §22 — Customer-closing Loyalty: no lifetime cap (owner, 27 Oct 2026) ====== */
 
   // A closer who has bought nothing is not a Customer closer.
   const stranger = await makeEligiblePerson("Stranger", "9600000080");
@@ -773,9 +773,6 @@ async function main() {
   );
 
   const closer = await makeCloser(project.id, "Closer", "9600000090");
-  // CP §17 — the limit is checked when the closer is selected, so all five
-  // requests are sent while none has qualified yet (UAT LOY-08: a request sent
-  // before the third event qualifies may continue; its Loyalty does not).
   const closings: string[] = [];
   for (let i = 1; i <= 5; i++) {
     const plot = await makePlot(project.id, `L${i}`);
@@ -789,43 +786,24 @@ async function main() {
     closings.push(bookingId);
     assert.equal((await recordOf(bookingId, "LOYALTY")).ruleVersion, `LOYALTY/INTRODUCED_BUYER/${V}/1%@100`);
   }
+  // Every closing qualifies — the fourth and fifth too — and no Membership task is raised.
   for (const [index, bookingId] of closings.entries()) {
     const i = index + 1;
     await pay(bookingId, "100", `${TAG}-LOY-${i}`);
     const after = await recordOf(bookingId, "LOYALTY");
-    if (i <= 3) {
-      assert.equal(`${after.eligibility}|${after.payment}`, "READY|NOT_PAID", `closing ${i} qualifies`);
-      assert.ok(after.qualifiedAt, `closing ${i} is counted`);
-    } else {
-      assert.equal(after.payment, "CANCELLED", `closing ${i} is past the lifetime three`);
-      assert.match(after.closedReason ?? "", /Membership activation is required/);
-      assert.ok(
-        await db.commissionEvent.findFirst({ where: { recordId: after.id, action: "LIMIT_REACHED" } }),
-        "and the record says why"
-      );
-    }
+    assert.equal(`${after.eligibility}|${after.payment}`, "READY|NOT_PAID", `closing ${i} qualifies`);
+    assert.ok(after.qualifiedAt, `closing ${i} is counted`);
   }
-  // UAT LOY-07, TSK-05 — one T43 task, raised on the third event only.
   const closerProfile = await db.customerProfile.findUniqueOrThrow({ where: { personId: closer.id } });
-  const limitTasks = await db.task.findMany({
-    where: { recordId: closerProfile.id, purpose: "CUSTOMER_CLOSING_LIMIT" },
-  });
-  assert.equal(limitTasks.length, 1, "one Customer-closing limit task");
-  assert.equal(limitTasks[0].assigneeRole, "CRM");
-  assert.match(limitTasks[0].latestResult ?? "", /^3rd closing done\. Make them a Member to sell more\.$/);
-  // UAT LOY-08 — with three consumed, the closer can no longer be selected.
+  assert.equal(
+    await db.task.count({ where: { recordId: closerProfile.id, purpose: "CUSTOMER_CLOSING_LIMIT" } }),
+    0,
+    "no Customer-closing limit task"
+  );
+  // With five consumed, the closer can still be selected.
   const plotSixth = await makePlot(project.id, "L6");
   const sixthBuyer = await makeEligiblePerson("LoyaltyBuyer6", "9600000160");
-  await expectBlocked(/three Customer-closing Loyalty Points events/, () =>
-    submit({ plotId: plotSixth.id, buyerPersonId: sixthBuyer.id, soldByType: "CUSTOMER", soldByPersonId: closer.id })
-  );
-  // Becoming a Member is what the task asked for, so activation closes it.
-  await activateMember({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", personId: closer.id });
-  assert.equal(
-    (await db.task.findUniqueOrThrow({ where: { id: limitTasks[0].id } })).status,
-    "COMPLETED",
-    "Member activation closes the Customer-closing limit task"
-  );
+  await submit({ plotId: plotSixth.id, buyerPersonId: sixthBuyer.id, soldByType: "CUSTOMER", soldByPersonId: closer.id });
   // At most one current Loyalty per Booking — the database refuses a second.
   await assert.rejects(
     db.commissionRecord.create({
@@ -899,13 +877,13 @@ async function main() {
   const loyaltyRows = await runReport("LOYALTY");
   const closerRows = loyaltyRows.filter((r) => r.customer === closer.fullName);
   assert.ok(
-    closerRows.every((r) => r.route === "Customer-closing Loyalty Points" && r.customerClosingUsed === "3 of 3"),
-    "the closer's rows read 3 of 3, closing route only"
+    closerRows.every((r) => r.route === "Customer-closing Loyalty Points" && r.customerClosingEvents === 5),
+    "the closer's rows count five, closing route only"
   );
   const repeaterRows = loyaltyRows.filter((r) => r.customer === repeater.fullName);
   assert.equal(repeaterRows.length, 4);
   assert.ok(
-    repeaterRows.every((r) => r.route === "Repeat-purchase Loyalty Points" && r.repeatPurchaseEvents === 4 && r.customerClosingUsed === null),
+    repeaterRows.every((r) => r.route === "Repeat-purchase Loyalty Points" && r.repeatPurchaseEvents === 4 && r.customerClosingEvents === null),
     "the repeat buyer counts four, with no closing count"
   );
 
@@ -1340,6 +1318,28 @@ async function main() {
   });
   assert.equal((await recordOf(saleT, "DIRECT")).eligibility, "READY", "MD's approval releases it");
   assert.equal((await tasksOn(t23Direct.id, "BENEFICIARY_BEFORE_RECOVERY")).length, 0, "T23 closes");
+
+  /* ---- MD pays a Payment Pending commission early, no Accounts request (owner, 27 Oct 2026) ---- */
+  const mdSeller = await makeEligiblePerson("MdEarlySeller", "9600000501");
+  await makeMember("MDE", mdSeller.id, 400);
+  const mdBuyer = await makeEligiblePerson("MdEarlyBuyer", "9600000502");
+  const mdPlot = await makePlot(project.id, "MDE");
+  const mdSale = await bookAndApprove({ plotId: mdPlot.id, buyerPersonId: mdBuyer.id, soldByType: "MEMBER", soldByPersonId: mdSeller.id });
+  const mdDirect = await recordOf(mdSale, "DIRECT");
+  assert.equal(mdDirect.eligibility, "MILESTONE_PENDING");
+  await markCommissionPaid({
+    idempotencyKey: key(),
+    actorRef: MD,
+    actorRole: "MD",
+    recordId: mdDirect.id,
+    early: true,
+    paidOn: today,
+    reference: `${TAG} UTR MDE`,
+    remarks: "MD paid early.",
+  });
+  const mdPaid = await recordOf(mdSale, "DIRECT");
+  assert.equal(mdPaid.payment, "PAID_EARLY", "MD pays early without an Accounts request");
+  assert.equal(mdPaid.earlyApprovedByRef, MD, "and the payout is its own approval");
 
   await cleanup();
   console.log("commission.check.ts OK");

@@ -1,6 +1,7 @@
 "use client";
 
-// Potential Investors — the list, and the three-field form that adds and edits it.
+// Investor Leads (the PotentialInvestor table) — the list, and the four-field form that adds and edits it.
+// The PI- ID stays in the database and the audit; the owner hid it from this screen (28 Oct 2026).
 
 import React from "react";
 import { useRouter } from "next/navigation";
@@ -19,10 +20,11 @@ import {
 
 export type PotentialInvestorRowView = {
   id: string;
-  investorNo: string;
   name: string;
   /** Masked unless this actor may read it whole. */
   mobile: string;
+  /** Masked like the mobile, blank when none. */
+  altMobile: string;
   /** The City as stored, blank when none; the table prints "—" for blank. */
   city: string;
   addedOn: string;
@@ -55,7 +57,9 @@ export default function PotentialInvestorsClient({
 
   const q = search.trim().toLowerCase();
   const visible = q
-    ? rows.filter((r) => `${r.investorNo} ${r.name} ${r.mobile} ${r.city}`.toLowerCase().includes(q))
+    ? rows.filter((r) =>
+        `${r.name} ${r.mobile} ${r.altMobile} ${r.city}`.toLowerCase().includes(q)
+      )
     : rows;
 
   function open(next: Dialog) {
@@ -87,26 +91,26 @@ export default function PotentialInvestorsClient({
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
       <div className="mx-auto max-w-6xl space-y-3">
         <header className="flex flex-wrap items-end justify-between gap-3">
-          <h1 className="text-2xl font-bold tracking-tight">Potential Investors</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Investor Leads</h1>
           <Button size="sm" variant="gradient" onClick={() => open({ kind: "ADD" })}>
-            <Plus className="mr-1 h-4 w-4" /> Add Potential Investor
+            <Plus className="mr-1 h-4 w-4" /> Add Investor Lead
           </Button>
         </header>
 
         <Input
           className="h-9 w-72"
-          placeholder="Search ID, name, mobile or city"
+          placeholder="Search name, mobile or city"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[44rem] border-collapse text-xs">
+          <table className="w-full min-w-[46rem] border-collapse text-xs">
             <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr className="border-b border-border">
-                <th className="w-[7rem] px-3 py-1.5">ID</th>
                 <th className="px-3 py-1.5">Name</th>
                 <th className="w-[7.5rem] px-3 py-1.5">Mobile</th>
+                <th className="w-[8.5rem] px-3 py-1.5">Alternate Mobile</th>
                 <th className="w-[9rem] px-3 py-1.5">City</th>
                 <th className="w-[8rem] px-3 py-1.5">Added on</th>
                 <th className="w-[5rem] px-3 py-1.5">
@@ -118,7 +122,7 @@ export default function PotentialInvestorsClient({
               {visible.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-3 py-10 text-center text-sm text-muted-foreground">
-                    {rows.length === 0 ? "No Potential Investors yet." : "Nothing matches that search."}
+                    {rows.length === 0 ? "No Investor Leads yet." : "Nothing matches that search."}
                   </td>
                 </tr>
               )}
@@ -127,15 +131,15 @@ export default function PotentialInvestorsClient({
                   key={row.id}
                   className="h-11 border-b border-border/60 align-middle last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1.5"
                 >
-                  <td className="whitespace-nowrap font-bold text-primary">{row.investorNo}</td>
-                  <td className="truncate text-foreground" title={row.name}>{row.name}</td>
+                  <td className="truncate font-semibold text-foreground" title={row.name}>{row.name}</td>
                   <td className="whitespace-nowrap">{row.mobile}</td>
+                  <td className="whitespace-nowrap">{row.altMobile || "—"}</td>
                   <td className="truncate" title={row.city}>{row.city || "—"}</td>
                   <td className="whitespace-nowrap text-muted-foreground">{row.addedOn}</td>
                   <td className="whitespace-nowrap text-right">
                     <button
                       type="button"
-                      aria-label={`Edit ${row.investorNo}`}
+                      aria-label={`Edit ${row.name}`}
                       title="Edit"
                       onClick={() => open({ kind: "EDIT", row })}
                       className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
@@ -144,7 +148,7 @@ export default function PotentialInvestorsClient({
                     </button>
                     <button
                       type="button"
-                      aria-label={`Delete ${row.investorNo}`}
+                      aria-label={`Delete ${row.name}`}
                       title="Delete"
                       onClick={() => open({ kind: "DELETE", row })}
                       className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
@@ -161,7 +165,7 @@ export default function PotentialInvestorsClient({
 
       {(dialog?.kind === "ADD" || dialog?.kind === "EDIT") && (
         <Modal
-          title={dialog.kind === "ADD" ? "Add Potential Investor" : `Edit ${dialog.row.investorNo}`}
+          title={dialog.kind === "ADD" ? "Add Investor Lead" : `Edit ${dialog.row.name}`}
           onClose={() => setDialog(null)}
         >
           {errorBox}
@@ -173,6 +177,7 @@ export default function PotentialInvestorsClient({
               const input = {
                 fullName: String(f.get("fullName") ?? ""),
                 mobile: String(f.get("mobile") ?? ""),
+                altMobile: String(f.get("altMobile") ?? ""),
                 city: String(f.get("city") ?? ""),
               };
               void run(() =>
@@ -191,14 +196,21 @@ export default function PotentialInvestorsClient({
               />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
-              {/* The list may only hold the number masked, so an edit never
-                  prefills it: blank keeps the one on file. */}
+              {/* The list may only hold the numbers masked, so an edit never
+                  prefills them: blank keeps the one on file. */}
               <Field label={dialog.kind === "ADD" ? "Mobile" : "Mobile — leave blank to keep"}>
                 <Input
                   name="mobile"
                   required={dialog.kind === "ADD"}
                   inputMode="tel"
                   placeholder={dialog.kind === "EDIT" ? dialog.row.mobile : "9876543210"}
+                />
+              </Field>
+              <Field label={dialog.kind === "ADD" ? "Alternate Mobile" : "Alternate Mobile — leave blank to keep"}>
+                <Input
+                  name="altMobile"
+                  inputMode="tel"
+                  placeholder={dialog.kind === "EDIT" ? dialog.row.altMobile || "Optional" : "Optional"}
                 />
               </Field>
               <Field label="City">
@@ -222,14 +234,14 @@ export default function PotentialInvestorsClient({
       )}
 
       {dialog?.kind === "DELETE" && (
-        <Modal title={`Delete ${dialog.row.investorNo}`} onClose={() => setDialog(null)}>
+        <Modal title={`Delete ${dialog.row.name}`} onClose={() => setDialog(null)}>
           {errorBox}
           <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
             <p className="font-semibold text-foreground">
-              {dialog.row.investorNo} · {dialog.row.name}
+              {dialog.row.name} · {dialog.row.mobile}
             </p>
             <p className="mt-1 text-muted-foreground">
-              The Potential Investor leaves the list for good. What it held stays in the audit trail.
+              The Investor Lead leaves the list for good. What it held stays in the audit trail.
             </p>
           </div>
           <div className="flex justify-end gap-2 pt-1">

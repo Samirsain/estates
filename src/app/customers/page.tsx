@@ -59,7 +59,7 @@ export default async function CustomersPage() {
         },
       },
     }),
-    // v2.1 §21 — Customer-closing Loyalty used, of the lifetime three.
+    // v2.1 §21 — Customer-closing Loyalty events qualified (no cap since 27 Oct 2026).
     closingLoyaltyUsed(personIds),
   ]);
 

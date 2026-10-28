@@ -1,6 +1,6 @@
 "use server";
 
-// Potential Investors — a name, a mobile and a city, taken down for later.
+// Investor Leads (the PotentialInvestor table) — a name, a mobile (and maybe a second one) and a city, taken down for later.
 
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -9,12 +9,13 @@ import { isValidMobile, normaliseMobile } from "@/lib/domain/land-inquiry";
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
 
-type InvestorInput = { fullName: string; mobile: string; city: string };
+type InvestorInput = { fullName: string; mobile: string; altMobile: string; city: string };
 
 /** The columns the audit keeps, so a deleted row can still be read back. */
-const snapshot = (p: { fullName: string; mobile: string; city: string | null }) => ({
+const snapshot = (p: { fullName: string; mobile: string; altMobile: string | null; city: string | null }) => ({
   fullName: p.fullName,
   mobile: p.mobile,
+  altMobile: p.altMobile,
   city: p.city,
 });
 
@@ -28,8 +29,12 @@ export async function addPotentialInvestorAction(input: InvestorInput, key: stri
 
   const fullName = input.fullName.trim();
   const mobile = normaliseMobile(input.mobile);
+  const altMobile = input.altMobile.trim() ? normaliseMobile(input.altMobile) : null;
   if (!fullName) return { ok: false, error: "Enter the name." };
   if (!isValidMobile(mobile)) return { ok: false, error: "Enter a 10-digit mobile number." };
+  if (altMobile !== null && !isValidMobile(altMobile)) {
+    return { ok: false, error: "Enter a 10-digit alternate mobile number, or leave it blank." };
+  }
 
   try {
     const investorNo = await runCommand<string>(
@@ -46,6 +51,7 @@ export async function addPotentialInvestorAction(input: InvestorInput, key: stri
             investorNo: await nextReference(tx, "PI", "PotentialInvestor"),
             fullName,
             mobile,
+            altMobile,
             city: input.city.trim() || null,
             createdByRef: actor.staffAccountId,
           },
@@ -68,7 +74,7 @@ export async function addPotentialInvestorAction(input: InvestorInput, key: stri
   }
 }
 
-/** A blank mobile keeps the one on file — the list may only show it masked. */
+/** A blank mobile or alternate mobile keeps the one on file — the list may only show it masked. */
 export async function updatePotentialInvestorAction(
   id: string,
   input: InvestorInput,
@@ -78,9 +84,16 @@ export async function updatePotentialInvestorAction(
 
   const fullName = input.fullName.trim();
   const mobile = input.mobile.trim() ? normaliseMobile(input.mobile) : null;
+  const altMobile = input.altMobile.trim() ? normaliseMobile(input.altMobile) : null;
   if (!fullName) return { ok: false, error: "Enter the name." };
   if (mobile !== null && !isValidMobile(mobile)) {
     return { ok: false, error: "Enter a 10-digit mobile number, or leave it blank to keep the current one." };
+  }
+  if (altMobile !== null && !isValidMobile(altMobile)) {
+    return {
+      ok: false,
+      error: "Enter a 10-digit alternate mobile number, or leave it blank to keep the current one.",
+    };
   }
 
   try {
@@ -94,10 +107,15 @@ export async function updatePotentialInvestorAction(
       },
       async (tx) => {
         const before = await tx.potentialInvestor.findUnique({ where: { id } });
-        if (!before) blocked("This Potential Investor no longer exists.");
+        if (!before) blocked("This Investor Lead no longer exists.");
         const row = await tx.potentialInvestor.update({
           where: { id },
-          data: { fullName, mobile: mobile ?? undefined, city: input.city.trim() || null },
+          data: {
+            fullName,
+            mobile: mobile ?? undefined,
+            altMobile: altMobile ?? undefined,
+            city: input.city.trim() || null,
+          },
         });
         return {
           result: row.investorNo,
@@ -118,7 +136,7 @@ export async function updatePotentialInvestorAction(
   }
 }
 
-/** Nothing else points at a Potential Investor, so the row goes; the audit keeps what it held. */
+/** Nothing else points at an Investor Lead, so the row goes; the audit keeps what it held. */
 export async function deletePotentialInvestorAction(id: string, key: string): Promise<ActionResult> {
   const actor = await requireStaff();
 
@@ -133,7 +151,7 @@ export async function deletePotentialInvestorAction(id: string, key: string): Pr
       },
       async (tx) => {
         const before = await tx.potentialInvestor.findUnique({ where: { id } });
-        if (!before) blocked("This Potential Investor was already deleted.");
+        if (!before) blocked("This Investor Lead was already deleted.");
         await tx.potentialInvestor.delete({ where: { id } });
         return {
           result: before.investorNo,

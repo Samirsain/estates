@@ -841,7 +841,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS "one_reference_credit_per_introduced_member"
 ALTER TABLE "TripCredit" DROP CONSTRAINT IF EXISTS "trip_credit_stamps";
 ALTER TABLE "TripCredit" ADD CONSTRAINT "trip_credit_stamps"
   CHECK (("creditType" <> 'REFERENCE' OR "introducedMemberId" IS NOT NULL)
-     AND ("state" IN ('PENDING', 'REVERSED') OR ("qualifiedAt" IS NOT NULL AND "expiresAt" IS NOT NULL))
+     -- Credits do not expire (owner, 27 Oct 2026), so expiresAt is no longer required.
+     AND ("state" IN ('PENDING', 'REVERSED') OR "qualifiedAt" IS NOT NULL)
      AND ("state" NOT IN ('ALLOCATED', 'USED') OR "bucketId" IS NOT NULL)
      AND ("state" <> 'USED' OR "usedAt" IS NOT NULL)
      AND ("state" <> 'REVERSED' OR ("reversedAt" IS NOT NULL AND length(btrim(coalesce("reversalReason", ''))) > 0)));
@@ -850,9 +851,11 @@ ALTER TABLE "TripCredit" ADD CONSTRAINT "trip_credit_stamps"
 CREATE UNIQUE INDEX IF NOT EXISTS "one_open_trip_bucket"
   ON "TripBucket" ("memberProfileId", "projectId", "programmeCode") WHERE "state" = 'OPEN';
 
+-- A Reward goes straight from Earned to Delivered (TRAVELLED) with no booking
+-- details (owner, 27 Oct 2026), so only BOOKED still needs them.
 ALTER TABLE "TripReward" DROP CONSTRAINT IF EXISTS "trip_reward_stamps";
 ALTER TABLE "TripReward" ADD CONSTRAINT "trip_reward_stamps"
-  CHECK (("state" NOT IN ('BOOKED', 'TRAVELLED') OR ("bookingReference" IS NOT NULL AND "bookedAt" IS NOT NULL AND "recipient" IS NOT NULL))
+  CHECK (("state" <> 'BOOKED' OR ("bookingReference" IS NOT NULL AND "bookedAt" IS NOT NULL AND "recipient" IS NOT NULL))
      AND ("state" <> 'TRAVELLED' OR "travelledAt" IS NOT NULL)
      AND ("state" NOT IN ('BOOKED', 'TRAVELLED') OR "recipient" <> 'NON_FAMILY' OR "recipientApprovedAt" IS NOT NULL));
 

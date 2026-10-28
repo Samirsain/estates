@@ -237,7 +237,7 @@ const HOLD_LABEL: Record<string, string> = {
   CUSTOMER_TERMS_PENDING: "Customer Terms Pending",
   RECOVERY_OUTSTANDING: "Recovery Pending",
   OLD_RECOVERY_PENDING: "Waiting for the old beneficiary's Recovery",
-  RECOVERY_CIRCUMVENTION_REVIEW: "Recovery circumvention review",
+  RECOVERY_CIRCUMVENTION_REVIEW: "Recovery Review",
 };
 
 /** v2.1 §9 — one line, the same everywhere a Booking states its terms. */

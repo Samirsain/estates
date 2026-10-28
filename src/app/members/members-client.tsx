@@ -474,7 +474,7 @@ function MemberDetailPanel({
 
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Members invited
+              Members Invited
             </h3>
             {detail.invitedMembers.length === 0 ? (
               <p className="mt-2 text-muted-foreground">None yet.</p>

@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 
 /** CP §90 — the open work behind each card, for the Rewards page. */
 export async function rewardLists() {
-  const [monetary, recoveries, trips, heldAwards] = await Promise.all([
+  const [monetary, recoveries, heldAwards] = await Promise.all([
     db.commissionRecord.findMany({
       where: { isCurrent: true, payment: { in: ["NOT_PAID", "ACCOUNTS_ADJUSTMENT_REQUIRED"] }, eligibility: { in: ["READY", "ON_HOLD"] } },
       include: {
@@ -34,14 +34,6 @@ export async function rewardLists() {
       },
       orderBy: { dueOn: "asc" },
     }),
-    db.tripReward.findMany({
-      where: { state: { in: ["EARNED", "BOOKED", "DEFICIENT"] } },
-      include: {
-        memberProfile: { select: { memberId: true, person: { select: { id: true, fullName: true } } } },
-        bucket: { select: { programmeCode: true, totalTarget: true, settingsVersion: { select: { project: { select: { name: true } } } } } },
-      },
-      orderBy: { earnedAt: "asc" },
-    }),
     // docss/11 — Royalty awards not yet posted or restricted.
     db.royaltyAward.findMany({
       where: { OR: [{ state: "PENDING" }, { state: "RELEASED", holdReason: { not: null } }] },
@@ -54,7 +46,7 @@ export async function rewardLists() {
       orderBy: { qualifiedAt: "asc" },
     }),
   ]);
-  return { monetary, recoveries, trips, royalty: { heldAwards } };
+  return { monetary, recoveries, royalty: { heldAwards } };
 }
 
 /** CP §55 — circumvention reviews, open first, for the Reviews tab. */

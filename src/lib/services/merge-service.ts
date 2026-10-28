@@ -301,8 +301,8 @@ async function applyMerge(
     data: {
       status: "APPROVED",
       ...decision,
-      // CP §87 — rebuilt from unique valid events, capped at three.
-      loyaltyRebuiltTo: Math.min(3, await consumedClosingEvents(tx, survivor.id)),
+      // CP §87 — rebuilt from unique valid events (no cap since 27 Oct 2026).
+      loyaltyRebuiltTo: await consumedClosingEvents(tx, survivor.id),
     },
   });
 

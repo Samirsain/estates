@@ -9,7 +9,6 @@
 
 import { Prisma } from "@prisma/client";
 import { db, inWaves } from "@/lib/db";
-import { CUSTOMER_CLOSING_LOYALTY_LIMIT } from "@/lib/domain/commission";
 
 const D = Prisma.Decimal;
 
@@ -334,48 +333,6 @@ async function commissionIntegrity(): Promise<RuleResult> {
   };
 }
 
-/**
- * v2.1 §21, §25, §77 — at most three Customer-closing Loyalty events qualify per
- * real person, merged-away identities included.
- */
-async function customerClosingLoyalty(): Promise<RuleResult> {
-  const qualified = await db.commissionRecord.findMany({
-    where: {
-      type: "LOYALTY",
-      beneficiaryRole: "CLOSING_CUSTOMER",
-      isCurrent: true,
-      payment: { not: "CANCELLED" },
-      qualifiedAt: { not: null },
-    },
-    select: { beneficiaryPerson: { select: { id: true, fullName: true, survivingPersonId: true } } },
-  });
-
-  const byPerson = new Map<string, { name: string; count: number }>();
-  for (const { beneficiaryPerson: p } of qualified) {
-    const key = p.survivingPersonId ?? p.id;
-    const entry = byPerson.get(key) ?? { name: p.fullName, count: 0 };
-    entry.count++;
-    byPerson.set(key, entry);
-  }
-
-  const exceptions: Exception[] = [];
-  for (const { name, count } of byPerson.values()) {
-    if (count > CUSTOMER_CLOSING_LOYALTY_LIMIT) {
-      exceptions.push({
-        record: name,
-        detail: `${count} Customer-closing Loyalty Points events qualified; the lifetime limit is ${CUSTOMER_CLOSING_LOYALTY_LIMIT}`,
-      });
-    }
-  }
-
-  return {
-    rule: "customer_closing_loyalty_limit",
-    source: "v2.1 §21, §25 — three successful Customer-closing events for life",
-    checked: byPerson.size,
-    exceptions,
-  };
-}
-
 /** PRD §22; ARCHITECTURE §13.11 — merged and duplicate Persons reconcile. */
 async function personMerges(): Promise<RuleResult> {
   const persons = await db.person.findMany({
@@ -659,7 +616,7 @@ const RULES = [
   bookingPlotPairs,
   paymentDatasets,
   commissionIntegrity,
-  customerClosingLoyalty,
+  // customerClosingLoyalty removed: no three-closing cap since 27 Oct 2026.
   personMerges,
   portalLogins,
   deliveredCompletions,

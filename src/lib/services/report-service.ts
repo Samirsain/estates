@@ -144,8 +144,8 @@ export async function runReport(
 
     case "LOYALTY": {
       // CP §73.5; Removal Audit OL-54 — Customer-closing and repeat-purchase
-      // Loyalty are reported apart: the closing count is of the lifetime three,
-      // the repeat count is unlimited. Never one combined "3/3".
+      // Loyalty are reported apart, each counted on its own; neither is capped
+      // (the closing cap was removed on 27 Oct 2026).
       const rows = await db.commissionRecord.findMany({
         where: { isCurrent: true, type: "LOYALTY", beneficiaryPerson: NOT_MERGED_AWAY },
         include: {
@@ -176,8 +176,8 @@ export async function runReport(
           eligibility: r.eligibility,
           holdReason: r.holdReason,
           paymentState: r.payment,
-          customerClosingUsed:
-            r.beneficiaryRole === "CLOSING_CUSTOMER" ? `${consumed.get(r.beneficiaryPersonId) ?? 0} of 3` : null,
+          customerClosingEvents:
+            r.beneficiaryRole === "CLOSING_CUSTOMER" ? (consumed.get(r.beneficiaryPersonId) ?? 0) : null,
           repeatPurchaseEvents:
             r.beneficiaryRole === "REPEAT_PURCHASE_CUSTOMER" ? (repeats.get(r.beneficiaryPersonId) ?? 0) : null,
         }));
@@ -240,14 +240,13 @@ export async function runReport(
       });
       const credits = await db.tripCredit.findMany({
         where: { memberProfileId: { in: buckets.map((b) => b.memberProfileId) } },
-        select: { memberProfileId: true, projectId: true, programmeCode: true, creditType: true, state: true, bucketId: true, expiresAt: true },
+        select: { memberProfileId: true, projectId: true, programmeCode: true, creditType: true, state: true, bucketId: true },
       });
       return buckets.map((b) => {
         const inBucket = credits.filter((c) => c.bucketId === b.id);
         const banked = credits.filter(
           (c) => c.memberProfileId === b.memberProfileId && c.projectId === b.projectId && c.programmeCode === b.programmeCode && !c.bucketId
         );
-        const expiries = banked.filter((c) => c.state === "QUALIFIED" && c.expiresAt).map((c) => c.expiresAt!.getTime());
         return {
           memberId: b.memberProfile.memberId,
           member: b.memberProfile.person.fullName,
@@ -263,7 +262,6 @@ export async function runReport(
           pendingOwn: b.state === "OPEN" ? banked.filter((c) => c.creditType === "OWN_SALE" && c.state === "PENDING").length : null,
           qualifiedOwn: b.state === "OPEN" ? banked.filter((c) => c.creditType === "OWN_SALE" && c.state === "QUALIFIED").length : null,
           qualifiedReference: b.state === "OPEN" ? banked.filter((c) => c.creditType === "REFERENCE" && c.state === "QUALIFIED").length : null,
-          nearestExpiry: b.state === "OPEN" && expiries.length ? new Date(Math.min(...expiries)) : null,
           reward: b.reward?.state ?? null,
           holdReason: b.reward?.holdReason ?? null,
           earnedAt: b.reward?.earnedAt ?? null,
@@ -299,7 +297,6 @@ export async function runReport(
             project: credit?.sourceBooking.project.name ?? null,
             creditState: credit?.state ?? null,
             qualifiedAt: credit?.qualifiedAt ?? null,
-            expiresAt: credit?.expiresAt ?? null,
           };
         });
     }

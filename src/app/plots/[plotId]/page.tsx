@@ -171,10 +171,23 @@ function PlotShape({
   const l = Number(lengthFt);
   if (!(w > 0) || !(l > 0)) return null;
 
+  // East and West labels sit beside the shape, where the margin is all the room
+  // they have. A long one ("Park / Playground · Central Park P-1") breaks at its
+  // " · " and the margin widens to its longest line, so it stays in the card.
+  // ponytail: ~7 units a character at 12px is an estimate, not a measurement.
+  const CHAR = 7;
+  const rows = (side: (typeof SIDES)[number]) => {
+    const label = sides[side]?.label;
+    if (!label) return [];
+    const beside = side === "EAST" || side === "WEST";
+    return beside && label.length * CHAR > 108 ? label.split(" · ") : [label];
+  };
+  const widest = Math.max(0, ...[...rows("EAST"), ...rows("WEST")].map((row) => row.length));
+
   const scale = 210 / Math.max(w, l);
   const bw = Math.max(88, w * scale);
   const bh = Math.max(88, l * scale);
-  const padX = 150;
+  const padX = Math.max(150, 42 + widest * CHAR);
   const padY = 52;
   const x = padX;
   const y = padY;
@@ -269,13 +282,17 @@ function PlotShape({
               {sides[side] && (
                 <text
                   x={mark.label[0]}
-                  y={mark.label[1]}
+                  y={mark.label[1] - (rows(side).length - 1) * 7}
                   textAnchor={mark.anchor}
                   dominantBaseline="middle"
                   className="text-[12px] font-medium text-foreground/75"
                   fill="currentColor"
                 >
-                  {sides[side]!.label}
+                  {rows(side).map((row, i) => (
+                    <tspan key={i} x={mark.label[0]} dy={i ? 14 : 0}>
+                      {row}
+                    </tspan>
+                  ))}
                 </text>
               )}
             </g>

@@ -92,12 +92,10 @@ export default async function PortalPage() {
       qualifiedOwn: p.qualifiedOwn,
       qualifiedReference: p.qualifiedReference,
       held: p.held,
-      nearestExpiry: p.nearestExpiry,
       rewards: p.rewards.map((r) => ({
         state: r.state,
         holdReason: r.holdReason,
         earnedAt: r.earnedAt,
-        travelledAt: r.travelledAt,
       })),
     })),
     tokens: { ...tokens.figures, redemptions: tokens.redemptions, notice: tokens.notice },

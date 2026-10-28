@@ -16,9 +16,10 @@ import { REWARD_HOLD_LABEL } from "@/app/members/[id]/royalty-tokens";
 
 export const dynamic = "force-dynamic";
 
+// No Rewards (trip) tab: the owner removed it on 28 Oct 2026; Rewards are
+// seen on each Member's profile. An old ?tab=trip link lands on Commission.
 const TABS = [
   ["monetary", "Commission"],
-  ["trip", "Rewards"],
   ["royalty", "Royalty Points"],
   ["recovery", "Recovery"],
   ["reviews", "Reviews"],
@@ -105,38 +106,6 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
                       {c.holdReason ? ` · ${c.holdReason.replaceAll("_", " ").toLowerCase()}` : ""}
                     </td>
                     <td className={TD}>{c.payment.replaceAll("_", " ").toLowerCase()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {tab === "trip" && (
-            <table className="w-full min-w-[40rem] text-xs">
-              <thead className="border-b border-border/50">
-                <tr>
-                  <th className={TH}>Member</th>
-                  <th className={TH}>Programme</th>
-                  <th className={TH}>Reward</th>
-                  <th className={TH}>Earned</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lists.trips.map((t) => (
-                  <tr key={t.id} className="border-b border-border/30">
-                    <td className={TD}>
-                      <Link className="text-primary hover:underline" href={member(t.memberProfile.person.id)}>
-                        {t.memberProfile.memberId} · {t.memberProfile.person.fullName}
-                      </Link>
-                    </td>
-                    <td className={TD}>
-                      {t.bucket.settingsVersion.project.name} · {t.bucket.programmeCode} · target {t.bucket.totalTarget}
-                    </td>
-                    <td className={TD}>
-                      <Badge variant={t.state === "DEFICIENT" ? "destructive" : "info"}>{t.state.toLowerCase()}</Badge>
-                      {t.holdReason && <span className="ml-1 text-amber-800">{REWARD_HOLD_LABEL[t.holdReason] ?? t.holdReason}</span>}
-                    </td>
-                    <td className={TD}>{formatIst(t.earnedAt)}</td>
                   </tr>
                 ))}
               </tbody>

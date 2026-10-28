@@ -1,4 +1,4 @@
-// Potential Investors — people who may invest later: a name, a mobile and a city.
+// Investor Leads (the PotentialInvestor table) — people who may invest later: a name, a mobile, an optional second one and a city.
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -26,9 +26,9 @@ export default async function PotentialInvestorsPage() {
       staffAccountId={actor.staffAccountId}
       rows={investors.map((i) => ({
         id: i.id,
-        investorNo: i.investorNo,
         name: i.fullName,
         mobile: fullMobile ? i.mobile : maskMobile(i.mobile),
+        altMobile: i.altMobile ? (fullMobile ? i.altMobile : maskMobile(i.altMobile)) : "",
         city: i.city ?? "",
         addedOn: formatIstDate(i.createdAt),
       }))}

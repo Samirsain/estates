@@ -39,7 +39,7 @@ export type CustomerRowView = {
   plotId: string | null;
   /** The other deals, "Project · Plot N", besides the one the row shows. */
   otherBookings: string[];
-  /** v2.1 §21 — Customer-closing Loyalty events qualified, of three for life. */
+  /** v2.1 §21 — Customer-closing Loyalty events qualified (no cap since 27 Oct 2026). */
   closingLoyaltyUsed: number;
 };
 

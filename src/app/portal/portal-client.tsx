@@ -95,8 +95,7 @@ export type PortalData = {
     qualifiedOwn: number;
     qualifiedReference: number;
     held: number;
-    nearestExpiry: string | null;
-    rewards: Array<{ state: string; holdReason: string | null; earnedAt: string; travelledAt: string | null }>;
+    rewards: Array<{ state: string; holdReason: string | null; earnedAt: string }>;
   }>;
   /**
    * docss/11 — exactly three figures (balance may be negative), each
@@ -159,10 +158,11 @@ const TRIP_HOLD_LABEL: Record<string, string> = {
   RECOVERY_CIRCUMVENTION_REVIEW: "Under Review",
 };
 
+// A Reward reads as a Reward only: never a booking or travel.
 const TRIP_STATE_LABEL: Record<string, string> = {
-  EARNED: "Reward earned — the team will contact you to book it",
-  BOOKED: "Reward booked",
-  TRAVELLED: "Travelled",
+  EARNED: "Reward earned",
+  BOOKED: "Reward earned",
+  TRAVELLED: "Reward earned",
   DEFICIENT: "Under Review",
   CANCELLED: "Cancelled",
 };
@@ -481,6 +481,8 @@ export default function PortalClient({ data }: { data: PortalData }) {
                   const counted = rules ? t.qualifiedOwn + Math.min(t.qualifiedReference, rules.maxRef) : 0;
                   const banked = rules ? Math.max(0, t.qualifiedReference - rules.maxRef) : 0;
                   const pct = rules ? Math.min(100, Math.round((counted / rules.target) * 100)) : 0;
+                  // One Reward per Project: once earned there is no next one to count toward.
+                  const done = data.trip.some((q) => q.project === t.project && q.rewards.some((r) => r.state !== "CANCELLED"));
                   return (
                     <div key={`${t.project}-${t.code}`} className="space-y-2.5 rounded-xl border border-border/70 p-3">
                       <div className="flex items-start justify-between gap-2">
@@ -491,14 +493,13 @@ export default function PortalClient({ data }: { data: PortalData }) {
                             {rules ? ` · Terms ${rules.termsRef}` : ""}
                           </p>
                         </div>
-                        {rules && (
+                        {rules && !done && (
                           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary">
-                            {t.rewards.length > 0 ? "Reward " : ""}
                             {counted} / {rules.target}
                           </span>
                         )}
                       </div>
-                      {rules && (
+                      {rules && !done && (
                         <>
                           <div
                             className="h-2 overflow-hidden rounded-full bg-muted"
@@ -515,6 +516,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
                           </p>
                         </>
                       )}
+                      {!done && (
                       <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
                         <dt className="text-muted-foreground">Own sales qualified</dt>
                         <dd className="text-right tabular-nums font-medium">
@@ -540,20 +542,12 @@ export default function PortalClient({ data }: { data: PortalData }) {
                             <dd className="text-right tabular-nums text-amber-700">{t.held}</dd>
                           </>
                         )}
-                        {t.nearestExpiry && (
-                          <>
-                            <dt className="text-muted-foreground">Next credit expires</dt>
-                            <dd className="text-right">{formatIst(t.nearestExpiry)}</dd>
-                          </>
-                        )}
                       </dl>
+                      )}
                       {t.rewards.map((r, i) => (
                         <div key={i} className="rounded-lg bg-emerald-50 px-2.5 py-2 text-emerald-800">
                           <p className="font-semibold">{TRIP_STATE_LABEL[r.state] ?? r.state}</p>
-                          <p className="text-[11px]">
-                            Earned {formatIst(r.earnedAt)}
-                            {r.travelledAt ? ` · travelled ${formatIst(r.travelledAt)}` : ""}
-                          </p>
+                          <p className="text-[11px]">Earned {formatIst(r.earnedAt)}</p>
                           {r.holdReason && (
                             <p className="text-[11px] font-medium text-amber-700">{TRIP_HOLD_LABEL[r.holdReason] ?? "Under Review"}</p>
                           )}

@@ -29,8 +29,8 @@ export const LOYALTY_MAX_PERCENT = "3";
 export const DIRECT_MILESTONE = "25";
 /** v2.1 §20, §22, §23 — self-purchase Direct and every Loyalty settle at 100%. */
 export const FULL_MILESTONE = "100";
-/** v2.1 §21, §25 — Customer-closing Loyalty: three successful events for life. */
-export const CUSTOMER_CLOSING_LOYALTY_LIMIT = 3;
+// v2.1 §21, §25 used to cap Customer-closing Loyalty at three events for life.
+// The owner removed the cap on 27 Oct 2026: every closing earns.
 /** v2.1 §41 — a Buyback stands in for a milestone only after 25% received. */
 export const BUYBACK_MIN_SOURCE_PAYMENT = "25";
 
@@ -91,15 +91,6 @@ export function validateCommissionTerms(t: CommissionTermsInput): Check {
     );
   }
   return ok;
-}
-
-/**
- * v2.1 §21, §25 — whether one more Customer-closing Loyalty may qualify, given
- * how many of the closer's events have already qualified. After the third,
- * Membership activation is required to earn from further third-party sales.
- */
-export function closingLoyaltyQualifies(alreadyQualified: number): boolean {
-  return alreadyQualified < CUSTOMER_CLOSING_LOYALTY_LIMIT;
 }
 
 /* ------------------------------------------------------ anniversaries */
@@ -675,6 +666,39 @@ export function canMarkPaid(
     );
   }
   return ok;
+}
+
+/** The payout step a viewer can take on a commission line from a profile. */
+export type PayoutStep = "PAY" | "REQUEST" | "PAY_EARLY";
+
+/** Not Ready, but may be paid early: Payment Pending, or held for a Recovery
+ *  Review (owner, 27 Oct 2026). Other holds must clear first. */
+export function earlyPayable(c: { eligibility: string; holdReason: string | null }): boolean {
+  return c.eligibility === "MILESTONE_PENDING" || (c.eligibility === "ON_HOLD" && c.holdReason === "RECOVERY_CIRCUMVENTION_REVIEW");
+}
+
+/**
+ * Ready → Mark Paid. Payment Pending or Recovery Review → Pay Early: MD pays it
+ * straight away, which is its own approval; Accounts asks MD first and pays
+ * once approved (owner, 27 Oct 2026). Null when this viewer has no step to take.
+ */
+export function payoutStep(
+  c: {
+    payment: string;
+    eligibility: string;
+    holdReason: string | null;
+    earlyRequestedAt: Date | null;
+    earlyApprovedAt: Date | null;
+  },
+  role: string,
+  canProcess: boolean
+): PayoutStep | null {
+  if (!canProcess || c.payment !== "NOT_PAID") return null;
+  if (c.eligibility === "READY") return "PAY";
+  if (c.earlyApprovedAt) return "PAY_EARLY";
+  if (!earlyPayable(c)) return null;
+  if (role === "MD") return "PAY_EARLY";
+  return role === "ACCOUNTS" && !c.earlyRequestedAt ? "REQUEST" : null;
 }
 
 /**

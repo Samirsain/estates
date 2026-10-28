@@ -4,8 +4,8 @@
 // submitted, and again when a corrected request is sent; the version on the
 // request Accounts approves is the one that counts (v2.1 §16). Records are
 // generated at Accounts approval from those frozen terms. There is no combined
-// cap (v2.1 §11). Customer-closing Loyalty is limited to three successful events
-// for life (v2.1 §21, §25), counted when each record reaches its milestone.
+// cap (v2.1 §11), and no cap on Customer-closing Loyalty events either: the
+// three-for-life limit of v2.1 §21, §25 was removed by the owner on 27 Oct 2026.
 
 import { Prisma } from "@prisma/client";
 import type { SoldByType } from "@prisma/client";
@@ -15,8 +15,7 @@ import {
   BUYBACK_MIN_SOURCE_PAYMENT,
   buybackMilestoneMet,
   canMarkPaid,
-  closingLoyaltyQualifies,
-  CUSTOMER_CLOSING_LOYALTY_LIMIT,
+  earlyPayable,
   generateCommission,
   needsPaymentTask,
   resolveEligibility,
@@ -211,32 +210,12 @@ async function oldBeneficiaryRecoveryPending(tx: Tx, bookingId: string, personId
   return recoveries + adjustments > 0;
 }
 
-/** CP §64 T43 — renamed from "Membership Invitation — Loyalty Exhausted". */
-export const CLOSING_LIMIT_PURPOSE = "CUSTOMER_CLOSING_LIMIT";
-
 /**
- * CP §18.4, §64 T43; Removal Audit OL-20, OL-42 — the third Customer-closing
- * event is consumed, so Membership is required for future third-party selling.
- * Only the closing route is limited; the text says so (UAT TSK-05). Closed when
- * the Person is activated as a Member.
+ * CP §64 T43 — the "Membership — Upgrade Customer" task the three-closing cap
+ * raised. The cap is gone (owner, 27 Oct 2026), so nothing raises it now; Member
+ * activation still closes any left open from before.
  */
-async function raiseClosingLimitTask(tx: Tx, personId: string) {
-  const customer = await tx.customerProfile.findUnique({
-    where: { personId },
-    include: { person: { select: { fullName: true } } },
-  });
-  if (!customer) return;
-  await ensureTask(tx, {
-    recordKind: "Customer",
-    recordId: customer.id,
-    recordName: `${customer.customerId} · ${customer.person.fullName}`,
-    purpose: CLOSING_LIMIT_PURPOSE,
-    title: "Membership — Upgrade Customer",
-    assigneeRole: "CRM",
-    dueAt: new Date(),
-    latestResult: "3rd closing done. Make them a Member to sell more.",
-  });
-}
+export const CLOSING_LIMIT_PURPOSE = "CUSTOMER_CLOSING_LIMIT";
 
 /* ------------------------------------------------------------ engine input */
 
@@ -560,40 +539,8 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
     // Widened back to the full set: the guard above narrowed `record.payment`.
     let payment: PaymentState = record.payment;
 
+    // Every Customer-closing event qualifies: no lifetime cap (owner, 27 Oct 2026).
     if (record.type === "LOYALTY" && milestoneReached && !record.qualifiedAt) {
-      if (isClosing) {
-        // Serialise the closer's events, so two Bookings reaching 100% at the
-        // same instant cannot both be the third.
-        await lockKey(tx, `customer-closing-loyalty:${record.beneficiaryPersonId}`);
-        const alreadyQualified = await consumedClosingEvents(tx, record.beneficiaryPersonId, record.id);
-        if (!closingLoyaltyQualifies(alreadyQualified)) {
-          const reason =
-            "Three Customer-closing Loyalty Points events have already been earned. Membership activation " +
-            "is required to earn from further third-party sales (v2.1 §25).";
-          payment = afterAffectingChange(record.payment, "CANCELLED_BEFORE_COMPLETION");
-          await tx.commissionRecord.update({
-            where: { id: record.id },
-            data: { payment, closedReason: reason },
-          });
-          await adjustmentIfNewlyRequired(tx, record.id, record.payment, payment, "3 deals closed. Membership needed.");
-          await tx.commissionEvent.create({
-            data: {
-              recordId: record.id,
-              actorRef,
-              action: "LIMIT_REACHED",
-              fromState: record.payment,
-              toState: payment,
-              reason,
-            },
-          });
-          await closeTasksFor(tx, "Commission", record.id, actorRef, reason, COMMISSION_PAYMENT_PURPOSE);
-          continue;
-        }
-        // CP §18.4, §64 T43 — this is the third: CRM follows up on Membership.
-        if (alreadyQualified + 1 === CUSTOMER_CLOSING_LOYALTY_LIMIT) {
-          await raiseClosingLimitTask(tx, record.beneficiaryPersonId);
-        }
-      }
       await tx.commissionRecord.update({ where: { id: record.id }, data: { qualifiedAt: new Date() } });
       await tx.commissionEvent.create({
         data: { recordId: record.id, actorRef, action: viaBuyback ? "QUALIFIED_BY_BUYBACK" : "QUALIFIED" },
@@ -1066,13 +1013,35 @@ export async function markCommissionPaid(args: {
         );
       }
 
+      // MD paying a Payment Pending (or Recovery Review) commission early is its own approval
+      // (owner, 27 Oct 2026): no Accounts request first. The request and the
+      // approval are stored with MD's remarks, as if asked and approved now.
+      let approvedAt = record.earlyApprovedAt;
+      if (
+        args.early &&
+        args.actorRole === "MD" &&
+        !approvedAt &&
+        record.payment === "NOT_PAID" &&
+        earlyPayable(record) &&
+        args.remarks.trim()
+      ) {
+        approvedAt = new Date();
+        await tx.commissionRecord.update({
+          where: { id: record.id },
+          data: {
+            earlyRequestedByRef: record.earlyRequestedByRef ?? args.actorRef,
+            earlyRequestedAt: record.earlyRequestedAt ?? approvedAt,
+            earlyRequestReason: record.earlyRequestReason ?? args.remarks.trim(),
+            earlyApprovedByRef: args.actorRef,
+            earlyApprovedAt: approvedAt,
+            earlyApprovalNote: args.remarks.trim(),
+          },
+        });
+        await closeTasksFor(tx, "Commission", record.id, args.actorRef, `Paid Early by MD — ${args.remarks.trim()}`, PAID_EARLY_PURPOSE);
+      }
+
       // AC-03 — the stored approval is the only thing that unlocks Paid Early.
-      const allowed = canMarkPaid(
-        record.payment,
-        record.eligibility,
-        args.early,
-        record.earlyApprovedAt !== null
-      );
+      const allowed = canMarkPaid(record.payment, record.eligibility, args.early, approvedAt !== null);
       if (!allowed.ok) blocked(allowed.reason);
 
       const dated = notFutureDated("Commission Paid Date", args.paidOn);
@@ -1120,8 +1089,8 @@ export async function markCommissionPaid(args: {
           after: {
             percent: record.percent.toFixed(4),
             reference: reference.rawValue,
-            earlyApprovedByRef: record.earlyApprovedByRef,
-            earlyApprovedAt: record.earlyApprovedAt?.toISOString() ?? null,
+            earlyApprovedByRef: approvedAt === record.earlyApprovedAt ? record.earlyApprovedByRef : args.actorRef,
+            earlyApprovedAt: approvedAt?.toISOString() ?? null,
           },
           reason: args.remarks.trim() || null,
         },
@@ -1421,7 +1390,7 @@ export async function applyMemberCommissionHold(args: {
 
 /**
  * v2.1 §21, §25 — how many Customer-closing Loyalty events have qualified for
- * each Person, of the lifetime three. Screens read this rather than counting.
+ * each Person (no cap since 27 Oct 2026). Screens read this rather than counting.
  */
 export async function closingLoyaltyUsed(personIds: readonly string[]): Promise<Map<string, number>> {
   if (personIds.length === 0) return new Map();

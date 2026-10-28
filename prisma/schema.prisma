@@ -284,6 +284,7 @@ model PotentialInvestor {
   investorNo   String   @unique
   fullName     String
   mobile       String
+  altMobile    String?
   city         String?
   createdByRef String
   createdAt    DateTime @default(now())

@@ -9,7 +9,7 @@ export type TripProgrammeView = {
   project: string;
   code: string;
   open: { target: number; minOwn: number; maxRef: number; termsRef: string; openedAt: string } | null;
-  /** The rules the next Trip is judged by: the open bucket's, else the latest bucket's. */
+  /** The rules the next Trip is judged by: the open bucket's, else the latest bucket's, else the Project settings. */
   rules: { target: number; minOwn: number; maxRef: number; termsRef: string } | null;
   pendingOwn: number;
   qualifiedOwn: number;
@@ -18,7 +18,6 @@ export type TripProgrammeView = {
   banked: number;
   held: number;
   expired: number;
-  nearestExpiry: string | null;
   /** CP §68 — every credit of the programme, oldest first (staff view; empty in the portal). */
   credits: Array<{
     id: string;
@@ -31,8 +30,8 @@ export type TripProgrammeView = {
     booking: string | null;
     bookingId: string | null;
     plot: string | null;
-    /** A Reference credit's introduced Member: "MEM-000017 Vijay" (ID, first name). */
-    via: string | null;
+    /** A Reference credit's introduced Member: profile id (for the link), Member ID and full name. */
+    via: { id: string; memberId: string; name: string } | null;
     reversalReason: string | null;
   }>;
   rewards: Array<{
@@ -59,7 +58,15 @@ export async function tripOfMember(memberProfileId: string) {
   const [credits, buckets] = await Promise.all([
     db.tripCredit.findMany({
       where: { memberProfileId },
-      select: { projectId: true, programmeCode: true, creditType: true, state: true, bucketId: true, expiresAt: true },
+      select: {
+        projectId: true,
+        programmeCode: true,
+        creditType: true,
+        state: true,
+        bucketId: true,
+        expiresAt: true,
+        settingsVersion: { select: { tripTotalTarget: true, tripMinOwnCredits: true, tripMaxReferenceCredits: true, tripTermsVersionRef: true } },
+      },
     }),
     db.tripBucket.findMany({ where: { memberProfileId }, include: { reward: true }, orderBy: { openedAt: "desc" } }),
   ]);
@@ -82,7 +89,14 @@ export async function tripProgrammes(
     createdAt?: Date;
     reversalReason?: string | null;
     sourceBooking?: { id: string; bookingNumber: string | null; plot: { plotNumber: string } };
-    introducedMember?: { memberId: string; person?: { fullName: string } } | null;
+    introducedMember?: { id: string; memberId: string; person?: { fullName: string } } | null;
+    /** The Project settings the credit was made under: the rule before any bucket exists. */
+    settingsVersion?: {
+      tripTotalTarget: number | null;
+      tripMinOwnCredits: number | null;
+      tripMaxReferenceCredits: number | null;
+      tripTermsVersionRef: string | null;
+    } | null;
   }[],
   buckets: Array<{
     id: string;
@@ -127,7 +141,9 @@ export async function tripProgrammes(
     const open = buckets.find((b) => b.projectId === projectId && b.programmeCode === code && b.state === "OPEN");
     // Buckets arrive newest first, so after a Trip is earned its rules still show.
     const latest = open ?? buckets.find((b) => b.projectId === projectId && b.programmeCode === code);
-    const expiries = mine.filter((c) => c.state === "QUALIFIED" && !c.bucketId && c.expiresAt).map((c) => c.expiresAt!.getTime());
+    // No bucket yet (say, a Reference alone): the rule a bucket would freeze,
+    // from the Project settings its qualifying credit was made under.
+    const set = mine.find((c) => QUALIFYING.has(c.state) && c.settingsVersion?.tripTotalTarget != null)?.settingsVersion;
     return {
       key,
       project: projects.find((p) => p.id === projectId)?.name ?? "—",
@@ -143,7 +159,14 @@ export async function tripProgrammes(
         : null,
       rules: latest
         ? { target: latest.totalTarget, minOwn: latest.minOwnCredits, maxRef: latest.maxReferenceCredits, termsRef: latest.termsVersionRef }
-        : null,
+        : set
+          ? {
+              target: set.tripTotalTarget!,
+              minOwn: set.tripMinOwnCredits ?? 0,
+              maxRef: set.tripMaxReferenceCredits ?? 0,
+              termsRef: set.tripTermsVersionRef ?? "",
+            }
+          : null,
       pendingOwn: own("PENDING"),
       qualifiedOwn: own("QUALIFIED"),
       qualifiedReference: mine.filter((c) => c.creditType === "REFERENCE" && c.state === "QUALIFIED" && !c.bucketId).length,
@@ -165,15 +188,16 @@ export async function tripProgrammes(
           bookingId: c.sourceBooking?.id ?? null,
           plot: c.sourceBooking?.plot.plotNumber ?? null,
           via: c.introducedMember
-            ? [c.introducedMember.memberId, c.introducedMember.person?.fullName.trim().split(/\s+/)[0]]
-                .filter(Boolean)
-                .join(" ")
+            ? {
+                id: c.introducedMember.id,
+                memberId: c.introducedMember.memberId,
+                name: c.introducedMember.person?.fullName.trim() ?? "",
+              }
             : null,
           reversalReason: c.reversalReason ?? null,
         })),
       held: mine.filter((c) => c.state === "HELD").length,
       expired: mine.filter((c) => c.state === "EXPIRED").length,
-      nearestExpiry: expiries.length ? new Date(Math.min(...expiries)).toISOString() : null,
       rewards: buckets
         .filter((b) => b.projectId === projectId && b.programmeCode === code && b.reward)
         .map((b) => ({

@@ -430,7 +430,7 @@ const HOLD_WORDS: Record<string, string> = {
   RECOVERY_OUTSTANDING: "a pending Recovery",
   MEMBER_DEACTIVATED: "the Member being Deactivated",
   BUYBACK_STABLE_COMPLETION_PENDING: "a Buyback not yet stably complete",
-  RECOVERY_CIRCUMVENTION_REVIEW: "a Recovery circumvention review",
+  RECOVERY_CIRCUMVENTION_REVIEW: "a Recovery Review",
 };
 
 /** Staff-facing: why spending is blocked or limited now. */

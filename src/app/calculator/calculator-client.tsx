@@ -31,7 +31,6 @@ import { Field, inputClass } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
 import { calculateAreas } from "@/lib/domain/inventory";
 import {
-  CUSTOMER_CLOSING_LOYALTY_LIMIT,
   generateCommission,
   previewInput,
   rateLabel,
@@ -97,8 +96,6 @@ export type CalcPersonView = {
     customerId: string;
     /** v2.1 §22 — accepted Customer Terms. */
     termsAccepted: boolean;
-    /** v2.1 §21 — Customer-closing Loyalty events qualified, of three for life. */
-    closingLoyaltyUsed: number;
   } | null;
 };
 
@@ -254,7 +251,7 @@ const HOLD_SENTENCE: Record<string, string> = {
   CUSTOMER_TERMS_PENDING: "Customer Terms Pending — the closer has not accepted Customer Terms",
   RECOVERY_OUTSTANDING: "Recovery Pending — new cash payouts wait until it is repaid or set off",
   OLD_RECOVERY_PENDING: "Waiting for the old beneficiary's Recovery on this Booking, unless MD approves",
-  RECOVERY_CIRCUMVENTION_REVIEW: "Recovery circumvention review — shares bank, mobile or address with an unresolved Recovery",
+  RECOVERY_CIRCUMVENTION_REVIEW: "Recovery Review — shares bank, mobile or address with an unresolved Recovery",
 };
 
 export default function CalculatorClient({
@@ -574,12 +571,6 @@ export default function CalculatorClient({
         notes.push(
           "Holds an Active Member capability, so a closing action uses Sold By Member and earns " +
             "no Loyalty Points (v2.1 §24)."
-        );
-      }
-      if (closing && (beneficiary.customer?.closingLoyaltyUsed ?? 0) >= CUSTOMER_CLOSING_LOYALTY_LIMIT) {
-        notes.push(
-          `Already earned ${CUSTOMER_CLOSING_LOYALTY_LIMIT} Customer-closing Loyalty Points events — Membership ` +
-            "is required to earn from further sales (v2.1 §25)."
         );
       }
     }

@@ -441,8 +441,9 @@ on("2026-09-15", "Trip travelled", async () => {
 
 const spend = (memberKey: string, tokens: number, recipient: "SELF" | "NON_FAMILY", recipientName: string, what: string) =>
   recordTokenRedemption({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", memberProfileId: P(memberKey).profileId!, tokens, redeemedOn: istDay(new Date()), recipient, recipientName, reference: what });
-on("2026-09-20", "Pooja spends Royalty points", () => spend("M04", 10, "SELF", "", "Weekend stay at Ranthambore, booked by the team"));
-on("2026-10-02", "Pooja spends points for a friend", () => spend("M04", 3, "NON_FAMILY", "Suresh Bhatt (friend)", "Diwali sweets hamper"));
+// Used For is a Gift or a Voucher, for the Member (owner, 27 Oct 2026).
+on("2026-09-20", "Pooja spends Royalty points", () => spend("M04", 10, "SELF", "", "Voucher"));
+on("2026-10-02", "Pooja spends points on a gift", () => spend("M04", 3, "SELF", "", "Gift"));
 
 /* ---------------------------------------------------- Holds and Hold Requests */
 

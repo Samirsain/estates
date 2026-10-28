@@ -9,7 +9,7 @@ import Link from "next/link";
 import { PersonLink } from "@/components/person-link";
 import { AlertTriangle, ChevronDown, Plus, CheckCircle2 } from "lucide-react";
 import { addTaskAction, assignableStaffAction, completeTaskAction, reviseTaskAction, type ActionResult } from "./actions";
-import { AppShell, SALES_LINKS } from "@/components/app-shell";
+import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -147,19 +147,10 @@ export default function DashboardClient({
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
       <div className="mx-auto max-w-7xl space-y-4">
-        {/* Three columns at md: the heading, Plots & Sales centred on the
-            page, and the actions. The outer two share the leftover width
-            equally, so the middle stays centred whatever sits beside it. */}
-        <header className="flex flex-wrap items-center justify-between gap-3 md:grid md:grid-cols-[1fr_auto_1fr]">
+        {/* Plots & Sales moved from here to the top bar of every page. */}
+        <header className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-bold tracking-tight">Task List</h1>
-          <nav aria-label="Plots & Sales" className="flex flex-wrap justify-center gap-1.5">
-            {SALES_LINKS.map((link) => (
-              <Button key={link.href} asChild size="sm" variant="default">
-                <Link href={link.href}>{link.label}</Link>
-              </Button>
-            ))}
-          </nav>
-          <div className="flex items-center gap-3 md:justify-end">
+          <div className="flex items-center gap-3">
             {seesAllWork && (
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <input

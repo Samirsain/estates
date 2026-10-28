@@ -1,9 +1,11 @@
 // Customer detail page — /customers/[id]
 //
 // Built to system/change-requests/custmer-profile.md, top to bottom: Header ›
-// Alerts › Summary › Contact · Identity · Bank › Properties › Property Activity
-// › Loyalty & Commission › History. Left out on the owner's instruction: the
-// Merged banner, the active-and-waiting bank accounts change, and Add Task.
+// Summary › Contact · Identity · Bank › Bookings › Property Activity ›
+// Loyalty & Commission. Alerts are badges beside Back and History opens from
+// the History button, both as on the Member profile. Left out on the owner's instruction: the
+// Merged banner, the active-and-waiting bank accounts change, Add Task and
+// Record Payment.
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -12,16 +14,16 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { can, canViewField } from "@/lib/security/permissions";
 import { maskAadhaar, maskMobile, maskPan } from "@/lib/security/identity";
 import {
-  CUSTOMER_CLOSING_LOYALTY_LIMIT,
   eligibilityLabel,
   experienceSince,
+  payoutStep,
 } from "@/lib/domain/commission";
+import { PayoutCell } from "@/app/members/[id]/payout-button";
 import { validateFinalBuyers } from "@/lib/domain/completion";
 import { formatIst, formatIstDateTime } from "@/lib/tasks";
 import { auditHistory, mergeHistory, newestFirst, type HistoryItem } from "@/lib/profile-history";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PersonDetailsEditor } from "@/components/person-details-editor";
 import { PersonLink } from "@/components/person-link";
@@ -30,16 +32,15 @@ import { Section, Stat } from "@/components/record-section";
 import { AccountNumber, IdentityFacts } from "@/components/protected-identity";
 import { MergeButton } from "./merge-button";
 import { RecordTermsButton, VerifyAadhaarButton } from "./closer-conditions";
-import { PaymentButton } from "./payment-button";
+import HistoryButton from "@/app/members/[id]/history-button";
+import { BankAccounts } from "./bank-accounts";
 import {
   AlertTriangle,
   ArrowLeft,
   ShieldCheck,
-  Banknote,
   User,
   MapPin,
   Layers,
-  History,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -84,18 +85,10 @@ function timeLeft(ms: number): string {
   return `${hours}h ${Math.floor((ms % 3_600_000) / 60_000)}m left`;
 }
 
-const PAYMENT_LABEL: Record<string, string> = {
-  NOT_PAID: "Not Paid",
-  PAID: "Paid",
-  PAID_EARLY: "Paid Early",
-  CANCELLED: "Cancelled",
-  ACCOUNTS_ADJUSTMENT_REQUIRED: "Recovery Pending",
-};
-
-/** One table header style for every table on the page. */
-const TH = "pb-2 pr-4 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
-const TD = "py-2.5 pr-4 align-top";
 const SUB = "block text-[11px] text-muted-foreground";
+/** Every table on the page centres each column under its heading (owner, 28 Oct 2026). */
+const CTH = "px-2 pb-2 text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
+const CTD = "px-2 py-2.5 text-center align-middle";
 
 
 export default async function CustomerDetailPage({
@@ -119,16 +112,10 @@ export default async function CustomerDetailPage({
       royaltyLinkedMember: { include: { person: true } },
       royaltyLinkFirstBooking: { select: { id: true, bookingNumber: true, requestNo: true } },
       termsAcceptances: { orderBy: { acceptedOn: "desc" } },
-      // SSOT §74; docss/11 — the one Royalty opportunity and the award it created.
-      royaltyAwards: { orderBy: { updatedAt: "desc" }, take: 1 },
     },
   });
 
   if (!customer) notFound();
-  const openRecoveries = await db.recovery.findMany({
-    where: { personId: customer.personId, status: "OUTSTANDING" },
-    orderBy: { dueOn: "asc" },
-  });
 
   const personId = customer.personId;
   const bookingRef = { id: true, bookingNumber: true, requestNo: true } as const;
@@ -185,7 +172,18 @@ export default async function CustomerDetailPage({
     }),
     db.commissionRecord.findMany({
       where: { beneficiaryPersonId: personId, isCurrent: true },
-      include: { booking: { select: bookingRef } },
+      // The Loyalty table names the Project, the Plot and who bought it.
+      include: {
+        booking: {
+          select: {
+            ...bookingRef,
+            primaryPersonId: true,
+            project: { select: { name: true } },
+            plot: { select: { id: true, plotNumber: true } },
+            primaryPerson: { select: { fullName: true, customerProfile: { select: { id: true, customerId: true } } } },
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     }),
     db.auditEvent.findMany({
@@ -211,44 +209,6 @@ export default async function CustomerDetailPage({
     }),
   ]);
 
-  // v2.1 §21, §25 — the Customer-closing Loyalty events that have qualified,
-  // oldest first: the three of a lifetime.
-  const closingUsed = commissions
-    .filter(
-      (c) =>
-        c.type === "LOYALTY" &&
-        c.beneficiaryRole === "CLOSING_CUSTOMER" &&
-        c.qualifiedAt !== null &&
-        c.payment !== "CANCELLED"
-    )
-    .sort((a, b) => a.qualifiedAt!.getTime() - b.qualifiedAt!.getTime());
-
-  // CP §69 — repeat-purchase Loyalty: counted, never capped (SSOT §28).
-  const repeatEarned = commissions.filter(
-    (c) =>
-      c.type === "LOYALTY" &&
-      c.beneficiaryRole === "REPEAT_PURCHASE_CUSTOMER" &&
-      c.qualifiedAt !== null &&
-      c.payment !== "CANCELLED"
-  ).length;
-
-  // CP §17, §69 — whether this Customer may be named Sold By Customer today,
-  // and if not, every reason — the same conditions the Booking Request checks.
-  const ownApprovedPurchases = await db.booking.count({
-    where: {
-      primaryPersonId: customer.personId,
-      bookingNumber: { not: null },
-      status: { notIn: ["CANCELLED", "REQUEST_REJECTED", "REQUEST_CANCELLED"] },
-    },
-  });
-  const closerBlockers = [
-    ownApprovedPurchases === 0 && "no own approved purchase",
-    customer.person.aadhaarStatus !== "VERIFIED" && "KYC not verified",
-    customer.termsAcceptances.length === 0 && "Customer Terms not accepted",
-    customer.person.memberProfile?.status === "ACTIVE" && "an Active Member closes as Sold By Member",
-    closingUsed.length >= CUSTOMER_CLOSING_LOYALTY_LIMIT && "three closing events used — Membership needed",
-  ].filter((r): r is string => typeof r === "string");
-
   const now = Date.now();
 
   // The Bookings this Customer is buying on: approved, and they are the
@@ -260,10 +220,6 @@ export default async function CustomerDetailPage({
       (b.primaryPersonId === personId ||
         b.parties.some((p) => p.personId === personId && p.kind === "COMMERCIAL"))
   );
-  const bookedCount = deals.filter((b) =>
-    ["BOOKED", "PAYMENT_COMPLETED", "REFUND_PENDING"].includes(b.status)
-  ).length;
-  const deliveredCount = deals.filter((b) => b.status === "DELIVERED").length;
 
   const firstBookingDate = bookings.at(-1)?.submittedAt ?? null;
   const experience = experienceSince(firstBookingDate);
@@ -296,11 +252,7 @@ export default async function CustomerDetailPage({
     (h) => h.status === "ACTIVE" && h.expiresAt.getTime() - now <= HOLD_EXPIRING_MS
   );
   const canCompleteDetails = can(actor.role, "FINAL_BUYER_RECORD", actor.extraPermissions);
-  const canConfirmPayment = can(actor.role, "PAYMENT_RECEIVED_CONFIRM", actor.extraPermissions);
-  // Same gate as the Plot Inventory row: Booked, with something left to receive.
-  const payable = deals.filter(
-    (b) => b.status === "BOOKED" && b.paymentReceivedPercent.lessThan(100)
-  );
+  const canPayCommission = can(actor.role, "COMMISSION_PROCESS", actor.extraPermissions);
 
   /* --------------------------------------------------------------- history */
 
@@ -332,50 +284,82 @@ export default async function CustomerDetailPage({
     })),
   ]);
 
-  const hasAlerts = detailsDue.length + blockedPayouts.length + expiringHolds.length > 0;
-
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
       <div className="mx-auto max-w-5xl space-y-4">
-        {/* Back on the left; everything staff can start from this Customer on
-            the right, in the order a sale runs. Each one opens the screen that
-            already does it, with this Customer chosen. */}
+        {/* Back on the left; this Customer's own actions on the right. The
+            owner took Start Enquiry, View Available Plots, Hold a Plot and
+            Start Booking off this profile on 28 Oct 2026. */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Link
-            href="/customers"
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to Customers
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/customers"
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to Customers
+            </Link>
+            {/* What needs action, as short badges beside Back — where the
+                Member profile shows Recovery pending. The badge names the work
+                and the Plot; the rest is in its tooltip. */}
+            {detailsDue.map((b) => {
+              const why = `${b.bookingNumber} · ${b.project.name} is paid in full; final buyer details are not complete.`;
+              const badge = (
+                <Badge variant="warning" className={`gap-1 ${canCompleteDetails ? "hover:underline" : ""}`}>
+                  <AlertTriangle className="h-3 w-3" />
+                  Complete Details · {plotName(b.plot)}
+                </Badge>
+              );
+              return canCompleteDetails ? (
+                <Link key={b.id} href={`/bookings/${b.id}`} title={why}>
+                  {badge}
+                </Link>
+              ) : (
+                <span key={b.id} title={why}>
+                  {badge}
+                </span>
+              );
+            })}
+            {/* One badge per reason, however many payouts it holds. */}
+            {(["AADHAAR_PENDING", "BANK_VERIFICATION_PENDING"] as const).map((reason) => {
+              const held = blockedPayouts.filter((c) => c.holdReason === reason);
+              if (held.length === 0) return null;
+              const what = held
+                .map(
+                  (c) =>
+                    `${c.type === "LOYALTY" ? "Loyalty Points" : `${words(c.type)} commission`}${
+                      c.booking ? ` on ${c.booking.bookingNumber ?? c.booking.requestNo}` : ""
+                    }`
+                )
+                .join(", ");
+              return (
+                <span key={reason} title={`Holds the ${what}.`}>
+                  <Badge variant="warning" className="gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    {reason === "AADHAAR_PENDING" ? "Aadhaar Pending" : "Bank not verified"}
+                  </Badge>
+                </span>
+              );
+            })}
+            {expiringHolds.map((h) => (
+              <Link
+                key={h.id}
+                href={`/plots/${h.plot.id}`}
+                title={`${h.plot.project.name} · ${plotName(h.plot)} — ${timeLeft(h.expiresAt.getTime() - now)}`}
+              >
+                <Badge variant="warning" className="gap-1 hover:underline">
+                  <AlertTriangle className="h-3 w-3" />
+                  Hold expiring · {plotName(h.plot)}
+                </Badge>
+              </Link>
+            ))}
+          </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {can(actor.role, "ENQUIRY_MANAGE", actor.extraPermissions) && (
-              <Button size="sm" variant="outline" asChild>
-                <Link href={`/enquiries?for=${personId}`}>Start Enquiry</Link>
-              </Button>
-            )}
-            <Button size="sm" variant="outline" asChild>
-              <Link href="/plots?status=AVAILABLE">View Available Plots</Link>
-            </Button>
-            {can(actor.role, "HOLD_CREATE", actor.extraPermissions) && (
-              <Button size="sm" variant="outline" asChild>
-                <Link href={`/plots?status=AVAILABLE&for=${personId}`}>Hold a Plot</Link>
-              </Button>
-            )}
-            {can(actor.role, "BOOKING_REQUEST_SUBMIT", actor.extraPermissions) && (
-              <Button size="sm" variant="outline" asChild>
-                <Link href={`/bookings?for=${personId}`}>Start Booking</Link>
-              </Button>
-            )}
-            {canConfirmPayment && payable.length > 0 && (
-              <PaymentButton
-                bookings={payable.map((b) => ({
-                  id: b.id,
-                  label: `${b.bookingNumber} · ${b.project.name} · ${plotName(b.plot)}`,
-                  receivedPercent: b.paymentReceivedPercent.toString(),
-                }))}
-              />
-            )}
+            {/* History opens over the page, as on the Member profile; it took
+                Record Payment's place on 28 Oct 2026. */}
+            <HistoryButton
+              rows={history.map((h) => ({ at: formatIstDateTime(h.at), title: h.title, detail: h.detail, by: h.by }))}
+            />
             {can(actor.role, "PERSON_MERGE", actor.extraPermissions) && (
               <MergeButton
                 person={{
@@ -418,8 +402,8 @@ export default async function CustomerDetailPage({
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <User className="h-6 w-6" />
             </div>
-            {/* Never narrower than the name and ID: with five answers beside
-                it, a shrinkable block broke "Vikas Bansal" over two lines. */}
+            {/* Never narrower than the name and ID: when five answers sat
+                beside it, a shrinkable block broke "Vikas Bansal" over two lines. */}
             <div className="min-w-fit flex-1">
               <h1 className="text-2xl font-bold tracking-tight">{customer.person.fullName}</h1>
               <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -435,33 +419,24 @@ export default async function CustomerDetailPage({
               </div>
             </div>
 
-            {/* Five answers where the Member has two, so a tighter gap: each
-                Stat already pads itself apart. */}
-            <dl className="flex flex-wrap gap-x-2 gap-y-3">
-              <Stat label="Customer for" value={experience?.label ?? "—"} />
-              {/* CP §69 — a Customer closer can owe a Recovery too; a safe indicator only. */}
+            {/* Two answers, the same count and gap as the Member profile. The
+                owner dropped Recovery, Properties and Closing Loyalty Points
+                from here on 28 Oct 2026. */}
+            <dl className="flex flex-wrap gap-x-10 gap-y-3">
+              {/* Shaped like the Member profile's "Member for": how long, then
+                  the day it started. */}
               <Stat
-                label="Recovery"
-                value={openRecoveries.length ? `${openRecoveries.length} pending` : "None"}
-                hint={openRecoveries[0] ? `${openRecoveries[0].recoveryNo} due ${formatIst(openRecoveries[0].dueOn)}` : undefined}
-              />
-              <Stat label="Properties" value={`${bookedCount} booked · ${deliveredCount} delivered`} />
-              <Stat
-                label="Closing Loyalty Points"
-                value={`${closingUsed.length} of ${CUSTOMER_CLOSING_LOYALTY_LIMIT} used`}
-                hint={closingUsed.length >= CUSTOMER_CLOSING_LOYALTY_LIMIT ? "Membership needed for more" : undefined}
+                label="Customer for"
+                value={experience?.ago ?? "—"}
+                hint={firstBookingDate ? `First booking on ${formatIst(firstBookingDate)}` : "No booking yet"}
               />
               {/* CR-002 — the Member who was Sold By on the first qualifying
                   purchase; CR-003's nobody when that purchase was sold by the 3%
                   Club or a Customer.
 
                   Shaped like the Member profile's "Invited by", which answers the
-                  same question on that side: a short value and the person's name
-                  under it. It used to carry a sentence for a value and a hint
-                  that wrapped onto a second line, which left this one column
-                  taller than the three beside it. Where the link stands and which
-                  position it took moved down to Loyalty Points & commission — that block
-                  is already about exactly this and has the room. */}
+                  same question on that side: the Member ID and name together as
+                  the value, and a hint only when there is something more to say. */}
               {customer.royaltyLinkedMember ? (
                 <Stat
                   label="Royalty linked to"
@@ -470,17 +445,12 @@ export default async function CustomerDetailPage({
                       href={`/members/${customer.royaltyLinkedMember.id}`}
                       className="text-primary hover:underline"
                     >
-                      {customer.royaltyLinkedMember.memberId}
+                      <span className="block">{customer.royaltyLinkedMember.memberId}</span>
+                      <span className="block text-foreground">{customer.royaltyLinkedMember.person.fullName}</span>
                     </Link>
                   }
-                  // An unconfirmed link can still move to a different Member, so
-                  // that is the fact worth the one line here — the name is on the
-                  // Member's own page, the standing is not.
-                  hint={
-                    customer.royaltyLinkFinalAt
-                      ? customer.royaltyLinkedMember.person.fullName
-                      : "Provisional"
-                  }
+                  // An unconfirmed link can still move to a different Member.
+                  hint={customer.royaltyLinkFinalAt ? undefined : "Provisional"}
                 />
               ) : customer.royaltyLinkFirstBookingId ? (
                 <Stat
@@ -494,56 +464,6 @@ export default async function CustomerDetailPage({
             </dl>
           </div>
         </Card>
-
-        {/* Alerts — only when something is due. */}
-        {hasAlerts && (
-          <Card className="border-amber-500/40 p-4 md:p-5">
-            <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-800">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              Needs action
-            </h2>
-            <ul className="mt-2 divide-y divide-border/50 text-xs">
-              {detailsDue.map((b) => (
-                <li key={b.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
-                  <span>
-                    <span className="font-semibold">Complete Customer Details</span>
-                    <span className={SUB}>
-                      {b.bookingNumber} · {b.project.name} · {plotName(b.plot)} is paid in full;
-                      final buyer details are not complete.
-                    </span>
-                  </span>
-                  {canCompleteDetails && (
-                    <Button size="sm" variant="outline" asChild>
-                      <Link href={`/bookings/${b.id}`}>Complete details</Link>
-                    </Button>
-                  )}
-                </li>
-              ))}
-              {blockedPayouts.map((c) => (
-                <li key={c.id} className="py-2.5">
-                  <span className="font-semibold">
-                    {c.holdReason === "AADHAAR_PENDING" ? "Aadhaar Pending" : "Bank not verified"}
-                  </span>
-                  <span className={SUB}>
-                    Holds the {c.type === "LOYALTY" ? "Loyalty Points" : `${words(c.type)} commission`}
-                    {c.booking ? ` on ${c.booking.bookingNumber ?? c.booking.requestNo}` : ""}.
-                  </span>
-                </li>
-              ))}
-              {expiringHolds.map((h) => (
-                <li key={h.id} className="py-2.5">
-                  <span className="font-semibold">Hold expiring</span>
-                  <span className={SUB}>
-                    <Link href={`/plots/${h.plot.id}`} className="text-primary hover:underline">
-                      {h.plot.project.name} · {plotName(h.plot)}
-                    </Link>{" "}
-                    — {timeLeft(h.expiresAt.getTime() - now)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
 
         {/* Who they are, how they prove it, where the money goes. */}
         <div className="grid gap-4 md:grid-cols-3">
@@ -585,14 +505,34 @@ export default async function CustomerDetailPage({
                 customer.person.panMasked ? statusWord(customer.person.panStatus) : undefined
               }
             />
+            {/* v2.1 §22, §77 — a Sold By Customer needs verified KYC and
+                accepted Customer Terms; the two steps sit here with Identity. */}
+            {customer.person.aadhaarStatus === "AVAILABLE" && ["ACCOUNTS", "MD"].includes(actor.role) && (
+              <div className="flex justify-end">
+                <VerifyAadhaarButton personId={customer.personId} />
+              </div>
+            )}
+            <Row
+              label="Customer Terms"
+              value={
+                customer.termsAcceptances[0]
+                  ? `${customer.termsAcceptances[0].termsVersion} · ${formatIst(customer.termsAcceptances[0].acceptedOn)}`
+                  : "Not accepted"
+              }
+            />
+            {["CRM", "MD"].includes(actor.role) && (
+              <div className="flex justify-end">
+                <RecordTermsButton customerProfileId={customer.id} />
+              </div>
+            )}
           </Section>
 
-          <Section fill title="Bank" icon={<Banknote className="h-3.5 w-3.5" />}>
-            {banks.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No bank details recorded.</p>
-            ) : (
-              banks.map((b) => (
-                <div key={b.id} className="border-b border-border/50 pb-2 last:border-0 last:pb-0">
+          {/* The newest account; the others open under "Show N more". */}
+          <BankAccounts
+            accounts={banks.map((b) => ({
+              id: b.id,
+              body: (
+                <div>
                   <Row
                     label="Account"
                     value={
@@ -621,13 +561,13 @@ export default async function CustomerDetailPage({
                   <Row label="Branch" value={b.branchName ?? "—"} />
                   <Row label="Holder name" value={b.accountHolder} />
                 </div>
-              ))
-            )}
-          </Section>
+              ),
+            }))}
+          />
         </div>
 
-        {/* Properties — one row per Booking they are buying on. */}
-        <Section title={`Properties (${deals.length})`} icon={<MapPin className="h-3.5 w-3.5" />}>
+        {/* Bookings (was Properties until 28 Oct 2026) — one row per Booking they are buying on. */}
+        <Section title={`Bookings (${deals.length})`} icon={<MapPin className="h-3.5 w-3.5" />}>
           {deals.length === 0 ? (
             <p className="text-xs text-muted-foreground">No approved Bookings yet.</p>
           ) : (
@@ -635,12 +575,12 @@ export default async function CustomerDetailPage({
               <table className="w-full min-w-[46rem] text-xs">
                 <thead className="border-b border-border/50">
                   <tr>
-                    <th className={TH}>Booking</th>
-                    <th className={TH}>Plot</th>
-                    <th className={TH}>Status</th>
-                    <th className={TH}>Ownership</th>
-                    <th className={TH}>Sold By</th>
-                    <th className={`${TH} pr-0`}>Completion</th>
+                    <th className={CTH}>Booking</th>
+                    <th className={CTH}>Project &amp; Plot</th>
+                    <th className={CTH}>Status</th>
+                    <th className={CTH}>Ownership</th>
+                    <th className={CTH}>Sold By</th>
+                    <th className={CTH}>Completion</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
@@ -663,7 +603,7 @@ export default async function CustomerDetailPage({
                     const doneOn = done?.allotmentDate ?? done?.registryDate ?? null;
                     return (
                       <tr key={b.id}>
-                        <td className={TD}>
+                        <td className={CTD}>
                           <Link
                             href={`/bookings/${b.id}`}
                             className="font-semibold text-primary hover:underline"
@@ -671,7 +611,7 @@ export default async function CustomerDetailPage({
                             {b.bookingNumber}
                           </Link>
                         </td>
-                        <td className={TD}>
+                        <td className={CTD}>
                           <Link
                             href={`/plots/${b.plot.id}`}
                             className="font-semibold text-primary hover:underline"
@@ -682,13 +622,13 @@ export default async function CustomerDetailPage({
                             {titleWords(b.plot.plotType)} · {b.project.name}
                           </span>
                         </td>
-                        <td className={TD}>
+                        <td className={CTD}>
                           <span className="font-medium">{words(b.status)}</span>
                           <span className={`${SUB} tabular-nums`}>
                             {b.paymentReceivedPercent.toFixed(2)}% received
                           </span>
                         </td>
-                        <td className={TD}>
+                        <td className={CTD}>
                           <span className="font-medium">
                             {mine?.role === "ADDITIONAL" ? "Additional" : "Primary"}
                             <span className="tabular-nums">
@@ -712,7 +652,7 @@ export default async function CustomerDetailPage({
                             </span>
                           )}
                         </td>
-                        <td className={TD}>
+                        <td className={CTD}>
                           {b.soldByType === "THREE_PERCENT_CLUB" || !seller ? (
                             <span className="font-medium">3% Club</span>
                           ) : (
@@ -727,7 +667,7 @@ export default async function CustomerDetailPage({
                             </>
                           )}
                         </td>
-                        <td className={`${TD} pr-0`}>
+                        <td className={CTD}>
                           {done ? (
                             <>
                               <span className="font-medium">
@@ -749,162 +689,30 @@ export default async function CustomerDetailPage({
           )}
         </Section>
 
-        {/* Loyalty & Commission — one block, because it is one subject. The
-            three slots, the purchase that named the Royalty link, and what has
-            actually been earned were three separate cards saying the same
-            thing in three places. The two short lists sit across the top and
-            the table runs under them, so the whole answer is read in one go. */}
-        <Section title="Loyalty Points & commission" icon={<Layers className="h-3.5 w-3.5" />}>
-          {/* Five answers on one line, in the same shape as the summary row at
-              the top of the page: three slots, the purchase that named the
-              Royalty link, and where that link stands. They were two stacked
-              lists in two columns, which is five lines of card for five short
-              facts. `Stat` already draws exactly this, dividers included. */}
-          <dl className="grid grid-cols-2 gap-y-4 md:grid-cols-4 md:divide-x md:divide-border/60 lg:grid-cols-7">
-            {/* v2.1 §21, §25 — the three Customer-closing events of a lifetime,
-                in the order they qualified. Repeat-purchase Loyalty Points are unlimited
-                and is not counted here. */}
-            {Array.from({ length: CUSTOMER_CLOSING_LOYALTY_LIMIT }, (_, i) => {
-              const event = closingUsed[i];
-              return (
-                <Stat
-                  key={i}
-                  label={`Closing ${i + 1}`}
-                  value={
-                    event?.booking ? (
-                      <Link href={`/bookings/${event.booking.id}`} className="text-primary hover:underline">
-                        {event.booking.bookingNumber ?? event.booking.requestNo}
-                      </Link>
-                    ) : (
-                      "Open"
-                    )
-                  }
-                  hint={event?.qualifiedAt ? formatIst(event.qualifiedAt) : undefined}
-                />
-              );
-            })}
-
-            <Stat
-              label="Repeat purchase"
-              value={`${repeatEarned} earned`}
-              hint="Own repeat purchases · unlimited"
-            />
-            <Stat
-              label="First purchase"
-              value={
-                customer.royaltyLinkFirstBooking ? (
-                  <Link
-                    href={`/bookings/${customer.royaltyLinkFirstBooking.id}`}
-                    className="text-primary hover:underline"
-                  >
-                    {customer.royaltyLinkFirstBooking.bookingNumber ??
-                      customer.royaltyLinkFirstBooking.requestNo}
-                  </Link>
-                ) : (
-                  "—"
-                )
-              }
-              hint={customer.royaltyLinkFirstBooking ? undefined : "No qualifying purchase yet"}
-            />
-            <Stat
-              label="Royalty link"
-              value={
-                !customer.royaltyLinkFirstBooking
-                  ? "—"
-                  : customer.royaltyLinkFinalAt
-                    ? "Final"
-                    : "Provisional"
-              }
-              hint={
-                customer.royaltyLinkFinalAt
-                  ? `${formatIst(customer.royaltyLinkFinalAt)}${
-                      customer.royaltyLinkFinalRoute === "APPROVED_BUYBACK" ? " · by Buyback" : ""
-                    }`
-                  : undefined
-              }
-            />
-            <Stat
-              label="Royalty opportunity"
-              value={customer.royaltyOpportunityConsumedAt ? "Consumed" : "Unused"}
-              hint={
-                customer.royaltyAwards[0]
-                  ? `${customer.royaltyAwards[0].tokens} points · ${
-                      { PENDING: "pending", RELEASED: "posted", REVERSED: "reversed" }[customer.royaltyAwards[0].state]
-                    }`
-                  : customer.royaltyLinkedMemberId
-                    ? "Royalty points for the linked Member on the first Club-direct repeat purchase"
-                    : undefined
-              }
-            />
-          </dl>
-
-          {/* v2.1 §22, §77 — what a Customer closer needs before Customer-closing
-              Loyalty Points are paid. Shown for every Customer: anyone may close a sale
-              once they have bought. */}
-          <div className="mt-4 grid gap-3 border-t border-border/60 pt-3 md:grid-cols-2">
-            {/* CP §17, §69 — the verdict first, then the two conditions staff can act on. */}
-            <div className="text-xs md:col-span-2">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Can close a sale (Sold By Customer)
-              </p>
-              <p className={`mt-0.5 font-medium ${closerBlockers.length ? "text-amber-700" : "text-emerald-700"}`}>
-                {closerBlockers.length
-                  ? `No — ${closerBlockers.join(" · ")}`
-                  : `Yes — ${CUSTOMER_CLOSING_LOYALTY_LIMIT - closingUsed.length} closing event(s) left`}
-              </p>
-            </div>
-            <div className="flex items-start justify-between gap-3 text-xs">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Closer KYC</p>
-                <p className="mt-0.5">
-                  {customer.person.aadhaarStatus === "VERIFIED"
-                    ? "Aadhaar Verified"
-                    : customer.person.aadhaarStatus === "AVAILABLE"
-                      ? "Aadhaar recorded, not verified yet"
-                      : "No Aadhaar recorded"}
-                </p>
-              </div>
-              {customer.person.aadhaarStatus === "AVAILABLE" && ["ACCOUNTS", "MD"].includes(actor.role) && (
-                <VerifyAadhaarButton personId={customer.personId} />
-              )}
-            </div>
-            <div className="flex items-start justify-between gap-3 text-xs">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Customer Terms</p>
-                <p className="mt-0.5">
-                  {customer.termsAcceptances[0]
-                    ? `${customer.termsAcceptances[0].termsVersion} · accepted ${formatIst(customer.termsAcceptances[0].acceptedOn)}`
-                    : "Not accepted yet"}
-                </p>
-              </div>
-              {["CRM", "MD"].includes(actor.role) && (
-                <RecordTermsButton customerProfileId={customer.id} />
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 border-t border-border/60 pt-3">
-            <p className="pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Commission
-            </p>
+        {/* Loyalty Points — the commission table alone (owner, 27 Oct 2026):
+            the Loyalty counts and the Royalty link moved off this card, and
+            the closer conditions live with Identity. */}
+        <Section title="Loyalty Points" icon={<Layers className="h-3.5 w-3.5" />}>
+          <div>
             {commissions.length === 0 ? (
             <p className="text-xs text-muted-foreground">No commission records yet.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[40rem] text-xs">
+              <table className="w-full min-w-[46rem] text-xs">
                 <thead className="border-b border-border/50">
                   <tr>
-                    <th className={TH}>Booking</th>
-                    <th className={TH}>Type</th>
-                    <th className={`${TH} text-right`}>%</th>
-                    <th className={TH}>Eligibility</th>
-                    <th className={`${TH} pr-0`}>Payment</th>
+                    <th className={CTH}>Booking ID</th>
+                    <th className={CTH}>Project &amp; Plot</th>
+                    <th className={CTH}>Buyer</th>
+                    <th className={CTH}>%</th>
+                    <th className={CTH}>Eligibility</th>
+                    <th className={CTH}>Payment</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
                   {commissions.map((c) => (
                     <tr key={c.id}>
-                      <td className={TD}>
+                      <td className={CTD}>
                         {c.booking ? (
                           <Link
                             href={`/bookings/${c.booking.id}`}
@@ -916,25 +724,73 @@ export default async function CustomerDetailPage({
                           "—"
                         )}
                       </td>
-                      <td className={TD}>
-                        {c.type === "LOYALTY"
-                          ? c.beneficiaryRole === "CLOSING_CUSTOMER"
-                            ? "Customer-closing Loyalty Points"
-                            : "Repeat-purchase Loyalty Points"
-                          : words(c.type)}
-                      </td>
-                      <td className={`${TD} text-right font-medium tabular-nums`}>
-                        {c.percent.toFixed(2)}%
-                      </td>
-                      <td className={TD}>
-                        {eligibilityLabel(c.eligibility)}
-                        {c.holdReason && (
-                          <span className="block text-[11px] text-amber-700">{c.holdReason === "RECOVERY_OUTSTANDING" ? "Recovery Pending" : words(c.holdReason)}</span>
+                      <td className={CTD}>
+                        {c.booking ? (
+                          <>
+                            <Link
+                              href={`/plots/${c.booking.plot.id}`}
+                              className="font-semibold text-primary hover:underline"
+                            >
+                              {plotName(c.booking.plot)}
+                            </Link>
+                            <span className={SUB}>{c.booking.project.name}</span>
+                          </>
+                        ) : (
+                          "—"
                         )}
                       </td>
-                      <td className={`${TD} pr-0`}>
-                        {PAYMENT_LABEL[c.payment] ?? c.payment}
-                        {c.paidOn && <span className={SUB}>{formatIst(c.paidOn)}</span>}
+                      {/* Who bought: "Self" on a repeat purchase, the closed
+                          Customer's name and ID on a Customer-closing one. */}
+                      <td className={CTD}>
+                        {c.beneficiaryRole === "REPEAT_PURCHASE_CUSTOMER" ||
+                        (c.booking && c.booking.primaryPersonId === personId) ? (
+                          <span className="font-medium">Self</span>
+                        ) : !c.booking ? (
+                          "—"
+                        ) : (
+                          // The Customer ID on top, opening their profile; the name under it.
+                          <>
+                            {c.booking.primaryPerson.customerProfile && (
+                              <Link
+                                href={`/customers/${c.booking.primaryPerson.customerProfile.id}`}
+                                className="block font-semibold text-primary hover:underline"
+                              >
+                                {c.booking.primaryPerson.customerProfile.customerId}
+                              </Link>
+                            )}
+                            <span className={SUB}>{c.booking.primaryPerson.fullName}</span>
+                          </>
+                        )}
+                        {/* A Customer who is also a Member can earn other commission here too. */}
+                        {c.type !== "LOYALTY" && <span className={SUB}>{words(c.type)} commission</span>}
+                      </td>
+                      <td className={`${CTD} font-medium tabular-nums`}>
+                        {c.percent.toFixed(2)}%
+                      </td>
+                      <td className={CTD}>
+                        {eligibilityLabel(c.eligibility)}
+                        {c.holdReason && (
+                          <span className="block text-[11px] text-amber-700">{c.holdReason === "RECOVERY_OUTSTANDING"
+                            ? "Recovery Pending"
+                            : c.holdReason === "RECOVERY_CIRCUMVENTION_REVIEW"
+                              ? "Recovery Review"
+                              : words(c.holdReason)}</span>
+                        )}
+                      </td>
+                      {/* The Member profile's Payout: Paid with its date, or Mark
+                          Paid / Pay Early for whoever can take that step. */}
+                      <td className={CTD}>
+                        <PayoutCell
+                          payment={c.payment}
+                          paidOn={c.paidOn}
+                          step={payoutStep(c, actor.role, canPayCommission)}
+                          awaitingMd={!!c.earlyRequestedAt && !c.earlyApprovedAt}
+                          recordId={c.id}
+                          buying={!!c.acquisitionId}
+                          label={`${c.type === "LOYALTY" ? "Loyalty Points" : words(c.type)} ${c.percent.toFixed(2)}% · ${
+                            c.booking?.bookingNumber ?? c.booking?.requestNo ?? ""
+                          }`}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -943,24 +799,6 @@ export default async function CustomerDetailPage({
               </div>
             )}
           </div>
-        </Section>
-
-        {/* History — one timeline, newest first. */}
-        <Section title="History" icon={<History className="h-3.5 w-3.5" />}>
-          <ul className="divide-y divide-border/40 text-xs">
-            {history.map((h, index) => (
-              <li key={index} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 py-2.5">
-                <span className="min-w-0">
-                  <span className="font-medium text-foreground">{h.title}</span>
-                  {h.detail && <span className={SUB}>{h.detail}</span>}
-                </span>
-                <span className="text-right text-[11px] text-muted-foreground">
-                  {formatIstDateTime(h.at)}
-                  {h.by && <span className="block">{h.by}</span>}
-                </span>
-              </li>
-            ))}
-          </ul>
         </Section>
       </div>
     </AppShell>

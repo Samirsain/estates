@@ -6,28 +6,30 @@
 // Plot, Sold By Correction) calls `syncTripForBooking`, which decides what its
 // Own-Sale Credit and any Reference Credit should be, then re-evaluates the
 // buckets they feed. Non-cash throughout: no rupee value is stored.
+//
+// Owner, 27 Oct 2026 (docs/Rewards_Guide.md): at most one Reward per Member
+// per Project; a sale locked into an earned Reward stays there whatever
+// happens to its Booking later; credits do not expire; and there is no
+// Reward Sale Cancelled (NT04) or Reward Expiry (NT05) task.
 
 import type { Prisma, RewardHoldReason, RewardRecipient, TripCredit } from "@prisma/client";
 import { db } from "@/lib/db";
 import { notFutureDated } from "@/lib/domain/booking";
 import { BUYBACK_MIN_SOURCE_PAYMENT } from "@/lib/domain/commission";
 import { createsInviteCycle } from "@/lib/domain/network";
-import { allocate, CREDIT_REASON, creditExpiry, type AllocatableCredit } from "@/lib/domain/trip";
+import { allocate, CREDIT_REASON, type AllocatableCredit } from "@/lib/domain/trip";
 import { recordAudit } from "@/lib/security/audit";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { outstandingRecovery } from "./commission-service";
-import { closeTasksFor, ensureTask } from "./task-service";
-import { formatIstDate } from "@/lib/tasks";
+import { closeTasksFor, completeTask, ensureTask } from "./task-service";
 import { assertIndependent, controlHoldReason } from "./benefit-control-service";
 
 /** CP §65 NT03. */
 export const TRIP_FULFILMENT_PURPOSE = "TRIP_REWARD_FULFILMENT";
-/** CP §65 NT04. */
-export const TRIP_DEFICIENCY_PURPOSE = "TRIP_REWARD_DEFICIENCY";
-/** CP §65 NT05. */
-export const TRIP_WIND_DOWN_PURPOSE = "TRIP_BUCKET_WIND_DOWN";
 export const TRIP_REWARD_KIND = "Trip Reward";
 export const TRIP_BUCKET_KIND = "Trip Bucket";
+/** What a closed Reward Earned task reads — "Reward" and nothing more. */
+export const REWARD_EARNED_RESULT = "Reward earned.";
 
 const CLOSED_BOOKING = ["CANCELLED", "REQUEST_REJECTED", "REQUEST_CANCELLED"];
 
@@ -61,13 +63,15 @@ async function qualification(
 
 /* --------------------------------------------------------------- credits */
 
+/** A credit inside an earned Reward: final, whatever happens to its Booking. */
+const locked = (credit: TripCredit) => credit.state === "ALLOCATED" || credit.state === "USED";
+
 /**
- * SSOT §63 — a credit whose basis is gone. Used credits (a Travelled Trip)
- * are final and never touched (SSOT §64). An allocated one leaves its bucket,
- * whose reward is then backfilled or becomes Deficient.
+ * SSOT §63 — a credit whose basis is gone. One locked into an earned Reward
+ * is final and never touched (owner, 27 Oct 2026).
  */
 export async function invalidate(tx: Tx, credit: TripCredit, actorRef: string, reason: string) {
-  if (credit.state === "USED" || credit.state === "REVERSED" || credit.state === "EXPIRED") return;
+  if (locked(credit) || credit.state === "REVERSED" || credit.state === "EXPIRED") return;
   await tx.tripCredit.update({
     where: { id: credit.id },
     data: { state: "REVERSED", reversedAt: new Date(), reversalReason: reason, bucketId: null },
@@ -82,12 +86,12 @@ export async function invalidate(tx: Tx, credit: TripCredit, actorRef: string, r
   }
 }
 
-/** Qualification lost (SSOT §99): back to Pending, out of any bucket. */
+/** Qualification lost (SSOT §99): back to Pending. Never reached for a locked credit. */
 async function unqualify(tx: Tx, credit: TripCredit, actorRef: string) {
-  if (credit.state !== "QUALIFIED" && credit.state !== "ALLOCATED") return;
+  if (credit.state !== "QUALIFIED") return;
   await tx.tripCredit.update({
     where: { id: credit.id },
-    data: { state: "PENDING", qualifiedAt: null, expiresAt: null, qualificationRoute: null, bucketId: null },
+    data: { state: "PENDING", qualifiedAt: null, expiresAt: null, qualificationRoute: null },
   });
   await event(tx, credit.memberProfileId, { creditId: credit.id }, actorRef, "QUALIFICATION_LOST", credit.state, "PENDING");
 }
@@ -111,6 +115,9 @@ export async function syncTripForBooking(tx: Tx, bookingId: string, actorRef: st
   let live = await tx.tripCredit.findFirst({
     where: { sourceBookingId: bookingId, creditType: "OWN_SALE", state: { not: "REVERSED" } },
   });
+  // The sale is locked into an earned Reward: nothing about it changes now,
+  // and its Reference Credit was settled when it qualified.
+  if (live && locked(live)) return;
   const owner = booking.soldByType === "MEMBER" ? booking.soldByPerson?.memberProfile ?? null : null;
   const rule = v?.tripInventoryRules.find((r) => r.plotId === booking.plotId);
   const creditPlotId = rule?.parentCreditPoolPlotId ?? booking.plotId;
@@ -174,7 +181,7 @@ export async function syncTripForBooking(tx: Tx, bookingId: string, actorRef: st
       const now = new Date();
       live = await tx.tripCredit.update({
         where: { id: live.id },
-        data: { state: "QUALIFIED", qualifiedAt: now, expiresAt: creditExpiry(now), qualificationRoute: route },
+        data: { state: "QUALIFIED", qualifiedAt: now, qualificationRoute: route },
       });
       await event(tx, live.memberProfileId, { creditId: live.id }, actorRef, "CREDIT_QUALIFIED", "PENDING", "QUALIFIED", route);
     } else if (route && live.qualificationRoute !== route && live.state !== "USED") {
@@ -216,7 +223,6 @@ export async function syncTripForBooking(tx: Tx, bookingId: string, actorRef: st
           // CP §30 — a Deactivated inviter's credit is created but held.
           state: inviter.status === "ACTIVE" ? "QUALIFIED" : "HELD",
           qualifiedAt: now,
-          expiresAt: creditExpiry(now),
           qualificationRoute: live!.qualificationRoute,
         },
       });
@@ -260,6 +266,7 @@ async function openBucketIfNone(
     where: { memberProfileId: credit.memberProfileId, projectId: credit.projectId, programmeCode: credit.programmeCode, state: "OPEN" },
   });
   if (open) return open;
+  if (await hasReward(tx, credit.memberProfileId, credit.projectId)) return null;
   const bucket = await tx.tripBucket.create({
     data: {
       memberProfileId: credit.memberProfileId,
@@ -282,68 +289,45 @@ async function openBucketIfNone(
 
 const asAllocatable = (c: TripCredit): AllocatableCredit => ({ id: c.id, type: c.creditType, qualifiedAt: c.qualifiedAt! });
 
+/** Owner, 27 Oct 2026 — at most one Reward per Member per Project, across its programmes. */
+async function hasReward(tx: Tx, memberProfileId: string, projectId: string) {
+  return (await tx.tripReward.count({ where: { memberProfileId, state: { not: "CANCELLED" }, bucket: { projectId } } })) > 0;
+}
+
 /**
- * SSOT §57, §58, §63; CP §33, §34, §39 — earned rewards not yet booked are
- * kept whole (backfilled FIFO, else Deficient); then the open bucket earns if
- * the pool now meets its frozen target and composition.
+ * SSOT §57, §58; CP §33, §34 — the open bucket earns if the pool now meets
+ * its frozen target and composition, and the Member has no Reward in this
+ * Project yet. An earned Reward never changes after: its sales are locked.
  */
 export async function evaluateBuckets(tx: Tx, memberProfileId: string, projectId: string, programmeCode: string, actorRef: string) {
   await lockKey(tx, `trip:${memberProfileId}:${projectId}:${programmeCode}`);
   const scope = { memberProfileId, projectId, programmeCode };
-  const pool = async () =>
-    (await tx.tripCredit.findMany({ where: { ...scope, state: "QUALIFIED", bucketId: null } })).map(asAllocatable);
-  const rule = (b: { totalTarget: number; minOwnCredits: number; maxReferenceCredits: number }) => ({
-    target: b.totalTarget,
-    minOwn: b.minOwnCredits,
-    maxRef: b.maxReferenceCredits,
-  });
-  const take = async (bucketId: string, ids: string[]) => {
-    if (ids.length === 0) return;
-    await tx.tripCredit.updateMany({ where: { id: { in: ids } }, data: { state: "ALLOCATED", bucketId } });
-    for (const id of ids) await event(tx, memberProfileId, { creditId: id, bucketId }, actorRef, "CREDIT_ALLOCATED", "QUALIFIED", "ALLOCATED");
-  };
-
-  // 1. Earned, not yet travelled: still whole?
-  const earned = await tx.tripBucket.findMany({
-    where: { ...scope, state: { in: ["EARNED", "DEFICIENT"] }, reward: { state: { in: ["EARNED", "DEFICIENT", "BOOKED"] } } },
-    include: { reward: true, credits: { where: { state: "ALLOCATED" } } },
-    orderBy: { earnedAt: "asc" },
-  });
-  for (const bucket of earned) {
-    const reward = bucket.reward!;
-    const kept = bucket.credits.map(asAllocatable);
-    const add = allocate(reward.state === "BOOKED" ? [] : await pool(), rule(bucket), kept);
-    if (add) {
-      await take(bucket.id, add);
-      if (reward.state === "DEFICIENT") {
-        await tx.tripBucket.update({ where: { id: bucket.id }, data: { state: "EARNED" } });
-        await tx.tripReward.update({ where: { id: reward.id }, data: { state: "EARNED" } });
-        await event(tx, memberProfileId, { bucketId: bucket.id, rewardId: reward.id }, actorRef, "REWARD_BACKFILLED", "DEFICIENT", "EARNED");
-        await closeTasksFor(tx, TRIP_REWARD_KIND, reward.id, actorRef, "Backfilled and whole again.", TRIP_DEFICIENCY_PURPOSE);
-      }
-    } else if (reward.state === "BOOKED") {
-      // SSOT §63 — once Booked the Trip Terms govern; a human reviews it.
-      await deficiencyTask(tx, reward.id, memberProfileId, "A sale for this booked Reward was cancelled. Check the Reward Terms.");
-    } else if (reward.state === "EARNED") {
-      await tx.tripBucket.update({ where: { id: bucket.id }, data: { state: "DEFICIENT" } });
-      await tx.tripReward.update({ where: { id: reward.id }, data: { state: "DEFICIENT" } });
-      await event(tx, memberProfileId, { bucketId: bucket.id, rewardId: reward.id }, actorRef, "REWARD_DEFICIENT", "EARNED", "DEFICIENT");
-      await deficiencyTask(tx, reward.id, memberProfileId, "A sale for this Reward was cancelled. No other sale can replace it.");
-    }
-    await refreshTripReward(tx, reward.id, actorRef);
-  }
-
-  // 2. The open bucket.
   const open = await tx.tripBucket.findFirst({ where: { ...scope, state: "OPEN" } });
   if (!open) return;
-  const add = allocate(await pool(), rule(open));
-  if (add) {
-    await take(open.id, add);
+  const pool = (await tx.tripCredit.findMany({ where: { ...scope, state: "QUALIFIED", bucketId: null } })).map(asAllocatable);
+  const add = allocate(pool, { target: open.totalTarget, minOwn: open.minOwnCredits, maxRef: open.maxReferenceCredits });
+  if (add && !(await hasReward(tx, memberProfileId, projectId))) {
+    await tx.tripCredit.updateMany({ where: { id: { in: add } }, data: { state: "ALLOCATED", bucketId: open.id } });
+    for (const id of add) await event(tx, memberProfileId, { creditId: id, bucketId: open.id }, actorRef, "CREDIT_ALLOCATED", "QUALIFIED", "ALLOCATED");
     await tx.tripBucket.update({ where: { id: open.id }, data: { state: "EARNED", earnedAt: new Date() } });
     const reward = await tx.tripReward.create({
       data: { bucketId: open.id, memberProfileId, termsVersionRef: open.termsVersionRef },
     });
     await event(tx, memberProfileId, { bucketId: open.id, rewardId: reward.id }, actorRef, "TRIP_EARNED", "OPEN", "EARNED");
+    // Owner, 27 Oct 2026 — the Reward Earned task closes as the Reward is
+    // earned: the Task List records that it happened and asks for nothing
+    // more, since fulfilling a Reward is not shown anywhere.
+    const member = await tx.memberProfile.findUniqueOrThrow({ where: { id: memberProfileId }, include: { person: { select: { fullName: true } } } });
+    const task = await ensureTask(tx, {
+      recordKind: TRIP_REWARD_KIND,
+      recordId: reward.id,
+      recordName: `${member.memberId} · ${member.person.fullName}`,
+      purpose: TRIP_FULFILMENT_PURPOSE,
+      title: "Reward Earned",
+      assigneeRole: "CRM",
+      dueAt: new Date(),
+    });
+    await completeTask(tx, task.id, actorRef, REWARD_EARNED_RESULT);
     await refreshTripReward(tx, reward.id, actorRef);
     return;
   }
@@ -356,20 +340,6 @@ export async function evaluateBuckets(tx: Tx, memberProfileId: string, projectId
       await event(tx, memberProfileId, { bucketId: open.id }, actorRef, "BUCKET_CLOSED", "OPEN", "CLOSED", "Its opening credit reversed and nothing else remains (CP §32).");
     }
   }
-}
-
-async function deficiencyTask(tx: Tx, rewardId: string, memberProfileId: string, text: string) {
-  const member = await tx.memberProfile.findUniqueOrThrow({ where: { id: memberProfileId }, include: { person: { select: { fullName: true } } } });
-  await ensureTask(tx, {
-    recordKind: TRIP_REWARD_KIND,
-    recordId: rewardId,
-    recordName: `${member.memberId} · ${member.person.fullName}`,
-    purpose: TRIP_DEFICIENCY_PURPOSE,
-    title: "Reward Sale Cancelled",
-    assigneeRole: "CRM",
-    dueAt: new Date(),
-    latestResult: text,
-  });
 }
 
 /* --------------------------------------------------------------- rewards */
@@ -396,7 +366,7 @@ async function rewardHold(tx: Tx, rewardId: string): Promise<RewardHoldReason | 
   return null;
 }
 
-/** Recomputes a reward's hold and its NT03 task (CP §65, §66). */
+/** Recomputes a reward's hold (CP §65, §66). Its NT03 task is raised and closed when it is earned. */
 export async function refreshTripReward(tx: Tx, rewardId: string, actorRef: string) {
   const reward = await tx.tripReward.findUniqueOrThrow({
     where: { id: rewardId },
@@ -414,18 +384,6 @@ export async function refreshTripReward(tx: Tx, rewardId: string, actorRef: stri
   if (hold !== reward.holdReason) {
     await tx.tripReward.update({ where: { id: reward.id }, data: { holdReason: hold } });
     await event(tx, reward.memberProfileId, { rewardId: reward.id }, actorRef, hold ? "REWARD_HELD" : "REWARD_RELEASED", reward.holdReason, hold);
-  }
-  if (!hold && reward.state === "EARNED") {
-    await ensureTask(tx, {
-      recordKind: TRIP_REWARD_KIND,
-      recordId: reward.id,
-      recordName: `${reward.memberProfile.memberId} · ${reward.memberProfile.person.fullName}`,
-      purpose: TRIP_FULFILMENT_PURPOSE,
-      title: "Reward Earned",
-      assigneeRole: "CRM",
-      dueAt: new Date(),
-      latestResult: "Reward earned. Record the traveller/nominee, the booking, then the travel.",
-    });
   }
 }
 
@@ -527,7 +485,9 @@ export async function bookTripReward(args: Actor & { rewardId: string; bookingRe
   );
 }
 
-/** SSOT §64 — travelled: the credits it used stay consumed forever. */
+/** SSOT §64 — travelled, on screen "Mark Delivered": the credits it used stay
+ *  consumed forever. An Earned Reward is delivered directly, with no booking
+ *  step (owner, 27 Oct 2026). */
 export async function markTripTravelled(args: Actor & { rewardId: string; travelledOn: Date }) {
   fulfilmentRole(args.actorRole);
   await assertIndependent({ ...args, beneficiaryPersonId: await tripOwner(args.rewardId), action: "TRIP_TRAVELLED" });
@@ -537,14 +497,14 @@ export async function markTripTravelled(args: Actor & { rewardId: string; travel
     { idempotencyKey: args.idempotencyKey, operation: "TRIP_TRAVELLED", actorRef: args.actorRef, actorRole: args.actorRole, payload: { rewardId: args.rewardId } },
     async (tx) => {
       const reward = await lockedReward(tx, args.rewardId);
-      if (reward.state !== "BOOKED") blocked("Only a booked Reward can be marked travelled.");
+      if (reward.state !== "EARNED" && reward.state !== "BOOKED") blocked("Only an Earned Reward can be marked delivered.");
       await refreshTripReward(tx, reward.id, args.actorRef);
       const now = await tx.tripReward.findUniqueOrThrow({ where: { id: reward.id } });
       if (now.holdReason) blocked(`Fulfilment is on hold: ${now.holdReason.replaceAll("_", " ").toLowerCase()}.`);
       await tx.tripReward.update({ where: { id: reward.id }, data: { state: "TRAVELLED", travelledAt: args.travelledOn, holdReason: null } });
       await tx.tripCredit.updateMany({ where: { bucketId: reward.bucketId, state: "ALLOCATED" }, data: { state: "USED", usedAt: args.travelledOn } });
-      await event(tx, reward.memberProfileId, { rewardId: reward.id }, args.actorRef, "TRIP_TRAVELLED", "BOOKED", "TRAVELLED");
-      await closeTasksFor(tx, TRIP_REWARD_KIND, reward.id, args.actorRef, "Travelled.");
+      await event(tx, reward.memberProfileId, { rewardId: reward.id }, args.actorRef, "TRIP_TRAVELLED", reward.state, "TRAVELLED");
+      await closeTasksFor(tx, TRIP_REWARD_KIND, reward.id, args.actorRef, "Reward completed.");
       return { result: { rewardId: reward.id }, audit: { entity: "TripReward", entityId: reward.id, action: "TRIP_TRAVELLED", after: { travelledOn: args.travelledOn.toISOString() } } };
     }
   );
@@ -632,30 +592,13 @@ export async function correctInviter(args: Actor & { memberProfileId: string; in
 /* ------------------------------------------------------------------- jobs */
 
 /**
- * SSOT §56; CP §35, §76.1 — Qualified credits not allocated expire 12 months
- * after qualification. Used or allocated credits never do. Idempotent.
- */
-export async function expireTripCredits(tx: Tx, now: Date) {
-  const due = await tx.tripCredit.findMany({
-    where: { state: { in: ["QUALIFIED", "HELD"] }, bucketId: null, expiresAt: { lte: now } },
-  });
-  for (const credit of due) {
-    await tx.tripCredit.update({ where: { id: credit.id }, data: { state: "EXPIRED" } });
-    await event(tx, credit.memberProfileId, { creditId: credit.id }, "SYSTEM:TRIP_CREDIT_EXPIRY", "CREDIT_EXPIRED", credit.state, "EXPIRED", "12 months after qualification.");
-  }
-  return due.length;
-}
-
-/**
  * SSOT §48; CP §36, §76.2 — once a programme's cut-off has passed, each open
- * bucket gets one NT05; at the final wind-down deadline it expires. The
- * closure is read from the Project's live version of that programme.
+ * bucket expires at the final wind-down deadline. No task is raised (owner,
+ * 27 Oct 2026). The closure is read from the Project's live version of that
+ * programme.
  */
 export async function windDownTripBuckets(tx: Tx, now: Date) {
-  const open = await tx.tripBucket.findMany({
-    where: { state: "OPEN" },
-    include: { memberProfile: { include: { person: { select: { fullName: true } } } } },
-  });
+  const open = await tx.tripBucket.findMany({ where: { state: "OPEN" } });
   let changed = 0;
   for (const bucket of open) {
     const live = await tx.projectCommissionVersion.findFirst({ where: { projectId: bucket.projectId, status: "ACTIVE" } });
@@ -666,22 +609,8 @@ export async function windDownTripBuckets(tx: Tx, now: Date) {
     if (windDown && windDown <= now) {
       await tx.tripBucket.update({ where: { id: bucket.id }, data: { state: "EXPIRED", closedAt: now } });
       await event(tx, bucket.memberProfileId, { bucketId: bucket.id }, "SYSTEM:TRIP_WIND_DOWN", "BUCKET_EXPIRED", "OPEN", "EXPIRED", "Programme final wind-down deadline passed.");
-      await closeTasksFor(tx, TRIP_BUCKET_KIND, bucket.id, "SYSTEM:TRIP_WIND_DOWN", "Wind-down deadline passed.", TRIP_WIND_DOWN_PURPOSE);
       changed++;
-      continue;
     }
-    await ensureTask(tx, {
-      recordKind: TRIP_BUCKET_KIND,
-      recordId: bucket.id,
-      recordName: `${bucket.memberProfile.memberId} · ${bucket.memberProfile.person.fullName} · ${bucket.programmeCode}`,
-      purpose: TRIP_WIND_DOWN_PURPOSE,
-      title: "Reward Expiry",
-      assigneeRole: "CRM",
-      dueAt: windDown ?? now,
-      latestResult: windDown
-        ? `${bucket.programmeCode} closed. This Reward progress ends on ${formatIstDate(windDown)}.`
-        : `${bucket.programmeCode} closed. End date not set yet.`,
-    });
   }
   return changed;
 }
