@@ -15,14 +15,18 @@ import Link from "next/link";
 import { requireStaff } from "@/lib/security/current-actor";
 import { listProjects } from "@/lib/services/project-service";
 import CommissionSettings from "./commission-settings";
+import ProjectActions from "./project-actions";
+import { projectRowView } from "../row-view";
+import { can } from "@/lib/security/permissions";
 import { db } from "@/lib/db";
 import { formatPercent } from "@/lib/tasks";
 import { plcDisplayComponents } from "@/lib/domain/inventory";
 import { plcRules } from "@/lib/services/plc-service";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, ArrowUpRight, FolderOpen, MapPin } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Box, Layers, Map as MapIcon } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -89,16 +93,10 @@ function Section({
 }
 
 /** A number and what it counts. The number is the point, so it carries the weight. */
-function Stat({ value, label, muted }: { value: number; label: string; muted?: boolean }) {
+function Stat({ value, label }: { value: number; label: string }) {
   return (
     <div className="rounded-xl border border-border/60 bg-secondary px-3 py-2">
-      <p
-        className={`text-lg font-semibold leading-none tabular-nums ${
-          muted ? "text-muted-foreground" : "text-foreground"
-        }`}
-      >
-        {value}
-      </p>
+      <p className="text-lg font-semibold leading-none tabular-nums text-foreground">{value}</p>
       <p className="mt-1 text-[11px] leading-tight text-muted-foreground">{label}</p>
     </div>
   );
@@ -150,10 +148,6 @@ export default async function ProjectDetailPage({
   const available = countOf(SELLABLE);
   const inPlay = countOf(IN_PLAY);
   const sold = countOf(SOLD);
-  // Whatever is left is unavailable for a reason of its own — a restriction, or
-  // a Project not yet activated. Derived rather than listed, so a status
-  // added later can never quietly go uncounted.
-  const unavailable = total - available - inPlay - sold;
 
   const publishedVersion = project.plcRuleVersions.find((v) => v.status === "PUBLISHED");
   const charges = publishedVersion
@@ -161,25 +155,42 @@ export default async function ProjectDetailPage({
     : [];
   const amenities = amenityList(project.amenities);
 
-  const facts = [
-    [project.location, project.city].filter(Boolean).join(", "),
-    project.isExternalResaleGroup
-      ? "External Resale Property Group"
-      : (TYPE_LABEL[project.type] ?? project.type),
-    project.developer,
-    project.reraNumber ? `RERA ${project.reraNumber}` : null,
-  ].filter(Boolean);
+  // Four facts, two and two, left and right (owner, 28 Oct 2026): where and
+  // what on the left, who builds it and its RERA on the right. The city is
+  // added only when the address does not already name it — "…Jaipur,
+  // Rajasthan 302029, Jaipur" said it twice.
+  const where =
+    project.location && project.city && !project.location.toLowerCase().includes(project.city.toLowerCase())
+      ? `${project.location}, ${project.city}`
+      : (project.location ?? project.city);
+  const factColumns: Array<Array<[string, string | null]>> = [
+    [
+      ["Location", where],
+      ["Type", project.isExternalResaleGroup ? "External Resale Property Group" : (TYPE_LABEL[project.type] ?? project.type)],
+    ],
+    [
+      ["Developer", project.developer],
+      ["RERA", project.reraNumber],
+    ],
+  ];
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
       <main className="mx-auto max-w-5xl space-y-3">
-        <Link
-          href="/projects"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Projects
-        </Link>
+        {/* Back on the left; Edit Project and Update on the right, as on the
+            Plot and Booking pages (owner, 28 Oct 2026). */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Link
+            href="/projects"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to Projects
+          </Link>
+          {can(actor.role, "PROJECT_SETUP", actor.extraPermissions) && (
+            <ProjectActions project={projectRowView(project)} canEditCommission={actor.role === "MD"} />
+          )}
+        </div>
 
         {/* Identity. Four short facts that were four stacked rows, now one line
             of name and one of everything else. */}
@@ -193,31 +204,68 @@ export default async function ProjectDetailPage({
               <span className="text-xs text-muted-foreground">{project.projectCode}</span>
             </div>
 
-            {facts.length > 0 && <p className="text-xs text-foreground">{facts.join(" · ")}</p>}
+            {/* The facts as label · value rows: left pair, right pair against
+                the card's right edge, then Amenities on the same label column,
+                its text starting where every other value starts (owner,
+                28 Oct 2026). One spacing for every row. */}
+            <div className="space-y-1 text-xs">
+              <div className="grid gap-x-8 gap-y-1 sm:grid-cols-[1fr_auto]">
+                {factColumns.map((column, i) => (
+                  <dl key={i} className="space-y-1">
+                    {column.map(([label, value]) => (
+                      <div key={label} className="flex gap-3">
+                        <dt className="w-16 shrink-0 text-muted-foreground">{label}</dt>
+                        <dd className="min-w-0 text-foreground">{value ?? "—"}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ))}
+              </div>
+              {amenities.length > 0 && (
+                <div className="flex gap-3">
+                  <span className="w-16 shrink-0 text-muted-foreground">Amenities</span>
+                  {/* Columns as wide as their longest amenity, one fixed gap
+                      between them, so the spacing is even however long the
+                      names are. The dot hangs in the gap before the text, which
+                      starts where every other value starts. */}
+                  <ul className="grid min-w-0 gap-x-10 gap-y-1 sm:grid-cols-[repeat(2,max-content)] lg:grid-cols-[repeat(3,max-content)]">
+                    {amenities.map((a) => (
+                      <li key={a} className="relative text-foreground">
+                        <span className="absolute -left-2.5 top-[0.45em] h-1 w-1 rounded-full bg-primary/60" />
+                        {a}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
 
-            {(project.locationUrl || project.driveUrl) && (
-              // noreferrer carries noopener; without it the opened tab can reach
-              // back through window.opener and navigate this one.
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                {project.locationUrl && (
-                  <a
-                    href={project.locationUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 text-primary hover:underline"
-                  >
-                    <MapPin className="h-3.5 w-3.5" /> Map
-                  </a>
-                )}
+            {/* The same three links as the Project's card on the list, in the
+                same order and with the same names (owner, 28 Oct 2026).
+                noreferrer carries noopener: the opened tab cannot reach back
+                through window.opener and navigate this one. */}
+            {(project.driveUrl || project.locationUrl || project.renderUrl) && (
+              <div className="flex flex-wrap gap-2">
                 {project.driveUrl && (
-                  <a
-                    href={project.driveUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 text-primary hover:underline"
-                  >
-                    <FolderOpen className="h-3.5 w-3.5" /> Structure &amp; layout
-                  </a>
+                  <Button size="xs" variant="outline" className="h-7 px-2.5 text-[11px]" asChild>
+                    <a href={project.driveUrl} target="_blank" rel="noreferrer">
+                      <Layers className="mr-1 h-3 w-3" /> Layout
+                    </a>
+                  </Button>
+                )}
+                {project.locationUrl && (
+                  <Button size="xs" variant="outline" className="h-7 px-2.5 text-[11px]" asChild>
+                    <a href={project.locationUrl} target="_blank" rel="noreferrer">
+                      <MapIcon className="mr-1 h-3 w-3" /> Location
+                    </a>
+                  </Button>
+                )}
+                {project.renderUrl && (
+                  <Button size="xs" variant="outline" className="h-7 px-2.5 text-[11px]" asChild>
+                    <a href={project.renderUrl} target="_blank" rel="noreferrer">
+                      <Box className="mr-1 h-3 w-3" /> 3D Visuals
+                    </a>
+                  </Button>
                 )}
               </div>
             )}
@@ -225,7 +273,10 @@ export default async function ProjectDetailPage({
         </header>
 
         {!project.isExternalResaleGroup && (
-          <div className="grid items-start gap-3 lg:grid-cols-2">
+          // Inventory · PLC · Commission and Rewards, three boxes on one row
+          // (owner, 28 Oct 2026). An External Resale Property Group sells
+          // nothing of its own, so it has none of the three.
+          <div className="grid items-start gap-3 md:grid-cols-2 lg:grid-cols-3">
             <Card className="p-3">
               <Section
                 title="Inventory"
@@ -244,11 +295,11 @@ export default async function ProjectDetailPage({
                   <Empty>No Plots yet. Prepare inventory to add them.</Empty>
                 ) : (
                   <>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {/* Not available is not shown (owner, 28 Oct 2026). */}
+                    <div className="grid grid-cols-3 gap-2">
                       <Stat value={available} label="Available" />
                       <Stat value={inPlay} label="On hold" />
                       <Stat value={sold} label="Sold" />
-                      <Stat value={unavailable} label="Not available" muted />
                     </div>
                     <dl className="mt-3">
                       <Fact label="Total Plots" value={total} />
@@ -284,71 +335,54 @@ export default async function ProjectDetailPage({
                 )}
               </Section>
             </Card>
+
+            <div id="commission" className="scroll-mt-28">
+            <CommissionSettings
+              projectId={project.id}
+              role={actor.role}
+              versions={commissionVersions.map((v) => ({
+                id: v.id,
+                version: v.version,
+                status: v.status,
+                directEnabled: v.directEnabled,
+                directPercent: v.directPercent?.toString() ?? null,
+                loyaltyEnabled: v.loyaltyEnabled,
+                loyaltyPercent: v.loyaltyPercent?.toString() ?? null,
+                loyaltyExceptionReason: v.loyaltyExceptionReason,
+                reason: v.reason,
+                decisionNote: v.decisionNote,
+                preparedByRef: v.preparedByRef,
+                decidedByRef: v.decidedByRef,
+                decidedAt: v.decidedAt?.toISOString() ?? null,
+                effectiveFrom: v.effectiveFrom?.toISOString() ?? null,
+                effectiveTo: v.effectiveTo?.toISOString() ?? null,
+                trip: v.tripEnabled
+                  ? {
+                      target: v.tripTotalTarget!,
+                      minOwn: v.tripMinOwnCredits!,
+                      maxRef: v.tripMaxReferenceCredits!,
+                      code: v.tripProgrammeCode!,
+                      versionRef: v.tripProgrammeVersionRef!,
+                      termsRef: v.tripTermsVersionRef!,
+                      cutOffAt: v.tripCutOffAt?.toISOString() ?? null,
+                      windDownAt: v.tripWindDownAt?.toISOString() ?? null,
+                      excludedPlotIds: v.tripInventoryRules.filter((r) => !r.eligible).map((r) => r.plotId),
+                      sharedPools: v.tripInventoryRules
+                        .filter((r) => r.parentCreditPoolPlotId)
+                        .map((r) => ({ plotId: r.plotId, parentPlotId: r.parentCreditPoolPlotId! })),
+                    }
+                  : null,
+                economicsReviewedAt: v.economicsReviewedAt?.toISOString() ?? null,
+                economicsReviewedByRef: v.economicsReviewedByRef,
+                royaltyTokensPerAward: v.royaltyTokensPerAward,
+              }))}
+              plots={plotOptions}
+            />
+            </div>
           </div>
         )}
 
-        {/* v2.1 §12–§15 — an External Resale Property Group sells nothing of
-            its own, so it has no commission settings. */}
-        {!project.isExternalResaleGroup && (
-          <CommissionSettings
-            projectId={project.id}
-            role={actor.role}
-            versions={commissionVersions.map((v) => ({
-              id: v.id,
-              version: v.version,
-              status: v.status,
-              directEnabled: v.directEnabled,
-              directPercent: v.directPercent?.toString() ?? null,
-              loyaltyEnabled: v.loyaltyEnabled,
-              loyaltyPercent: v.loyaltyPercent?.toString() ?? null,
-              loyaltyExceptionReason: v.loyaltyExceptionReason,
-              reason: v.reason,
-              decisionNote: v.decisionNote,
-              preparedByRef: v.preparedByRef,
-              decidedByRef: v.decidedByRef,
-              decidedAt: v.decidedAt?.toISOString() ?? null,
-              effectiveFrom: v.effectiveFrom?.toISOString() ?? null,
-              effectiveTo: v.effectiveTo?.toISOString() ?? null,
-              trip: v.tripEnabled
-                ? {
-                    target: v.tripTotalTarget!,
-                    minOwn: v.tripMinOwnCredits!,
-                    maxRef: v.tripMaxReferenceCredits!,
-                    code: v.tripProgrammeCode!,
-                    versionRef: v.tripProgrammeVersionRef!,
-                    termsRef: v.tripTermsVersionRef!,
-                    cutOffAt: v.tripCutOffAt?.toISOString() ?? null,
-                    windDownAt: v.tripWindDownAt?.toISOString() ?? null,
-                    excludedPlotIds: v.tripInventoryRules.filter((r) => !r.eligible).map((r) => r.plotId),
-                    sharedPools: v.tripInventoryRules
-                      .filter((r) => r.parentCreditPoolPlotId)
-                      .map((r) => ({ plotId: r.plotId, parentPlotId: r.parentCreditPoolPlotId! })),
-                  }
-                : null,
-              economicsReviewedAt: v.economicsReviewedAt?.toISOString() ?? null,
-              economicsReviewedByRef: v.economicsReviewedByRef,
-              royaltyTokensPerAward: v.royaltyTokensPerAward,
-            }))}
-            plots={plotOptions}
-          />
-        )}
 
-        {amenities.length > 0 && (
-          <Card className="p-3">
-            <Section title="Amenities">
-              <ul className="flex flex-wrap gap-1.5">
-                {amenities.map((a) => (
-                  <li
-                    key={a}
-                    className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground"
-                  >
-                    {a}
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          </Card>
-        )}
       </main>
     </AppShell>
   );

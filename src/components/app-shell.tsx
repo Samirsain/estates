@@ -54,6 +54,14 @@ const NAV = [
   { label: "Administration", icon: Settings, href: "/administration", phase: null, admin: true },
 ] as const;
 
+/**
+ * A row of links too long for a phone scrolls sideways under a finger. The
+ * scrollbar it drew was a grey bar across the header, so it is hidden; the
+ * right edge fades instead, which says there is more to swipe to.
+ */
+const SWIPE =
+  "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_85%,transparent)]";
+
 const isOn = (pathname: string, href: string) => pathname === href || pathname.startsWith(href + "/");
 
 export function AppShell({
@@ -105,11 +113,12 @@ export function AppShell({
         onKeyDown={(event) => {
           if (event.key === "Escape") setMenuOpen(false);
         }}
-        className={`chrome-surface z-50 border-b border-border/50 md:sticky md:top-0 md:h-screen md:overflow-hidden md:border-b-0 md:border-r md:transition-[width] md:duration-200 ${
+        // Below md the rail is one row: the logo, then the links beside it.
+        className={`chrome-surface z-50 flex items-center border-b border-border/50 md:block md:sticky md:top-0 md:h-screen md:overflow-hidden md:border-b-0 md:border-r md:transition-[width] md:duration-200 ${
           menuOpen ? "md:w-60" : "md:w-14"
         }`}
       >
-        <div className="flex items-center gap-3 px-4 py-4">
+        <div className="flex shrink-0 items-center gap-3 px-4 py-3 md:py-4">
           <img src="/logo.svg" alt="" className="h-6 w-6 shrink-0" />
           <div
             className={`hidden whitespace-nowrap transition-opacity md:block ${
@@ -122,7 +131,7 @@ export function AppShell({
           </div>
         </div>
 
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col md:overflow-y-auto md:overflow-x-hidden">
+        <nav className={`flex min-w-0 flex-1 gap-1 overflow-x-auto py-2 pr-3 md:flex-col md:overflow-y-auto md:overflow-x-hidden md:px-3 md:pb-3 md:pt-0 md:[mask-image:none] ${SWIPE}`}>
           {NAV.filter((item) => !("admin" in item && item.admin) || canAdminister).map(
             (item) => {
               const active = isOn(pathname, item.href);
@@ -219,7 +228,7 @@ export function AppShell({
               DESIGN §1 says not to reintroduce a standalone calculator; the
               owner asked for it anyway. It reads Plot dimensions and stores
               nothing. */}
-          <nav aria-label="Task List, Plots & Sales" className="flex gap-1 overflow-x-auto px-5 pt-1">
+          <nav aria-label="Task List, Plots & Sales" className={`flex gap-1 overflow-x-auto px-5 pt-1 lg:[mask-image:none] ${SWIPE}`}>
             {TOP_LINKS.map((link) => {
               const active = isOn(pathname, link.href);
               return (

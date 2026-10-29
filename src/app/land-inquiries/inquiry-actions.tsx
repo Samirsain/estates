@@ -18,20 +18,15 @@ import {
   type LandInquiryStage,
   type LandInquiryStatus,
 } from "@/lib/domain/land-inquiry";
-import {
-  archiveLandInquiryAction,
-  changeLandInquiryStageAction,
-  changeLandInquiryStatusAction,
-} from "./actions";
+import { changeLandInquiryStageAction, changeLandInquiryStatusAction } from "./actions";
 import { RemarkSelect } from "@/components/ui/remark-select";
 
-type Kind = "STAGE" | "CLOSE" | "REOPEN" | "ARCHIVE";
+type Kind = "STAGE" | "CLOSE" | "REOPEN";
 
 const REASON_PRESETS = {
   STAGE: "inquiryStage",
   CLOSE: "closeInquiry",
   REOPEN: "reopenInquiry",
-  ARCHIVE: "archiveInquiry",
 } as const;
 
 const newKey = () => globalThis.crypto.randomUUID();
@@ -44,7 +39,6 @@ export default function InquiryActions({
   archived,
   canManage,
   canReopen,
-  canArchive,
 }: {
   id: string;
   version: number;
@@ -53,7 +47,6 @@ export default function InquiryActions({
   archived: boolean;
   canManage: boolean;
   canReopen: boolean;
-  canArchive: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = React.useState<Kind | null>(null);
@@ -104,9 +97,9 @@ export default function InquiryActions({
             </Button>
           </Link>
           <Button size="sm" variant="outline" onClick={() => setOpen("STAGE")}>
-            Change Stage
+            Change Status
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setOpen("CLOSE")}>
+          <Button size="sm" variant="outline" onClick={() => setOpen("CLOSE")}>
             Close Inquiry
           </Button>
         </>
@@ -116,28 +109,15 @@ export default function InquiryActions({
           Reopen
         </Button>
       )}
-      {canArchive && (
-        <Button size="sm" variant="ghost" onClick={() => setOpen("ARCHIVE")}>
-          Archive
-        </Button>
-      )}
-      {status === "WORKING" && stage === "APPROVED_FOR_ACQUISITION" && (
-        <span className="text-[11px] text-muted-foreground">
-          Approved for Acquisition. Raising the acquisition itself stays a separate, explicit step
-          in Buyback / Resale — nothing is created from this stage.
-        </span>
-      )}
 
       {open && (
         <Modal
           title={
             open === "STAGE"
-              ? "Change Inquiry Stage"
+              ? "Change Status"
               : open === "CLOSE"
                 ? "Close Inquiry"
-                : open === "REOPEN"
-                  ? "Reopen Inquiry"
-                  : "Archive Inquiry"
+                : "Reopen Inquiry"
           }
           onClose={close}
         >
@@ -222,21 +202,18 @@ export default function InquiryActions({
                       )
                     );
                   }
-                  if (open === "REOPEN") {
-                    return run(() =>
-                      changeLandInquiryStatusAction(
-                        {
-                          id,
-                          version,
-                          status: "WORKING",
-                          reason,
-                          restoredStage: WORKING_STAGES.includes(nextStage) ? nextStage : "NEW",
-                        },
-                        newKey()
-                      )
-                    );
-                  }
-                  return run(() => archiveLandInquiryAction({ id, version, reason }, newKey()));
+                  return run(() =>
+                    changeLandInquiryStatusAction(
+                      {
+                        id,
+                        version,
+                        status: "WORKING",
+                        reason,
+                        restoredStage: WORKING_STAGES.includes(nextStage) ? nextStage : "NEW",
+                      },
+                      newKey()
+                    )
+                  );
                 }}
               >
                 {busy ? "Saving…" : "Confirm"}

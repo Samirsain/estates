@@ -284,8 +284,9 @@ export default function DashboardClient({
               <tbody>
                 {visible.map((task) => {
                   const state = EMPHASIS_STYLE[emphasis(task, now)];
-                  // The record's own reference — BKG-000002, ENQ-000045 — is a
-                  // column of its own, and the one cell that opens the task.
+                  // The record's own reference — BKG-000002, MEM-000017, or what
+                  // the record is where its number is off the screens (ID Guide
+                  // §5) — is a column of its own, and the one cell that opens the task.
                   // A Buyback or Resale is named by what it is. Its internal
                   // ACQ number is off the screens by request, and the Plot
                   // column beside this one says which deal it is.

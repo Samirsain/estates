@@ -47,7 +47,7 @@ export function toAcquisitionRow(a: AcquisitionWithRelations): AcquisitionRowVie
     arrangedByPersonId: a.arrangedByPersonId ?? null,
     arrangedByType: a.arrangedByType,
     sourceBooking: a.sourceBooking
-      ? `${a.sourceBooking.bookingNumber ?? a.sourceBooking.requestNo} · ${a.sourceBooking.project.name} ${a.sourceBooking.plot.plotNumber}`
+      ? `${a.sourceBooking.bookingNumber ?? "Booking Request"} · ${a.sourceBooking.project.name} ${a.sourceBooking.plot.plotNumber}`
       : null,
     purchaseDate: a.purchaseDate.toISOString(),
     paymentGivenPercent: a.paymentGivenPercent.toFixed(2),

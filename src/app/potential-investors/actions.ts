@@ -37,7 +37,7 @@ export async function addPotentialInvestorAction(input: InvestorInput, key: stri
   }
 
   try {
-    const investorNo = await runCommand<string>(
+    await runCommand<string>(
       {
         idempotencyKey: key,
         operation: "POTENTIAL_INVESTOR_ADD",
@@ -68,7 +68,7 @@ export async function addPotentialInvestorAction(input: InvestorInput, key: stri
       }
     );
     revalidatePath("/potential-investors");
-    return { ok: true, message: `Added as ${investorNo}.` };
+    return { ok: true, message: "Investor Lead added." };
   } catch (error) {
     return toResult(error);
   }
@@ -97,7 +97,7 @@ export async function updatePotentialInvestorAction(
   }
 
   try {
-    const investorNo = await runCommand<string>(
+    await runCommand<string>(
       {
         idempotencyKey: key,
         operation: "POTENTIAL_INVESTOR_UPDATE",
@@ -130,7 +130,7 @@ export async function updatePotentialInvestorAction(
       }
     );
     revalidatePath("/potential-investors");
-    return { ok: true, message: `${investorNo} updated.` };
+    return { ok: true, message: "Investor Lead updated." };
   } catch (error) {
     return toResult(error);
   }
@@ -141,7 +141,7 @@ export async function deletePotentialInvestorAction(id: string, key: string): Pr
   const actor = await requireStaff();
 
   try {
-    const investorNo = await runCommand<string>(
+    await runCommand<string>(
       {
         idempotencyKey: key,
         operation: "POTENTIAL_INVESTOR_DELETE",
@@ -165,7 +165,7 @@ export async function deletePotentialInvestorAction(id: string, key: string): Pr
       }
     );
     revalidatePath("/potential-investors");
-    return { ok: true, message: `${investorNo} deleted.` };
+    return { ok: true, message: "Investor Lead deleted." };
   } catch (error) {
     return toResult(error);
   }

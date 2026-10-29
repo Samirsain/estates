@@ -381,7 +381,7 @@ export default function PortalClient({ data }: { data: PortalData }) {
               <div key={e.enquiryNo} className="rounded-2xl border border-border bg-card p-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-foreground">
-                    <span className="text-primary">{e.enquiryNo}</span> · {e.buyer}
+                    {e.buyer}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {e.mobileMasked} · {e.project} · {e.plot} · Submitted {formatIst(e.createdAt)}

@@ -343,6 +343,26 @@ export function recordReference(record: { id: string; name: string }): string | 
 }
 
 /**
+ * A task's stored record name, as a screen prints it.
+ *
+ * Request, Buyback / Resale, Enquiry, Task and Investor Lead numbers are off
+ * the screens (ID Guide §5), but the one line a task stored when it was raised
+ * may still carry one — "REQ-000057 · Shri Ram Enclave SR-03". It reads as
+ * the kind of record instead; the Plot beside it says which.
+ */
+const HIDDEN_ID: Record<string, string> = {
+  REQ: "Booking Request",
+  ACQ: "Buyback / Resale",
+  ENQ: "Enquiry",
+  TSK: "Task",
+  PI: "Investor Lead",
+};
+
+export function shownRecordName(name: string): string {
+  return name.replace(/\b(REQ|ACQ|ENQ|TSK|PI)-\d+\b/g, (_, prefix: string) => HIDDEN_ID[prefix]);
+}
+
+/**
  * Where a task's record is opened, or nothing.
  *
  * A decision — Approve or Reject — is never taken on the Dashboard row: it is

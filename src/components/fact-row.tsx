@@ -20,8 +20,10 @@ export function Row({
     // and two cards side by side lined up on nothing.
     <div className="flex min-h-[3.25rem] items-center justify-between gap-4 border-b border-border/50 py-2 last:border-0">
       <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
-      <span className="text-right">
-        <span className="block text-sm font-semibold text-foreground">{value}</span>
+      {/* A value with no spaces (ALT/GV/2026/021) breaks inside a narrow card
+          rather than running out of it. */}
+      <span className="min-w-0 text-right">
+        <span className="block text-sm font-semibold text-foreground [overflow-wrap:anywhere]">{value}</span>
         {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
       </span>
     </div>

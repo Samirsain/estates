@@ -83,38 +83,53 @@ export default async function LandInquiryDetailPage({
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
       <div className="mx-auto max-w-5xl space-y-3">
-        <header>
-          <Link
-            href="/land-inquiries"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" /> Land Inquiries
-          </Link>
-          <div className="mt-1 flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">{inquiry.inquiryNo}</h1>
-            <Badge variant={inquiry.status === "WORKING" ? "info" : "secondary"}>
-              {inquiry.status === "WORKING" ? "Working" : "Closed"}
-            </Badge>
-            <Badge variant={stageVariant(inquiry.stage)}>{STAGE_LABEL[inquiry.stage]}</Badge>
-            {inquiry.archivedAt && <Badge variant="outline">Archived</Badge>}
+        {/* The actions sit on the right of the heading (owner, 29 Oct 2026). */}
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <Link
+              href="/land-inquiries"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Land Inquiries
+            </Link>
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-bold tracking-tight">{inquiry.inquiryNo}</h1>
+              <Badge variant={inquiry.status === "WORKING" ? "info" : "secondary"}>
+                {inquiry.status === "WORKING" ? "Working" : "Closed"}
+              </Badge>
+              <Badge variant={stageVariant(inquiry.stage)}>{STAGE_LABEL[inquiry.stage]}</Badge>
+              {inquiry.archivedAt && <Badge variant="outline">Archived</Badge>}
+            </div>
+            {/* Each fact named, not a run of dots (owner, 29 Oct 2026). */}
+            <dl className="mt-1.5 flex flex-wrap gap-x-6 gap-y-1 text-xs">
+              {[
+                ["Date", formatIstDate(inquiry.inquiryDate)],
+                [
+                  "Received From",
+                  inquiry.receivedFrom === "THREE_PERCENT_CLUB"
+                    ? RECEIVED_FROM_LABEL[inquiry.receivedFrom]
+                    : `${RECEIVED_FROM_LABEL[inquiry.receivedFrom]} · ${sourceLabel}`,
+                ],
+                ["Land Owner", primary?.ownerName ?? "—"],
+                ["Location", [inquiry.district, inquiry.tehsil].filter(Boolean).join(" / ") || "—"],
+              ].map(([label, value]) => (
+                <div key={label} className="flex items-baseline gap-1.5">
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd className="font-medium text-foreground">{value}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {formatIstDate(inquiry.inquiryDate)} · {RECEIVED_FROM_LABEL[inquiry.receivedFrom]} ·{" "}
-            {sourceLabel} · {primary?.ownerName ?? "no owner recorded"} ·{" "}
-            {[inquiry.district, inquiry.tehsil].filter(Boolean).join(" / ") || "no location"}
-          </p>
+          <InquiryActions
+            id={inquiry.id}
+            version={inquiry.version}
+            status={inquiry.status}
+            stage={inquiry.stage}
+            archived={inquiry.archivedAt !== null}
+            canManage={can(actor.role, "LAND_INQUIRY_MANAGE", actor.extraPermissions)}
+            canReopen={can(actor.role, "LAND_INQUIRY_REOPEN", actor.extraPermissions)}
+          />
         </header>
-
-        <InquiryActions
-          id={inquiry.id}
-          version={inquiry.version}
-          status={inquiry.status}
-          stage={inquiry.stage}
-          archived={inquiry.archivedAt !== null}
-          canManage={can(actor.role, "LAND_INQUIRY_MANAGE", actor.extraPermissions)}
-          canReopen={can(actor.role, "LAND_INQUIRY_REOPEN", actor.extraPermissions)}
-          canArchive={can(actor.role, "LAND_INQUIRY_ARCHIVE", actor.extraPermissions)}
-        />
 
         <Section index={1} title="Inquiry Details">
           <Row label="Inquiry No." value={inquiry.inquiryNo} />

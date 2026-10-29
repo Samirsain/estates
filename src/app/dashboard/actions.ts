@@ -127,7 +127,7 @@ export async function addTaskAction(
         ok: false,
         error:
           `A Pending task for ${input.recordKind} ${recordId} with purpose "${purpose}" already exists ` +
-          `(${existing.taskNo}). One record may hold only one Pending task per purpose — revise that task instead.`,
+          `("${existing.title}"). One record may hold only one Pending task per purpose — revise that task instead.`,
       };
     }
 

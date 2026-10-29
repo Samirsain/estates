@@ -383,7 +383,7 @@ export async function loadMemberDetail(memberProfileId: string) {
     commissions: commissions.map((c) => ({
       id: c.id,
       bookingNumber:
-        c.booking?.bookingNumber ?? c.booking?.requestNo ?? c.acquisition?.acquisitionNo ?? "—",
+        c.booking ? (c.booking.bookingNumber ?? "Booking Request") : c.acquisition ? "Buyback / Resale" : "—",
       project: c.booking?.project.name ?? c.acquisition?.plot?.project.name ?? c.acquisition?.propertyName ?? "—",
       plot: c.booking
         ? `${c.booking.plot.plotType.replaceAll("_", " ")} ${c.booking.plot.plotNumber}`

@@ -169,7 +169,7 @@ export async function loadCustomerDetail(customerProfileId: string) {
     activity: [
       ...enquiries.map((e) => ({
         kind: "Enquiry" as const,
-        reference: e.enquiryNo,
+        reference: "Enquiry",
         project: e.project.name,
         plot: e.plot ? `${e.plot.plotType.replaceAll("_", " ")} ${e.plot.plotNumber}` : "General",
         status: e.status,
@@ -185,7 +185,7 @@ export async function loadCustomerDetail(customerProfileId: string) {
       })),
       ...bookings.map((b) => ({
         kind: "Booking" as const,
-        reference: b.bookingNumber ?? b.requestNo,
+        reference: b.bookingNumber ?? "Booking Request",
         project: b.project.name,
         plot: `${b.plot.plotType.replaceAll("_", " ")} ${b.plot.plotNumber}`,
         status: b.status,

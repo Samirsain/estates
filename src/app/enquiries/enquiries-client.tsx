@@ -442,7 +442,7 @@ export default function EnquiriesClient({
       )}
 
       {closing && (
-        <Modal title={`Close ${closing.enquiryNo}`} onClose={() => setClosing(null)}>
+        <Modal title={`Close enquiry · ${closing.name}`} onClose={() => setClosing(null)}>
           <p className="text-xs text-muted-foreground">
             Closing the Enquiry completes its Pending follow-up task. A Close reason is compulsory.
           </p>
@@ -811,7 +811,7 @@ function FollowUpDialog({
   }, [enquiry.id]);
 
   return (
-    <Modal title={`Follow-up · ${enquiry.enquiryNo}`} onClose={onClose}>
+    <Modal title={`Follow-up · ${enquiry.name}`} onClose={onClose}>
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {enquiry.name} · {enquiry.project} · {enquiry.plot}

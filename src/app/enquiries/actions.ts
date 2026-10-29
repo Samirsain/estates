@@ -35,7 +35,7 @@ export async function createEnquiryAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("ENQUIRY_MANAGE");
   try {
-    const result = await createEnquiry({
+    await createEnquiry({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
@@ -57,7 +57,7 @@ export async function createEnquiryAction(
     });
     revalidatePath("/enquiries");
     revalidatePath("/dashboard");
-    return { ok: true, message: `Enquiry ${result.enquiryNo} created with a Pending follow-up task.` };
+    return { ok: true, message: "Enquiry created with a Pending follow-up task." };
   } catch (error) {
     return toResult(error);
   }

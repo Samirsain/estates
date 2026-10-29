@@ -108,6 +108,7 @@ export const bookingRow = (b: Awaited<ReturnType<typeof listBookings>>[number]):
     requestNo: b.requestNo,
     bookingNumber: b.bookingNumber,
     project: b.project.name,
+    plotId: b.plot.id,
     plotNumber: b.plot.plotNumber,
     plotType: b.plot.plotType,
     plotWidthFt: b.plot.widthFt?.toString() ?? null,

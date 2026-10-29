@@ -77,13 +77,13 @@ export type StaffRowView = {
 
 export type QueuedTaskView = {
   id: string;
-  taskNo: string;
   title: string;
   recordName: string;
   dueAt: string;
 };
 
-export type QueuedEnquiryView = { id: string; enquiryNo: string; person: string; project: string };
+/** Named by who, which Plot and when: the ENQ number is off the screens (ID Guide §5). */
+export type QueuedEnquiryView = { id: string; person: string; project: string; plot: string | null; createdAt: string };
 
 export type MergeView = {
   id: string;
@@ -502,8 +502,7 @@ function QueueTab({
                 checked={taskIds.includes(task.id)}
                 onChange={() => setTaskIds((list) => toggle(list, task.id))}
               />
-              <span className="font-medium">{task.taskNo}</span>
-              <span>{task.title}</span>
+              <span className="font-medium">{task.title}</span>
               <span className="text-muted-foreground">{task.recordName}</span>
               <span className="text-muted-foreground">due {formatIst(task.dueAt)}</span>
             </label>
@@ -521,9 +520,12 @@ function QueueTab({
                 checked={enquiryIds.includes(enquiry.id)}
                 onChange={() => setEnquiryIds((list) => toggle(list, enquiry.id))}
               />
-              <span className="font-medium">{enquiry.enquiryNo}</span>
-              <span>{enquiry.person}</span>
-              <span className="text-muted-foreground">{enquiry.project}</span>
+              <span className="font-medium">{enquiry.person}</span>
+              <span className="text-muted-foreground">
+                {enquiry.project}
+                {enquiry.plot ? ` ${enquiry.plot}` : ""}
+              </span>
+              <span className="text-muted-foreground">since {formatIst(enquiry.createdAt)}</span>
             </label>
           ))}
         </div>

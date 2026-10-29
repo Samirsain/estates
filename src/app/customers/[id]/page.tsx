@@ -110,7 +110,7 @@ export default async function CustomerDetailPage({
     include: {
       person: { include: { memberProfile: { select: { id: true, memberId: true, status: true } } } },
       royaltyLinkedMember: { include: { person: true } },
-      royaltyLinkFirstBooking: { select: { id: true, bookingNumber: true, requestNo: true } },
+      royaltyLinkFirstBooking: { select: { id: true, bookingNumber: true } },
       termsAcceptances: { orderBy: { acceptedOn: "desc" } },
     },
   });
@@ -118,7 +118,7 @@ export default async function CustomerDetailPage({
   if (!customer) notFound();
 
   const personId = customer.personId;
-  const bookingRef = { id: true, bookingNumber: true, requestNo: true } as const;
+  const bookingRef = { id: true, bookingNumber: true } as const;
 
   const [
     holds,
@@ -262,14 +262,14 @@ export default async function CustomerDetailPage({
     ...mergeHistory(merges, personId),
     ...customerChanges.map((c) => ({
       at: c.decidedAt ?? c.requestedAt,
-      title: `Primary Customer change on ${c.booking.bookingNumber ?? c.booking.requestNo}`,
+      title: `Primary Customer change on ${c.booking.bookingNumber ?? "Booking Request"}`,
       detail: `${c.toPersonId === personId ? "To this Customer" : "Away from this Customer"} · ${words(c.status)} — ${c.reason}`,
       by: c.decidedByRef ?? c.requestedByRef,
     })),
     ...endedShares.map((p) => ({
       at: p.effectiveTo!,
       title: `${p.kind === "FINAL_REGISTRATION" ? "Final buyer" : "Ownership"} share ended on ${
-        p.booking.bookingNumber ?? p.booking.requestNo
+        p.booking.bookingNumber ?? "Booking Request"
       }`,
       detail:
         [
@@ -328,7 +328,7 @@ export default async function CustomerDetailPage({
                 .map(
                   (c) =>
                     `${c.type === "LOYALTY" ? "Loyalty Points" : `${words(c.type)} commission`}${
-                      c.booking ? ` on ${c.booking.bookingNumber ?? c.booking.requestNo}` : ""
+                      c.booking ? ` on ${c.booking.bookingNumber ?? "Booking Request"}` : ""
                     }`
                 )
                 .join(", ");
@@ -718,7 +718,7 @@ export default async function CustomerDetailPage({
                             href={`/bookings/${c.booking.id}`}
                             className="font-semibold text-primary hover:underline"
                           >
-                            {c.booking.bookingNumber ?? c.booking.requestNo}
+                            {c.booking.bookingNumber ?? "Booking Request"}
                           </Link>
                         ) : (
                           "—"
@@ -788,7 +788,7 @@ export default async function CustomerDetailPage({
                           recordId={c.id}
                           buying={!!c.acquisitionId}
                           label={`${c.type === "LOYALTY" ? "Loyalty Points" : words(c.type)} ${c.percent.toFixed(2)}% · ${
-                            c.booking?.bookingNumber ?? c.booking?.requestNo ?? ""
+                            (c.booking ? (c.booking.bookingNumber ?? "Booking Request") : "")
                           }`}
                         />
                       </td>

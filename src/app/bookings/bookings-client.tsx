@@ -7,12 +7,32 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, ChevronLeft, Plus, Wallet } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  ChevronDown,
+  Layers,
+  Percent,
+  Plus,
+  Receipt,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { PersonLink } from "@/components/person-link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Section, Stat } from "@/components/record-section";
+import HistoryButton from "@/app/members/[id]/history-button";
+import ShowMore from "@/app/members/[id]/show-more";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
@@ -28,6 +48,7 @@ import { eligibilityLabel, rateLabel } from "@/lib/domain/commission";
 import {
   formatIst,
   formatIstDate,
+  formatIstDateTime,
   formatDimension,
   formatPlotSize,
   formatQuantity,
@@ -79,6 +100,8 @@ export type BookingRowView = {
   requestNo: string;
   bookingNumber: string | null;
   project: string;
+  /** The Booking page links back to its Plot's page. */
+  plotId: string;
   plotNumber: string;
   /** CONSTANT_CASE from the schema — pass through `humanise` before showing it. */
   plotType: string;
@@ -171,10 +194,16 @@ type Permissions = {
   reopenDelivered: boolean;
 };
 
-// One width and one height for every action in the Booking header, so three
-// buttons on a line read as three of the same thing.
-const headerButton = "h-8 w-[9rem]";
 const rowButton = "h-7 px-2 text-[11px]";
+
+/** Every column centred under its heading, as on the Customer and Member pages. */
+const CTH = "px-2 pb-2 text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
+const CTD = "px-2 py-2.5 text-center align-middle";
+
+/** "Show N more" only when there are more; a short list is just the list. */
+function MaybeMore({ count, children }: { count: number; children: React.ReactNode }) {
+  return count > 0 ? <ShowMore count={count}>{children}</ShowMore> : <>{children}</>;
+}
 
 /** DIRECT, INVITE_OVERRIDE — read as words, not as constants. */
 const humanise = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ");
@@ -265,7 +294,9 @@ const CANCEL_REASONS = ["Payment Not Received", "Loan Denied", "Other"] as const
 function statusTooltip(row: BookingRowView): string {
   const lines = [STATUS_LABEL[row.status] ?? row.status];
   if (PROCESS_LABEL[row.activeProcess]) lines.push(PROCESS_LABEL[row.activeProcess]);
-  lines.push(row.bookingNumber ? `${row.bookingNumber} · ${row.requestNo}` : row.requestNo);
+  // The REQ number is off the screens (ID Guide §5); before approval the
+  // Booking has no number to show.
+  if (row.bookingNumber) lines.push(row.bookingNumber);
   lines.push(`Booking Date: ${formatIstDate(row.bookingDate)}`);
   lines.push(`Submitted by ${row.submittedByRef} on ${formatIst(row.submittedAt)}`);
   lines.push(`Payment Received: ${row.paymentReceivedPercent}%`);
@@ -343,6 +374,7 @@ type Dialog =
   | { kind: "SOLD_BY_DECIDE"; row: BookingRowView; approve: boolean }
   | { kind: "FINAL_BUYERS"; row: BookingRowView }
   | { kind: "COMPLETION"; row: BookingRowView }
+  | { kind: "DELIVER"; row: BookingRowView }
   | { kind: "REOPEN"; row: BookingRowView }
   | { kind: "CANCEL_DECIDE"; row: BookingRowView; approve: boolean }
   | { kind: "CHANGE_PLOT"; row: BookingRowView }
@@ -472,60 +504,128 @@ export default function BookingsClient({
   const newKey = () => globalThis.crypto.randomUUID();
 
   /**
-   * What can be done to this Booking now. These used to sit in the row, four
-   * buttons wide in a column that was already carrying six others; they belong
-   * with the detail that says whether doing them is the right call.
+   * The one next step on this Booking, beside History — as on the Customer and
+   * Member pages. Everything else it allows waits under More.
    */
-  function actions(row: BookingRowView) {
+  function primaryAction(row: BookingRowView) {
+    if (row.status === "REQUEST_PENDING" && permissions.decide) {
+      return (
+        <Button size="sm" onClick={() => openDialog({ kind: "DECIDE", row, approve: true })}>
+          Review
+        </Button>
+      );
+    }
+    // Fully paid is the end of this button, not a form that opens and then
+    // refuses. Payment Completed still qualifies while anything remains — a
+    // correction can step the total back below 100 — so the gate is what is
+    // left, not the status.
+    if (
+      ["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
+      permissions.confirmPayment &&
+      Number(remainingPercent(row.paymentReceivedPercent)) > 0
+    ) {
+      return (
+        <Button size="sm" onClick={() => openDialog({ kind: "PAY", row })}>
+          Record Payment
+        </Button>
+      );
+    }
+    // Paid in full: the one step left is the legal end of the sale (owner,
+    // 28 Oct 2026). The form asks for both halves — the final buyers and the
+    // route — as Plot Inventory's Deliver did.
+    if (row.status === "PAYMENT_COMPLETED" && permissions.recordFinalBuyers && permissions.recordCompletion) {
+      return (
+        <Button size="sm" onClick={() => openDialog({ kind: "DELIVER", row })}>
+          Delivered
+        </Button>
+      );
+    }
+    return null;
+  }
+
+  /** Every other change this Booking allows now, under the same rules as before. */
+  function moreMenu(row: BookingRowView) {
+    const loaded = detail?.id === row.id ? detail : null;
+    const live = ["BOOKED", "PAYMENT_COMPLETED"].includes(row.status);
+    const items: Array<{ label: string; open: Dialog; danger?: boolean }> = [];
+    if (row.status === "REQUEST_PENDING" && permissions.submit) items.push({ label: "Revise request", open: { kind: "REVISE", row } });
+    if (loaded) {
+      if (live && permissions.changeShares) items.push({ label: "Change ownership shares", open: { kind: "SHARES", row } });
+      if (live && permissions.raiseCustomerChange && !loaded.customerChanges.some((c) => c.status === "PENDING")) {
+        items.push({ label: "Change Primary Customer", open: { kind: "CUSTOMER_CHANGE", row } });
+      }
+      if (
+        (live || row.status === "DELIVERED") &&
+        permissions.raiseSoldBy &&
+        !loaded.soldByCorrections.some((c) => c.status === "PENDING")
+      ) {
+        items.push({ label: "Sold By Correction", open: { kind: "SOLD_BY", row } });
+      }
+      if (
+        permissions.reviseSchedule &&
+        loaded.scheduleVersions.some((v) => v.status === "ACTIVE") &&
+        !loaded.scheduleVersions.some((v) => v.status === "PENDING")
+      ) {
+        items.push({ label: "Revise Payment Schedule", open: { kind: "SCHEDULE", row } });
+      }
+    }
+    // PRD §5.1 — Change Plot applies before Delivered, one process at a time.
+    if (live && row.activeProcess === "NONE" && permissions.raiseChangePlot) {
+      items.push({ label: "Change Plot", open: { kind: "CHANGE_PLOT", row } });
+    }
+    if ((row.status === "REQUEST_PENDING" || live) && permissions.cancel) {
+      items.push({ label: row.status === "REQUEST_PENDING" ? "Cancel Request" : "Cancel Booking", open: { kind: "CANCEL", row }, danger: true });
+    }
+    if (items.length === 0) return null;
     return (
-      <>
-        {row.status === "REQUEST_PENDING" && permissions.decide && (
-          <Button size="sm" className={headerButton} onClick={() => openDialog({ kind: "DECIDE", row, approve: true })}>
-            Review
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="sm" variant="outline">
+            More <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
           </Button>
-        )}
-        {row.status === "REQUEST_PENDING" && permissions.submit && (
-          <Button
-            size="sm"
-            variant="outline"
-            className={headerButton}
-            onClick={() => openDialog({ kind: "REVISE", row })}
-          >
-            Revise request
-          </Button>
-        )}
-        {/* Fully paid is the end of this button, not a form that opens and
-            then refuses. Payment Completed still qualifies while anything
-            remains — a correction can step the total back below 100 — so the
-            gate is what is left, not the status. */}
-        {["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
-          permissions.confirmPayment &&
-          Number(remainingPercent(row.paymentReceivedPercent)) > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              className={headerButton}
-              onClick={() => openDialog({ kind: "PAY", row })}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {items.map((item) => (
+            <DropdownMenuItem
+              key={item.label}
+              onSelect={() => openDialog(item.open)}
+              className={item.danger ? "text-red-700 focus:text-red-700" : undefined}
             >
-              Confirm Payment
-            </Button>
-          )}
-        {["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
-          permissions.cancel && (
-            // Outline, not ghost: three actions on one line, and the third had
-            // no edge at all, so it read as a stray link rather than the third
-            // button. Red says what it does; the shape says it is one of three.
-            <Button
-              size="sm"
-              variant="outline"
-              className={`${headerButton} border-red-500/40 text-red-700 hover:bg-red-500/5`}
-              onClick={() => openDialog({ kind: "CANCEL", row })}
-            >
-              Cancel Booking
-            </Button>
-          )}
-      </>
+              {item.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     );
+  }
+
+  /** The Booking's events and every request version, newest first, for the History button. */
+  function historyRows(d: BookingDetail) {
+    return [
+      ...d.events.map((e) => ({
+        at: e.at,
+        title: humanise(e.action),
+        detail:
+          [
+            e.fromStatus && e.toStatus && e.fromStatus !== e.toStatus
+              ? `${STATUS_LABEL[e.fromStatus] ?? e.fromStatus} → ${STATUS_LABEL[e.toStatus] ?? e.toStatus}`
+              : null,
+            e.reason,
+          ]
+            .filter(Boolean)
+            .join(" — ") || undefined,
+        by: e.actorRef,
+      })),
+      ...d.reviewVersions.map((v) => ({
+        at: v.decidedAt ?? v.submittedAt,
+        title: `Request version ${v.version} — ${humanise(v.status)}`,
+        detail:
+          [v.decisionNote, v.rejectReason ? humanise(v.rejectReason) : null].filter(Boolean).join(" · ") || undefined,
+        by: v.decidedByRef ?? v.submittedByRef,
+      })),
+    ]
+      .sort((a, b) => (a.at < b.at ? 1 : -1))
+      .map((h) => ({ ...h, at: formatIstDateTime(h.at) }));
   }
 
   const noticeCard = notice && (
@@ -556,69 +656,122 @@ export default function BookingsClient({
           underneath the list, which put a form-length panel inside a table and
           left the actions stranded in a seventh column. */}
       {focusRow ? (
-        <div className="mx-auto max-w-6xl space-y-3">
-          <Link
-            href="/bookings"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" /> Bookings
-          </Link>
-          {/* The Booking Number is generated, not chosen, and nobody reads a
-              page to find out what it is. The title is who bought what; the
-              numbers stay on the line that carries the other filing facts. */}
-          <header className="flex flex-wrap items-end justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-bold tracking-tight">{focusRow.primaryCustomer}</h1>
-                <Badge variant={statusVariant(focusRow.status)}>
-                  {STATUS_LABEL[focusRow.status] ?? focusRow.status}
+        <div className="mx-auto max-w-5xl space-y-4">
+          {/* Back and what is under way on the left; History, the one next step
+              and More on the right — as on the Customer, Member and Plot pages. */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href="/bookings"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to Bookings
+              </Link>
+              {PROCESS_LABEL[focusRow.activeProcess] && (
+                <Badge variant="warning" className="gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  {PROCESS_LABEL[focusRow.activeProcess]}
                 </Badge>
-                {PROCESS_LABEL[focusRow.activeProcess] && (
-                  <Badge variant="warning">{PROCESS_LABEL[focusRow.activeProcess]}</Badge>
-                )}
-                {/* The historical classification stays visible on the record
-                    itself, not only as a count on the Dashboard. */}
-                {focusRow.originalClassification && (
-                  <Badge
-                    variant="outline"
-                    title="Frozen with the Booking Request and permanent after Accounts approval."
-                  >
-                    {focusRow.originalClassification === "MEMBER"
-                      ? "Member business"
-                      : "Customer business"}
-                  </Badge>
-                )}
-              </div>
-              <p className="mt-1 text-sm">
-                {focusRow.plotNumber} · {focusRow.project} · {humanise(focusRow.plotType)}
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {focusRow.bookingNumber
-                  ? `${focusRow.bookingNumber} · ${focusRow.requestNo}`
-                  : focusRow.requestNo}{" "}
-                · booked {formatIstDate(focusRow.bookingDate)} · submitted by {focusRow.submittedByRef}
-              </p>
-              {focusRow.commissionTerms && (
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {termsLine(focusRow.commissionTerms)}
-                  {focusRow.royaltyTokens !== null ? ` · Royalty ${focusRow.royaltyTokens} points` : ""}
-                </p>
               )}
-              {/* The one case the classification has to explain itself: the
-                  buyer has become a Member since, and the Booking still counts
-                  as Customer business. Saying so is what stops a reader taking
-                  it for a mistake. */}
-              {focusRow.originalClassification === "CUSTOMER" && focusRow.buyerMemberIdNow && (
-                <p className="mt-1 text-[11px] text-amber-800">
-                  Customer business. {focusRow.primaryCustomer} has since been activated as{" "}
-                  {focusRow.buyerMemberIdNow}, and this Booking keeps the classification it was
-                  approved under — it is not recalculated as a Member self-purchase.
-                </p>
+              {/* A pending request's own schedule is decided by its Review, not as a revision. */}
+              {focusRow.status !== "REQUEST_PENDING" &&
+                detail?.id === focusRow.id &&
+                detail.scheduleVersions.some((v) => v.status === "PENDING") && (
+                <Badge variant="warning" className="gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  Schedule revision waiting
+                </Badge>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-2">{actions(focusRow)}</div>
-          </header>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {detail?.id === focusRow.id && <HistoryButton rows={historyRows(detail)} />}
+              {primaryAction(focusRow)}
+              {moreMenu(focusRow)}
+            </div>
+          </div>
           {noticeCard}
+
+          {/* 1 Header · 2 Summary. The Booking Number is generated, not chosen,
+              and nobody reads a page to find out what it is: the title is who
+              bought, the numbers sit on the line under it. */}
+          <Card className="p-4 md:p-5">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <Receipt className="h-6 w-6" />
+              </div>
+              <div className="min-w-fit flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-2xl font-bold tracking-tight">{focusRow.primaryCustomer}</h1>
+                  <Badge variant={statusVariant(focusRow.status)}>
+                    {STATUS_LABEL[focusRow.status] ?? focusRow.status}
+                  </Badge>
+                  {/* The historical classification stays visible on the record
+                      itself, not only as a count on the Dashboard. */}
+                  {focusRow.originalClassification && (
+                    <Badge
+                      variant="outline"
+                      title="Frozen with the Booking Request and permanent after Accounts approval."
+                    >
+                      {focusRow.originalClassification === "MEMBER" ? "Member business" : "Customer business"}
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {focusRow.bookingNumber && `${focusRow.bookingNumber} · `}
+                  booked {formatIstDate(focusRow.bookingDate)} · submitted by {focusRow.submittedByRef}
+                </p>
+                <p className="mt-1 text-sm">
+                  <Link href={`/plots/${focusRow.plotId}`} className="font-medium text-primary hover:underline">
+                    {focusRow.plotNumber} · {focusRow.project}
+                  </Link>
+                  <span className="text-muted-foreground"> · {humanise(focusRow.plotType)}</span>
+                </p>
+                {/* The one case the classification has to explain itself: the
+                    buyer has become a Member since, and the Booking still counts
+                    as Customer business. */}
+                {focusRow.originalClassification === "CUSTOMER" && focusRow.buyerMemberIdNow && (
+                  <p className="mt-1 max-w-prose text-[11px] text-amber-800">
+                    {focusRow.primaryCustomer} has since been activated as {focusRow.buyerMemberIdNow}; this
+                    Booking keeps the classification it was approved under.
+                  </p>
+                )}
+              </div>
+
+              <dl className="flex flex-wrap gap-x-10 gap-y-3">
+                <Stat
+                  label="Received"
+                  value={`${Number(focusRow.paymentReceivedPercent)}%`}
+                  hint={
+                    Number(remainingPercent(focusRow.paymentReceivedPercent)) > 0
+                      ? `${Number(remainingPercent(focusRow.paymentReceivedPercent))}% remaining`
+                      : "Paid in full"
+                  }
+                />
+                <Stat
+                  label="Sold By"
+                  value={
+                    focusRow.soldByPersonId ? (
+                      <>
+                        <PersonLink
+                          personId={focusRow.soldByPersonId}
+                          name={focusRow.soldByCode ?? focusRow.soldByName ?? "—"}
+                          as={focusRow.soldByType === "MEMBER" ? "member" : undefined}
+                        />
+                        {focusRow.soldByCode && focusRow.soldByName && (
+                          <span className="block text-foreground">{focusRow.soldByName}</span>
+                        )}
+                      </>
+                    ) : (
+                      "3% Club"
+                    )
+                  }
+                  hint={SOLD_BY_LABEL[focusRow.soldByType] ?? focusRow.soldByType}
+                />
+              </dl>
+            </div>
+          </Card>
+
           <BookingDetailPanel
             row={focusRow}
             detail={detail}
@@ -845,7 +998,7 @@ export default function BookingsClient({
 
       {dialog?.kind === "REVISE" && (
         <BookingFormDialog
-          title={`Send a corrected request — ${dialog.row.requestNo}`}
+          title={`Send a corrected request — ${dialog.row.project} ${dialog.row.plotNumber}`}
           bookable={bookable}
           people={people}
           members={members}
@@ -1104,7 +1257,7 @@ export default function BookingsClient({
 
       {dialog?.kind === "SOLD_BY" && (
         <Modal
-          title={`Sold By Correction — ${dialog.row.bookingNumber ?? dialog.row.requestNo}`}
+          title={`Sold By Correction — ${dialog.row.bookingNumber ?? "Booking Request"}`}
           description="Nothing changes until MD approves. Booking and Payment history are never touched by this correction."
           onClose={() => setDialog(null)}
         >
@@ -1413,6 +1566,26 @@ export default function BookingsClient({
         />
       )}
 
+      {dialog?.kind === "DELIVER" && (
+        <DeliverDialog
+          row={dialog.row}
+          detail={detail}
+          people={people}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={({ buyers, completion }) =>
+            run(async () => {
+              // Two commands, in order: the route refuses to run without the
+              // buyers, and stopping on the first failure never leaves half a
+              // delivery behind.
+              const saved = await recordFinalBuyersAction(dialog.row.id, buyers, newKey());
+              if (!saved.ok) return saved;
+              return recordCompletionAction(dialog.row.id, completion, newKey());
+            })
+          }
+        />
+      )}
+
       {dialog?.kind === "COMPLETION" && (
         <CompletionDialog
           row={dialog.row}
@@ -1492,508 +1665,380 @@ function BookingDetailPanel({
   permissions: Permissions;
   onAction: (d: Dialog) => void;
 }) {
-  const [tab, setTab] = React.useState<"OVERVIEW" | "PAYMENT" | "COMMISSION" | "HISTORY">("OVERVIEW");
-
   if (!detail || detail.id !== row.id) {
     return (
       <p className="py-6 text-xs text-muted-foreground">Loading Booking details…</p>
     );
   }
 
-  const hasExceptionAction =
-    (row.status === "REFUND_PENDING" && permissions.decideCancellation) ||
-    (row.activeProcess === "CHANGE_PLOT_PENDING" && permissions.decideChangePlot) ||
-    (["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
-      row.activeProcess === "NONE" &&
-      permissions.raiseChangePlot);
-
-  const currentParties = detail.parties.filter((p) => p.effectiveTo === null);
+  // Who is buying (commercial) and who the papers go to (final registration)
+  // are two lists that are usually the same people; the second is shown only
+  // where it differs.
+  const currentParties = detail.parties.filter((p) => p.kind === "COMMERCIAL" && p.effectiveTo === null);
+  const finalBuyers = detail.parties.filter((p) => p.kind === "FINAL_REGISTRATION" && p.effectiveTo === null);
+  const shareKey = (list: typeof currentParties) =>
+    list
+      .map((p) => `${p.personId}:${p.sharePercent ?? "100"}`)
+      .sort()
+      .join("|");
+  const finalSame = finalBuyers.length > 0 && shareKey(finalBuyers) === shareKey(currentParties);
   const liveSchedule = detail.scheduleVersions.find((s) => s.status === "ACTIVE");
-  const pendingSchedule = detail.scheduleVersions.find((s) => s.status === "PENDING");
+  // A pending request's own schedule is decided by its Review, not as a revision.
+  const pendingSchedule =
+    row.status === "REQUEST_PENDING" ? undefined : detail.scheduleVersions.find((s) => s.status === "PENDING");
   const pendingCustomerChange = detail.customerChanges.find((c) => c.status === "PENDING");
   const pendingSoldBy = detail.soldByCorrections.find((c) => c.status === "PENDING");
+  const supersededEntries = detail.paymentEntries.filter((e) => e.status === "SUPERSEDED");
+  // Current lines first; superseded ones stay visible under Show more rather
+  // than being removed.
+  const commissions = [...detail.commissions].sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent));
+  const supersededCommissions = commissions.filter((c) => !c.isCurrent).length;
+
+  /** A decision waiting on this Booking, with its Approve and Reject. */
+  const waiting = (title: string, lines: React.ReactNode, canDecide: boolean, decide: (approve: boolean) => Dialog) => (
+    <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
+      <p className="font-semibold">{title}</p>
+      <div className="mt-1">{lines}</div>
+      {canDecide && (
+        <div className="mt-2 flex gap-2">
+          <Button size="sm" onClick={() => onAction(decide(true))}>
+            Approve
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => onAction(decide(false))}>
+            Reject
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 
   return (
-    <div className="space-y-5">
-      {/* Tabs sit on a rule rather than inside a box — the panel is the page. */}
-      <div className="flex flex-wrap gap-1 border-b border-border">
-        {(["OVERVIEW", "PAYMENT", "COMMISSION", "HISTORY"] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`-mb-px border-b-2 px-3 py-2 text-xs ${
-              tab === t
-                ? "border-primary font-semibold text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.charAt(0) + t.slice(1).toLowerCase()}
-          </button>
-        ))}
-      </div>
+    <div className="space-y-4">
+      {row.status === "REQUEST_PENDING" && (
+        <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
+          Submitted values are locked while Accounts reviews them. To change one, use{" "}
+          <span className="font-semibold">More → Revise request</span> — it replaces this request and keeps the old one in
+          History.
+        </p>
+      )}
 
-      {tab === "OVERVIEW" && (
-        <div className="space-y-4">
-          {row.status === "REQUEST_PENDING" && (
-            <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
-              Submitted values are locked while Accounts reviews them. To change one, use{" "}
-              <span className="font-semibold">Revise request</span> — it replaces this request and keeps the old one in History.
+      {/* Decisions waiting on this Booking, each with its Approve and Reject. */}
+      {row.status === "REFUND_PENDING" &&
+        waiting(
+          "Cancellation — Waiting for the Accounts decision",
+          "Approving refunds and closes the Booking; rejecting restores it as it was.",
+          permissions.decideCancellation,
+          (approve) => ({ kind: "CANCEL_DECIDE", row, approve })
+        )}
+      {row.activeProcess === "CHANGE_PLOT_PENDING" &&
+        waiting(
+          "Change Plot — Waiting for the Accounts decision",
+          "The new Plot is held for this Booking until the decision.",
+          permissions.decideChangePlot,
+          (approve) => ({ kind: "CHANGE_PLOT_DECIDE", row, approve })
+        )}
+      {pendingCustomerChange &&
+        waiting(
+          "Primary Customer Change — Waiting Approval",
+          <p>
+            {pendingCustomerChange.reason} · raised by {pendingCustomerChange.requestedByRef} on{" "}
+            {formatIst(pendingCustomerChange.requestedAt)}
+          </p>,
+          permissions.approveCustomerChange,
+          (approve) => ({ kind: "CUSTOMER_CHANGE_DECIDE", row, approve })
+        )}
+      {pendingSoldBy &&
+        waiting(
+          "Sold By Correction — Waiting Approval",
+          <>
+            <p>
+              {SOLD_BY_LABEL[pendingSoldBy.fromSoldByType]} → {SOLD_BY_LABEL[pendingSoldBy.toSoldByType]} ·{" "}
+              {pendingSoldBy.reason}
             </p>
-          )}
-          {pendingCustomerChange && (
-            <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
-              <p className="font-semibold">Primary Customer Change — Waiting Approval</p>
-              <p className="mt-1">
-                {pendingCustomerChange.reason} · raised by {pendingCustomerChange.requestedByRef} on{" "}
-                {formatIst(pendingCustomerChange.requestedAt)}
-              </p>
-              {permissions.approveCustomerChange && (
-                <div className="mt-2 flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => onAction({ kind: "CUSTOMER_CHANGE_DECIDE", row, approve: true })}
-                  >
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onAction({ kind: "CUSTOMER_CHANGE_DECIDE", row, approve: false })}
-                  >
-                    Reject
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {pendingSoldBy && (
-            <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
-              <p className="font-semibold">Sold By Correction — Waiting Approval</p>
-              <p className="mt-1">
-                {SOLD_BY_LABEL[pendingSoldBy.fromSoldByType]} →{" "}
-                {SOLD_BY_LABEL[pendingSoldBy.toSoldByType]} · {pendingSoldBy.reason}
-              </p>
-              <p className="mt-1 text-[11px]">
-                {pendingSoldBy.supportingNote} · raised by {pendingSoldBy.requestedByRef} on{" "}
-                {formatIst(pendingSoldBy.requestedAt)}
-              </p>
-              {permissions.approveSoldBy && (
-                <div className="mt-2 flex gap-2">
-                  <Button size="sm" onClick={() => onAction({ kind: "SOLD_BY_DECIDE", row, approve: true })}>
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onAction({ kind: "SOLD_BY_DECIDE", row, approve: false })}
-                  >
-                    Reject
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Customers
-            </h3>
-            <ul className="mt-2 space-y-1 text-xs">
-              {currentParties.map((p) => (
-                <li key={`${p.personId}-${p.effectiveFrom}`} className="flex justify-between gap-3">
-                  <span>
-                    <PersonLink personId={p.personId} name={p.name} />
-                    <span className="ml-2 text-[11px] text-muted-foreground">
-                      {/* One buyer is the Customer. "Primary" only says
-                          something when there is a second one to be primary
-                          over, and otherwise sends the reader looking. */}
-                      {currentParties.length === 1
-                        ? "Customer"
-                        : p.role === "PRIMARY"
-                          ? "Primary Customer"
-                          : "Additional Customer"}
-                    </span>
-                  </span>
-                  <span className="tabular-nums">
-                    {p.sharePercent ? `${p.sharePercent}%` : "100%"}
-                  </span>
+            <p className="mt-1 text-[11px]">
+              {pendingSoldBy.supportingNote} · raised by {pendingSoldBy.requestedByRef} on{" "}
+              {formatIst(pendingSoldBy.requestedAt)}
+            </p>
+          </>,
+          permissions.approveSoldBy,
+          (approve) => ({ kind: "SOLD_BY_DECIDE", row, approve })
+        )}
+      {pendingSchedule &&
+        waiting(
+          "Schedule revision — Waiting for the Accounts decision",
+          <>
+            <p>{pendingSchedule.reason}</p>
+            <ul className="mt-2 space-y-0.5">
+              {pendingSchedule.instalments.map((i) => (
+                <li key={i.seq} className="tabular-nums">
+                  {i.seq}. {i.scheduled}% due {formatIst(i.dueDate)}
                 </li>
               ))}
             </ul>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) && permissions.changeShares && (
-                <Button size="sm" variant="outline" onClick={() => onAction({ kind: "SHARES", row })}>
-                  Change ownership shares
-                </Button>
-              )}
-              {["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
-                permissions.raiseCustomerChange &&
-                !pendingCustomerChange && (
-                  <Button size="sm" variant="outline" onClick={() => onAction({ kind: "CUSTOMER_CHANGE", row })}>
-                    Change Primary Customer
-                  </Button>
-                )}
-              {["BOOKED", "PAYMENT_COMPLETED", "DELIVERED"].includes(row.status) &&
-                permissions.raiseSoldBy &&
-                !pendingSoldBy && (
-                  <Button size="sm" variant="outline" onClick={() => onAction({ kind: "SOLD_BY", row })}>
-                    Sold By Correction
-                  </Button>
-                )}
-            </div>
-          </section>
+          </>,
+          permissions.decideSchedule,
+          (approve) => ({ kind: "SCHEDULE_DECIDE", row, approve })
+        )}
 
-          {/* PLC spec §15.3 — the frozen Booking PLC. Percentage only: no rupee
-              value is derived from it here or anywhere else. */}
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Plot Location Charge (PLC %)
-            </h3>
-            {!detail.plc ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                No PLC snapshot is frozen against this Booking.
-              </p>
-            ) : (
-              <div className="mt-2 space-y-2 text-xs">
-                <div className="flex flex-wrap items-baseline justify-between gap-3">
-                  <span className="text-base font-semibold tabular-nums">
-                    {Number(detail.plc.totalPercent).toFixed(2)}%
-                    <span className="ml-2 text-xs font-normal">
-                      {detail.plc.position.join(" · ")}
-                    </span>
+      {/* 3 Customers · 4 PLC · 5 Terms */}
+      <div className="grid items-start gap-4 md:grid-cols-3">
+        <Section title="Customers" icon={<Users className="h-3.5 w-3.5" />}>
+          <ul className="space-y-1.5 text-xs">
+            {currentParties.map((p) => (
+              <li key={`${p.personId}-${p.effectiveFrom}`} className="flex justify-between gap-3">
+                <span>
+                  <PersonLink personId={p.personId} name={p.name} />
+                  <span className="block text-[11px] text-muted-foreground">
+                    {/* One buyer is the Customer. "Primary" only says something
+                        when there is a second one to be primary over. */}
+                    {currentParties.length === 1
+                      ? "Customer"
+                      : p.role === "PRIMARY"
+                        ? "Primary Customer"
+                        : "Additional Customer"}
                   </span>
-                  <span className="text-[11px] text-muted-foreground">
-                    Frozen {formatIst(detail.plc.frozenAt)}
-                    {detail.plc.correctionReason ? " · corrected" : " · original freeze"}
-                    {detail.plc.isCurrent ? "" : " · superseded"}
-                  </span>
-                </div>
+                </span>
+                <span className="tabular-nums">{p.sharePercent ? `${Number(p.sharePercent)}%` : "100%"}</span>
+              </li>
+            ))}
+          </ul>
+          {finalBuyers.length > 0 && (
+            <p className="mt-3 border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
+              {finalSame ? "Final buyers: the same ✓" : "Final buyers differ — see Allotment / Registry below."}
+            </p>
+          )}
+        </Section>
 
-                <ul className="space-y-0.5">
+        {/* PLC spec §15.3 — the frozen Booking PLC. Percentage only: no rupee
+            value is derived from it here or anywhere else. */}
+        <Section
+          title={detail.plc ? `PLC · ${Number(detail.plc.totalPercent).toFixed(2)}% frozen` : "PLC"}
+          icon={<Percent className="h-3.5 w-3.5" />}
+        >
+          {!detail.plc ? (
+            <p className="text-xs text-muted-foreground">No PLC snapshot is frozen against this Booking.</p>
+          ) : (
+            <div className="space-y-2 text-xs">
+              {detail.plc.components.length === 0 ? (
+                <p className="text-muted-foreground">No location charge on this Plot.</p>
+              ) : (
+                <ul className="space-y-1">
                   {detail.plc.components.map((c) => (
                     <li key={c.category} className="flex justify-between gap-3">
                       <span>
                         {c.label}
-                        <span className="ml-2 text-[11px] text-muted-foreground">{c.evidence}</span>
+                        <span className="block text-[11px] text-muted-foreground">{c.evidence}</span>
                       </span>
                       <span className="tabular-nums">{Number(c.percent).toFixed(2)}%</span>
                     </li>
                   ))}
                 </ul>
-
-                {detail.plc.correctionReason && (
-                  <p className="text-[11px] text-amber-800">
-                    Corrected by {detail.plc.correctedBy} — {detail.plc.correctionReason}
-                  </p>
-                )}
-
-                {detail.plc.history.length > 1 && (
-                  <div className="border-t border-border/50 pt-2">
-                    <p className="text-[11px] font-medium text-muted-foreground">
-                      Correction history
-                    </p>
-                    <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
-                      {detail.plc.history.map((h, index) => (
-                        <li key={index} className="flex justify-between gap-3">
-                          <span>
-                            {formatIst(h.frozenAt)}
-                            {h.correctionReason ? ` — ${h.correctionReason}` : " — original freeze"}
-                          </span>
-                          <span className="tabular-nums">
-                            {Number(h.totalPercent).toFixed(2)}%
-                            {h.isCurrent ? "" : " (superseded)"}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <p className="text-[11px] text-muted-foreground">
-                  Frozen at submission — a later change to the Project PLC does not move it.
+              )}
+              {detail.plc.position.length > 0 && <p className="font-medium">{detail.plc.position.join(" · ")}</p>}
+              <p className="text-[11px] text-muted-foreground">
+                Frozen {formatIst(detail.plc.frozenAt)}
+                {detail.plc.correctionReason ? " · corrected" : " · original freeze"}
+                {detail.plc.isCurrent ? "" : " · superseded"} — a later change to the Project PLC does not move it.
+              </p>
+              {detail.plc.correctionReason && (
+                <p className="text-[11px] text-amber-800">
+                  Corrected by {detail.plc.correctedBy} — {detail.plc.correctionReason}
                 </p>
-              </div>
-            )}
-          </section>
-
-          {/* Drawn only when there is an exception to act on. It used to render
-              a heading and a line saying no exception applied — true of almost
-              every Booking, almost all of the time, and three of the six things
-              on this page were saying nothing in the same way. */}
-          {hasExceptionAction && (
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Exception workflows
-            </h3>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {/* PRD §15.4 — the Accounts decision on a formal cancellation. */}
-              {row.status === "REFUND_PENDING" && permissions.decideCancellation && (
-                <>
-                  <Button
-                    size="sm"
-                    onClick={() => onAction({ kind: "CANCEL_DECIDE", row, approve: true })}
-                  >
-                    Approve cancellation
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onAction({ kind: "CANCEL_DECIDE", row, approve: false })}
-                  >
-                    Reject cancellation
-                  </Button>
-                </>
               )}
-
-              {/* PRD §5.1 — Change Plot applies before Delivered, one process at a time. */}
-              {["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
-                row.activeProcess === "NONE" &&
-                permissions.raiseChangePlot && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onAction({ kind: "CHANGE_PLOT", row })}
-                  >
-                    Change Plot
-                  </Button>
-                )}
-
-              {row.activeProcess === "CHANGE_PLOT_PENDING" && permissions.decideChangePlot && (
-                <>
-                  <Button
-                    size="sm"
-                    onClick={() => onAction({ kind: "CHANGE_PLOT_DECIDE", row, approve: true })}
-                  >
-                    Approve Change Plot
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onAction({ kind: "CHANGE_PLOT_DECIDE", row, approve: false })}
-                  >
-                    Reject Change Plot
-                  </Button>
-                </>
-              )}
-
-            </div>
-          </section>
-          )}
-
-          <CompletionSection
-            row={row}
-            detail={detail}
-            permissions={permissions}
-            onAction={onAction}
-          />
-
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Review history
-            </h3>
-            <ul className="mt-2 space-y-1 text-xs">
-              {detail.reviewVersions.map((v) => (
-                <li key={v.version} className="flex flex-wrap items-center justify-between gap-2">
-                  <span>
-                    Submitted by {v.submittedByRef} · {formatIst(v.submittedAt)}
-                    {v.decisionNote ? ` · ${v.decisionNote}` : ""}
-                    {v.rejectReason ? ` · ${v.rejectReason.replaceAll("_", " ")}` : ""}
-                  </span>
-                  <Badge variant="outline">{v.status.charAt(0) + v.status.slice(1).toLowerCase()}</Badge>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </div>
-      )}
-
-      {tab === "PAYMENT" && (
-        <div className="space-y-4">
-          <p className="text-xs text-muted-foreground">
-            Payment Received progress: <span className="tabular-nums">{row.paymentReceivedPercent}%</span>.
-            Part payment is allowed and there is no separate Partially Received status.
-          </p>
-
-          {pendingSchedule && (
-            <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
-              <p className="font-semibold">Schedule revision waiting for the Accounts decision</p>
-              <p className="mt-1">{pendingSchedule.reason}</p>
-              <ul className="mt-2 space-y-0.5">
-                {pendingSchedule.instalments.map((i) => (
-                  <li key={i.seq} className="tabular-nums">
-                    {i.seq}. {i.scheduled}% due {formatIst(i.dueDate)}
-                  </li>
-                ))}
-              </ul>
-              {permissions.decideSchedule && (
-                <div className="mt-2 flex gap-2">
-                  <Button size="sm" onClick={() => onAction({ kind: "SCHEDULE_DECIDE", row, approve: true })}>
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onAction({ kind: "SCHEDULE_DECIDE", row, approve: false })}
-                  >
-                    Reject
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {liveSchedule ? (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[34rem] text-xs">
-                <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="w-[3rem] py-1">#</th>
-                    <th className="py-1 text-right">Scheduled %</th>
-                    <th className="py-1 text-right">Received %</th>
-                    <th className="py-1 text-right">Remaining %</th>
-                    <th className="py-1 text-center">Due date</th>
-                    <th className="py-1 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {liveSchedule.instalments.map((i) => (
-                    <tr key={i.seq}>
-                      <td className="py-1">{i.seq}</td>
-                      <td className="py-1 text-right tabular-nums">{i.scheduled}</td>
-                      <td className="py-1 text-right tabular-nums">{i.received}</td>
-                      <td className="py-1 text-right tabular-nums">{i.remaining}</td>
-                      <td className="py-1 text-center tabular-nums">{formatIst(i.dueDate)}</td>
-                      <td className="py-1 text-center">
-                        <Badge
-                          variant={
-                            i.status === "RECEIVED"
-                              ? "success"
-                              : i.status === "OVERDUE"
-                                ? "destructive"
-                                : "outline"
-                          }
-                        >
-                          {i.status.charAt(0) + i.status.slice(1).toLowerCase()}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              The schedule becomes live when Accounts approves the Booking Request.
-            </p>
-          )}
-
-          {permissions.reviseSchedule && liveSchedule && !pendingSchedule && (
-            <Button size="sm" variant="outline" onClick={() => onAction({ kind: "SCHEDULE", row })}>
-              Revise Remaining Payment Schedule
-            </Button>
-          )}
-
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Payment entries
-            </h3>
-            {detail.paymentEntries.length === 0 ? (
-              <p className="mt-2 text-xs text-muted-foreground">No payment confirmed yet.</p>
-            ) : (
-              <ul className="mt-2 space-y-1 text-xs">
-                {detail.paymentEntries.map((e) => (
-                  <li key={e.id} className="flex flex-wrap items-center justify-between gap-2">
-                    <span className={e.status === "SUPERSEDED" ? "text-muted-foreground line-through" : ""}>
-                      <span className="tabular-nums">{e.percent}%</span> · {e.reference}
-                      <span className="ml-2 text-[11px] text-muted-foreground">
-                        paid {formatIst(e.paidOn)} · entered {formatIst(e.recordedAt)} · {e.confirmedByRef}
+              {detail.plc.history.length > 1 && (
+                <ul className="space-y-0.5 border-t border-border/50 pt-2 text-[11px] text-muted-foreground">
+                  {detail.plc.history.map((h, index) => (
+                    <li key={index} className="flex justify-between gap-3">
+                      <span>
+                        {formatIst(h.frozenAt)}
+                        {h.correctionReason ? ` — ${h.correctionReason}` : " — original freeze"}
                       </span>
-                      {e.payerName && (
-                        <span className="ml-2 text-[11px] text-amber-800">
-                          paid by {e.payerName}
-                          {e.payerReference ? ` (${e.payerReference})` : ""}
-                        </span>
-                      )}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <Badge variant={e.status === "SUPERSEDED" ? "outline" : "success"}>
-                        {e.status === "SUPERSEDED" ? "Superseded" : "Confirmed"}
-                      </Badge>
-                      {e.status === "CONFIRMED" && permissions.correctPayment && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            onAction({
-                              kind: "CORRECT",
-                              row,
-                              entryId: e.id,
-                              percent: e.percent,
-                              reference: e.reference,
-                            })
-                          }
-                        >
-                          Correct
-                        </Button>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </div>
-      )}
-
-      {tab === "COMMISSION" && (
-        <div className="space-y-4">
-          <p className="text-xs text-muted-foreground">
-            Percentages only — the CRM stores no payout amount. Eligibility and payment are separate
-            statuses, and a superseded record stays visible rather than being removed.
-          </p>
-
-          {/* CP §90 — non-cash rewards this sale created; no value attaches to them. */}
-          {detail.rewards.length > 0 && (
-            <ul className="space-y-1 rounded-lg border border-border/60 p-2.5 text-xs">
-              {detail.rewards.map((r, i) => (
-                <li key={i} className="flex flex-wrap justify-between gap-2">
-                  <span>
-                    {r.kind} · {r.member}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {r.state} · {r.detail}
-                  </span>
-                </li>
-              ))}
-            </ul>
+                      <span className="tabular-nums">
+                        {Number(h.totalPercent).toFixed(2)}%{h.isCurrent ? "" : " (superseded)"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
+        </Section>
 
-          {detail.commissions.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              Commission is generated when Accounts approves the Booking Request.
-            </p>
+        {/* v2.1 §15, §16 — the terms frozen with the request. */}
+        <Section title="Terms" icon={<Layers className="h-3.5 w-3.5" />}>
+          {row.commissionTerms ? (
+            <ul className="space-y-1.5 text-xs">
+              <li className="flex justify-between gap-3">
+                <span className="text-muted-foreground">Commission</span>
+                <span className="tabular-nums">
+                  {row.commissionTerms.direct ? `${rateLabel(row.commissionTerms.direct)}%` : "Disabled"}
+                </span>
+              </li>
+              <li className="flex justify-between gap-3">
+                <span className="text-muted-foreground">Loyalty Points</span>
+                <span className="tabular-nums">
+                  {row.commissionTerms.loyalty ? `${rateLabel(row.commissionTerms.loyalty)}%` : "Disabled"}
+                </span>
+              </li>
+              {row.royaltyTokens !== null && (
+                <li className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Royalty</span>
+                  <span className="tabular-nums">{row.royaltyTokens} points</span>
+                </li>
+              )}
+              <li className="flex justify-between gap-3">
+                <span className="text-muted-foreground">Settings</span>
+                <span>Version {row.commissionTerms.version}</span>
+              </li>
+            </ul>
           ) : (
+            <p className="text-xs text-muted-foreground">No commission settings were frozen with this request.</p>
+          )}
+        </Section>
+      </div>
+
+      {/* 6 Payments — the schedule, then every confirmed entry. Part payment is
+          allowed and there is no separate Partially Received status. */}
+      <Section
+        title="Payments"
+        icon={<Wallet className="h-3.5 w-3.5" />}
+        aside={<span className="text-[11px] text-muted-foreground tabular-nums">{Number(row.paymentReceivedPercent)}% received</span>}
+      >
+        {liveSchedule ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[34rem] text-xs">
+              <thead className="border-b border-border/60">
+                <tr>
+                  <th className={CTH}>#</th>
+                  <th className={CTH}>Due date</th>
+                  <th className={CTH}>Scheduled</th>
+                  <th className={CTH}>Received</th>
+                  <th className={CTH}>Remaining</th>
+                  <th className={CTH}>Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40">
+                {liveSchedule.instalments.map((i) => (
+                  <tr key={i.seq}>
+                    <td className={CTD}>{i.seq}</td>
+                    <td className={`${CTD} tabular-nums`}>{formatIst(i.dueDate)}</td>
+                    <td className={`${CTD} tabular-nums`}>{i.scheduled}%</td>
+                    <td className={`${CTD} tabular-nums`}>{i.received}%</td>
+                    <td className={`${CTD} tabular-nums`}>{i.remaining}%</td>
+                    <td className={CTD}>
+                      <Badge
+                        variant={i.status === "RECEIVED" ? "success" : i.status === "OVERDUE" ? "destructive" : "outline"}
+                      >
+                        {i.status.charAt(0) + i.status.slice(1).toLowerCase()}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            The schedule becomes live when Accounts approves the Booking Request.
+          </p>
+        )}
+
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Payment entries</p>
+          {detail.paymentEntries.length === 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">No payment confirmed yet.</p>
+          ) : (
+            <MaybeMore count={supersededEntries.length}>
+              <ul className="mt-2 divide-y divide-border/40 text-xs">
+                {[...detail.paymentEntries]
+                  .sort((a, b) => Number(a.status === "SUPERSEDED") - Number(b.status === "SUPERSEDED"))
+                  .map((e) => (
+                    <li
+                      key={e.id}
+                      className={`flex-wrap items-center justify-between gap-2 py-2 ${
+                        e.status === "SUPERSEDED" ? "hidden group-data-[open]/more:flex" : "flex"
+                      }`}
+                    >
+                      <span className={e.status === "SUPERSEDED" ? "text-muted-foreground line-through" : ""}>
+                        <span className="tabular-nums">{e.percent}%</span> · {e.reference}
+                        <span className="ml-2 text-[11px] text-muted-foreground">
+                          paid {formatIst(e.paidOn)} · entered {formatIst(e.recordedAt)} · {e.confirmedByRef}
+                        </span>
+                        {e.payerName && (
+                          <span className="ml-2 text-[11px] text-amber-800">
+                            paid by {e.payerName}
+                            {e.payerReference ? ` (${e.payerReference})` : ""}
+                          </span>
+                        )}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <Badge variant={e.status === "SUPERSEDED" ? "outline" : "success"}>
+                          {e.status === "SUPERSEDED" ? "Corrected" : "Confirmed"}
+                        </Badge>
+                        {e.status === "CONFIRMED" && permissions.correctPayment && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              onAction({ kind: "CORRECT", row, entryId: e.id, percent: e.percent, reference: e.reference })
+                            }
+                          >
+                            Correct
+                          </Button>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            </MaybeMore>
+          )}
+        </div>
+      </Section>
+
+      {/* 7 Commission — percentages only; the CRM stores no payout amount.
+          Eligibility and payment are separate statuses. */}
+      <Section title="Commission" icon={<Percent className="h-3.5 w-3.5" />}>
+        {/* CP §90 — non-cash rewards this sale created; no value attaches to them. */}
+        {detail.rewards.length > 0 && (
+          <ul className="mb-3 space-y-1 rounded-lg border border-border/60 p-2.5 text-xs">
+            {detail.rewards.map((r, i) => (
+              <li key={i} className="flex flex-wrap justify-between gap-2">
+                <span>
+                  {r.kind} · {r.member}
+                </span>
+                <span className="text-muted-foreground">
+                  {r.state} · {r.detail}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {commissions.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Commission is generated when Accounts approves the Booking Request.
+          </p>
+        ) : (
+          <MaybeMore count={supersededCommissions}>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[46rem] text-xs">
-                <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <thead className="border-b border-border/60">
                   <tr>
-                    <th className="w-[8rem] py-1.5 pr-3">Type</th>
-                    <th className="py-1.5 pr-3">Beneficiary</th>
-                    <th className="w-[4.5rem] py-1.5 pr-3 text-right">Rate</th>
-                    <th className="w-[6rem] py-1.5 pr-3 text-right">Payment</th>
-                    <th className="w-[10rem] py-1.5 pr-3">Eligibility</th>
-                    <th className="w-[12rem] py-1.5 pr-3">Payment</th>
-                    <th className="w-[7rem] py-1.5 text-right">Action</th>
+                    <th className={CTH}>Type</th>
+                    <th className={CTH}>Beneficiary</th>
+                    <th className={CTH}>Rate</th>
+                    <th className={CTH}>Ready at</th>
+                    <th className={CTH}>Eligibility</th>
+                    <th className={CTH}>Payment</th>
+                    <th className={CTH}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {detail.commissions.map((c) => (
+                  {commissions.map((c) => (
                     <tr
                       key={c.id}
-                      className={`border-b border-border/60 align-middle leading-tight last:border-0 [&>td]:py-1.5 [&>td]:pr-3 ${
-                        c.isCurrent ? "" : "text-muted-foreground"
+                      className={`border-b border-border/40 align-middle leading-tight last:border-0 [&>td]:px-2 [&>td]:py-2 [&>td]:text-center ${
+                        c.isCurrent ? "" : "hidden text-muted-foreground group-data-[open]/more:table-row"
                       }`}
                     >
                       <td>
@@ -2017,8 +2062,8 @@ function BookingDetailPanel({
                       </td>
                       {/* The rate carries its unit: "3.00" beside a milestone
                           percentage read as two halves of one number. */}
-                      <td className="text-right tabular-nums">{c.percent}%</td>
-                      <td className="text-right tabular-nums">{c.milestonePercent}%</td>
+                      <td className="tabular-nums">{c.percent}%</td>
+                      <td className="tabular-nums">{c.milestonePercent}%</td>
                       <td>
                         <Badge
                           variant={
@@ -2084,7 +2129,7 @@ function BookingDetailPanel({
                           </span>
                         ))}
                       </td>
-                      <td className="whitespace-nowrap text-right">
+                      <td className="whitespace-nowrap">
                         {permissions.approvePaidEarly && c.isCurrent && c.holdReason === "OLD_RECOVERY_PENDING" && (
                           <Button
                             size="xs"
@@ -2272,24 +2317,11 @@ function BookingDetailPanel({
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
-      )}
+          </MaybeMore>
+        )}
+      </Section>
 
-      {tab === "HISTORY" && (
-        <ul className="space-y-2 text-xs">
-          {detail.events.map((e, index) => (
-            <li key={index} className="border-l border-border/60 pl-3">
-              <p className="font-medium">{e.action.replaceAll("_", " ")}</p>
-              <p className="text-[11px] text-muted-foreground">
-                {formatIst(e.at)} · {e.actorRef}
-                {e.fromStatus && e.toStatus ? ` · ${e.fromStatus} → ${e.toStatus}` : ""}
-              </p>
-              {e.reason && <p className="text-[11px] text-muted-foreground">{e.reason}</p>}
-            </li>
-          ))}
-        </ul>
-      )}
+      <CompletionSection row={row} detail={detail} permissions={permissions} onAction={onAction} />
 
       {/* People are needed for the shares dialog rendered by the parent. */}
       <span className="hidden">{people.length}</span>
@@ -2321,7 +2353,7 @@ function ActionDialog({
     <Modal title={title} onClose={onClose}>
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber} · {row.primaryCustomer}
+          {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber} · {row.primaryCustomer}
         </p>
         <p className="mt-1 text-muted-foreground">{consequence}</p>
       </div>
@@ -2508,7 +2540,7 @@ export function ReviewDialog({
 
   return (
     <Modal
-      title={`Verify — Booking Payment ${row.requestNo}`}
+      title={`Verify — Booking Payment · ${row.project} ${row.plotNumber}`}
       onClose={onClose}
       wide
     >
@@ -3094,7 +3126,7 @@ function ScheduleDialog({
 
   return (
     <Modal
-      title={`Revise Remaining Payment Schedule — ${row.bookingNumber ?? row.requestNo}`}
+      title={`Revise Remaining Payment Schedule — ${row.bookingNumber ?? "Booking Request"}`}
       description="Received portions stay locked. Only the unpaid percentage may be split, combined or moved, and Accounts approves the revision."
       onClose={onClose}
       wide
@@ -3159,7 +3191,7 @@ function SharesDialog({
 
   return (
     <Modal
-      title={`Change ownership shares — ${row.bookingNumber ?? row.requestNo}`}
+      title={`Change ownership shares — ${row.bookingNumber ?? "Booking Request"}`}
       description="Old and new shares both stay in History. The Primary Customer cannot be replaced here — that needs Accounts approval."
       onClose={onClose}
       wide
@@ -3418,13 +3450,9 @@ function CompletionSection({
   if (!atCompletion && !delivered) return null;
 
   return (
-    <section>
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Allotment / Registry
-      </h3>
-
+    <Section title="Allotment / Registry" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
       {(atCompletion || delivered) && (
-        <div className="mt-2 space-y-3 text-xs">
+        <div className="space-y-3 text-xs">
           <div>
             <p className="font-medium text-foreground">Final buyer details</p>
             {finalBuyers.length === 0 ? (
@@ -3510,7 +3538,7 @@ function CompletionSection({
           </div>
         </div>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -3582,7 +3610,7 @@ export function FinalBuyersDialog({
     <Modal title="Final buyer details" wide onClose={onClose}>
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber}
+          {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber}
         </p>
         <p className="mt-1 text-muted-foreground">
           Aadhaar comes from the Person record and must already be recorded. A single final buyer may
@@ -3809,7 +3837,7 @@ export function DeliverDialog({
     >
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber}
+          {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber}
         </p>
         <p className="mt-1 text-muted-foreground">
           One buyer owns 100%. Add a Customer to split it, and the shares must then total exactly
@@ -4056,7 +4084,7 @@ export function CompletionDialog({
     >
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber}
+          {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber}
         </p>
         <p className="mt-1 text-muted-foreground">
           Completing the route sets the Booking and Plot to Delivered once, and Papers Legally
@@ -4185,7 +4213,7 @@ function CancellationDecisionDialog({
     >
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber} · {row.primaryCustomer}
+          {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber} · {row.primaryCustomer}
         </p>
         <p className="mt-1 text-muted-foreground">
           {approve
@@ -4287,7 +4315,7 @@ function ChangePlotDialog({
     >
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber}
+          {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber}
         </p>
         <p className="mt-1 text-muted-foreground">
           The replacement Plot is reserved with its own PLC snapshot. Accounts then records the
@@ -4368,7 +4396,7 @@ function ChangePlotDecisionDialog({
     >
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
-          {row.bookingNumber ?? row.requestNo} · {row.project} {row.plotNumber}
+          {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber}
         </p>
         <p className="mt-1 text-muted-foreground">
           {approve

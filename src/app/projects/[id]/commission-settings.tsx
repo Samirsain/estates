@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { Field, Modal } from "@/components/ui/modal";
 import { createCommissionVersionAction, type ActionResult, type CommissionDraftInput } from "../actions";
 import { RemarkSelect } from "@/components/ui/remark-select";
 
@@ -80,59 +80,57 @@ const direct = (v: CommissionVersionView) =>
 const loyalty = (v: CommissionVersionView) =>
   v.loyaltyEnabled && v.loyaltyPercent ? `${rateLabel(v.loyaltyPercent)}%` : "Disabled";
 
-/** CP §8 — one heading per section, numbered the same in the card and the form. */
-function Section({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+/** The Rewards rule in the words the Member profile uses. */
+const rewards = (v: CommissionVersionView) => (v.trip ? `${v.trip.target} sales = 1 Reward` : "Disabled");
+
+/** One group of the version's terms: a quiet heading over label-left, value-right rows. */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="space-y-1">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {n}. {title}
-      </h3>
-      <dl className="space-y-1 text-xs">{children}</dl>
+    <section>
+      <h3 className="text-xs font-semibold text-foreground">{title}</h3>
+      <dl className="mt-1">{children}</dl>
     </section>
   );
 }
 
+/** The same row as the facts in the card, so the box and its Details read alike. */
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex justify-between gap-3">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="text-right">{children}</dd>
+    <div className="flex items-baseline justify-between gap-4 border-b border-border/40 py-1.5 text-xs last:border-0">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="text-right font-medium tabular-nums text-foreground">{children}</dd>
     </div>
   );
 }
 
-const yesNo = (b: boolean) => (b ? "Yes" : "No");
-
 function Terms({ v, plotNo }: { v: CommissionVersionView; plotNo: (id: string) => string }) {
-  const decided = v.status === "REJECTED" ? "Rejected by" : "Approved by";
-  // A version MD created is approved by that act — one line, not two.
-  const selfApproved = v.decidedByRef === v.preparedByRef;
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <Section n={1} title="Commission">
-        <Row label="Commission Enabled">{yesNo(v.directEnabled)}</Row>
-        <Row label="Commission Rate %">
-          <span className="font-medium">{direct(v)}</span>
-        </Row>
+    <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+      <Section title="Commission">
+        <Row label="Rate">{direct(v)}</Row>
         {v.directEnabled && <Row label="Payment">25% Payment Received · self-purchase 100%</Row>}
       </Section>
-      <Section n={2} title="Loyalty Points">
-        <Row label="Loyalty Points Enabled">{yesNo(v.loyaltyEnabled)}</Row>
-        <Row label="Loyalty Points Rate %">
-          <span className="font-medium">{loyalty(v)}</span>
-        </Row>
+      <Section title="Loyalty Points">
+        <Row label="Rate">{loyalty(v)}</Row>
         {v.loyaltyEnabled && <Row label="Payment">100% Payment Received</Row>}
         {v.loyaltyExceptionReason && <Row label="MD commercial exception">{v.loyaltyExceptionReason}</Row>}
       </Section>
-      <Section n={3} title="Rewards">
-        <Row label="Rewards Enabled">{yesNo(v.trip !== null)}</Row>
-        {v.trip && (
+      <Section title="Royalty Points">
+        <Row label="Points per qualifying Royalty">
+          {v.royaltyTokensPerAward != null
+            ? `${v.royaltyTokensPerAward} points`
+            : "Not set — Booking Requests are refused until a version sets it"}
+        </Row>
+        <Row label="Earned by">The Royalty Linked Member, once per Customer</Row>
+      </Section>
+      <Section title="Rewards">
+        {v.trip ? (
           <>
             <Row label="Target">{v.trip.target}</Row>
             <Row label="Minimum Own-Sale Credits">{v.trip.minOwn}</Row>
             <Row label="Maximum Reference Credits">{v.trip.maxRef}</Row>
             <Row label="Excluded Plots">
-              {v.trip.excludedPlotIds.length ? v.trip.excludedPlotIds.map((id) => plotNo(id)).join(", ") : "None — every Plot eligible"}
+              {v.trip.excludedPlotIds.length ? v.trip.excludedPlotIds.map((id) => plotNo(id)).join(", ") : "None"}
             </Row>
             {v.trip.sharedPools.length > 0 && (
               <Row label="Shared credit pools">
@@ -140,53 +138,16 @@ function Terms({ v, plotNo }: { v: CommissionVersionView; plotNo: (id: string) =
               </Row>
             )}
           </>
+        ) : (
+          <Row label="Status">Disabled</Row>
         )}
-      </Section>
-      <Section n={4} title="Royalty Points">
-        <Row label="Points per qualifying Royalty">
-          <span className="font-medium">
-            {v.royaltyTokensPerAward ?? "Not set — Booking Requests are refused until a version sets it"}
-          </span>
-        </Row>
-        <Row label="Earned by">The Royalty Linked Member, once per Customer</Row>
-      </Section>
-      <Section n={5} title="Rewards References">
-        {v.trip && (
-          <>
-            <Row label="Rewards Code">{v.trip.code}</Row>
-            <Row label="Rewards Version">{v.trip.versionRef}</Row>
-            <Row label="Terms Version">{v.trip.termsRef}</Row>
-            <Row label="Cut-off">{v.trip.cutOffAt ? formatIst(v.trip.cutOffAt) : "—"}</Row>
-            <Row label="Final Wind-down">{v.trip.windDownAt ? formatIst(v.trip.windDownAt) : "—"}</Row>
-          </>
-        )}
-        {!v.trip && <Row label="Rewards">Disabled</Row>}
-      </Section>
-      <Section n={6} title="Economics Review">
-        <Row label="Economics Reviewed">
-          {v.economicsReviewedAt
-            ? `Yes · ${v.economicsReviewedByRef ?? ""} · ${formatIst(v.economicsReviewedAt)}`
-            : v.trip
-              ? "No"
-              : "Not needed without Rewards"}
-        </Row>
-      </Section>
-      <Section n={7} title="Version">
-        <Row label="Status">{STATUS[v.status].label}</Row>
-        <Row label={selfApproved ? "Created and approved by" : "Prepared by"}>{v.preparedByRef}</Row>
-        {v.decidedByRef && v.decidedAt && !selfApproved && (
-          <Row label={decided}>
-            {v.decidedByRef} · {formatIst(v.decidedAt)}
-          </Row>
-        )}
-        <Row label="Effective From">{v.effectiveFrom ? formatIst(v.effectiveFrom) : "—"}</Row>
-        {v.effectiveTo && <Row label="Effective To">{formatIst(v.effectiveTo)}</Row>}
-        <Row label="Reason">{v.reason}</Row>
-        {v.decisionNote && v.decisionNote !== v.reason && <Row label="MD note">{v.decisionNote}</Row>}
       </Section>
     </div>
   );
 }
+
+/** The event Update → Edit commission sends to open the new-version form. */
+export const OPEN_COMMISSION_FORM = "commission:new-version";
 
 export default function CommissionSettings({
   projectId,
@@ -204,12 +165,21 @@ export default function CommissionSettings({
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
   const [editing, setEditing] = React.useState(false);
+  const [showAll, setShowAll] = React.useState(false);
+
 
   const active = versions.find((v) => v.status === "ACTIVE") ?? null;
   const open =
     versions.find((v) => v.status === "DRAFT" || v.status === "PENDING_APPROVAL" || v.status === "APPROVED") ?? null;
   const history = versions.filter((v) => v !== active && v !== open);
   const isMd = role === "MD";
+  // Update → Edit commission, at the top of the page, opens this form.
+  React.useEffect(() => {
+    if (!isMd) return;
+    const open = () => setEditing(true);
+    window.addEventListener(OPEN_COMMISSION_FORM, open);
+    return () => window.removeEventListener(OPEN_COMMISSION_FORM, open);
+  }, [isMd]);
 
   async function run(action: () => Promise<ActionResult>) {
     setBusy(true);
@@ -222,79 +192,117 @@ export default function CommissionSettings({
     }
   }
 
+  // One of three boxes beside Inventory and the PLC (owner, 28 Oct 2026): the
+  // terms in force as rows, the way the PLC box reads; every section of every
+  // version, and the history, open under Details.
+  const fact = (label: string, value: React.ReactNode) => (
+    <div className="flex items-baseline justify-between gap-4 border-b border-border/40 py-1.5 last:border-0">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="text-right text-xs font-medium tabular-nums text-foreground">{value}</dd>
+    </div>
+  );
+
   return (
-    <Card className="space-y-3 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold">Rewards settings</h2>
-          <p className="text-xs text-muted-foreground">
-            Applicable Commission is Project-specific and disclosed before the relevant Booking.
-          </p>
+    <Card className="p-3">
+      <section className="space-y-2">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-xs font-semibold text-foreground">Commission and Rewards</h2>
+          {(active || open || history.length > 0) && (
+            <button type="button" onClick={() => setShowAll(true)} className="text-xs text-primary hover:underline">
+              Details
+            </button>
+          )}
         </div>
-        {isMd && (
-          <Button size="xs" variant="outline" onClick={() => setEditing(true)}>
-            New version
-          </Button>
+
+        {notice && (
+          <p className={`text-xs ${notice.ok ? "text-emerald-700" : "text-red-700"}`}>
+            {notice.ok ? notice.message : notice.error}
+          </p>
         )}
-      </div>
 
-      {notice && (
-        <p className={`text-xs ${notice.ok ? "text-emerald-700" : "text-red-700"}`}>
-          {notice.ok ? notice.message : notice.error}
-        </p>
-      )}
+        {active ? (
+          <dl>
+            {fact("Commission", direct(active))}
+            {fact("Loyalty Points", loyalty(active))}
+            {fact("Royalty", `${active.royaltyTokensPerAward ?? "—"} points`)}
+            {fact("Rewards", rewards(active))}
+          </dl>
+        ) : (
+          <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-800">
+            No settings yet. Booking Requests on this Project cannot be submitted until MD creates a version.
+          </p>
+        )}
 
-      {active ? (
-        <div className="space-y-2 rounded-lg border border-border/60 p-2.5">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="font-semibold">Version {active.version}</span>
-            <Badge variant="success">Active</Badge>
-            {active.effectiveFrom && (
-              <span className="text-muted-foreground">since {formatIst(active.effectiveFrom)}</span>
+        {open && (
+          <p className="text-[11px] text-amber-800">
+            Version {open.version} · {STATUS[open.status].label}
+            {open.effectiveFrom ? ` · takes effect ${formatIst(open.effectiveFrom)}` : ""}
+          </p>
+        )}
+      </section>
+
+      {showAll && (
+        <Modal
+          title="Commission and Rewards"
+          description="Applicable Commission is Project-specific and disclosed before the relevant Booking."
+          wide
+          onClose={() => setShowAll(false)}
+        >
+          <div className="space-y-3">
+            {active ? (
+              <div className="space-y-3 rounded-lg border border-border/60 p-3">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-semibold">Version {active.version}</span>
+                  <Badge variant="success">Active</Badge>
+                  {active.effectiveFrom && (
+                    <span className="text-muted-foreground">since {formatIst(active.effectiveFrom)}</span>
+                  )}
+                </div>
+                <Terms v={active} plotNo={plotNo} />
+              </div>
+            ) : (
+              <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-800">
+                No settings yet. Booking Requests on this Project cannot be submitted until MD creates a version.
+              </p>
+            )}
+
+            {open && (
+              <div className="space-y-3 rounded-lg border border-dashed border-border p-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-semibold">Version {open.version}</span>
+                  <Badge variant={STATUS[open.status].variant}>{STATUS[open.status].label}</Badge>
+                  {open.effectiveFrom && <span className="text-muted-foreground">takes effect {formatIst(open.effectiveFrom)}</span>}
+                </div>
+                <Terms v={open} plotNo={plotNo} />
+              </div>
+            )}
+
+            {history.length > 0 && (
+              <details className="text-xs">
+                <summary className="cursor-pointer text-muted-foreground">Version History — read-only ({history.length})</summary>
+                <ul className="mt-1.5 space-y-1.5">
+                  {history.map((v) => (
+                    <li key={v.id}>
+                      <details className="rounded-lg border border-border/40 p-2">
+                        <summary className="flex cursor-pointer flex-wrap gap-x-2">
+                          <span className="font-medium">Version {v.version}</span>
+                          <Badge variant={STATUS[v.status].variant}>{STATUS[v.status].label}</Badge>
+                          <span className="text-muted-foreground">
+                            Commission {direct(v)} · Loyalty Points {loyalty(v)} · Royalty {v.royaltyTokensPerAward ?? "—"} points ·
+                            Rewards {rewards(v)}
+                          </span>
+                        </summary>
+                        <div className="mt-2">
+                          <Terms v={v} plotNo={plotNo} />
+                        </div>
+                      </details>
+                    </li>
+                  ))}
+                </ul>
+              </details>
             )}
           </div>
-          <Terms v={active} plotNo={plotNo} />
-        </div>
-      ) : (
-        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-800">
-          No settings yet. Booking Requests on this Project cannot be submitted until MD creates a version.
-        </p>
-      )}
-
-      {open && (
-        <div className="space-y-2 rounded-lg border border-dashed border-border p-2.5">
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="font-semibold">Version {open.version}</span>
-            <Badge variant={STATUS[open.status].variant}>{STATUS[open.status].label}</Badge>
-            {open.effectiveFrom && <span className="text-muted-foreground">takes effect {formatIst(open.effectiveFrom)}</span>}
-          </div>
-          <Terms v={open} plotNo={plotNo} />
-        </div>
-      )}
-
-      {history.length > 0 && (
-        <details className="text-xs">
-          <summary className="cursor-pointer text-muted-foreground">Version History — read-only ({history.length})</summary>
-          <ul className="mt-1.5 space-y-1.5">
-            {history.map((v) => (
-              <li key={v.id}>
-                <details className="rounded-lg border border-border/40 p-2">
-                  <summary className="flex cursor-pointer flex-wrap gap-x-2">
-                    <span className="font-medium">Version {v.version}</span>
-                    <Badge variant={STATUS[v.status].variant}>{STATUS[v.status].label}</Badge>
-                    <span className="text-muted-foreground">
-                      Commission {direct(v)} · Loyalty Points {loyalty(v)} · Rewards {v.trip ? v.trip.code : "Disabled"} · Royalty{" "}
-                      {v.royaltyTokensPerAward ?? "—"} points
-                    </span>
-                  </summary>
-                  <div className="mt-2">
-                    <Terms v={v} plotNo={plotNo} />
-                  </div>
-                </details>
-              </li>
-            ))}
-          </ul>
-        </details>
+        </Modal>
       )}
 
       {editing && (
@@ -307,23 +315,8 @@ export default function CommissionSettings({
           onSubmit={(input) => run(() => createCommissionVersionAction(projectId, input, newKey()))}
         />
       )}
-
     </Card>
   );
-}
-
-/** "A-10B=A-10A" lines → shared pools, by Plot Number. */
-function parsePools(text: string, plots: PlotOption[]): { pools: { plotId: string; parentPlotId: string }[]; problem: string | null } {
-  const byNo = new Map(plots.map((p) => [p.plotNumber.trim().toUpperCase(), p.id]));
-  const pools: { plotId: string; parentPlotId: string }[] = [];
-  for (const line of text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
-    const [child, parent] = line.split("=").map((x) => x?.trim().toUpperCase());
-    const plotId = child ? byNo.get(child) : undefined;
-    const parentPlotId = parent ? byNo.get(parent) : undefined;
-    if (!plotId || !parentPlotId) return { pools, problem: `"${line}" — use CHILD=PARENT with Plot Numbers of this Project.` };
-    pools.push({ plotId, parentPlotId });
-  }
-  return { pools, problem: null };
 }
 
 /**
@@ -342,18 +335,7 @@ export function useCommercialRewardsDraft(
   const [target, setTarget] = React.useState(String(t?.target ?? ""));
   const [minOwn, setMinOwn] = React.useState(String(t?.minOwn ?? ""));
   const [maxRef, setMaxRef] = React.useState(String(t?.maxRef ?? ""));
-  const [code, setCode] = React.useState(t?.code ?? "");
-  const [versionRef, setVersionRef] = React.useState(t?.versionRef ?? "");
-  const [termsRef, setTermsRef] = React.useState(t?.termsRef ?? "");
-  const [cutOff, setCutOff] = React.useState(t?.cutOffAt ? toLocalInput(t.cutOffAt) : "");
-  const [windDown, setWindDown] = React.useState(t?.windDownAt ? toLocalInput(t.windDownAt) : "");
   const [excluded, setExcluded] = React.useState<string[]>(t?.excludedPlotIds ?? []);
-  const [poolText, setPoolText] = React.useState(
-    (t?.sharedPools ?? [])
-      .map((sp) => `${plots.find((p) => p.id === sp.plotId)?.plotNumber}=${plots.find((p) => p.id === sp.parentPlotId)?.plotNumber}`)
-      .join("\n")
-  );
-  const pools = parsePools(poolText, plots);
   const [directEnabled, setDirectEnabled] = React.useState(start?.directEnabled ?? true);
   const [directPercent, setDirectPercent] = React.useState(
     start?.directPercent ? rateLabel(start.directPercent) : "3"
@@ -362,23 +344,30 @@ export function useCommercialRewardsDraft(
   const [loyaltyPercent, setLoyaltyPercent] = React.useState(
     start?.loyaltyPercent ? rateLabel(start.loyaltyPercent) : "1"
   );
-  const [exception, setException] = React.useState(start?.loyaltyExceptionReason ?? "");
   const [royaltyTokens, setRoyaltyTokens] = React.useState(String(start?.royaltyTokensPerAward ?? ""));
-  const [reason, setReason] = React.useState(defaultReason ?? "");
-  // datetime-local wants "YYYY-MM-DDTHH:mm" in local time; empty means "now".
+  // Reason and Effective From sit under Rewards (owner, 29 Oct 2026). Without
+  // Rewards the audit still gets a reason, and the version takes effect when saved.
+  const [reasonText, setReasonText] = React.useState(defaultReason ?? "");
+  // A date only, "YYYY-MM-DD": empty or today takes effect now, a later date
+  // at the start of that day (local time).
   const [effectiveFrom, setEffectiveFrom] = React.useState("");
-  // CP §7.4 — MD confirms the Rewards economics were reviewed outside the CRM.
-  const [economicsReviewed, setEconomicsReviewed] = React.useState(false);
+  const reason = tripEnabled ? reasonText : defaultReason ?? "Commission and Rewards updated";
+  const startsAt = tripEnabled && effectiveFrom ? new Date(`${effectiveFrom}T00:00`) : null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   const terms = {
     directEnabled,
     directPercent: directEnabled ? directPercent : null,
     loyaltyEnabled,
     loyaltyPercent: loyaltyEnabled ? loyaltyPercent : null,
-    loyaltyExceptionReason: exception.trim() || null,
+    // CP §7.3 — the MD exception field is off the form (owner, 29 Oct 2026);
+    // the version's reason is the written reason.
+    loyaltyExceptionReason: reason.trim() || null,
   };
   const showException = needsLoyaltyException(terms);
-  const check = validateCommissionTerms(terms);
+  // The rates only; the exception's written reason is the Reason, checked below.
+  const check = validateCommissionTerms({ ...terms, loyaltyExceptionReason: "Reason" });
   const whole = (x: string) => (/^\d+$/.test(x.trim()) ? Number(x) : NaN);
   const tripProblem = !tripEnabled
     ? null
@@ -388,143 +377,127 @@ export function useCommercialRewardsDraft(
         ? "Minimum Own-Sale Credits must be from 0 to the Total Target."
         : !(whole(maxRef) >= 0 && whole(maxRef) <= whole(target))
           ? "Maximum Reference Credits must be from 0 to the Total Target."
-          : !code.trim() || !versionRef.trim() || !termsRef.trim()
-            ? "Enter the Rewards code, version and Terms version."
-            : pools.problem ?? (economicsReviewed ? null : "Confirm the Rewards economics were reviewed.");
+          : null;
   const tokenCheck = validateTokenQuantity("Royalty points per qualifying purchase", whole(royaltyTokens));
+  // In the order the fields read, top to bottom.
   const problem = !check.ok
     ? check.reason
     : !tokenCheck.ok
       ? tokenCheck.reason
       : tripProblem
-      ? tripProblem
-      : !reason.trim()
-      ? "Write the reason for this version."
-      : effectiveFrom && new Date(effectiveFrom) <= new Date()
-        ? "Effective from must be in the future, or left empty to take effect now."
-        : null;
+        ? tripProblem
+        : startsAt && startsAt < today
+          ? "Effective From cannot be in the past. Leave it empty to take effect now."
+          : !reason.trim()
+            ? "Write the reason for this version."
+            : null;
 
   const value: CommissionDraftInput = {
     ...terms,
     loyaltyExceptionReason: showException ? terms.loyaltyExceptionReason : null,
     royaltyTokensPerAward: whole(royaltyTokens),
     reason,
-    effectiveFrom: effectiveFrom ? new Date(effectiveFrom).toISOString() : null,
-    economicsReviewed: tripEnabled && economicsReviewed,
+    effectiveFrom: startsAt && startsAt > today ? startsAt.toISOString() : null,
+    // CP §7.4 — the checkbox is off the form (owner, 29 Oct 2026); MD saving
+    // Rewards is the confirmation the economics were reviewed.
+    economicsReviewed: tripEnabled,
     trip: tripEnabled
       ? {
           tripTotalTarget: Number(target),
           tripMinOwnCredits: Number(minOwn),
           tripMaxReferenceCredits: Number(maxRef),
-          tripProgrammeCode: code,
-          tripProgrammeVersionRef: versionRef,
-          tripTermsVersionRef: termsRef,
-          tripCutOffAt: cutOff ? new Date(cutOff).toISOString() : null,
-          tripWindDownAt: windDown ? new Date(windDown).toISOString() : null,
+          // Off the form (owner, 29 Oct 2026): kept from the version this one
+          // starts from, so the Rewards keep their identity across versions.
+          tripProgrammeCode: t?.code ?? "RWD",
+          tripProgrammeVersionRef: t?.versionRef ?? "RWD v1",
+          tripTermsVersionRef: t?.termsRef ?? "RWD-TERMS-1",
+          tripCutOffAt: t?.cutOffAt ?? null,
+          tripWindDownAt: t?.windDownAt ?? null,
           excludedPlotIds: excluded,
-          sharedPools: pools.pools,
+          sharedPools: t?.sharedPools ?? [],
         }
       : null,
   };
 
-  // One flat grid in the same Field-over-input style as the Project form it
-  // sits under, so the two read as one form.
+  // The three rates on one row, then Rewards as its own group under a rule.
+  // Rows align on the inputs, so a label that wraps never shifts its box.
   const fields = (
-    <div className="grid gap-3 md:grid-cols-2">
-      <RateField
-        label="Commission"
-        max={DIRECT_MAX_PERCENT}
-        enabled={directEnabled}
-        value={directPercent}
-        onEnabled={setDirectEnabled}
-        onValue={setDirectPercent}
-      />
-      <RateField
-        label="Loyalty Points"
-        max={LOYALTY_MAX_PERCENT}
-        enabled={loyaltyEnabled}
-        value={loyaltyPercent}
-        onEnabled={setLoyaltyEnabled}
-        onValue={setLoyaltyPercent}
-      />
-      <Field label="Royalty points per qualifying purchase">
-        <Input
-          inputMode="numeric"
-          placeholder="e.g. 10"
-          value={royaltyTokens}
-          onChange={(e) => setRoyaltyTokens(e.target.value)}
+    <div className="space-y-3">
+      <div className="grid items-end gap-3 sm:grid-cols-3">
+        <RateField
+          label="Commission"
+          max={DIRECT_MAX_PERCENT}
+          enabled={directEnabled}
+          value={directPercent}
+          onEnabled={setDirectEnabled}
+          onValue={setDirectPercent}
         />
-      </Field>
-      {showException && (
-        <div className="md:col-span-2">
-          <Field label="MD commercial exception — why Loyalty Points are not lower than Commission (CP §7.3)">
-            <RemarkSelect presets="mdException" value={exception} onChange={setException} required />
-          </Field>
-        </div>
-      )}
-      <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground md:col-span-2">
-        <input type="checkbox" checked={tripEnabled} onChange={(e) => setTripEnabled(e.target.checked)} />
-        Rewards
-      </label>
-      {tripEnabled && (
-        <>
-          <Field label="Target">
-            <Input inputMode="numeric" value={target} onChange={(e) => setTarget(e.target.value)} />
-          </Field>
-          <Field label="Minimum Own-Sale Credits">
-            <Input inputMode="numeric" value={minOwn} onChange={(e) => setMinOwn(e.target.value)} />
-          </Field>
-          <Field label="Maximum Reference Credits">
-            <Input inputMode="numeric" value={maxRef} onChange={(e) => setMaxRef(e.target.value)} />
-          </Field>
-          <Field label="Rewards Code">
-            <Input placeholder="RWD-A" value={code} onChange={(e) => setCode(e.target.value)} />
-          </Field>
-          <Field label="Rewards Version">
-            <Input placeholder="RWD-A-2026-01" value={versionRef} onChange={(e) => setVersionRef(e.target.value)} />
-          </Field>
-          <Field label="Terms Version">
-            <Input placeholder="RWD-TERMS-1.0" value={termsRef} onChange={(e) => setTermsRef(e.target.value)} />
-          </Field>
-          <Field label="Cut-off (optional)">
-            <Input type="datetime-local" value={cutOff} onChange={(e) => setCutOff(e.target.value)} />
-          </Field>
-          <Field label="Final Wind-down (optional)">
-            <Input type="datetime-local" value={windDown} onChange={(e) => setWindDown(e.target.value)} />
-          </Field>
-          {plots.length > 0 && (
-            <>
-              <Field label="Excluded Plots (Ctrl to pick several)">
-                <select
-                  multiple
-                  className={`${inputClass} h-24 py-1`}
-                  value={excluded}
-                  onChange={(e) => setExcluded([...e.target.selectedOptions].map((o) => o.value))}
-                >
+        <RateField
+          label="Loyalty Points"
+          max={LOYALTY_MAX_PERCENT}
+          enabled={loyaltyEnabled}
+          value={loyaltyPercent}
+          onEnabled={setLoyaltyEnabled}
+          onValue={setLoyaltyPercent}
+        />
+        <Field label="Royalty points per qualifying purchase">
+          <Input
+            inputMode="numeric"
+            placeholder="e.g. 10"
+            value={royaltyTokens}
+            onChange={(e) => setRoyaltyTokens(e.target.value)}
+          />
+        </Field>
+      </div>
+
+      <div className="space-y-3 border-t border-border/60 pt-3">
+        <label className="flex w-fit items-center gap-2 text-xs font-semibold text-foreground">
+          <input type="checkbox" checked={tripEnabled} onChange={(e) => setTripEnabled(e.target.checked)} />
+          Rewards
+        </label>
+        {tripEnabled && (
+          <>
+            <div className="grid items-end gap-3 sm:grid-cols-3">
+              <Field label="Target">
+                <Input inputMode="numeric" value={target} onChange={(e) => setTarget(e.target.value)} />
+              </Field>
+              <Field label="Minimum Own-Sale Credits">
+                <Input inputMode="numeric" value={minOwn} onChange={(e) => setMinOwn(e.target.value)} />
+              </Field>
+              <Field label="Maximum Reference Credits">
+                <Input inputMode="numeric" value={maxRef} onChange={(e) => setMaxRef(e.target.value)} />
+              </Field>
+            </div>
+            {plots.length > 0 && (
+              <fieldset className="space-y-1">
+                <legend className="text-xs font-medium text-muted-foreground">Excluded Plots</legend>
+                <div className="flex max-h-28 flex-wrap gap-x-4 gap-y-2 overflow-y-auto rounded-md border border-input px-3 py-2.5">
                   {plots.map((p) => (
-                    <option key={p.id} value={p.id}>
+                    <label key={p.id} className="flex items-center gap-1.5 text-xs tabular-nums text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={excluded.includes(p.id)}
+                        onChange={(e) =>
+                          setExcluded(e.target.checked ? [...excluded, p.id] : excluded.filter((id) => id !== p.id))
+                        }
+                      />
                       {p.plotNumber}
-                    </option>
+                    </label>
                   ))}
-                </select>
+                </div>
+              </fieldset>
+            )}
+            <div className="grid items-end gap-3 sm:grid-cols-2">
+              <Field label="Effective From">
+                <Input type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />
               </Field>
-              <Field label="Shared credit pools — CHILD=PARENT per line">
-                <textarea className={`${inputClass} h-24 py-2`} value={poolText} onChange={(e) => setPoolText(e.target.value)} />
+              <Field label="Reason">
+                <RemarkSelect presets="commissionSettings" value={reasonText} onChange={setReasonText} required />
               </Field>
-            </>
-          )}
-          <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground md:col-span-2">
-            <input type="checkbox" checked={economicsReviewed} onChange={(e) => setEconomicsReviewed(e.target.checked)} />
-            Rewards economics reviewed (Reward cost and Own + Reference exposure against margin)
-          </label>
-        </>
-      )}
-      <Field label="Effective From (optional)">
-        <Input type="datetime-local" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />
-      </Field>
-      <Field label="Reason">
-        <RemarkSelect presets="commissionSettings" value={reason} onChange={setReason} required />
-      </Field>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
   return { fields, value, problem };
@@ -547,23 +520,22 @@ function VersionForm({
   onSubmit: (input: CommissionDraftInput) => void;
 }) {
   const draft = useCommercialRewardsDraft(start, plots);
+  // The problem shows once Save is pressed, not while the form is being filled.
+  const [tried, setTried] = React.useState(false);
   return (
     <Modal
-      title="New Rewards version"
-      description={
-        "Saved and approved at once. It becomes Active now, or at its Effective from. Earlier versions are never edited." +
-        (replacing ? ` Saving replaces Version ${replacing}, which has not taken effect yet.` : "")
-      }
+      title="Commission and Rewards"
+      description={replacing ? `Saving replaces Version ${replacing}, which has not taken effect yet.` : undefined}
       onClose={onClose}
     >
       <div className="space-y-3">
         {draft.fields}
-        {draft.problem && <p className="text-xs text-red-700">{draft.problem}</p>}
+        {tried && draft.problem && <p className="text-xs text-red-700">{draft.problem}</p>}
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" disabled={busy || draft.problem !== null} onClick={() => onSubmit(draft.value)}>
+          <Button size="sm" disabled={busy} onClick={() => (draft.problem ? setTried(true) : onSubmit(draft.value))}>
             Save
           </Button>
         </div>
@@ -604,10 +576,4 @@ function RateField({
       />
     </div>
   );
-}
-
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

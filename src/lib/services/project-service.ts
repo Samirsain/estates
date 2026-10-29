@@ -753,7 +753,7 @@ export async function listProjects() {
   // The breakdown is counted in the database rather than by loading every Plot:
   // a Project with five hundred Plots should not cost five hundred rows to say
   // how many of each type it holds.
-  const [projects, byType] = await Promise.all([
+  const [projects, byType, roads] = await Promise.all([
     db.project.findMany({
       include: {
         plcRuleVersions: {
@@ -765,6 +765,12 @@ export async function listProjects() {
       orderBy: { projectCode: "asc" },
     }),
     db.plot.groupBy({ by: ["projectId", "plotType"], _count: { _all: true } }),
+    // The road widths set on Plot sides, so the PLC dialog offers each one.
+    // ponytail: one row per Road side; a DISTINCT query if inventories grow large.
+    db.plotBoundary.findMany({
+      where: { kind: "ROAD", roadWidthFt: { not: null } },
+      select: { roadWidthFt: true, plot: { select: { projectId: true } } },
+    }),
   ]);
 
   return projects.map((project) => ({
@@ -772,5 +778,8 @@ export async function listProjects() {
     plotTypeCounts: byType
       .filter((row) => row.projectId === project.id)
       .map((row) => ({ plotType: row.plotType, count: row._count._all })),
+    roadWidths: [
+      ...new Set(roads.filter((r) => r.plot.projectId === project.id).map((r) => r.roadWidthFt!.toString())),
+    ],
   }));
 }

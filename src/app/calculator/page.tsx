@@ -132,7 +132,6 @@ export default async function CalculatorPage({
             select: {
               plotId: true,
               bookingNumber: true,
-              requestNo: true,
               status: true,
               soldByType: true,
               soldByPersonId: true,
@@ -220,7 +219,7 @@ export default async function CalculatorPage({
       eligibility: record.eligibility,
       holdReason: record.holdReason,
       payment: record.payment,
-      bookingRef: booking.bookingNumber ?? booking.requestNo,
+      bookingRef: booking.bookingNumber ?? "Booking Request",
       bookingStatus: booking.status,
       soldBy: booking.soldByPerson?.fullName ?? "3% Club",
       soldByType: booking.soldByType,

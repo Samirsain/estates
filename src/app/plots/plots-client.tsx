@@ -301,6 +301,9 @@ const EXTENSION_STATUS_LABEL: Record<string, string> = {
  * where a row with Make Available ends, and the column has one edge instead of
  * one per row. Width lives here and nowhere else.
  */
+const SOLD = new Set(["BOOKED", "PAYMENT_COMPLETED", "DELIVERED"]);
+/** Make Available is green — the colour Available itself wears (owner, 28 Oct 2026). */
+const MAKE_AVAILABLE = "bg-emerald-600 text-white hover:bg-emerald-600/90";
 const rowActions = "flex w-28 items-center gap-1.5";
 const rowButton = "h-7 flex-1 basis-0 px-1.5 text-[11px]";
 
@@ -973,8 +976,12 @@ export default function PlotsClient({
     [people]
   );
 
+  // Booked, Payment Completed and Delivered Plots are the Bookings page's
+  // (owner, 28 Oct 2026). A Buyback returns its Plot to Available, so it comes
+  // back here by itself.
   const visible = rows.filter(
     (r) =>
+      !SOLD.has(r.status) &&
       (projectFilter === "ALL" || r.projectId === projectFilter) &&
       (statusFilter === "ALL" || r.status === statusFilter) &&
       (search.trim() === "" ||
@@ -1387,14 +1394,18 @@ export default function PlotsClient({
                       {plot.plc ? `${Number(plot.plc.totalPercent).toFixed(2)}%` : "—"}
                     </td>
                     <td className="w-px whitespace-nowrap py-2 pl-3 pr-2">
-                      {/* The thing to do to this Plot now, on the row — or a
-                          menu, once there is more than one — and then Book.
-                          Both solid: the row offers two things and neither is
-                          the lesser one. What ends something still reads as
-                          such — Cancel Hold is red inside the menu. */}
+                      {/* Three calls to action only (owner, 28 Oct 2026): Make
+                          Available, Hold and Book. On a held Plot, Hold opens
+                          what can be done to that Hold — Extend, an extension
+                          decision, Cancel (red) — since nowhere else does it.
+                          Review, Payment and Deliver are on the Booking page;
+                          Hold Requests are decided on the Plot's page. */}
                       <div className={rowActions}>
                         {plot.status === "NOT_AVAILABLE" && permissions.makeAvailable && (
-                          <Button className={rowButton} onClick={() => setDialog({ kind: "AVAILABLE", plot })}>
+                          <Button
+                            className={`${rowButton} ${MAKE_AVAILABLE}`}
+                            onClick={() => setDialog({ kind: "AVAILABLE", plot })}
+                          >
                             Make Available
                           </Button>
                         )}
@@ -1416,11 +1427,7 @@ export default function PlotsClient({
                         {plot.status === "HOLD" && plot.hold && holdActions.length > 0 && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              {/* Named, not three dots. The Available row
-                                  shows what it can do; a bare ··· made the
-                                  held row the one place you had to open
-                                  something to find out. */}
-                              <Button className={rowButton}>Cancel</Button>
+                              <Button className={rowButton}>Hold</Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="start">
                               {holdActions.map((action) => (
@@ -1432,98 +1439,6 @@ export default function PlotsClient({
                                   {action.label}
                                 </DropdownMenuItem>
                               ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-
-                        {/* Waiting on Accounts: the decision belongs on the row
-                            that is blocked by it, not one screen away. */}
-                        {plot.status === "WAITING_FOR_BOOKING_APPROVAL" &&
-                          permissions.decideBooking &&
-                          pendingBookings[plot.id] && (
-                            <Button
-                              className={rowButton}
-                              onClick={() => {
-                                const row = pendingBookings[plot.id];
-                                setBookingDetail(null);
-                                setDialog({ kind: "REVIEW", row });
-                                loadBookingDetail(row.id).then(setBookingDetail);
-                              }}
-                            >
-                              Review
-                            </Button>
-                          )}
-
-                        {/* A Booked Plot is still taking payment, and the row is
-                            where anyone reading inventory sees that. Fully paid
-                            has no button — the gate is what remains, not the
-                            status, because a correction can step the total back
-                            below 100. */}
-                        {plot.status === "BOOKED" &&
-                          permissions.confirmPayment &&
-                          bookedBookings[plot.id] &&
-                          Number(remainingPercent(bookedBookings[plot.id].paymentReceivedPercent)) > 0 && (
-                            <Button
-                              className={rowButton}
-                              onClick={() =>
-                                setDialog({ kind: "PAY", plot, row: bookedBookings[plot.id] })
-                              }
-                            >
-                              Payment
-                            </Button>
-                          )}
-
-                        {/* Paid in full. One thing is left — the legal end of
-                            the sale — and the dialog asks for both halves of
-                            it: who the papers go to, and the route that
-                            transfers them. */}
-                        {plot.status === "PAYMENT_COMPLETED" &&
-                          completedBookings[plot.id] &&
-                          permissions.recordFinalBuyers &&
-                          permissions.recordCompletion && (
-                            <Button
-                              className={rowButton}
-                              onClick={() => {
-                                const row = completedBookings[plot.id];
-                                setBookingDetail(null);
-                                setDialog({ kind: "DELIVER", row });
-                                loadBookingDetail(row.id).then(setBookingDetail);
-                              }}
-                            >
-                              Deliver
-                            </Button>
-                          )}
-
-                        {/* The Member Hold Requests on this Plot. A request
-                            expires at the working-day cut-off and cannot be
-                            approved after it. */}
-                        {permissions.reviewRequests && requests.length > 0 && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button className={rowButton} disabled={busy}>
-                                Hold Request
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start">
-                              {requests.flatMap((r) => [
-                                <DropdownMenuItem
-                                  key={`${r.id}-approve`}
-                                  onSelect={() =>
-                                    setDialog({ kind: "DECIDE_REQUEST", request: r, approve: true })
-                                  }
-                                >
-                                  Approve — {r.buyer}
-                                </DropdownMenuItem>,
-                                <DropdownMenuItem
-                                  key={`${r.id}-reject`}
-                                  className="text-red-700 focus:text-red-700"
-                                  onSelect={() =>
-                                    setDialog({ kind: "DECIDE_REQUEST", request: r, approve: false })
-                                  }
-                                >
-                                  Reject — {r.buyer}
-                                </DropdownMenuItem>,
-                              ])}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         )}

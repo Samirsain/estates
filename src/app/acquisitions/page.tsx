@@ -68,7 +68,7 @@ export default async function AcquisitionsPage() {
       rows={acquisitions.map(toAcquisitionRow)}
       buybackable={buybackable.map((b) => ({
         id: b.id,
-        label: `${b.bookingNumber ?? b.requestNo} · ${b.project.name} ${b.plot.plotNumber} · ${b.primaryPerson.fullName}`,
+        label: `${b.bookingNumber ?? "Booking Request"} · ${b.project.name} ${b.plot.plotNumber} · ${b.primaryPerson.fullName}`,
         primaryPersonId: b.primaryPersonId,
       }))}
       people={people.map((p) => ({

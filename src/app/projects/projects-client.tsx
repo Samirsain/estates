@@ -4,7 +4,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Box, Info, Layers, Map, MoreVertical, Pencil, Plus, Share } from "lucide-react";
+import { Box, ChevronDown, Info, Layers, Map, MoreVertical, Pencil, Plus, Share, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,13 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { useCommercialRewardsDraft } from "./[id]/commission-settings";
 import { downloadProjectSheet } from "@/lib/pdf/project-sheet";
-import {
-  PLC_CATEGORIES,
-  PLC_CATEGORY_ORDER,
-  plcComponentLabels,
-  plcDisplayComponents,
-  type PlcCategory,
-} from "@/lib/domain/inventory";
+import { plcComponentLabel, plcDisplayComponents, type PlcCategory } from "@/lib/domain/inventory";
 import { formatPercent } from "@/lib/tasks";
 import { formatIst, type StaffRole } from "@/lib/tasks";
 import {
@@ -60,6 +54,8 @@ export type ProjectRowView = {
   isExternalResaleGroup: boolean;
   plotCount: number;
   plotTypeCounts: Array<{ plotType: string; count: number }>;
+  /** Feet, as set on this Project's Plot sides — the PLC dialog lists each one. */
+  roadWidths: string[];
   components: ComponentRow[];
   /** PLC spec §15.1 — published, draft and superseded, newest first. */
   plcVersions: Array<{
@@ -504,10 +500,12 @@ function ProjectInfoDialog({
             because it is shared outside the office. */}
         <div className="grid gap-x-10 gap-y-3 md:grid-cols-2">
           <div className="space-y-3">
-            <Group title="Where">
+            {/* No heading over these two rows (owner, 28 Oct 2026): City and
+                Location name themselves. */}
+            <dl className="text-xs">
               <Row label="City" value={project.city ?? "Not recorded"} />
               <Row label="Location" value={project.location ?? "Not recorded"} />
-            </Group>
+            </dl>
 
             <Group title="Inventory">
               <Row label="Total Plots" value={String(project.plotCount)} />
@@ -556,10 +554,11 @@ function ProjectInfoDialog({
           </div>
 
           <div className="space-y-3">
-            <Group title="Responsibility">
+            {/* No heading here either (owner, 28 Oct 2026). */}
+            <dl className="text-xs">
               <Row label="Developer" value={project.developer ?? "Not recorded"} />
               <Row label="RERA Number" value={project.reraNumber ?? "Not recorded"} />
-            </Group>
+            </dl>
 
             <Group title="Plot Location Charge">
               {!published ? (
@@ -624,169 +623,193 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** A PLC row on the form; `typed` marks a road width added by hand, whose feet are an input. */
+type EditorRow = ComponentRow & { typed?: boolean };
+
+const OPEN_SIDE_BANDS = ["2", "2.5", "3", "4"];
+const sameBand = (a: string | null, b: string | null) => a !== null && b !== null && Number(a) === Number(b);
+// An exact stored value is trimmed by string, not by Number: it should not take
+// a trip through a binary float to be shown in a text box.
+const editablePercent = (p: string) => (p.includes(".") ? p.replace(/0+$/, "").replace(/\.$/, "") : p);
+
+/** The road widths already known: set on the Project's Plots, or a band of the current version. Widest first. */
+function knownRoadWidths(components: ComponentRow[], roadWidths: string[]): string[] {
+  return [
+    ...new Set(
+      [...roadWidths, ...components.filter((c) => c.category === "ROAD_WIDTH").map((c) => c.threshold ?? "")]
+        .filter((ft) => ft.trim() !== "")
+        .map((ft) => String(Number(ft)))
+    ),
+  ].sort((a, b) => Number(b) - Number(a));
+}
+
 /**
- * The four categories are the whole vocabulary, so this offers them rather than
- * asking anyone to invent one. A banded category takes a number — feet of road,
- * or a count of open sides — and the label is generated from it, which is why
- * there is no Code field and no Label field here any more.
+ * Every charge the vocabulary allows, listed once: each road width set on the
+ * Project's Plots (and any band the current version already has), the four
+ * open-side types, and the two facings. A box left empty is no charge.
+ */
+function plcEditorRows(components: ComponentRow[], roadWidths: string[]): EditorRow[] {
+  const percent = (category: PlcCategory, threshold: string | null) => {
+    const found = components.find(
+      (c) => c.category === category && (threshold === null ? c.threshold === null : sameBand(c.threshold, threshold))
+    );
+    return { percent: found ? editablePercent(found.percent) : "", remark: found?.remark || "" };
+  };
+  return [
+    ...knownRoadWidths(components, roadWidths).map((ft) => ({ category: "ROAD_WIDTH" as const, threshold: ft, ...percent("ROAD_WIDTH", ft) })),
+    ...OPEN_SIDE_BANDS.map((n) => ({ category: "OPEN_SIDES" as const, threshold: n, ...percent("OPEN_SIDES", n) })),
+    { category: "PARK_FACING" as const, threshold: null, ...percent("PARK_FACING", null) },
+    { category: "PLAYGROUND_FACING" as const, threshold: null, ...percent("PLAYGROUND_FACING", null) },
+  ];
+}
+
+/** What is saved: only the rows given a percentage. */
+const plcComponentsToSave = (rows: EditorRow[]): ComponentRow[] =>
+  rows
+    .filter((r) => r.percent.trim() !== "" && (r.category !== "ROAD_WIDTH" || (r.threshold ?? "").trim() !== ""))
+    .map(({ typed: _typed, ...r }) => r);
+
+/**
+ * The four categories are the whole vocabulary, so the form lists every charge
+ * instead of asking anyone to build rows. Labels are generated from the band —
+ * feet of road, or a count of open sides — never typed.
  */
 function ComponentEditor({
   rows,
+  widths,
   onChange,
 }: {
-  rows: ComponentRow[];
-  onChange: (rows: ComponentRow[]) => void;
+  rows: EditorRow[];
+  /** The widths a road row offers, before Custom — as the Plot form offers them. */
+  widths: string[];
+  onChange: (rows: EditorRow[]) => void;
 }) {
-  const update = (index: number, patch: Partial<ComponentRow>) =>
+  const takenBy = (ft: string, index: number) =>
+    rows.some((r, i) => i !== index && r.category === "ROAD_WIDTH" && !r.typed && sameBand(r.threshold, ft));
+  const update = (index: number, patch: Partial<EditorRow>) =>
     onChange(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
-
-  /** Band labels read as ranges, which needs the whole list, not one row. */
-  const labels = plcComponentLabels(
-    rows.map((r) => ({
-      category: r.category,
-      threshold: r.threshold,
-      percent: r.percent || "0",
-      remark: r.remark,
-    }))
+  const percentBox = (row: EditorRow, index: number, label: string) => (
+    <div className="relative w-20 shrink-0">
+      <Input
+        aria-label={`${label} percent`}
+        value={row.percent}
+        inputMode="decimal"
+        onChange={(e) => update(index, { percent: e.target.value })}
+        className="h-9 pr-6 text-right tabular-nums"
+      />
+      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+    </div>
   );
+  const group = (title: string, category: PlcCategory | PlcCategory[], hint?: string, extra?: React.ReactNode) => {
+    const categories = Array.isArray(category) ? category : [category];
+    return (
+      <section>
+        <h3 className="text-xs font-semibold text-foreground">{title}</h3>
+        {hint && <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>}
+        <div className="mt-1">
+          {rows.map((row, index) => {
+            if (!categories.includes(row.category)) return null;
+            const label = plcComponentLabel(row.category, row.threshold);
+            return (
+              <div key={index} className="flex items-center gap-2 border-b border-border/40 py-1.5 last:border-0">
+                {row.category === "ROAD_WIDTH" ? (
+                  // The Plot form's road picker: the widths already known, then
+                  // Custom, which puts a feet box beside it.
+                  <div className="flex w-40 shrink-0 items-center gap-1">
+                    <select
+                      aria-label="Road width"
+                      className={`${inputClass} h-9 min-w-0 flex-1 text-xs`}
+                      value={row.typed ? "custom" : (row.threshold ?? "")}
+                      onChange={(e) =>
+                        update(
+                          index,
+                          e.target.value === "custom"
+                            ? { typed: true, threshold: "" }
+                            : { typed: false, threshold: e.target.value }
+                        )
+                      }
+                    >
+                      {widths.map((ft) => (
+                        <option key={ft} value={ft} disabled={takenBy(ft, index)}>
+                          Road {ft} ft
+                        </option>
+                      ))}
+                      <option value="custom">Custom</option>
+                    </select>
+                    {row.typed && (
+                      <Input
+                        aria-label="Road width in feet"
+                        value={row.threshold ?? ""}
+                        inputMode="decimal"
+                        placeholder="ft"
+                        onChange={(e) => update(index, { threshold: e.target.value })}
+                        className="h-9 w-14 shrink-0 px-2 tabular-nums"
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <span className="w-28 shrink-0 text-xs text-foreground">{label}</span>
+                )}
+                {row.category === "ROAD_WIDTH" ? (
+                  <Input
+                    aria-label={`${label} road name`}
+                    value={row.remark ?? ""}
+                    placeholder="Road name (optional)"
+                    onChange={(e) => update(index, { remark: e.target.value })}
+                    className="h-9 min-w-0 flex-1"
+                  />
+                ) : (
+                  <span className="flex-1" />
+                )}
+                {percentBox(row, index, label)}
+                {/* Every row keeps the slot, so the % boxes stay one column. */}
+                {row.category === "ROAD_WIDTH" ? (
+                  <button
+                    type="button"
+                    aria-label="Remove this road width"
+                    onClick={() => onChange(rows.filter((_, i) => i !== index))}
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <span aria-hidden className="w-8 shrink-0" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {extra}
+      </section>
+    );
+  };
 
   return (
-    <div className="space-y-2">
-      {rows.map((row, index) => {
-        const meta = PLC_CATEGORIES[row.category];
-
-        return (
-          <div key={index} className="rounded-xl border border-border/70 bg-muted/20 p-2.5 space-y-1.5 transition-all">
-            <div className="grid gap-2 md:grid-cols-[1fr_1fr_0.6fr_0.6fr_auto] items-end">
-              <Field label="Category">
-                <select
-                  className={inputClass}
-                  value={row.category}
-                  onChange={(e) => {
-                    const category = e.target.value as PlcCategory;
-                    update(index, {
-                      category,
-                      threshold: PLC_CATEGORIES[category].banded ? (row.threshold ?? "") : null,
-                      remark: "",
-                    });
-                  }}
-                >
-                  {PLC_CATEGORY_ORDER.map((category) => (
-                    <option key={category} value={category}>
-                      {PLC_CATEGORIES[category].label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              {row.category === "OPEN_SIDES" ? (
-                <div className="md:col-span-2">
-                  <Field label="Open Side Type">
-                    <select
-                      className={inputClass}
-                      value={row.threshold ?? ""}
-                      onChange={(e) => update(index, { threshold: e.target.value })}
-                    >
-                      <option value="">-- Select Open Side Type --</option>
-                      <option value="2">Two Side Open</option>
-                      <option value="2.5">Corner Plot</option>
-                      <option value="3">Three Side Open</option>
-                      <option value="4">Four Side Open</option>
-                    </select>
-                  </Field>
-                </div>
-              ) : !meta.banded ? (
-                // Not a field. It was drawn as one — border, card background,
-                // input height — so it read as something to fill in, sitting in
-                // a row of things that were. It is a sentence about the category
-                // above it, so it looks like a sentence.
-                <p className="md:col-span-2 self-center text-[11px] leading-relaxed text-muted-foreground">
-                  Charged once. Park and Playground share the one charge, so a Plot facing both
-                  still pays it once — the rows are separate so the Plot&apos;s own facing is
-                  named on its snapshot.
-                </p>
-              ) : (
-                <>
-                  <Field label="Remark / Road Name">
-                    <Input
-                      value={row.remark ?? ""}
-                      onChange={(e) => update(index, { remark: e.target.value })}
-                      placeholder="60ft Main Road"
-                    />
-                  </Field>
-                  <Field label={`From (${meta.unit})`}>
-                    <Input
-                      value={row.threshold ?? ""}
-                      inputMode="decimal"
-                      onChange={(e) => update(index, { threshold: e.target.value })}
-                      placeholder="40"
-                    />
-                  </Field>
-                </>
-              )}
-
-              <Field label="Percent">
-                <Input
-                  value={row.percent}
-                  inputMode="decimal"
-                  onChange={(e) => update(index, { percent: e.target.value })}
-                  placeholder="%"
-                />
-              </Field>
-
-              <div className="pb-0.5">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-9 w-9 p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  title="Remove component"
-                  onClick={() => onChange(rows.filter((_, i) => i !== index))}
-                >
-                  ✕
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between border-t border-border/40 pt-1.5 text-[11px] text-muted-foreground">
-              <span>
-                Reads as: <strong className="font-semibold text-foreground">{labels[index]}</strong>
-              </span>
-              {row.percent.trim() !== "" && (
-                <span className="rounded bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                  +{formatPercent(row.percent)}
-                </span>
-              )}
-            </div>
-          </div>
-        );
-      })}
-      <div className="flex flex-wrap gap-2 pt-1">
-        <Button
+    <div className="space-y-4">
+      {group(
+        "Road width",
+        "ROAD_WIDTH",
+        "Every width set on this Project's Plots. A Plot pays the highest band its road reaches.",
+        <button
           type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => onChange([...rows, { category: "ROAD_WIDTH", threshold: "", percent: "", remark: "" }])}
+          onClick={() => {
+            const free = widths.find((ft) => !takenBy(ft, -1));
+            onChange([
+              ...rows,
+              { category: "ROAD_WIDTH", threshold: free ?? "", percent: "", remark: "", typed: free === undefined },
+            ]);
+          }}
+          className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary hover:underline"
         >
-          + Road Rule
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => onChange([...rows, { category: "OPEN_SIDES", threshold: "2.5", percent: "", remark: "" }])}
-        >
-          + Open Side Rule
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => onChange([...rows, { category: "PARK_FACING", threshold: null, percent: "", remark: "" }])}
-        >
-          + Park / Playground Facing Rule
-        </Button>
-      </div>
+          <Plus className="h-3 w-3" /> Add road width
+        </button>
+      )}
+      {group("Open sides", "OPEN_SIDES")}
+      {group(
+        "Park / Playground facing",
+        ["PARK_FACING", "PLAYGROUND_FACING"],
+        "Charged once — a Plot facing both pays the higher of the two."
+      )}
     </div>
   );
 }
@@ -936,6 +959,8 @@ function ProjectDialog({
   const [withCommission, setWithCommission] = React.useState(canPrepareCommission);
   const draft = useCommercialRewardsDraft(null, [], "Initial Project settings");
   const commissionProblem = withCommission ? draft.problem : null;
+  // The problem shows once Create is pressed, not while the form is being filled.
+  const [tried, setTried] = React.useState(false);
 
   return (
     <Modal
@@ -947,6 +972,7 @@ function ProjectDialog({
         className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
+          if (commissionProblem) return setTried(true);
           const form = new FormData(e.currentTarget);
           onSubmit({
             ...readProjectFields(form),
@@ -982,7 +1008,7 @@ function ProjectDialog({
             {withCommission && (
               <>
                 {draft.fields}
-                {commissionProblem && <p className="text-xs text-red-700">{commissionProblem}</p>}
+                {tried && commissionProblem && <p className="text-xs text-red-700">{commissionProblem}</p>}
               </>
             )}
           </div>
@@ -992,7 +1018,7 @@ function ProjectDialog({
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Back
           </Button>
-          <Button type="submit" size="sm" disabled={busy || commissionProblem !== null}>
+          <Button type="submit" size="sm" disabled={busy}>
             {busy ? "Creating…" : "Create Project"}
           </Button>
         </div>
@@ -1007,7 +1033,7 @@ function ProjectDialog({
  * flag is what PRD §11.6 uses to tell a development Project from an acquisition
  * container. Status has its own dialog: releasing is not editing.
  */
-function EditProjectDialog({
+export function EditProjectDialog({
   project,
   busy,
   onClose,
@@ -1052,7 +1078,7 @@ function EditProjectDialog({
   );
 }
 
-function PlcDialog({
+export function PlcDialog({
   project,
   busy,
   onClose,
@@ -1067,26 +1093,19 @@ function PlcDialog({
   onDraft: (components: ComponentRow[], reason: string) => void;
   onPublish: (plcRuleVersionId: string) => void;
 }) {
-  const [components, setComponents] = React.useState<ComponentRow[]>(
-    project.components.length > 0
-      // Trailing zeros are trimmed for editing by string, not by Number: an
-      // exact stored value should not take a trip through a binary float to be
-      // shown in a text box.
-      ? project.components.map((c) => ({
-          ...c,
-          percent: c.percent.includes(".") ? c.percent.replace(/0+$/, "").replace(/\.$/, "") : c.percent,
-          remark: c.remark || "",
-        }))
-      : [{ category: "ROAD_WIDTH" as PlcCategory, threshold: "", percent: "", remark: "" }]
-  );
+  const [rows, setRows] = React.useState<EditorRow[]>(() => plcEditorRows(project.components, project.roadWidths));
+  const widths = knownRoadWidths(project.components, project.roadWidths);
   const [reason, setReason] = React.useState("");
+  const components = plcComponentsToSave(rows);
 
   const drafts = project.plcVersions.filter((v) => v.status === "DRAFT");
 
+  // Portrait (owner, 29 Oct 2026): one narrow column that reads top to bottom.
   return (
     <Modal
       title={`PLC — ${project.projectCode}`}
-      wide
+      description="Leave a box empty for no charge."
+      width="w-[min(32rem,94vw)]"
       onClose={onClose}
     >
       <form
@@ -1096,11 +1115,11 @@ function PlcDialog({
           onSubmit(components, reason);
         }}
       >
-        <ComponentEditor rows={components} onChange={setComponents} />
+        <ComponentEditor rows={rows} widths={widths} onChange={setRows} />
         <Field label="Reason — compulsory">
           <RemarkSelect presets="locationCharge" name="reason" required value={reason} onChange={setReason} />
         </Field>
-        <div className="flex flex-wrap justify-end gap-2 pt-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Back
           </Button>
@@ -1121,98 +1140,78 @@ function PlcDialog({
       </form>
 
       {drafts.length > 0 && (
-        <div className="mt-4 border-t border-border/50 pt-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Drafts waiting to be published
-          </h3>
-          <ul className="mt-2 space-y-2 text-xs">
+        <section className="border-t border-border/50 pt-3">
+          <h3 className="text-xs font-semibold text-foreground">Drafts waiting to be published</h3>
+          <ul className="mt-1">
             {drafts.map((draft) => (
-              <li key={draft.id} className="flex flex-wrap items-center justify-between gap-2">
-                <span>
-                  Version {draft.version}
-                  <span className="ml-2 text-[11px] text-muted-foreground">
+              <li key={draft.id} className="flex items-start justify-between gap-3 border-b border-border/40 py-2 last:border-0">
+                <div className="min-w-0 text-xs">
+                  <p className="font-medium">Version {draft.version}</p>
+                  <p className="text-[11px] text-muted-foreground">
                     {plcDisplayComponents(draft.components)
                       .map((c) => `${c.label} ${formatPercent(c.percent)}`)
                       .join(" · ") || "No component"}
-                  </span>
-                  {draft.reason && (
-                    <span className="block text-[11px] text-muted-foreground">{draft.reason}</span>
-                  )}
-                </span>
+                  </p>
+                  {draft.reason && <p className="text-[11px] text-muted-foreground">{draft.reason}</p>}
+                </div>
                 <Button size="sm" disabled={busy} onClick={() => onPublish(draft.id)}>
                   Publish
                 </Button>
               </li>
             ))}
           </ul>
-        </div>
+        </section>
       )}
 
       {/* PLC spec §15.1 — the version history, so what changed and when is
-          answerable without opening the database. */}
-      <div className="mt-4 border-t border-border/50 pt-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Version history
-        </h3>
+          answerable without opening the database. One version under another,
+          so the column stays narrow. Closed until asked for (owner, 29 Oct 2026). */}
+      <details className="group border-t border-border/50 pt-3">
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-xs font-semibold text-foreground [&::-webkit-details-marker]:hidden">
+          Version history ({project.plcVersions.length})
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-180" />
+        </summary>
         {project.plcVersions.length === 0 ? (
-          <p className="mt-2 text-xs text-muted-foreground">No PLC version exists yet.</p>
+          <p className="mt-1 text-xs text-muted-foreground">No PLC version exists yet.</p>
         ) : (
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full min-w-[36rem] text-xs">
-              <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="py-1">Version</th>
-                  <th className="py-1">Status</th>
-                  <th className="py-1 w-1/2">Components</th>
-                  <th className="py-1">Effective</th>
-                  <th className="py-1">Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {project.plcVersions.map((v) => (
-                  <tr
-                    key={v.id}
-                    className={`align-top border-t border-border/40 ${
-                      v.status === "PUBLISHED" ? "" : "text-muted-foreground"
-                    }`}
-                  >
-                    <td className="py-1.5 tabular-nums">{v.version}</td>
-                    <td className="py-1.5">{PLC_STATUS_LABEL[v.status] ?? v.status}</td>
-                    <td className="py-1.5">
-                      {v.components.length === 0 ? (
-                        "—"
-                      ) : (
-                        <ul className="space-y-0.5">
-                          {plcDisplayComponents(v.components).map((c, i) => (
-                            <li key={i} className="flex justify-between gap-3">
-                              <span>{c.label}</span>
-                              <span className="tabular-nums">{formatPercent(c.percent)}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </td>
-                    <td className="py-1.5 text-[11px] tabular-nums">
-                      {v.effectiveFrom ? formatIst(v.effectiveFrom) : "Not published"}
-                      {v.effectiveTo && (
-                        <span className="block text-muted-foreground">
-                          to {formatIst(v.effectiveTo)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-1.5 text-[11px]">{v.reason ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ul className="mt-1">
+            {project.plcVersions.map((v) => (
+              <li
+                key={v.id}
+                className={`border-b border-border/40 py-2 text-xs last:border-0 ${
+                  v.status === "PUBLISHED" ? "" : "text-muted-foreground"
+                }`}
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-medium">
+                    Version {v.version} · {PLC_STATUS_LABEL[v.status] ?? v.status}
+                  </span>
+                  <span className="text-[11px] tabular-nums text-muted-foreground">
+                    {v.effectiveFrom ? formatIst(v.effectiveFrom) : "Not published"}
+                    {v.effectiveTo && ` to ${formatIst(v.effectiveTo)}`}
+                  </span>
+                </div>
+                {v.components.length > 0 && (
+                  <dl className="mt-1">
+                    {plcDisplayComponents(v.components).map((c, i) => (
+                      <div key={i} className="flex justify-between gap-3 py-0.5">
+                        <dt>{c.label}</dt>
+                        <dd className="tabular-nums">{formatPercent(c.percent)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                {v.reason && <p className="mt-0.5 text-[11px] text-muted-foreground">{v.reason}</p>}
+              </li>
+            ))}
+          </ul>
         )}
-      </div>
+      </details>
     </Modal>
   );
 }
 
-function StatusDialog({
+export function StatusDialog({
   project,
   busy,
   onClose,

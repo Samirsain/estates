@@ -213,7 +213,6 @@ export async function taskSubjects(
             select: {
               id: true,
               bookingNumber: true,
-              requestNo: true,
               project: { select: { name: true } },
               plot: { select: { id: true, plotNumber: true } },
               primaryPerson: { select: personSelect },
@@ -225,7 +224,6 @@ export async function taskSubjects(
             where: { id: { in: enquiryIds } },
             select: {
               id: true,
-              enquiryNo: true,
               project: { select: { name: true } },
               plot: { select: { id: true, plotNumber: true } },
               person: { select: personSelect },
@@ -255,7 +253,6 @@ export async function taskSubjects(
             where: { id: { in: acquisitionIds } },
             select: {
               id: true,
-              acquisitionNo: true,
               propertyName: true,
               propertyNumber: true,
               plot: { select: { id: true, plotNumber: true, project: { select: { name: true } } } },
@@ -272,7 +269,6 @@ export async function taskSubjects(
                 select: {
                   id: true,
                   bookingNumber: true,
-                  requestNo: true,
                   project: { select: { name: true } },
                   plot: { select: { id: true, plotNumber: true } },
                 },
@@ -280,7 +276,6 @@ export async function taskSubjects(
               acquisition: {
                 select: {
                   id: true,
-                  acquisitionNo: true,
                   propertyName: true,
                   propertyNumber: true,
                   plot: { select: { id: true, plotNumber: true, project: { select: { name: true } } } },
@@ -321,7 +316,9 @@ export async function taskSubjects(
       project: b.project.name,
       plot: b.plot.plotNumber,
       plotId: b.plot.id,
-      reference: b.bookingNumber ?? b.requestNo,
+      // REQ, ENQ and ACQ numbers are off the screens (ID Guide §5): the record
+      // reads as what it is, and the Plot and Name columns say which one.
+      reference: b.bookingNumber ?? "Booking Request",
       ...party(b.primaryPerson),
     });
   }
@@ -330,7 +327,7 @@ export async function taskSubjects(
       project: e.project.name,
       plot: e.plot?.plotNumber ?? null,
       plotId: e.plot?.id ?? null,
-      reference: e.enquiryNo,
+      reference: "Enquiry",
       ...party(e.person),
     });
   }
@@ -374,7 +371,7 @@ export async function taskSubjects(
       project: a.plot?.project.name ?? a.propertyName,
       plot: a.plot?.plotNumber ?? a.propertyNumber,
       plotId: a.plot?.id ?? null,
-      reference: a.acquisitionNo,
+      reference: "Buyback / Resale",
       ...party(a.sellerPerson),
     });
   }
@@ -385,7 +382,7 @@ export async function taskSubjects(
       project: r.booking?.project.name ?? deal?.plot?.project.name ?? deal?.propertyName ?? null,
       plot: r.booking?.plot.plotNumber ?? deal?.plot?.plotNumber ?? deal?.propertyNumber ?? null,
       plotId: r.booking?.plot.id ?? deal?.plot?.id ?? null,
-      reference: r.booking?.bookingNumber ?? r.booking?.requestNo ?? deal?.acquisitionNo ?? null,
+      reference: r.booking ? (r.booking.bookingNumber ?? "Booking Request") : deal ? "Buyback / Resale" : null,
       // A Commission review happens on the Booking (or the deal), so the row
       // needs that record's id, not only its number.
       bookingId: r.booking?.id ?? null,

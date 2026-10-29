@@ -4,7 +4,7 @@
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { taskSubjects } from "@/lib/services/task-service";
-import type { RecordKind, Recurrence, Task } from "@/lib/tasks";
+import { shownRecordName, type RecordKind, type Recurrence, type Task } from "@/lib/tasks";
 import DashboardClient from "./dashboard-client";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,7 @@ export default async function DashboardPage() {
     id: row.id,
     purpose: row.purpose,
     title: row.title,
-    record: { kind: row.recordKind as RecordKind, id: row.recordId, name: row.recordName },
+    record: { kind: row.recordKind as RecordKind, id: row.recordId, name: shownRecordName(row.recordName) },
     subject: subjects.get(row.recordId),
     assigneeRole: row.assigneeRole,
     assigneeName: row.assigneeStaff?.person.fullName ?? "Unassigned",

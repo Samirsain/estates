@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can, canViewField } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
+import { shownRecordName } from "@/lib/tasks";
 import AdministrationClient from "./administration-client";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export default async function AdministrationPage() {
     }),
     db.enquiry.findMany({
       where: { needsReassignment: true, status: "ACTIVE" },
-      include: { person: true, project: true },
+      include: { person: true, project: true, plot: true },
       orderBy: { createdAt: "asc" },
       take: 100,
     }),
@@ -74,16 +75,16 @@ export default async function AdministrationPage() {
       }))}
       queuedTasks={queuedTasks.map((task) => ({
         id: task.id,
-        taskNo: task.taskNo,
         title: task.title,
-        recordName: task.recordName,
+        recordName: shownRecordName(task.recordName),
         dueAt: task.dueAt.toISOString(),
       }))}
       queuedEnquiries={queuedEnquiries.map((enquiry) => ({
         id: enquiry.id,
-        enquiryNo: enquiry.enquiryNo,
         person: enquiry.person.fullName,
         project: enquiry.project.name,
+        plot: enquiry.plot?.plotNumber ?? null,
+        createdAt: enquiry.createdAt.toISOString(),
       }))}
       merges={merges.map((merge) => ({
         id: merge.id,

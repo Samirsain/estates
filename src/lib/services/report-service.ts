@@ -63,7 +63,7 @@ export async function runReport(
         orderBy: { bookingDate: "desc" },
       });
       return rows.map((b) => ({
-        bookingNumber: b.bookingNumber ?? b.requestNo,
+        bookingNumber: b.bookingNumber ?? "Booking Request",
         status: b.status,
         project: b.project.name,
         plotNumber: b.plot.plotNumber,
@@ -86,7 +86,7 @@ export async function runReport(
       });
       return rows.map((e) => ({
         dataset: "PAYMENT_RECEIVED",
-        bookingNumber: e.booking.bookingNumber ?? e.booking.requestNo,
+        bookingNumber: e.booking.bookingNumber ?? "Booking Request",
         project: e.booking.project.name,
         plotNumber: e.booking.plot.plotNumber,
         receivedPercent: e.percent.toFixed(2),
@@ -98,13 +98,15 @@ export async function runReport(
     case "PAYMENTS_GIVEN": {
       const rows = await db.paymentGivenEntry.findMany({
         where: { status: "CONFIRMED", ...(at ? { paidOn: at } : {}) },
-        include: { acquisition: true, externalReference: true },
+        include: { acquisition: { include: { plot: true } }, externalReference: true },
         orderBy: { paidOn: "desc" },
       });
       return rows.map((e) => ({
         dataset: "PAYMENT_GIVEN",
-        acquisitionRef: e.acquisition.acquisitionNo,
+        // The ACQ number is off the screens (ID Guide §5): the type, the Plot and
+        // the date say which deal.
         acquisitionType: e.acquisition.type,
+        plotNumber: e.acquisition.plot?.plotNumber ?? e.acquisition.propertyNumber,
         givenPercent: e.percent.toFixed(2),
         paidOn: e.paidOn,
         reference: e.externalReference?.rawValue ?? null,
@@ -329,7 +331,7 @@ export async function runReport(
         orderBy: { deliveredAt: "desc" },
       });
       return rows.map((c) => ({
-        bookingNumber: c.booking.bookingNumber ?? c.booking.requestNo,
+        bookingNumber: c.booking.bookingNumber ?? "Booking Request",
         project: c.booking.project.name,
         plotNumber: c.booking.plot.plotNumber,
         route: c.route,

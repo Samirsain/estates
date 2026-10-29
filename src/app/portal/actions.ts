@@ -31,7 +31,7 @@ export async function addMemberEnquiryAction(
 ): Promise<ActionResult> {
   const member = await requireMember();
   try {
-    const result = await runCommand(
+    await runCommand(
       {
         idempotencyKey: key,
         operation: "MEMBER_ENQUIRY_CREATE",
@@ -109,7 +109,7 @@ export async function addMemberEnquiryAction(
     revalidatePath("/portal");
     revalidatePath("/enquiries");
     revalidatePath("/dashboard");
-    return { ok: true, message: `Enquiry ${result.enquiryNo} submitted and assigned to CRM.` };
+    return { ok: true, message: "Enquiry submitted and assigned to CRM." };
   } catch (error) {
     return toResult(error);
   }

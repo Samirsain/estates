@@ -2,6 +2,7 @@
 
 import type { EnquirySource, FollowUpOutcome } from "@prisma/client";
 import { db } from "@/lib/db";
+import { formatIst } from "@/lib/tasks";
 import { FOLLOW_UP_OUTCOME_LABEL, validateSource } from "@/lib/domain/enquiry";
 import { blocked, nextReference, runCommand, type Tx } from "./command";
 import { completeTask, ensureTask, reviseTask } from "./task-service";
@@ -140,7 +141,7 @@ export async function createEnquiry(input: CreateEnquiryInput) {
       });
       if (duplicate) {
         blocked(
-          `An Active Enquiry (${duplicate.enquiryNo}) already exists for this Person, Project and Plot. ` +
+          `An Active Enquiry (logged ${formatIst(duplicate.createdAt)}) already exists for this Person, Project and Plot. ` +
             `Open that Enquiry and use Follow-up instead of creating another.`
         );
       }

@@ -437,7 +437,8 @@ export default async function MemberDetailPage({
       buyer: b.primaryPerson.customerProfile?.customerId ?? b.primaryPerson.fullName,
       buyerId: b.primaryPerson.id,
       condition: REQUEST_WORDS[b.status] ?? words(b.status),
-      ref: b.requestNo as string | null,
+      // The REQ number is off the screens (ID Guide §5): Plot, buyer and date say which.
+      ref: null as string | null,
       at: b.submittedAt,
     })),
     ...holdRequests.map((r) => ({
@@ -564,7 +565,7 @@ export default async function MemberDetailPage({
     ...shownBookings.map((b) => ({
       id: b.id,
       href: `/bookings/${b.id}`,
-      ref: b.bookingNumber ?? b.requestNo,
+      ref: b.bookingNumber ?? "Booking Request",
       at: b.submittedAt,
       project: b.project.name,
       plotId: b.plot.id as string | null,
@@ -674,7 +675,7 @@ export default async function MemberDetailPage({
         <span className="min-w-0">
           {c.booking ? (
             <Link href={`/bookings/${c.booking.id}`} className="font-semibold text-primary hover:underline">
-              {c.booking.bookingNumber ?? c.booking.requestNo}
+              {c.booking.bookingNumber ?? "Booking Request"}
             </Link>
           ) : c.acquisition ? (
             <Link href={`/acquisitions/${c.acquisition.id}`} className="font-semibold text-primary hover:underline">

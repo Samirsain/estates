@@ -17,6 +17,7 @@ import {
   type TaskView,
   recordHref,
   recordReference,
+  shownRecordName,
 } from "./tasks.ts";
 
 const task = (over: Partial<Task>): Task => ({
@@ -237,5 +238,11 @@ assert.equal(nextDue(due, "DAILY", noon).toISOString(), "2026-09-01T05:30:00.000
 assert.equal(nextDue(due, "WEEKLY", noon).toISOString(), "2026-09-07T05:30:00.000Z");
 assert.equal(nextDue(due, "MONTHLY", noon).toISOString(), "2026-10-01T05:30:00.000Z");
 assert.equal(nextDue(due, "DAILY", new Date("2026-09-03T06:00:00.000Z")).toISOString(), "2026-09-04T05:30:00.000Z", "closed late: the next one is still ahead");
+
+// ID Guide §5 — a stored record name never prints a hidden number; shown ones stay.
+assert.equal(shownRecordName("REQ-000057 · Shri Ram Enclave SR-03"), "Booking Request · Shri Ram Enclave SR-03");
+assert.equal(shownRecordName("ACQ-000002 · BUYING 1.00%"), "Buyback / Resale · BUYING 1.00%");
+assert.equal(shownRecordName("BKG-000054 · Govind Vatika G-21"), "BKG-000054 · Govind Vatika G-21");
+assert.equal(shownRecordName("MEM-000017"), "MEM-000017");
 
 console.log("tasks.check.ts OK");

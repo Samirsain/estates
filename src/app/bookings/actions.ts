@@ -121,7 +121,7 @@ export async function submitBookingRequestAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("BOOKING_REQUEST_SUBMIT");
   try {
-    const result = await submitBookingRequest({
+    await submitBookingRequest({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
@@ -140,7 +140,7 @@ export async function submitBookingRequestAction(
     return {
       ok: true,
       message:
-        `Booking Request ${result.requestNo} submitted. The reviewed values are locked and Accounts ` +
+        `Booking Request submitted. The reviewed values are locked and Accounts ` +
         `has a verification task.`,
     };
   } catch (error) {
