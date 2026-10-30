@@ -219,7 +219,6 @@ model MemberTermsAcceptance {
 
 model MemberProfile {
   id       String @id @default(uuid())
-  /// Login identifier for the Member portal (PRD §17.1).
   memberId String @unique
   personId String @unique
   person   Person @relation(fields: [personId], references: [id])
@@ -259,7 +258,6 @@ model MemberProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  portalAccount          PortalAccount?
   introducedCustomers    CustomerProfile[]  @relation("IntroducedCustomers")
   /// CR-002 — the Customers whose first qualifying purchase this Member closed.
   royaltyLinkedCustomers CustomerProfile[]  @relation("RoyaltyLinkedCustomers")
@@ -326,24 +324,6 @@ model StaffAccount {
   assignedLandInquiries LandInquiry[] @relation("LandInquiryAssignee")
 
   @@index([role, status])
-}
-
-model PortalAccount {
-  id              String        @id @default(uuid())
-  memberProfileId String        @unique
-  memberProfile   MemberProfile @relation(fields: [memberProfileId], references: [id])
-  /// Equals the Member ID. Mobile alone is never sufficient (PRD §17.1).
-  loginId         String        @unique
-  passwordHash    String
-  status          AccountStatus @default(ACTIVE)
-
-  sessionVersion Int       @default(1)
-  failedAttempts Int       @default(0)
-  lockedUntil    DateTime?
-  lastLoginAt    DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }
 
 /// PRD §19 / ARCHITECTURE §8 — a repeated key returns the original result.
@@ -537,6 +517,11 @@ model Project {
   isExternalResaleGroup Boolean @default(false)
 
   reraNumber String?
+
+  /// Public Project Portal (owner, 29 Oct 2026): every Project is listed on /p
+  /// and shown at /p/<name> to anyone with the link, with no sign-in, unless
+  /// this is turned off on its own page.
+  publicPortal Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { matchPeople, personLabel } from "./person-search.ts";
+import { projectSlug, publicPlotStatus } from "./public-portal.ts";
 import { capPercent, capShare, percentRoom, percentSum, shareRoom, shareSum } from "./shares.ts";
 import {
   fillForward,
@@ -1225,20 +1226,16 @@ assert.equal(
 /* v2.1 §22, §77 — the Customer closer's own conditions, after Aadhaar and bank. */
 const closing = { ...loyaltyAt40, progressPercent: "100" };
 assert.equal(
-  resolveEligibility({ ...closing, closer: { kycVerified: false, termsAccepted: false } }).holdReason,
+  resolveEligibility({ ...closing, closer: { kycVerified: false } }).holdReason,
   "CLOSER_KYC_PENDING"
 );
-assert.equal(
-  resolveEligibility({ ...closing, closer: { kycVerified: true, termsAccepted: false } }).holdReason,
-  "CUSTOMER_TERMS_PENDING"
-);
-assert.deepEqual(resolveEligibility({ ...closing, closer: { kycVerified: true, termsAccepted: true } }), {
+// Customer Terms are no longer a condition (owner, 29 Oct 2026).
+assert.deepEqual(resolveEligibility({ ...closing, closer: { kycVerified: true } }), {
   state: "READY",
   holdReason: null,
 });
 assert.equal(
-  resolveEligibility({ ...closing, beneficiaryBankVerified: false, closer: { kycVerified: false, termsAccepted: false } })
-    .holdReason,
+  resolveEligibility({ ...closing, beneficiaryBankVerified: false, closer: { kycVerified: false } }).holdReason,
   "BANK_VERIFICATION_PENDING",
   "the ordinary beneficiary conditions come first"
 );
@@ -2858,5 +2855,21 @@ assert.equal(shown("REVERSED", null, CREDIT_REASON.BOOKING_NOT_LIVE), "Not Count
 assert.equal(shown("REVERSED", null, CREDIT_REASON.SOLD_BY_CORRECTED), "Not Counted · Record Corrected");
 assert.equal(shown("REVERSED", null, CREDIT_REASON.PERSON_MERGE), "Not Counted · Record Corrected");
 assert.equal(shown("REVERSED", null, "Approved after the programme cut-off (SSOT §48)."), "Not Counted · Not Eligible");
+
+/* ------------------------------------------------ Public Project Portal */
+
+// The link: lower case, one hyphen between words, none at either end.
+assert.equal(projectSlug("Govind Vatika"), "govind-vatika");
+assert.equal(projectSlug("  Test Nagar (All Cases) "), "test-nagar-all-cases");
+
+// Eight Plot statuses become three; a Plot not on sale is left out, not coloured.
+assert.equal(publicPlotStatus("AVAILABLE", "NONE"), "AVAILABLE");
+assert.equal(publicPlotStatus("AVAILABLE", "PLEDGE"), null, "a pledged Plot is not offered");
+assert.equal(publicPlotStatus("NOT_AVAILABLE", "NOT_YET_RELEASED"), null);
+assert.equal(publicPlotStatus("HOLD", "NONE"), "HOLD");
+assert.equal(publicPlotStatus("WAITING_FOR_BOOKING_APPROVAL", "NONE"), "HOLD", "a Booking Request still holds the Plot");
+for (const sold of ["BOOKED", "PAYMENT_COMPLETED", "DELIVERED", "REFUND_PENDING"]) {
+  assert.equal(publicPlotStatus(sold, "NONE"), "SOLD", sold);
+}
 
 console.log("domain.check.ts OK");

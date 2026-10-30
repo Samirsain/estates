@@ -15,7 +15,7 @@
 //     Direct and nothing else. AC-01 freezes the classification at approval, so
 //     activating him afterwards leaves those four Bookings as Customer
 //     business, exactly as the pack intends.
-//  3. Only then is he activated, which is also what creates his portal account.
+//  3. Only then is he activated.
 //  4. Everything after that is Member work: Members under him, sales he closed,
 //     a sale his invited Member closed (which is what pays him Invite), and a
 //     repeat purchase by one of his Customers (which is what pays him Royalty).
@@ -210,7 +210,7 @@ async function main() {
     await sell({ label, buyerPersonId: vikramPerson.id, soldByType: "THREE_PERCENT_CLUB" });
   }
 
-  /* 5 — now he becomes a Member. This is also what opens his portal account. */
+  /* 5 — now he becomes a Member. */
   const vikram = await activate(vikramPerson.id, sanjay.memberProfileId, "RAJ/A/2026/2002");
   console.log(`Showcase Member  ${vikram.memberId} · Vikram Deshpande`);
 
@@ -289,7 +289,7 @@ async function report(personId: string) {
   });
   const vikramPerson = { id: personId };
   const customer = await db.customerProfile.findUniqueOrThrow({ where: { personId } });
-  const [invited, royaltyLinked, sold, commissions, requests, enquiries, portal] =
+  const [invited, royaltyLinked, sold, commissions, requests, enquiries] =
     await Promise.all([
       db.memberProfile.count({ where: { invitedByMemberId: profile.id } }),
       db.customerProfile.count({ where: { royaltyLinkedMemberId: profile.id } }),
@@ -301,7 +301,6 @@ async function report(personId: string) {
       }),
       db.holdRequest.count({ where: { memberId: profile.id } }),
       db.enquiry.count({ where: { sourceMemberId: profile.id } }),
-      db.portalAccount.findUnique({ where: { memberProfileId: profile.id } }),
     ]);
 
   console.log(`\n${profile.memberId} · Vikram Deshpande`);
@@ -313,7 +312,6 @@ async function report(personId: string) {
   console.log(`  Commission             ${commissions.map((c) => `${c.type} ×${c._count._all}`).join(", ")}`);
   console.log(`  Hold requests          ${requests}`);
   console.log(`  Enquiries sourced      ${enquiries}`);
-  console.log(`  Portal account         ${portal?.status ?? "none"}`);
   console.log(`  Also a Customer        ${customer.customerId}`);
   console.log(`\nProfile: /members/${profile.id}`);
 }

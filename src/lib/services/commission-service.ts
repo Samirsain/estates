@@ -510,10 +510,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
     where: { bookingId, isCurrent: true },
     include: {
       beneficiaryPerson: {
-        include: {
-          memberProfile: true,
-          customerProfile: { include: { termsAcceptances: { select: { id: true }, take: 1 } } },
-        },
+        include: { memberProfile: true },
       },
     },
   });
@@ -619,13 +616,8 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
         !record.beforeRecoveryApprovedAt &&
         (await oldBeneficiaryRecoveryPending(tx, bookingId, record.beneficiaryPersonId)),
       circumventionPending: controls?.circumvention,
-      // v2.1 §22, §77 — the closer's own KYC and Customer Terms.
-      closer: isClosing
-        ? {
-            kycVerified: record.beneficiaryPerson.aadhaarStatus === "VERIFIED",
-            termsAccepted: (record.beneficiaryPerson.customerProfile?.termsAcceptances.length ?? 0) > 0,
-          }
-        : null,
+      // v2.1 §22, §77 — the closer's own KYC.
+      closer: isClosing ? { kycVerified: record.beneficiaryPerson.aadhaarStatus === "VERIFIED" } : null,
     });
 
     if (next.state !== record.eligibility || next.holdReason !== record.holdReason) {
@@ -1421,47 +1413,4 @@ export function listCommissionForBooking(bookingId: string) {
     },
     orderBy: [{ isCurrent: "desc" }, { createdAt: "asc" }],
   });
-}
-
-/**
- * PRD §23.1 — the Member portal shows Project, Plot, type, percentage,
- * milestone, status and a Member-safe hold reason. Never the buyer's identity.
- */
-export async function memberCommissionView(personId: string) {
-  const records = await db.commissionRecord.findMany({
-    where: { beneficiaryPersonId: personId, isCurrent: true },
-    include: {
-      booking: { include: { project: true, plot: true } },
-      // Buying Commission names the acquired property instead of a Booking.
-      acquisition: { include: { plot: { include: { project: true } } } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-  });
-
-  return records.map((r) => ({
-    project: r.booking?.project.name ?? r.acquisition?.plot?.project.name ?? r.acquisition?.propertyName ?? "—",
-    plot: describePlot(r),
-    type: r.type,
-    percent: r.percent.toFixed(2),
-    milestonePercent: r.milestonePercent.toFixed(0),
-    eligibility: r.eligibility,
-    holdReason: r.holdReason,
-    payment: r.payment,
-    paidOn: r.paidOn?.toISOString() ?? null,
-  }));
-}
-
-/**
- * The Plot a commission record refers to. Sale commission names the Booking's
- * Plot; Buying Commission names the acquired property, which for an external
- * purchase may not be a Plot in inventory until the acquisition is approved.
- */
-function describePlot(record: {
-  booking: { plot: { plotType: string; plotNumber: string } } | null;
-  acquisition: { plot: { plotType: string; plotNumber: string } | null; propertyNumber: string | null } | null;
-}): string {
-  const plot = record.booking?.plot ?? record.acquisition?.plot ?? null;
-  if (plot) return `${plot.plotType.replaceAll("_", " ")} ${plot.plotNumber}`;
-  return record.acquisition?.propertyNumber ?? "—";
 }

@@ -38,7 +38,6 @@ export async function recordCounts(): Promise<Record<string, number>> {
     customers,
     members,
     staff,
-    portalAccounts,
     projects,
     plots,
     enquiries,
@@ -56,7 +55,6 @@ export async function recordCounts(): Promise<Record<string, number>> {
     () => db.customerProfile.count(),
     () => db.memberProfile.count(),
     () => db.staffAccount.count(),
-    () => db.portalAccount.count(),
     () => db.project.count(),
     () => db.plot.count(),
     () => db.enquiry.count(),
@@ -76,7 +74,6 @@ export async function recordCounts(): Promise<Record<string, number>> {
     customers,
     members,
     staff,
-    portalAccounts,
     projects,
     plots,
     enquiries,
@@ -473,18 +470,19 @@ async function businessModelV2(): Promise<RuleResult> {
     if (activated && activated <= b.createdAt) add(b.bookingNumber ?? b.requestNo, "Active Member recorded as Sold By Customer (§28.17)");
   }
 
-  // 18. A Customer closer's benefit released without KYC or Terms.
+  // 18. A Customer closer's benefit released without KYC. Customer Terms are no
+  // longer a condition (owner, 29 Oct 2026).
   const closings = await db.commissionRecord.findMany({
     where: { type: "LOYALTY", beneficiaryRole: "CLOSING_CUSTOMER", isCurrent: true, OR: [{ eligibility: "READY" }, { payment: "PAID" }] },
     select: {
       id: true,
-      beneficiaryPerson: { select: { fullName: true, aadhaarStatus: true, customerProfile: { select: { _count: { select: { termsAcceptances: true } } } } } },
+      beneficiaryPerson: { select: { fullName: true, aadhaarStatus: true } },
     },
   });
   for (const c of closings) {
     const p = c.beneficiaryPerson;
-    if (p.aadhaarStatus !== "VERIFIED" || !p.customerProfile?._count.termsAcceptances) {
-      add(p.fullName, "Customer-closing Loyalty Points released without verified KYC and accepted Terms (§28.18)");
+    if (p.aadhaarStatus !== "VERIFIED") {
+      add(p.fullName, "Customer-closing Loyalty Points released without verified KYC (§28.18)");
     }
   }
 
@@ -525,44 +523,6 @@ async function businessModelV2(): Promise<RuleResult> {
     rule: "business_model_v2_integrity",
     source: "UAT plan §28 — standing v2 integrity queries must return zero exceptions",
     checked: unfrozen.length + versions.length + banks.length + reviews.length + closings.length + customerSales.length,
-    exceptions,
-  };
-}
-
-/**
- * PRD §17.1; ARCHITECTURE §13.10 — a Member logs in with the Member ID, and the
- * old Customer portal is disabled rather than deleted. The approved model has no
- * Customer portal account at all, so any portal account must belong to a Member.
- */
-async function portalLogins(): Promise<RuleResult> {
-  const accounts = await db.portalAccount.findMany({
-    select: {
-      loginId: true,
-      status: true,
-      memberProfile: { select: { memberId: true, status: true } },
-    },
-  });
-
-  const exceptions: Exception[] = [];
-  for (const account of accounts) {
-    if (account.loginId !== account.memberProfile.memberId) {
-      exceptions.push({
-        record: account.loginId,
-        detail: `Portal login does not equal the Member ID ${account.memberProfile.memberId}`,
-      });
-    }
-    if (account.memberProfile.status === "DEACTIVATED" && account.status !== "DISABLED") {
-      exceptions.push({
-        record: account.loginId,
-        detail: "A deactivated Member still has an enabled portal account",
-      });
-    }
-  }
-
-  return {
-    rule: "member_id_login",
-    source: "PRD §17.1 — Member ID login; old Customer portal disabled, not deleted",
-    checked: accounts.length,
     exceptions,
   };
 }
@@ -617,8 +577,8 @@ const RULES = [
   paymentDatasets,
   commissionIntegrity,
   // customerClosingLoyalty removed: no three-closing cap since 27 Oct 2026.
+  // portalLogins removed with the Member portal (owner, 29 Oct 2026).
   personMerges,
-  portalLogins,
   deliveredCompletions,
   businessModelV2,
 ];

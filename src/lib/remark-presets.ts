@@ -78,11 +78,6 @@ export const REMARK_PRESETS = {
     "Not reachable after many tries",
     "Duplicate or wrong enquiry",
   ],
-  portalEnquiry: [
-    "Customer wants a site visit",
-    "Customer is ready to book soon",
-    "Customer wants a corner Plot",
-  ],
 
   // Bookings
   backdatedBooking: [
@@ -296,11 +291,6 @@ export const REMARK_PRESETS = {
     "Mobile number changed",
     "Name spelling corrected as per Aadhaar",
     "Moved to a new address",
-  ],
-  portalAccess: [
-    "Member forgot the password",
-    "Locked after wrong tries, verified by phone",
-    "Locked by mistake",
   ],
   disableStaff: [
     "Left the company",

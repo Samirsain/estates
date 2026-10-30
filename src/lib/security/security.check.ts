@@ -42,7 +42,6 @@ import {
   isAction,
   rolesHolding,
   STAFF_ROLES,
-  type Role,
 } from "./permissions.ts";
 import { requestHash, resolveIdempotency, expiryFrom, type StoredCommand } from "./idempotency.ts";
 import { signSession, verifySession, sessionExpiry, type SessionPayload } from "./session.ts";
@@ -142,7 +141,6 @@ assert.ok(!can("CRM", "BOOKING_DECIDE"), "CRM cannot approve its own Booking Req
 assert.ok(!can("PC", "PAYMENT_RECEIVED_CONFIRM"), "PC has no financial approval");
 assert.ok(!can("MIS", "TASK_COMPLETE"), "MIS is read-only besides manual tasks");
 assert.ok(can("MIS", "TASK_CREATE"));
-assert.ok(!can("MEMBER", "BOOKING_REQUEST_SUBMIT"), "Members submit Hold Requests, not Bookings");
 // MD holds everything, so a new Action is MD's the day it is added.
 for (const action of ALL_ACTIONS) {
   assert.ok(can("MD", action), `MD holds ${action}`);
@@ -165,8 +163,6 @@ for (const role of STAFF_ROLES) {
   const expected = role === "MD";
   assert.equal(canViewField(role, "AADHAAR_FULL"), expected, `${role} full Aadhaar`);
 }
-assert.ok(!canViewField("MEMBER" as Role, "BUYER_IDENTITY"), "portal never exposes buyer identity");
-assert.ok(!canViewField("MEMBER" as Role, "AADHAAR_FULL"));
 assert.ok(canViewField("ACCOUNTS", "BANK_FULL"));
 assert.ok(!canViewField("CRM", "BANK_FULL"));
 assert.ok(canViewField("MD", "MOBILE_FULL"));
@@ -223,7 +219,6 @@ const session: SessionPayload = {
 };
 const token = signSession(session, key);
 assert.deepEqual(verifySession(token, "STAFF", now, key), session);
-assert.equal(verifySession(token, "MEMBER", now, key), null, "staff token is rejected on the portal");
 assert.equal(verifySession(token, "STAFF", now, randomBytes(32)), null, "forged signature rejected");
 assert.equal(
   verifySession(token, "STAFF", new Date(now.getTime() + 9 * 3_600_000), key),
@@ -258,7 +253,7 @@ const loginSource = readFileSync(
 );
 const earlyReturns = (loginSource.match(/reason: "GENERIC"/g) ?? []).length;
 const burns = (loginSource.match(/burnPasswordTime\(password\)/g) ?? []).length;
-assert.ok(burns >= 3, `every pre-verify failure path burns password time (found ${burns})`);
+assert.ok(burns >= 2, `every pre-verify failure path burns password time (found ${burns})`);
 assert.ok(earlyReturns >= burns, "burns never outnumber the generic failure returns");
 
 // X-Forwarded-For is client-supplied: it must never be believed, recorded or
@@ -274,46 +269,6 @@ const realStart = Date.now();
 verifyPassword("some-wrong-password", hashPassword("a-real-password"));
 const realMs = Date.now() - realStart;
 assert.ok(decoyMs > 0 && realMs > 0, "both paths perform scrypt work");
-
-/* ------------------------------------------------ Member portal privacy */
-
-// PRD §23.1 / §25 test 20 / DESIGN §13.3 — the Member portal shows the
-// Member's own Network as positions and bands. A Customer's name, Customer ID
-// or contact detail is buyer-private and must never be assembled into the
-// portal payload in the first place. A source check, because the payload is
-// built in a server component that no unit test can call.
-const portalSource = readFileSync(new URL("../../app/portal/page.tsx", import.meta.url), "utf8");
-assert.ok(
-  portalSource.includes("royaltyLinkedCustomers"),
-  "the portal payload builds the Member's own Network (DESIGN §3.2, §13.2)"
-);
-
-// docss/11 §1, §2 — the Member's tokens come only through the Member-audience
-// view of their own profile: never another Member's ledger, never the internal
-// awards (no Project wallets, no pending awards as balances).
-assert.ok(
-  portalSource.includes('memberTokenView(member.memberProfileId, "MEMBER")'),
-  "the portal reads only the Member's own token view"
-);
-assert.ok(
-  !/royaltyAward|tokenLedger|tokenRedemption|tokenAllocation/.test(portalSource),
-  "the portal never queries awards, the ledger or redemptions directly"
-);
-
-// A Customer ID must not appear anywhere in what the portal assembles. Inviting
-// Members are Members, so their name and Member ID are allowed (DESIGN §13.2);
-// an introduced Customer's identity is not.
-assert.ok(
-  !portalSource.includes("customerId"),
-  "no Customer ID reaches the Member portal (PRD §23.1)"
-);
-
-// And the name cannot arrive by the back door either: joining Person onto the
-// introduced Customers is what would load it.
-assert.ok(
-  !portalSource.includes("introducedCustomers: { include:"),
-  "introduced Customers are not joined to Person in the portal query (PRD §23.1)"
-);
 
 // Forgot password — the recovery key is case-insensitive by request, and it is
 // the only thing standing between a Staff Account ID and a new password. Both

@@ -26,7 +26,6 @@ async function act(
     await run({ ref: actor.staffAccountId, role: actor.role });
     revalidatePath("/members");
     revalidatePath("/dashboard");
-    revalidatePath("/portal");
     return { ok: true, message: typeof message === "function" ? message(actor.role) : message };
   } catch (error) {
     if (error instanceof CommandError) return { ok: false, error: error.message };

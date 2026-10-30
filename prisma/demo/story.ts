@@ -37,7 +37,6 @@ import {
   bankAccounts,
   CRM,
   MD,
-  closerReady,
   customer,
   db,
   directOf,
@@ -284,9 +283,7 @@ on("2026-08-10", "Recovery opened on Nitin Goyal", async () => {
   await openRecovery({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", recordId: B.S11D, noticeOn: new Date(), reference: "REC-2026-001", reason: "Direct paid on a sale later cancelled." });
   notes("M09", "Owes a Recovery for the Direct paid on SR-22, which was later cancelled.");
 });
-on("2026-09-01", "Customer closers accept the Customer Terms", async () => {
-  await closerReady(P("vikas"));
-  await closerReady(P("kamal"));
+on("2026-09-01", "Kamal's shared mobile and address noted", async () => {
   notes("kamal", "Shares Nitin Goyal's mobile and address — his Loyalty waits for Check Recovery Link.");
 });
 

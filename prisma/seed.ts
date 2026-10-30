@@ -1,5 +1,5 @@
-// Phase 1 seed — one active MD plus one account per role, and a Member with
-// portal access. Idempotent: re-running updates the same records.
+// Phase 1 seed — one active MD plus one account per role, and a Member.
+// Idempotent: re-running updates the same records.
 // Run: npm run db:seed
 import { PrismaClient, type StaffRole } from "@prisma/client";
 import { hashPassword } from "../src/lib/security/auth.ts";
@@ -81,7 +81,7 @@ async function main() {
 
   }
 
-  // One Member with portal access, and one Customer, to exercise the identity model.
+  // One Member and one Customer, to exercise the identity model.
   const memberPerson = await upsertPerson("Kavita Joshi", "9811111111", {
     aadhaar: "234567890123",
     pan: "ABCDE1234F",
@@ -92,7 +92,6 @@ async function main() {
       memberId: "MEM-0217",
       personId: memberPerson.id,
       activationDate: new Date("2024-03-11T00:00:00+05:30"),
-      portalAccount: { create: { loginId: "MEM-0217", passwordHash } },
     },
     update: { status: "ACTIVE" },
   });

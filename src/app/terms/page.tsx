@@ -1,11 +1,8 @@
 // The published Terms and Privacy Notice — Terms §2.1.
 //
-// Public on purpose: the Member login links here before anyone has signed in,
-// and a person is entitled to read what they are being asked to accept without
-// first handing over credentials.
+// Public on purpose: a Member or Customer is entitled to read the Terms they
+// are held to without an account of any kind.
 
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { MEMBER_TERMS_VERSION, readTerms } from "@/lib/terms";
 
 export const dynamic = "force-dynamic";
@@ -20,14 +17,7 @@ export default function TermsPage() {
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-3xl px-5 py-10">
-      <Link
-        href="/portal/login"
-        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
-      </Link>
-
-      <header className="mt-4 border-b border-border/60 pb-5">
+      <header className="border-b border-border/60 pb-5">
         <h1 className="text-2xl font-semibold tracking-tight">Terms and Privacy Notice</h1>
         <p className="mt-1 text-xs text-muted-foreground">
           Published version {MEMBER_TERMS_VERSION}

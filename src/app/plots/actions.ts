@@ -166,7 +166,6 @@ export async function decideHoldRequestAction(
       note,
     });
     revalidatePath("/plots");
-    revalidatePath("/portal");
     return {
       ok: true,
       message:

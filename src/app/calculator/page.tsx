@@ -88,13 +88,7 @@ export default async function CalculatorPage({
           fullName: true,
           primaryMobile: true,
           aadhaarStatus: true,
-          customerProfile: {
-            select: {
-              customerId: true,
-              // v2.1 §22 — a Customer closer needs accepted Customer Terms.
-              termsAcceptances: { select: { id: true }, take: 1 },
-            },
-          },
+          customerProfile: { select: { customerId: true } },
           memberProfile: {
             select: {
               memberId: true,
@@ -193,12 +187,7 @@ export default async function CalculatorPage({
             commissionHold: member.commissionHold,
           }
         : null,
-      customer: customer
-        ? {
-            customerId: customer.customerId,
-            termsAccepted: customer.termsAcceptances.length > 0,
-          }
-        : null,
+      customer: customer ? { customerId: customer.customerId } : null,
     };
   });
 

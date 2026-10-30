@@ -2,7 +2,8 @@
 // Deny by default. Hiding a button is never the control (design.md §1).
 
 export type StaffRole = "MD" | "ACCOUNTS" | "CRM" | "MIS" | "PC";
-export type Role = StaffRole | "MEMBER";
+/** Staff only: Members have no sign-in since the portal was removed (owner, 29 Oct 2026). */
+export type Role = StaffRole;
 
 export const STAFF_ROLES: StaffRole[] = ["MD", "ACCOUNTS", "CRM", "MIS", "PC"];
 
@@ -30,7 +31,6 @@ export type Action =
   | "HOLD_CREATE"
   | "HOLD_EXTEND_FIRST"
   | "HOLD_EXTEND_FURTHER"
-  | "HOLD_REQUEST_SUBMIT"
   | "HOLD_REQUEST_REVIEW"
   // Pre-acquisition land sourcing (Land Inquiry spec §27). Viewing is any
   // signed-in staff account; reopening and archiving are MD/Admin only, which
@@ -126,8 +126,6 @@ const ROLE_ACTIONS: Record<Role, readonly Action[]> = {
   MIS: ["REPORT_VIEW", "REPORT_EXPORT", "TASK_CREATE"],
   // No financial approval (PRD §3). Project and Plot setup is MD's alone (owner, 16 Oct 2026).
   PC: ["TASK_COMPLETE", "REPORT_VIEW"],
-  // Restricted portal actions only (PRD §23).
-  MEMBER: ["HOLD_REQUEST_SUBMIT", "ENQUIRY_MANAGE"],
 };
 
 /** Sensitive values are masked unless the role holds explicit field permission. */
@@ -275,7 +273,6 @@ export const ACTION_GROUPS = [
       "HOLD_CREATE",
       "HOLD_EXTEND_FIRST",
       "HOLD_EXTEND_FURTHER",
-      "HOLD_REQUEST_SUBMIT",
       "HOLD_REQUEST_REVIEW",
       "LAND_INQUIRY_MANAGE",
       "LAND_INQUIRY_REOPEN",

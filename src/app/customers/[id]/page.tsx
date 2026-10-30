@@ -31,7 +31,7 @@ import { Row } from "@/components/fact-row";
 import { Section, Stat } from "@/components/record-section";
 import { AccountNumber, IdentityFacts } from "@/components/protected-identity";
 import { MergeButton } from "./merge-button";
-import { RecordTermsButton, VerifyAadhaarButton } from "./closer-conditions";
+import { VerifyAadhaarButton } from "./closer-conditions";
 import HistoryButton from "@/app/members/[id]/history-button";
 import { BankAccounts } from "./bank-accounts";
 import {
@@ -111,7 +111,6 @@ export default async function CustomerDetailPage({
       person: { include: { memberProfile: { select: { id: true, memberId: true, status: true } } } },
       royaltyLinkedMember: { include: { person: true } },
       royaltyLinkFirstBooking: { select: { id: true, bookingNumber: true } },
-      termsAcceptances: { orderBy: { acceptedOn: "desc" } },
     },
   });
 
@@ -505,24 +504,12 @@ export default async function CustomerDetailPage({
                 customer.person.panMasked ? statusWord(customer.person.panStatus) : undefined
               }
             />
-            {/* v2.1 §22, §77 — a Sold By Customer needs verified KYC and
-                accepted Customer Terms; the two steps sit here with Identity. */}
+            {/* v2.1 §22, §77 — a Sold By Customer needs verified KYC; the step
+                sits here with Identity. Customer Terms were removed from this
+                card and from the rule (owner, 29 Oct 2026). */}
             {customer.person.aadhaarStatus === "AVAILABLE" && ["ACCOUNTS", "MD"].includes(actor.role) && (
               <div className="flex justify-end">
                 <VerifyAadhaarButton personId={customer.personId} />
-              </div>
-            )}
-            <Row
-              label="Customer Terms"
-              value={
-                customer.termsAcceptances[0]
-                  ? `${customer.termsAcceptances[0].termsVersion} · ${formatIst(customer.termsAcceptances[0].acceptedOn)}`
-                  : "Not accepted"
-              }
-            />
-            {["CRM", "MD"].includes(actor.role) && (
-              <div className="flex justify-end">
-                <RecordTermsButton customerProfileId={customer.id} />
               </div>
             )}
           </Section>

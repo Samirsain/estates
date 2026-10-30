@@ -9,6 +9,11 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Calculator,
+  Check,
+  ChevronDown,
+  Copy,
+  ExternalLink,
+  Globe,
   LandPlot,
   Network,
   Search,
@@ -17,6 +22,13 @@ import {
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { NotificationBell } from "@/components/notification-bell";
 import { signOut } from "@/app/login/actions";
@@ -63,6 +75,60 @@ const SWIPE =
   "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_85%,transparent)]";
 
 const isOn = (pathname: string, href: string) => pathname === href || pathname.startsWith(href + "/");
+
+/**
+ * The Public Project Portal's one link, left of Calculator (owner, 29 Oct
+ * 2026): /p lists every Project not turned off on its own page, so this is the
+ * address to share. Copy for WhatsApp; Open in a new tab, since it is the
+ * public site and not a CRM page.
+ */
+function PublicPortalMenu() {
+  const [origin, setOrigin] = React.useState("");
+  const [copy, setCopy] = React.useState<"idle" | "copied" | "failed">("idle");
+  React.useEffect(() => setOrigin(window.location.origin), []);
+  const link = `${origin}/p`;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant="outline" className="ml-2 shrink-0 self-center">
+          <Globe className="mr-1 h-4 w-4" /> Public Portal <ChevronDown className="ml-1 h-3.5 w-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        <p className="truncate px-2 py-1.5 text-xs font-semibold text-foreground" title={link}>
+          {link}
+        </p>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          // The menu stays open so the tick can show the copy worked.
+          onSelect={(e) => {
+            e.preventDefault();
+            navigator.clipboard.writeText(link).then(
+              () => {
+                setCopy("copied");
+                setTimeout(() => setCopy("idle"), 1500);
+              },
+              () => setCopy("failed")
+            );
+          }}
+        >
+          {copy === "copied" ? (
+            <Check className="mr-1.5 h-3.5 w-3.5 text-emerald-700" />
+          ) : (
+            <Copy className="mr-1.5 h-3.5 w-3.5" />
+          )}
+          {copy === "copied" ? "Copied" : copy === "failed" ? "Could not copy — use Open Link" : "Copy Link"}
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <a href="/p" target="_blank" rel="noreferrer">
+            <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Open Link
+          </a>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 export function AppShell({
   role,
@@ -246,6 +312,7 @@ export function AppShell({
                 </a>
               );
             })}
+            <PublicPortalMenu />
             <Button asChild size="sm" className="ml-2 shrink-0 self-center">
               <a href="/calculator" aria-current={isOn(pathname, "/calculator") ? "page" : undefined}>
                 <Calculator className="mr-1 h-4 w-4" /> Calculator

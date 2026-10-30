@@ -8,16 +8,9 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { canViewField } from "@/lib/security/permissions";
 import { decryptSensitive } from "@/lib/security/identity";
 import { recordAudit } from "@/lib/security/audit";
-import { CommandError, blocked, runCommand } from "@/lib/services/command";
-import {
-  INITIAL_PORTAL_PASSWORD,
-  hashPassword,
-  oneTimePassword,
-  verifyPassword,
-} from "@/lib/security/auth";
+import { CommandError } from "@/lib/services/command";
 import { decideBankDetails, enterBankDetails, listBankDetails } from "@/lib/services/bank-service";
 import { applyMemberCommissionHold } from "@/lib/services/commission-service";
-import { signAutoLoginToken } from "@/lib/security/session";
 import { db } from "@/lib/db";
 import {
   activateMember,
@@ -147,8 +140,8 @@ export async function setMemberStatusAction(
     return {
       ok: true,
       message: active
-        ? "Reactivated. Portal access is restored and unpaid commission eligibility has been rechecked."
-        : "Deactivated. Portal access stopped immediately and every unpaid commission is On Hold — Member Deactivated. Paid records stay historical.",
+        ? "Reactivated. Unpaid commission eligibility has been rechecked."
+        : "Deactivated. Every unpaid commission is On Hold — Member Deactivated. Paid records stay historical.",
     };
   } catch (error) {
     return toResult(error);
@@ -403,109 +396,4 @@ export async function loadMemberDetail(memberProfileId: string) {
 }
 
 export type MemberDetail = NonNullable<Awaited<ReturnType<typeof loadMemberDetail>>>;
-
-/**
- * PRD §17.1 — Admin or MD unlocks a Member's portal account, or resets its
- * password. A reset signs out every portal session; the new password is
- * returned once and stored only as a hash. Both carry a reason into audit.
- */
-export async function resetPortalAccessAction(
-  memberProfileId: string,
-  mode: "UNLOCK" | "RESET_PASSWORD",
-  reason: string,
-  key: string
-): Promise<{ ok: true; message: string; oneTimePassword?: string } | { ok: false; error: string }> {
-  const actor = await requireStaff("MEMBER_ACTIVATE");
-  if (!reason.trim()) return { ok: false, error: "A compulsory reason is required." };
-  const password = mode === "RESET_PASSWORD" ? oneTimePassword() : null;
-
-  try {
-    const result = await runCommand<{ memberId: string }>(
-      {
-        idempotencyKey: key,
-        operation: `PORTAL_${mode}`,
-        actorRef: actor.staffAccountId,
-        actorRole: actor.role,
-        payload: { memberProfileId, mode, reason },
-      },
-      async (tx) => {
-        const member = await tx.memberProfile.findUniqueOrThrow({
-          where: { id: memberProfileId },
-          include: { portalAccount: true },
-        });
-        const account = member.portalAccount;
-        if (!account) blocked("This Member has no portal account yet.");
-
-        await tx.portalAccount.update({
-          where: { id: account.id },
-          data: password
-            ? {
-                passwordHash: hashPassword(password),
-                sessionVersion: account.sessionVersion + 1,
-                failedAttempts: 0,
-                lockedUntil: null,
-              }
-            : { failedAttempts: 0, lockedUntil: null },
-        });
-
-        return {
-          result: { memberId: member.memberId },
-          audit: {
-            entity: "MemberProfile",
-            entityId: member.id,
-            action: password ? "PORTAL_PASSWORD_RESET" : "PORTAL_UNLOCKED",
-            reason,
-          },
-        };
-      }
-    );
-    refresh();
-    return password
-      ? { ok: true, message: `${result.memberId} portal password reset.`, oneTimePassword: password }
-      : { ok: true, message: `${result.memberId} portal account unlocked.` };
-  } catch (error) {
-    return toResult(error) as { ok: false; error: string };
-  }
-}
-
-/**
- * `initialPassword` comes back only while the account still has the password
- * it started with. After the Member changes it or an Admin resets it, the
- * invite must not print a password that no longer works.
- */
-export async function generateMemberAutoLoginLinkAction(
-  memberId: string
-): Promise<ActionResult & { linkPath?: string; initialPassword?: string }> {
-  await requireStaff();
-  try {
-    const member = await db.memberProfile.findUnique({
-      where: { memberId },
-      include: { portalAccount: true },
-    });
-    if (!member || !member.portalAccount) {
-      return { ok: false, error: "Member portal account not found." };
-    }
-    if (member.status !== "ACTIVE" || member.portalAccount.status !== "ACTIVE") {
-      return { ok: false, error: "Member account is deactivated." };
-    }
-
-    const token = signAutoLoginToken(
-      {
-        memberId: member.memberId,
-        portalAccountId: member.portalAccount.id,
-      },
-      7
-    );
-
-    return {
-      ok: true,
-      linkPath: `/portal/autologin?token=${token}`,
-      ...(verifyPassword(INITIAL_PORTAL_PASSWORD, member.portalAccount.passwordHash)
-        ? { initialPassword: INITIAL_PORTAL_PASSWORD }
-        : {}),
-    };
-  } catch (error) {
-    return toResult(error);
-  }
-}
 

@@ -454,3 +454,68 @@ the screen. `src/lib/domain/rate-calculator.ts` — `calculateRate()`,
 The arithmetic is asserted in `src/lib/domain/domain.check.ts`, including the
 pack's own worked example.
 
+
+## D-08 · The Member Portal is gone
+
+**Date:** 29 October 2026
+**Approved by:** Product Owner, in the build session, after the downsides were
+set out ("permanent delete krdo member portal")
+**Governed area touched:** access — PRD §17.1 (Member ID login), §23 (portal
+views) and the portal sections of the Business Model v2 SSOT no longer describe
+the running system. No change request has been raised for it yet.
+
+### What changed (D-08)
+
+- No Member signs in. `/portal`, its login, the auto-login link, the Member
+  session and the `MEMBER` role are removed; staff are the only accounts.
+- Activating a Member no longer opens an account with a shared first password,
+  and deactivating one no longer has an account to disable.
+- The Member page loses Copy invite link, Unlock portal account and Reset portal
+  password; the Members list loses its "Portal disabled" tag.
+- The `PortalAccount` model is out of the schema. Its table is dropped by
+  `prisma/migrations/20261029120000_drop_member_portal`, which is written but
+  left for the owner to apply.
+
+### What stays (D-08)
+
+- Hold Requests already made, and the staff review of them on the Plot page.
+  Only a Member could raise one, so no new ones arrive.
+- Member Terms acceptances already recorded, shown on the Member's history; the
+  public `/terms` page.
+- Everything a Member used to read on the portal — commission, Royalty tokens,
+  Trip progress, their network — is still on the staff side, and the office
+  answers for it.
+
+## D-09 · A public, no-login Project Portal
+
+**Date:** 29 October 2026
+**Approved by:** Product Owner, in the build session, from their own spec after
+an analysis against the running system
+**Governed area touched:** access — the approved documents have no page that
+opens without signing in. No change request has been raised for it yet.
+
+### What exists (D-09)
+
+- `/p` lists every Project not turned off on its own page; `/p/<name>` shows one
+  Project's identity and its Plots as Available, Hold or Sold / Booked — the
+  only three states, worked out in `src/lib/domain/public-portal.ts`. A Plot
+  not on sale (Not Available, Not Yet Released, Not for Sale, Pledge) is left
+  out. Live data, nothing copied; no Booking, Hold, Enquiry or Person is read.
+- `Project.publicPortal` is on for every Project by default (owner: all
+  Projects show). MD removes one, or adds it back, from the Project page's
+  Update menu; audited. There is no card on the Project page for it.
+- A "Public Portal" menu left of Calculator in the top bar gives the `/p` link
+  to copy or open. That link carries no token and never expires; a Project's
+  own link follows its name.
+- An open portal page refreshes itself every two seconds while it is visible,
+  so a Hold, Booking or sale made in the CRM shows there within a few seconds.
+- Download PDF on a Project's portal page writes the same Project Information
+  Sheet as More info, PLC rates included, counting the Plots shown.
+
+### What the owner's spec asked for that the system cannot give (D-09)
+
+- Plots "in their actual position": no Plot carries a position on the site
+  plan, so the tiles are in plot-number order and the Layout link opens the plan.
+- Price, price per sq ft, description: not stored for a Plot, so not shown.
+- Contact / Enquiry: no office contact is stored and a public form would be a
+  new way in, so there is none.

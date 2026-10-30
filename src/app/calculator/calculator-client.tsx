@@ -92,11 +92,7 @@ export type CalcPersonView = {
     reraStatus: "REGISTERED" | "PENDING" | "EXPIRED" | "NOT_APPLICABLE";
     commissionHold: boolean;
   } | null;
-  customer: {
-    customerId: string;
-    /** v2.1 §22 — accepted Customer Terms. */
-    termsAccepted: boolean;
-  } | null;
+  customer: { customerId: string } | null;
 };
 
 /** One frozen CommissionRecord on the Plot's live Booking (PRD §6.9). */
@@ -528,7 +524,7 @@ export default function CalculatorClient({
    * The milestone is passed as reached, because there is no verified payment to
    * have reached it: the question is whether this Person could be paid at all —
    * Aadhaar, a verified bank, Member status, the Member hold, RERA, and for a
-   * Customer closer their KYC and Customer Terms (PRD §14.7, §19.5; v2.1 §22).
+   * Customer closer their KYC (PRD §14.7, §19.5; v2.1 §22).
    * A line that came from a Booking is never sent through here; it already
    * carries the engine's frozen answer.
    */
@@ -544,12 +540,7 @@ export default function CalculatorClient({
       reraStatus: beneficiary.member?.reraStatus ?? null,
       bookingProcess: "NONE",
       acquisitionPaymentPending: false,
-      closer: closing
-        ? {
-            kycVerified: beneficiary.aadhaarVerified,
-            termsAccepted: beneficiary.customer?.termsAccepted ?? false,
-          }
-        : null,
+      closer: closing ? { kycVerified: beneficiary.aadhaarVerified } : null,
     });
   }
 

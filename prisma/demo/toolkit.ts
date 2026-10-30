@@ -7,7 +7,7 @@ import { makeAvailable, prepareInventory } from "@/lib/services/inventory-servic
 import { createCommissionVersion, type CommissionVersionInput } from "@/lib/services/commission-settings-service";
 import { activateMember } from "@/lib/services/network-service";
 import { enterBankDetails } from "@/lib/services/bank-service";
-import { recordCustomerTermsAcceptance, verifyAadhaar } from "@/lib/services/customer-closer-service";
+import { verifyAadhaar } from "@/lib/services/customer-closer-service";
 import { createEnquiry } from "@/lib/services/enquiry-service";
 import { decideBookingRequest, submitBookingRequest } from "@/lib/services/booking-service";
 import { confirmPaymentReceived } from "@/lib/services/payment-service";
@@ -280,19 +280,6 @@ export async function enquiry(
     remark: opts.remark ?? "Interested; wants a site visit and the price list.",
   });
   return (made as { enquiryId: string }).enquiryId;
-}
-
-/** A Customer closer: verified KYC (from the cast) and Customer Terms accepted. */
-export async function closerReady(who: Who) {
-  const profile = await db.customerProfile.findUniqueOrThrow({ where: { personId: who.id } });
-  await recordCustomerTermsAcceptance({
-    idempotencyKey: key(),
-    actorRef: CRM,
-    actorRole: "CRM",
-    customerProfileId: profile.id,
-    termsVersion: "CT-2026-10",
-    acceptedOn: new Date(),
-  });
 }
 
 /** Accounts' monthly payout run: every Ready, unpaid line on the demo's Projects. */

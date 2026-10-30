@@ -544,10 +544,12 @@ export type EligibilityInput = {
   /** Payment Given on the acquisition is below 100% (PRD §11.3). */
   acquisitionPaymentPending: boolean;
   /**
-   * v2.1 §22, §77 — a Customer-closing Loyalty's closer must have verified KYC
-   * and accepted Customer Terms. Null on every other record.
+   * v2.1 §22, §77 — a Customer-closing Loyalty's closer must have verified KYC.
+   * Null on every other record. Customer Terms acceptance is no longer a
+   * condition (owner, 29 Oct 2026); CUSTOMER_TERMS_PENDING stays in the hold
+   * reasons only so records held for it before then still read.
    */
-  closer: { kycVerified: boolean; termsAccepted: boolean } | null;
+  closer: { kycVerified: boolean } | null;
   /**
    * CP §54, §85 — the beneficiary has a Recovery Outstanding, so no new cash
    * payout is released; the entitlement stays recorded.
@@ -609,10 +611,7 @@ export function resolveEligibility(input: EligibilityInput): Eligibility {
     if (input.reraStatus === "EXPIRED") return hold("RERA_EXPIRED");
   }
 
-  if (input.closer) {
-    if (!input.closer.kycVerified) return hold("CLOSER_KYC_PENDING");
-    if (!input.closer.termsAccepted) return hold("CUSTOMER_TERMS_PENDING");
-  }
+  if (input.closer && !input.closer.kycVerified) return hold("CLOSER_KYC_PENDING");
 
   return { state: "READY", holdReason: null };
 }

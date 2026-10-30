@@ -53,7 +53,6 @@ export type MemberRowView = {
   reraNotApplicableReason: string | null;
   commissionHold: boolean;
   commissionHoldReason: string | null;
-  portalStatus: string | null;
   aadhaarStatus: string;
   panStatus: string;
   aadhaarMasked: string;
@@ -274,11 +273,6 @@ export default function MembersClient({
                           under it because that is who they are about. */}
                       {row.commissionHold && (
                         <span className="block text-[11px] text-amber-800">Commission Hold</span>
-                      )}
-                      {row.portalStatus === "DISABLED" && (
-                        <span className="block text-[11px] text-muted-foreground">
-                          Portal disabled
-                        </span>
                       )}
                     </td>
                     <td className="whitespace-nowrap tabular-nums">{row.mobile}</td>

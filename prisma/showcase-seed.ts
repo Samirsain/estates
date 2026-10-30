@@ -235,7 +235,6 @@ async function wipe() {
     const memberIds = (
       await db.memberProfile.findMany({ where: { personId: { in: personIds } }, select: { id: true } })
     ).map((m) => m.id);
-    await db.portalAccount.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.memberTermsAcceptance.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.personMergeRequest.deleteMany({
       where: { OR: [{ survivingPersonId: { in: personIds } }, { mergedPersonId: { in: personIds } }] },

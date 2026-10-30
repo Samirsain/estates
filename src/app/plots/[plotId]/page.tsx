@@ -2,7 +2,7 @@
 //
 // Laid out as the Customer and Member profiles are (owner, 28 Oct 2026): Back
 // and alert badges on the left of the top line, History · the one next step ·
-// More on the right; a header card with Size and In the name of; Layout · PLC ·
+// More on the right; a header card with Size (sides and area) and In the name of; Layout · PLC ·
 // Completion side by side; then every deal on the Plot in one table. History
 // opens from its button. Payment schedule and commission are the Booking
 // page's — the Plot and its Bookings stay two pages, linked both ways.
@@ -171,9 +171,17 @@ function PlotShape({
   // The Plot drawn 30% smaller than it was (owner, 28 Oct 2026). Only the
   // shape shrinks: the side labels keep their size, so they stay readable.
   const scale = 147 / Math.max(w, l);
-  const bw = Math.max(62, w * scale);
-  const bh = Math.max(62, l * scale);
-  const padX = Math.max(150, 42 + widest * CHAR);
+  // A narrow Plot is drawn just wide enough for its number to clear the two
+  // length labels standing inside its east and west edges (~22 units in each),
+  // so "AH-05" never sits on "60 ft"; a shallow one just tall enough for it to
+  // clear the width labels above and below.
+  // ponytail: ~9.5 units a character at 15px bold is an estimate, not a measurement.
+  const bw = Math.max(62, w * scale, plotNumber.length * 9.5 + 44);
+  const bh = Math.max(64, l * scale);
+  // North and south labels are centred over the shape; a long one widens the
+  // margins rather than running out of the card.
+  const across = Math.max(0, ...[...rows("NORTH"), ...rows("SOUTH")].map((row) => row.length * CHAR));
+  const padX = Math.max(150, 42 + widest * CHAR, (across - bw) / 2 + 8);
   const padY = 52;
   const x = padX;
   const y = padY;
@@ -891,19 +899,24 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             </div>
 
             <dl className="flex flex-wrap gap-x-10 gap-y-3">
+              {/* One Size: the sides, then the area in all three units, moved up
+                  from under the drawing (owner, 29 Oct 2026), two to a line at one
+                  size and centred under one heading. An irregular Plot has no
+                  sides, so its square feet come first. */}
               <Stat
-                label="Size"
+                label="Size & Area"
+                className="text-center"
                 value={
-                  plot.widthFt && plot.lengthFt
-                    ? formatPlotSize(plot.widthFt.toString(), plot.lengthFt.toString())
-                    : `${num(plot.areaSqFt)} sq ft`
-                }
-                // Square feet under the size (owner, 28 Oct 2026); an irregular Plot
-                // already shows them as its size.
-                hint={
-                  plot.widthFt && plot.lengthFt
-                    ? `Area: ${num(plot.areaSqFt)} sq ft${plot.exactAreaSqFt ? " · exact" : ""}`
-                    : "Area · exact"
+                  <span className="grid grid-cols-[auto_auto] gap-x-4">
+                    {plot.widthFt && plot.lengthFt && (
+                      <span>{formatPlotSize(plot.widthFt.toString(), plot.lengthFt.toString())}</span>
+                    )}
+                    <span>{num(plot.areaSqFt)} sq ft</span>
+                    <span>{conv(plot.areaSqYd)} sq yd</span>
+                    <span>
+                      {conv(plot.areaSqM)} sq m{plot.exactAreaSqFt ? " · exact" : ""}
+                    </span>
+                  </span>
                 }
               />
               <Stat
@@ -929,14 +942,16 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
           </div>
         </Card>
 
-        {/* 3 Layout · 4 PLC · 5 Completion. The drawing takes two columns of
-            four: in a third of the row its side labels shrank below reading size.
-            On a tablet it takes the whole row and the other two share the next —
-            a quarter of 800px is too narrow for an Allotment Number. */}
-        <div className="grid items-start gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <div className="md:col-span-2">
-          {/* No heading: the drawing says what it is (owner, 28 Oct 2026). */}
-          <Card className="p-4 md:p-5">
+        {/* 3 Layout · 4 PLC · 5 Completion. The drawing takes half the row: in a
+            third its side labels shrank below reading size. PLC and Completion
+            stack in the other half and Completion stretches, so both halves end
+            on one line instead of three cards stopping at three heights (owner,
+            29 Oct 2026). On a tablet the drawing takes the whole row and the
+            other two share the next. */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          {/* No heading: the drawing says what it is (owner, 28 Oct 2026). It sits
+              in the middle of whatever height the other half gives the row. */}
+          <Card className="flex flex-col justify-center p-4 md:p-5">
             {plot.widthFt && plot.lengthFt ? (
               <PlotShape
                 plotNumber={plot.plotNumber}
@@ -960,107 +975,91 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             ) : (
               <p className="py-2 text-center text-xs text-muted-foreground">An irregular Plot has no sides to draw.</p>
             )}
-            {/* What the Plot measures, under the drawing of it. */}
-            <div className="mt-3 border-t border-border/60 pt-3">
-              <Row
-                label={plot.exactAreaSqFt ? "Area (exact)" : "Area"}
-                value={
-                  <span className="block space-y-0.5">
-                    {(
-                      [
-                        [num(plot.areaSqFt), "sq ft"],
-                        [conv(plot.areaSqYd), "sq yd"],
-                        [conv(plot.areaSqM), "sq m"],
-                      ] as const
-                    ).map(([amount, unit]) => (
-                      <span key={unit} className="block whitespace-nowrap tabular-nums">
-                        {amount}
-                        <span className="ml-1 text-[11px] font-medium text-muted-foreground">{unit}</span>
-                      </span>
-                    ))}
-                  </span>
-                }
-              />
-              {/* With both sides and an override, what the sides multiply to is
-                  the other half of the reason the override exists. */}
-              {plot.exactAreaSqFt && plot.widthFt && plot.lengthFt && (
-                <Row
-                  label="Width × Length area"
-                  value={<span className="tabular-nums">{num(plot.widthFt.mul(plot.lengthFt))} sq ft</span>}
-                />
-              )}
-              {plot.exactAreaReason && <Row label="Override reason" value={plot.exactAreaReason} />}
-            </div>
+            {/* Area moved up beside Size (owner, 29 Oct 2026). An exact-area
+                override still explains itself under the drawing: what the sides
+                multiply to is the other half of the reason it exists. */}
+            {((plot.exactAreaSqFt && plot.widthFt && plot.lengthFt) || plot.exactAreaReason) && (
+              <div className="mt-3 border-t border-border/60 pt-3">
+                {plot.exactAreaSqFt && plot.widthFt && plot.lengthFt && (
+                  <Row
+                    label="Width × Length area"
+                    value={<span className="tabular-nums">{num(plot.widthFt.mul(plot.lengthFt))} sq ft</span>}
+                  />
+                )}
+                {plot.exactAreaReason && <Row label="Override reason" value={plot.exactAreaReason} />}
+              </div>
+            )}
           </Card>
+
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-1 lg:grid-rows-[auto_1fr]">
+            {/* What the sides earn, and the sentence they add up to. */}
+            <Section title={plc ? `PLC · ${plc.total}%` : "PLC"} icon={<Percent className="h-3.5 w-3.5" />}>
+              {plc ? (
+                plc.components.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No location charge on this Plot.</p>
+                ) : (
+                  plc.components.map((c) => (
+                    <Row
+                      key={c.label}
+                      label={c.label}
+                      value={<span className="tabular-nums">{c.percent}%</span>}
+                      hint={c.evidence || undefined}
+                    />
+                  ))
+                )
+              ) : (
+                <p className="text-xs text-muted-foreground">{plcIssue}</p>
+              )}
+              {position && (
+                <p className="mt-3 border-t border-border/60 pt-3 text-xs">
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Position </span>
+                  <span className="font-semibold text-foreground">{position}</span>
+                </p>
+              )}
+              {/* The frozen figure is the one that counts (PLC spec §10.3); this
+                  only says the rules have moved since it was frozen. */}
+              {frozenDiffers && (
+                <p className="mt-2 text-[11px] text-amber-800">
+                  Frozen on this deal at {frozenPercent}% (version {frozen!.ruleVersion.version},{" "}
+                  {formatIst(frozen!.frozenAt)}); today&apos;s rules give {plc!.total}%.
+                </p>
+              )}
+            </Section>
+
+            <Section title="Completion" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
+              {completion ? (
+                completion.route === "ALLOTMENT" ? (
+                  <>
+                    <Row label="Route" value="Allotment" />
+                    <Row
+                      label="Allotment Date"
+                      value={completion.allotmentDate ? formatIst(completion.allotmentDate) : "—"}
+                    />
+                    <Row label="Allotment Number" value={completion.allotmentNumber ? slashBreaks(completion.allotmentNumber) : "—"} />
+                    <Row label="Given To" value={completion.allotmentGivenTo ?? "—"} />
+                    <Row
+                      label="Patta"
+                      value={completion.pattaStatus === "YES" ? "Yes" : "Don't Know"}
+                      hint={completion.pattaDate ? formatIst(completion.pattaDate) : undefined}
+                    />
+                    <Row label="Delivered On" value={formatIst(completion.deliveredAt)} />
+                  </>
+                ) : (
+                  <>
+                    <Row label="Route" value="Registry" />
+                    <Row label="Advocate" value={completion.advocateName ?? "—"} />
+                    <Row
+                      label="Registry Date"
+                      value={completion.registryDate ? formatIst(completion.registryDate) : "—"}
+                    />
+                    <Row label="Delivered On" value={formatIst(completion.deliveredAt)} />
+                  </>
+                )
+              ) : (
+                <p className="text-xs text-muted-foreground">Not completed yet.</p>
+              )}
+            </Section>
           </div>
-
-          {/* What the sides earn, and the sentence they add up to. */}
-          <Section title={plc ? `PLC · ${plc.total}%` : "PLC"} icon={<Percent className="h-3.5 w-3.5" />}>
-            {plc ? (
-              plc.components.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No location charge on this Plot.</p>
-              ) : (
-                plc.components.map((c) => (
-                  <Row
-                    key={c.label}
-                    label={c.label}
-                    value={<span className="tabular-nums">{c.percent}%</span>}
-                    hint={c.evidence || undefined}
-                  />
-                ))
-              )
-            ) : (
-              <p className="text-xs text-muted-foreground">{plcIssue}</p>
-            )}
-            {position && (
-              <p className="mt-3 border-t border-border/60 pt-3 text-xs">
-                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Position </span>
-                <span className="font-semibold text-foreground">{position}</span>
-              </p>
-            )}
-            {/* The frozen figure is the one that counts (PLC spec §10.3); this
-                only says the rules have moved since it was frozen. */}
-            {frozenDiffers && (
-              <p className="mt-2 text-[11px] text-amber-800">
-                Frozen on this deal at {frozenPercent}% (version {frozen!.ruleVersion.version},{" "}
-                {formatIst(frozen!.frozenAt)}); today&apos;s rules give {plc!.total}%.
-              </p>
-            )}
-          </Section>
-
-          <Section title="Completion" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
-            {completion ? (
-              completion.route === "ALLOTMENT" ? (
-                <>
-                  <Row label="Route" value="Allotment" />
-                  <Row
-                    label="Allotment Date"
-                    value={completion.allotmentDate ? formatIst(completion.allotmentDate) : "—"}
-                  />
-                  <Row label="Allotment Number" value={completion.allotmentNumber ? slashBreaks(completion.allotmentNumber) : "—"} />
-                  <Row label="Given To" value={completion.allotmentGivenTo ?? "—"} />
-                  <Row
-                    label="Patta"
-                    value={completion.pattaStatus === "YES" ? "Yes" : "Don't Know"}
-                    hint={completion.pattaDate ? formatIst(completion.pattaDate) : undefined}
-                  />
-                  <Row label="Delivered On" value={formatIst(completion.deliveredAt)} />
-                </>
-              ) : (
-                <>
-                  <Row label="Route" value="Registry" />
-                  <Row label="Advocate" value={completion.advocateName ?? "—"} />
-                  <Row
-                    label="Registry Date"
-                    value={completion.registryDate ? formatIst(completion.registryDate) : "—"}
-                  />
-                  <Row label="Delivered On" value={formatIst(completion.deliveredAt)} />
-                </>
-              )
-            ) : (
-              <p className="text-xs text-muted-foreground">Not completed yet.</p>
-            )}
-          </Section>
         </div>
 
         {/* 6 Bookings and Hold Requests (owner's names, 28 Oct 2026) — the live deal, Hold Requests waiting on it,

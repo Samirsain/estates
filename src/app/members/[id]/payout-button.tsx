@@ -145,16 +145,17 @@ export function PayoutButton({
               </>
             )}
             {/* Remarks are optional only on a normal payout; every early step needs its why. */}
-            <Field label={step === "PAY" ? "Remarks" : step === "REQUEST" ? "Reason — compulsory" : "Remarks — compulsory"}>
-              <textarea name="text" rows={2} className={`${inputClass} w-full`} required={step !== "PAY"} />
+            <Field label={step === "PAY" ? "Remarks" : step === "REQUEST" ? "Reason (compulsory)" : "Remarks (compulsory)"}>
+              {/* h-auto: inputClass's fixed h-9 would hold two rows to one line. */}
+              <textarea name="text" rows={2} className={`${inputClass} h-auto py-2`} required={step !== "PAY"} />
             </Field>
             {error && <p className="text-xs text-red-700">{error}</p>}
             <div className="flex justify-end gap-2">
-              <Button type="button" size="sm" variant="outline" onClick={() => setKey(null)}>
+              <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setKey(null)}>
                 Cancel
               </Button>
               <Button type="submit" size="sm" disabled={busy}>
-                {action}
+                {busy ? "Saving…" : action}
               </Button>
             </div>
           </form>

@@ -11,6 +11,7 @@ import {
   updateProject,
   revisePlcRules,
   savePlcDraft,
+  setProjectPublicPortal,
   setProjectStatus,
   type PlcComponentInput,
 } from "@/lib/services/project-service";
@@ -134,6 +135,29 @@ export async function setProjectStatusAction(
       message:
         `Project is now ${status.replaceAll("_", " ").toLowerCase()}.${released}` +
         (kept.length > 0 ? ` ${kept.join(", ")}.` : ""),
+    };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** Public Project Portal on or off — MD, as every other Project setting. */
+export async function setPublicPortalAction(projectId: string, on: boolean, key: string): Promise<ActionResult> {
+  const actor = await requireStaff("PROJECT_SETUP");
+  try {
+    await setProjectPublicPortal({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      projectId,
+      on,
+    });
+    revalidatePath(`/projects/${projectId}`);
+    return {
+      ok: true,
+      message: on
+        ? "Public Portal is on. This Project is listed again and its link opens."
+        : "Public Portal is off. This Project is no longer listed and its link does not open.",
     };
   } catch (error) {
     return toResult(error);

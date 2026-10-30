@@ -7,7 +7,6 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import {
-  INITIAL_PORTAL_PASSWORD,
   burnPasswordTime,
   hashPassword,
   isLocked,
@@ -19,16 +18,14 @@ import {
   verifyRecoveryKey,
 } from "@/lib/security/auth";
 import { decryptSensitive } from "@/lib/security/identity";
-import { MEMBER_TERMS_VERSION } from "@/lib/terms";
 import {
-  SESSION_COOKIE_MEMBER,
   SESSION_COOKIE_STAFF,
   SESSION_HOURS,
   sessionExpiry,
   signSession,
 } from "@/lib/security/session";
 
-type Outcome = { ok: true; to: string } | { ok: false; reason: "GENERIC" | "RATE" | "TERMS" };
+type Outcome = { ok: true; to: string } | { ok: false; reason: "GENERIC" | "RATE" };
 
 /**
  * X-Forwarded-For is set by the client unless a trusted proxy overwrites it, so
@@ -114,121 +111,6 @@ export async function staffLogin(form: FormData): Promise<void> {
   redirect(result.ok ? result.to : `/login?tab=staff&error=${result.reason}`);
 }
 
-/* ----------------------------------------------------------------- member */
-
-async function attemptMemberLogin(form: FormData): Promise<Outcome> {
-  // Member login uses Member ID; a mobile alone is never sufficient (PRD §17.1).
-  const loginId = String(form.get("loginId") ?? "").trim();
-  const password = String(form.get("password") ?? "");
-  const acceptsTerms = form.get("acceptTerms") === "on";
-  const ip = await clientIp();
-  const now = new Date();
-
-  if ((ip && !rateLimit(`ip:${ip}`, now)) || !rateLimit(`member:${loginId}`, now)) {
-    return { ok: false, reason: "RATE" };
-  }
-
-  let account = await db.portalAccount.findUnique({
-    where: { loginId },
-    include: { memberProfile: true },
-  });
-
-  // Self-healing: If MemberProfile is ACTIVE but PortalAccount record doesn't exist yet, auto-create it.
-  if (!account) {
-    const memberProfile = await db.memberProfile.findUnique({
-      where: { memberId: loginId },
-    });
-    if (memberProfile && memberProfile.status === "ACTIVE") {
-      const defaultPasswordHash = hashPassword(INITIAL_PORTAL_PASSWORD);
-      account = await db.portalAccount.create({
-        data: {
-          memberProfileId: memberProfile.id,
-          loginId: memberProfile.memberId,
-          passwordHash: defaultPasswordHash,
-          status: "ACTIVE",
-        },
-        include: { memberProfile: true },
-      });
-    }
-  }
-
-  if (
-    !account ||
-    account.status !== "ACTIVE" ||
-    account.memberProfile.status !== "ACTIVE" ||
-    isLocked({ failedAttempts: account.failedAttempts, lockedUntil: account.lockedUntil }, now)
-  ) {
-    burnPasswordTime(password);
-    return { ok: false, reason: "GENERIC" };
-  }
-
-  if (!verifyPassword(password, account.passwordHash)) {
-    const next = registerFailure(
-      { failedAttempts: account.failedAttempts, lockedUntil: account.lockedUntil },
-      now
-    );
-    await db.portalAccount.update({ where: { id: account.id }, data: next });
-    return { ok: false, reason: "GENERIC" };
-  }
-
-  // Terms §2.1 — the Member accepts the applicable Terms and Privacy Notice.
-  // Asked once per published version and recorded, rather than re-ticked at
-  // every sign-in: a box that records nothing proves nothing later.
-  const accepted = await db.memberTermsAcceptance.findUnique({
-    where: {
-      memberProfileId_version: {
-        memberProfileId: account.memberProfileId,
-        version: MEMBER_TERMS_VERSION,
-      },
-    },
-  });
-
-  if (!accepted) {
-    if (!acceptsTerms) {
-      // The credentials were right; only the acceptance is missing. The form
-      // comes back with the box, carrying the Member ID so only the password
-      // is retyped.
-      return { ok: false, reason: "TERMS" };
-    }
-    await db.memberTermsAcceptance.create({
-      data: {
-        memberProfileId: account.memberProfileId,
-        version: MEMBER_TERMS_VERSION,
-        ip,
-      },
-    });
-  }
-
-  await db.portalAccount.update({
-    where: { id: account.id },
-    data: { ...registerSuccess(), lastLoginAt: now },
-  });
-  await setSessionCookie(
-    SESSION_COOKIE_MEMBER,
-    signSession({
-      context: "MEMBER",
-      accountId: account.id,
-      loginId: account.loginId,
-      role: "MEMBER",
-      sessionVersion: account.sessionVersion,
-      expiresAt: sessionExpiry(now),
-    })
-  );
-  return { ok: true, to: "/portal" };
-}
-
-export async function memberLogin(form: FormData): Promise<void> {
-  const result = await attemptMemberLogin(form);
-  if (result.ok) redirect(result.to);
-  // Only the Terms step carries the Member ID back: it is not a secret, and
-  // retyping it to tick a box the server just asked for is pure friction.
-  const loginId =
-    result.reason === "TERMS"
-      ? `&loginId=${encodeURIComponent(String(form.get("loginId") ?? "").trim())}`
-      : "";
-  redirect(`/portal/login?error=${result.reason}${loginId}`);
-}
-
 /* ------------------------------------------------------- forgot password */
 
 /**
@@ -284,6 +166,5 @@ export async function forgotStaffPassword(form: FormData): Promise<void> {
 export async function signOut(): Promise<void> {
   const jar = await cookies();
   jar.delete(SESSION_COOKIE_STAFF);
-  jar.delete(SESSION_COOKIE_MEMBER);
   redirect("/login");
 }

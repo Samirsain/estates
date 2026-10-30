@@ -292,7 +292,6 @@ async function wipe() {
         select: { id: true },
       })
     ).map((m) => m.id);
-    await db.portalAccount.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.memberTermsAcceptance.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.bankDetail.deleteMany({ where: { personId: { in: personIds } } });
     await db.memberProfile.deleteMany({ where: { personId: { in: personIds } } });

@@ -46,7 +46,7 @@ import { CommandError } from "@/lib/services/command";
 import { emptyInput } from "@/lib/domain/land-inquiry";
 import { istDay } from "@/lib/tasks";
 import { at } from "./story-clock.ts";
-import { ACC, ACC2, CRM, MD, bankAccounts, closerReady, customer, db, enquiry, inDays, key, member, people, plotId, project, projectIds, settings } from "./toolkit.ts";
+import { ACC, ACC2, CRM, MD, bankAccounts, customer, db, enquiry, inDays, key, member, people, plotId, project, projectIds, settings } from "./toolkit.ts";
 import { AC_LAND_PREFIX } from "./all-cases-world.ts";
 
 type Step = { day: string; time: string; label: string; run: () => Promise<unknown> };
@@ -268,7 +268,6 @@ on("2026-04-08", "Rajat buys TN-20 through Vijay, jointly with Neha (30%)", asyn
   await submit("TN-20", "HC", { member: "TM01" }, { joint: "spouse", enquiryId: eq });
   await approve("TN-20");
   await pay("TN-20", "30");
-  await closerReady(rajat); // Customer Terms accepted, so he can close sales for others later
   kase(RAJAT, "TN-20", "First Plot: Enquiry by Member → Booking, joint with Neha 50/50, Sold By Vijay (Royalty link to Vijay, provisional until 100%)", "Properties; History.");
   kase(VIJAY, "TN-20", "Enquiry turned into a sale; Rajat Malpani becomes his Royalty linked Customer", "Requests and enquiries; Royalty linked Customers.");
   note("spouse", "Joint buyer with Rajat on TN-20; becomes Primary Customer of TN-28.");

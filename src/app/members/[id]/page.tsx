@@ -15,7 +15,6 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can, canViewField } from "@/lib/security/permissions";
 import { maskAadhaar, maskMobile, maskPan } from "@/lib/security/identity";
-import { isLocked } from "@/lib/security/auth";
 import { eligibilityLabel, experienceSince, payoutStep } from "@/lib/domain/commission";
 import { formatIst, formatIstDateTime, istDay } from "@/lib/tasks";
 import { auditHistory, mergeHistory, newestFirst } from "@/lib/profile-history";
@@ -226,9 +225,6 @@ export default async function MemberDetailPage({
       person: { include: { customerProfile: { select: { id: true, customerId: true } } } },
       invitedByMember: { include: { person: true } },
       invitedMembers: { include: { person: true }, orderBy: { activationDate: "asc" } },
-      portalAccount: {
-        select: { status: true, lastLoginAt: true, lockedUntil: true, failedAttempts: true },
-      },
       termsAcceptances: { select: { version: true, acceptedAt: true } },
     },
   });
@@ -407,12 +403,6 @@ export default async function MemberDetailPage({
   const bank =
     banks.find((b) => b.status === "VERIFIED") ?? banks.find((b) => b.status === "PENDING") ?? null;
 
-  /* ---------------------------------------------------------------- access */
-
-  const portal = member.portalAccount;
-  const portalLocked = portal
-    ? isLocked({ failedAttempts: portal.failedAttempts, lockedUntil: portal.lockedUntil })
-    : false;
   /* ------------------------------------------------------------- deals */
 
   // A Booking Request has no Booking number until Accounts approve it, and a
@@ -838,7 +828,6 @@ export default async function MemberDetailPage({
               canActivate={canManage}
               canDeactivate={can(actor.role, "MEMBER_DEACTIVATE", actor.extraPermissions)}
               canCorrectInviter={actor.role === "MD"}
-              portal={canManage && portal ? { locked: portalLocked } : null}
             />
             {can(actor.role, "PERSON_DETAILS_EDIT", actor.extraPermissions) && (
               <PersonDetailsEditor

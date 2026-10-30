@@ -28,7 +28,7 @@ import {
 } from "@/lib/services/commission-settings-service";
 import { activateMember, setMemberStatus } from "@/lib/services/network-service";
 import { enterBankDetails } from "@/lib/services/bank-service";
-import { recordCustomerTermsAcceptance, verifyAadhaar } from "@/lib/services/customer-closer-service";
+import { verifyAadhaar } from "@/lib/services/customer-closer-service";
 import { createEnquiry } from "@/lib/services/enquiry-service";
 import { cancelBooking, decideBookingRequest, submitBookingRequest } from "@/lib/services/booking-service";
 import { createHold } from "@/lib/services/hold-service";
@@ -241,8 +241,7 @@ async function member(label: string, name: string, note: string, inviter: string
     reraNumber: `RAJ/A/${label}/2026`,
     reraExpiryDate: day(400),
   });
-  // UAT §6.7 — the Member has accepted the Member Terms the portal publishes,
-  // so the mock Members sign in without a Terms stop.
+  // UAT §6.7 — the Member has accepted the published Member Terms.
   await db.memberTermsAcceptance.create({ data: { memberProfileId: activated.memberProfileId, version: MEMBER_TERMS_VERSION } });
   members[label] = { profileId: activated.memberProfileId, person: p };
   return p;
@@ -294,19 +293,6 @@ const pay = (bookingId: string, percent: string, payer?: { payerName: string; pa
   });
 
 const directOf = (bookingId: string) => db.commissionRecord.findFirstOrThrow({ where: { bookingId, type: "DIRECT", isCurrent: true } });
-
-/** CP §17 — a Customer closer: verified KYC and accepted Customer Terms CT-2026-10. */
-async function closerReady(p: Made) {
-  const profile = await db.customerProfile.findUniqueOrThrow({ where: { personId: p.id } });
-  await recordCustomerTermsAcceptance({
-    idempotencyKey: key(),
-    actorRef: CRM,
-    actorRole: "CRM",
-    customerProfileId: profile.id,
-    termsVersion: "CT-2026-10",
-    acceptedOn: today,
-  });
-}
 
 let crmAccountId = "";
 async function enquiryOnly(p: Made, projectId: string) {
@@ -517,17 +503,14 @@ async function main() {
   /* UAT §6.5 — Customer closers on Blue Ridge (Loyalty 2%). */
   const C1 = await person("C-001", "Deepika Rao", "Customer closer: own purchase, KYC verified, Customer Terms accepted, no closings yet.", { kyc: "verified" });
   await pay(await sell(P.B.plots["B-03"], C1), "100");
-  await closerReady(C1);
 
   const C2 = await person("C-002", "Gaurav Singhal", "Customer closer with 2 valid Customer-closing events — the next one is the third.", { kyc: "verified" });
   await pay(await sell(P.B.plots["B-04"], C2), "100");
-  await closerReady(C2);
   await pay(await sell(P.B.plots["B-05"], await buyer(8), { customer: C2 }), "100");
   await pay(await sell(P.B.plots["B-06"], await buyer(9), { customer: C2 }), "100");
 
   const C3 = await person("C-003", "Priyanka Jain", "3 valid Customer-closing events — blocked as a closer (T43 raised); Membership needed.", { kyc: "verified" });
   await pay(await sell(P.B.plots["B-07"], C3), "100");
-  await closerReady(C3);
   for (const unit of ["B-08", "B-09", "B-10"]) await pay(await sell(P.B.plots[unit], await buyer(10 + ["B-08", "B-09", "B-10"].indexOf(unit)), { customer: C3 }), "100");
 
   const C4 = await person("C-004", "Amit Chauhan", "One prior approved purchase (paid by his father — third-party payer recorded). His next purchase is a repeat-purchase Loyalty test.", { kyc: "verified" });
@@ -559,7 +542,6 @@ async function main() {
     address: "14 Shanti Nagar",
   });
   await pay(await sell(P.C.plots["C-04"], C12), "100");
-  await closerReady(C12);
   await pay(await sell(P.C.plots["C-05"], await person("B-16", "Buyer Sarita Sharma", "Filler buyer."), { customer: C12 }), "100");
 
   /* CTL-10 — M-008 is staff and earns his own Direct like any Member (owner, 14 Oct 2026). */
@@ -707,7 +689,6 @@ async function writeKey() {
     "- Project settings: Aravali Greens shows PSV-A2 Approved, waiting for its effective time.",
     "- Repeat-purchase Loyalty: C-014 (Bookings → C-07 → Commission).",
     "- Pre-sales: 4 Enquiries (Member, site visit, existing Customer, online), Holds on A-11 and E-05, and C-005's Booking Request on A-12 waiting for Accounts.",
-    "- Member Portal: sign in with any Member ID above and the initial portal password set at activation (INITIAL_PORTAL_PASSWORD in src/lib/security/auth.ts).",
     "",
   ];
   writeFileSync("docss/9. Business_Model_v2_Mock_Data_Key.md", lines.join("\n"), "utf-8");

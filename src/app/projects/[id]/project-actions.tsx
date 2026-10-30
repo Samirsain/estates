@@ -1,12 +1,12 @@
 "use client";
 
-// Edit Project and Update (PLC versions · Change status · Edit commission) on
+// Edit Project and Update (PLC versions · Change status · Public Portal · Edit commission) on
 // the Project's own page (owner, 28 Oct 2026). The dialogs and actions are the
 // Projects list's own, so a change made here is the change made there.
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Layers, Pencil } from "lucide-react";
+import { ChevronDown, Globe, Layers, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -19,6 +19,7 @@ import {
   revisePlcRulesAction,
   savePlcDraftAction,
   setProjectStatusAction,
+  setPublicPortalAction,
   updateProjectAction,
   type ActionResult,
 } from "../actions";
@@ -70,6 +71,24 @@ export default function ProjectActions({
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onSelect={() => setOpen("STATUS")}>Change status</DropdownMenuItem>
+              {/* Every Project is on the Public Project Portal unless removed
+                  here (owner, 29 Oct 2026); a resale group has no Plots to show.
+                  No confirmation line: the item's own wording flipping between
+                  Add and Remove says it worked. Only a failure is shown. */}
+              {!project.isExternalResaleGroup && (
+                <DropdownMenuItem
+                  disabled={busy}
+                  onSelect={async () => {
+                    setNotice(null);
+                    const result = await setPublicPortalAction(project.id, !project.publicPortal, newKey());
+                    if (result.ok) router.refresh();
+                    else setNotice(result);
+                  }}
+                >
+                  <Globe className="mr-2 h-3.5 w-3.5" />
+                  {project.publicPortal ? "Remove from Public Portal" : "Add to Public Portal"}
+                </DropdownMenuItem>
+              )}
               {canEditCommission && !project.isExternalResaleGroup && (
                 <DropdownMenuItem
                   onSelect={() => {

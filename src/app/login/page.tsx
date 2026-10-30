@@ -1,4 +1,5 @@
-// Staff and Member portal are separate security contexts (ARCHITECTURE §9.1).
+// Staff sign-in, the only one there is: the Member portal was removed for good
+// (owner, 29 Oct 2026).
 
 import { ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -11,13 +12,11 @@ import { SubmitButton } from "./login-form";
 const MESSAGES: Record<string, string> = {
   GENERIC: GENERIC_LOGIN_ERROR,
   RATE: "Too many attempts. Wait a minute and try again.",
-  TERMS: "Please read and accept the Terms and Privacy Notice to continue.",
   RESET: "Password set. Sign in with the new one.",
 };
 
-/** Neither is a failure: TERMS is the one remaining step (Terms §2.1), RESET
- *  is the confirmation coming back from Forgot password. */
-const NOTICES = new Set(["TERMS", "RESET"]);
+/** Not a failure: RESET is the confirmation coming back from Forgot password. */
+const NOTICES = new Set(["RESET"]);
 
 export default async function LoginPage({
   searchParams,
@@ -86,13 +85,6 @@ export default async function LoginPage({
             Sessions end after 8 hours. A password reset signs out every device.
           </p>
         </Card>
-
-        <p className="text-center text-[11px] text-muted-foreground">
-          Member?{" "}
-          <a href="/portal/login" className="underline underline-offset-2 hover:text-foreground">
-            Sign in to Member Portal
-          </a>
-        </p>
       </div>
     </div>
   );

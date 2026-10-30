@@ -4,33 +4,23 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Box, ChevronDown, Info, Layers, Map, MoreVertical, Pencil, Plus, Share, X } from "lucide-react";
+import { Box, ChevronDown, Info, Layers, Map, Plus, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { useCommercialRewardsDraft } from "./[id]/commission-settings";
-import { downloadProjectSheet } from "@/lib/pdf/project-sheet";
+import { ProjectIdentity, SheetHeading, amenityList, projectWhere } from "./project-identity";
+import { headline } from "@/lib/pdf/project-sheet";
+import DownloadPdfButton from "./download-pdf-button";
 import { plcComponentLabel, plcDisplayComponents, type PlcCategory } from "@/lib/domain/inventory";
 import { formatPercent } from "@/lib/tasks";
 import { formatIst, type StaffRole } from "@/lib/tasks";
 import {
   createProjectAction,
-  publishPlcVersionAction,
-  revisePlcRulesAction,
-  savePlcDraftAction,
-  updateProjectAction,
   type ProjectFields,
-  setProjectStatusAction,
   type ActionResult,
 } from "./actions";
 import { RemarkSelect } from "@/components/ui/remark-select";
@@ -52,6 +42,8 @@ export type ProjectRowView = {
   amenities: string | null;
   reraNumber: string | null;
   isExternalResaleGroup: boolean;
+  /** Listed on the Public Project Portal (/p) — on unless turned off from Update. */
+  publicPortal: boolean;
   plotCount: number;
   plotTypeCounts: Array<{ plotType: string; count: number }>;
   /** Feet, as set on this Project's Plot sides — the PLC dialog lists each one. */
@@ -102,30 +94,6 @@ const BULLET = "•";
  */
 const CARD_PILL = "h-6 shrink-0 px-2 text-[10px]";
 
-/**
- * Amenities are stored one per line, without the bullet. The bullet belongs to
- * the field you type in and to the card you read; storing it would put a
- * decoration inside the data.
- */
-/**
- * "clubhouse" was typed once and is read for years, so it is printed the way a
- * brochure would print it. Only the case is touched: whatever was typed is
- * what is stored, searched and edited.
- */
-function titleCase(value: string): string {
-  return value
-    .split(" ")
-    .map((word) => (word ? word.charAt(0).toUpperCase() + word.slice(1) : word))
-    .join(" ");
-}
-
-function amenityList(amenities: string | null): string[] {
-  return (amenities ?? "")
-    .split("\n")
-    .map((a) => a.replace(/^[•\-*]\s*/, "").trim())
-    .filter(Boolean);
-}
-
 const STATUS_LABEL: Record<string, string> = {
   // Screen wording only. The enum value stays SETUP_NOT_ACTIVE — DEVIATIONS D-03.
   SETUP_NOT_ACTIVE: "Unreleased",
@@ -151,9 +119,6 @@ export default function ProjectsClient({
 }) {
   const router = useRouter();
   const [creating, setCreating] = React.useState(false);
-  const [plc, setPlc] = React.useState<ProjectRowView | null>(null);
-  const [editing, setEditing] = React.useState<ProjectRowView | null>(null);
-  const [status, setStatus] = React.useState<ProjectRowView | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
   const [detail, setDetail] = React.useState<ProjectRowView | null>(null);
@@ -165,9 +130,6 @@ export default function ProjectsClient({
     setNotice(result);
     if (result.ok) {
       setCreating(false);
-      setPlc(null);
-      setEditing(null);
-      setStatus(null);
       router.refresh();
     }
   }
@@ -275,8 +237,9 @@ export default function ProjectsClient({
               </div>
 
               {/* Every link the office opens, each with its name on it — an
-                  icon alone is a guess. They share the footer with the actions
-                  menu; the code that used to sit here now leads the card, above
+                  icon alone is a guess. The actions menu that shared this
+                  footer is gone (owner, 29 Oct 2026): the Project page's Edit
+                  Project and Update ▾ do Edit, PLC versions and status. The code that used to sit here now leads the card, above
                   the name, where the sheet and the PDF also put it. */}
               <div className="mt-auto flex items-center justify-between gap-2 border-t border-border/50 pt-2">
                 <div className="flex min-w-0 flex-nowrap items-center gap-1">
@@ -313,33 +276,6 @@ export default function ProjectsClient({
                   </Button>
                 </div>
 
-                {canSetup && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={`Actions for ${project.name}`}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => setEditing(project)}>
-                          <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
-                        </DropdownMenuItem>
-                        {!project.isExternalResaleGroup && (
-                          <DropdownMenuItem onSelect={() => setPlc(project)}>
-                            <Layers className="mr-2 h-3.5 w-3.5" /> PLC versions
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onSelect={() => setStatus(project)}>
-                          Change status
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
               </div>
             </Card>
           ))}
@@ -357,56 +293,20 @@ export default function ProjectsClient({
         />
       )}
 
-      {editing && (
-        <EditProjectDialog
-          project={editing}
-          busy={busy}
-          onClose={() => setEditing(null)}
-          onSubmit={(input, reason) =>
-            run(() => updateProjectAction(editing.id, input, reason, newKey()))
-          }
-        />
-      )}
-
-      {plc && (
-        <PlcDialog
-          project={plc}
-          busy={busy}
-          onClose={() => setPlc(null)}
-          onSubmit={(components, reason) =>
-            run(() => revisePlcRulesAction(plc.id, components, reason, newKey()))
-          }
-          onDraft={(components, reason) =>
-            run(() => savePlcDraftAction(plc.id, components, reason, newKey()))
-          }
-          onPublish={(versionId) => run(() => publishPlcVersionAction(versionId, newKey()))}
-        />
-      )}
-
-      {status && (
-        <StatusDialog
-          project={status}
-          busy={busy}
-          onClose={() => setStatus(null)}
-          onSubmit={(next, reason) =>
-            run(() => setProjectStatusAction(status.id, next, reason, newKey()))
-          }
-        />
-      )}
     </AppShell>
   );
 }
 
 /**
- * Everything about one Project that the card has no room for.
+ * More info, laid out as the sheet Download PDF writes (owner, 29 Oct 2026):
+ * the Project's identity block as its own page heads it, then Project
+ * Amenities, Project Resources, Plot Inventory as count cards and Plot
+ * Location Charges as a ruled table, two to a row. The cards and rates are
+ * worked out once here and handed to the sheet as they are, so the screen and
+ * the paper never disagree.
  *
- * No boxes inside the box: the dialog is already a panel, and drawing more
- * panels inside it puts three borders between a heading and its own facts.
- * What separates one group from the next is the heading and the space around
- * it, the way a printed sheet does it.
- *
- * Share writes an A4 PDF of the same facts and hands it straight to the
- * browser's downloads — see lib/pdf/project-sheet.ts.
+ * Download PDF writes a one-page A4 sheet of the same facts and hands it
+ * straight to the browser's downloads — see lib/pdf/project-sheet.ts.
  */
 function ProjectInfoDialog({
   project,
@@ -415,211 +315,90 @@ function ProjectInfoDialog({
   project: ProjectRowView;
   onClose: () => void;
 }) {
-  const amenities = amenityList(project.amenities);
   const published = project.plcVersions.find((v) => v.status === "PUBLISHED") ?? null;
-  const [saving, setSaving] = React.useState(false);
+  const countOf = (plotType: string) =>
+    project.plotTypeCounts.find((c) => c.plotType === plotType)?.count ?? 0;
+  // An External Resale Property Group sells nothing of its own, so like its
+  // page it has neither part. Total, Residential and Commercial are always
+  // there, as the sheet's three cards; Informal Sector only where there is
+  // one. The rates without their version number, and nothing at all when none
+  // is published.
+  const inventory = project.isExternalResaleGroup
+    ? null
+    : [
+        { label: "Total Plots", value: String(project.plotCount) },
+        { label: "Residential Plots", value: String(countOf("RESIDENTIAL")) },
+        { label: "Commercial Plots", value: String(countOf("COMMERCIAL")) },
+        ...project.plotTypeCounts
+          .filter((c) => c.plotType !== "RESIDENTIAL" && c.plotType !== "COMMERCIAL" && c.count > 0)
+          .map((c) => ({ label: `${PLOT_TYPE_LABEL[c.plotType] ?? c.plotType} Plots`, value: String(c.count) })),
+      ];
+  const rates =
+    project.isExternalResaleGroup || !published
+      ? null
+      : plcDisplayComponents(published.components).map((c) => ({ label: c.label, value: formatPercent(c.percent) }));
 
   return (
-    // Narrower than the Booking dialogs and tight enough to read without a
-    // scrollbar: everything about one Project fits on one sheet.
-    <Modal title="" onClose={onClose} width="w-[min(50rem,94vw)]">
-      <div className="space-y-4">
-        {/* The heading and Share share one row: the sheet's whole
-            budget is the screen it has to fit on, and a title that took three
-            rows spent it on nothing. */}
-        {/* pr-8 keeps Share clear of the Modal's own corner close. */}
-        <div className="flex items-start justify-between gap-4 pr-8">
-          <div className="min-w-0">
-            <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
-              {[
-                project.projectCode,
-                project.isExternalResaleGroup
-                  ? "External Resale Property Group"
-                  : (TYPE_LABEL[project.type] ?? project.type),
-                STATUS_LABEL[project.status] ?? project.status,
-              ].join(" · ")}
-            </p>
-            <h2 className="mt-0.5 truncate text-xl font-semibold leading-tight tracking-tight text-foreground">
-              {project.name}
-            </h2>
-          </div>
-          {/* Apple's share glyph, where Apple puts it: the corner of the sheet
-              it acts on — on the heading's own line, so it costs no row. */}
-          <div className="flex shrink-0 items-center gap-1.5">
-          <Button
-            size="sm"
-            variant="outline"
-            className="group rounded-full pl-4 pr-1.5 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-[0.98]"
-            disabled={saving}
-            onClick={async () => {
-              setSaving(true);
-              try {
-                await downloadProjectSheet({
-                  name: project.name,
-                  projectCode: project.projectCode,
-                  type: project.isExternalResaleGroup
-                    ? "External Resale Property Group"
-                    : (TYPE_LABEL[project.type] ?? project.type),
-                  status: STATUS_LABEL[project.status] ?? project.status,
-                  developer: project.developer,
-                  reraNumber: project.reraNumber,
-                  city: project.city,
-                  location: project.location,
-                  locationUrl: project.locationUrl,
-                  driveUrl: project.driveUrl,
-                  renderUrl: project.renderUrl,
-                  plotCount: project.plotCount,
-                  plotTypeCounts: project.plotTypeCounts.map(({ plotType, count }) => ({
-                    label: PLOT_TYPE_LABEL[plotType] ?? plotType,
-                    count,
-                  })),
-                  amenities,
-                });
-              } finally {
-                setSaving(false);
-              }
-            }}
-            title="Download as PDF"
-          >
-            {saving ? "Saving…" : "Share"}
-            {/* The glyph sits in its own circle rather than naked beside the
-                word, and leans out a little when the pill is hovered. */}
-            <span className="ml-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:-translate-y-px group-hover:scale-105">
-              <Share className="h-3.5 w-3.5" />
-            </span>
-          </Button>
-          </div>
-        </div>
-
-        {/* One order, and every block keeps its place whether it holds
-            anything or not: two Projects side by side read the same, and the
-            eye stops looking for what moved. What is acted on — where it is
-            and the three links — leads; the rule behind the rates sits last
-            before the amenities, which are the longest and the least scanned.
-            The PDF draws the same order and leaves out only this PLC block,
-            because it is shared outside the office. */}
-        <div className="grid gap-x-10 gap-y-3 md:grid-cols-2">
-          <div className="space-y-3">
-            {/* No heading over these two rows (owner, 28 Oct 2026): City and
-                Location name themselves. */}
-            <dl className="text-xs">
-              <Row label="City" value={project.city ?? "Not recorded"} />
-              <Row label="Location" value={project.location ?? "Not recorded"} />
-            </dl>
-
-            <Group title="Inventory">
-              <Row label="Total Plots" value={String(project.plotCount)} />
-              {project.plotTypeCounts.length === 0 ? (
-                <p className="py-1.5 text-xs text-muted-foreground">No plots yet.</p>
-              ) : (
-                project.plotTypeCounts.map(({ plotType, count }) => (
-                  <Row
-                    key={plotType}
-                    label={PLOT_TYPE_LABEL[plotType] ?? plotType}
-                    value={String(count)}
-                  />
-                ))
-              )}
-            </Group>
-
-            {/* The documents sit under the inventory they describe: a layout
-                and a walkthrough are what someone reaches for after reading
-                how many Plots there are, not before. */}
-            <div className="flex flex-wrap gap-1.5">
-              {project.driveUrl && (
-              <Button size="xs" variant="outline" asChild>
-                <a href={project.driveUrl} target="_blank" rel="noreferrer noopener">
-                  <Layers className="mr-1 h-3 w-3" /> Layout
-                </a>
-              </Button>
-              )}
-              {project.locationUrl && (
-              <Button size="xs" variant="outline" asChild>
-                <a href={project.locationUrl} target="_blank" rel="noreferrer noopener">
-                  <Map className="mr-1 h-3 w-3" /> Location
-                </a>
-              </Button>
-              )}
-              {project.renderUrl && (
-              <Button size="xs" variant="outline" asChild>
-                <a href={project.renderUrl} target="_blank" rel="noreferrer noopener">
-                  <Box className="mr-1 h-3 w-3" /> 3D Visuals
-                </a>
-              </Button>
-              )}
-              {!project.locationUrl && !project.driveUrl && !project.renderUrl && (
-              <span className="text-[11px] text-muted-foreground">No links added yet.</span>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {/* No heading here either (owner, 28 Oct 2026). */}
-            <dl className="text-xs">
-              <Row label="Developer" value={project.developer ?? "Not recorded"} />
-              <Row label="RERA Number" value={project.reraNumber ?? "Not recorded"} />
-            </dl>
-
-            <Group title="Plot Location Charge">
-              {!published ? (
-                <p className="py-1.5 text-xs text-muted-foreground">No published version.</p>
-              ) : (
-                // The rates, not the version they came from: which version is
-                // published is the PLC versions dialog's business.
-                plcDisplayComponents(published.components).map((component, i) => (
-                  <Row key={i} label={component.label} value={formatPercent(component.percent)} />
-                ))
-              )}
-            </Group>
-          </div>
-        </div>
-
-        <Group title="Amenities">
-          {amenities.length === 0 ? (
-            <p className="py-1.5 text-xs text-muted-foreground">None recorded.</p>
-          ) : (
-            // Four columns: a Project with twenty amenities is five lines
-            // here rather than seven, which is what keeps the sheet on one
-            // screen for the long lists as well as the short ones.
-            <ul className="grid gap-x-8 gap-y-1 pt-1.5 text-xs sm:grid-cols-2 md:grid-cols-4">
-              {amenities.map((amenity) => (
-                <li key={amenity} className="flex items-center gap-2">
-                  <span className="h-1 w-1 shrink-0 rounded-full bg-primary/50" />
-                  <span className="truncate" title={amenity}>
-                    {titleCase(amenity)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Group>
+    // As wide as the Project page's own card, so the block lays out the same.
+    <Modal title="" onClose={onClose} width="w-[min(64rem,94vw)]">
+      {/* Download PDF in the top right corner, on the close button's own line
+          and just left of it (owner, 29 Oct 2026). !mt-0 undoes the margin the
+          Modal's space-y gives every child, which would drop it 14px below
+          the close button and onto RERA. */}
+      <div className="absolute right-12 top-3 !mt-0">
+        <DownloadPdfButton
+          sheet={{
+            name: project.name,
+            projectCode: project.projectCode,
+            type: project.isExternalResaleGroup
+              ? "External Resale Property Group"
+              : (TYPE_LABEL[project.type] ?? project.type),
+            status: STATUS_LABEL[project.status] ?? project.status,
+            developer: project.developer,
+            reraNumber: project.reraNumber,
+            where: projectWhere(project),
+            locationUrl: project.locationUrl,
+            driveUrl: project.driveUrl,
+            renderUrl: project.renderUrl,
+            amenities: amenityList(project.amenities),
+            inventory,
+            plcRates: rates,
+          }}
+        />
       </div>
 
+      <div className="space-y-4 pt-2">
+        <ProjectIdentity project={project} heading="h2" sections />
+
+        {inventory && (
+          <section className="space-y-2">
+            <SheetHeading>Plot Inventory</SheetHeading>
+            <dl className={`grid grid-cols-2 gap-3 ${inventory.length > 3 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
+              {inventory.map(({ label, value }) => (
+                <div key={label} className="rounded-xl border border-border/60 bg-secondary px-4 py-3">
+                  <dd className="text-xl font-bold leading-none tabular-nums text-foreground">{value}</dd>
+                  <dt className="mt-1.5 text-xs text-muted-foreground">{label}</dt>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )}
+
+        {rates && rates.length > 0 && (
+          <section className="space-y-2">
+            <SheetHeading>Plot Location Charges</SheetHeading>
+            <dl className="grid gap-x-10 sm:grid-cols-2">
+              {rates.map(({ label, value }, i) => (
+                <div key={i} className="flex items-baseline justify-between gap-4 border-b border-border/50 py-2 text-sm">
+                  <dt className="text-foreground">{headline(label)}</dt>
+                  <dd className="font-semibold tabular-nums text-foreground">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )}
+      </div>
     </Modal>
-  );
-}
-
-/**
- * A heading and the facts under it. The heading and the space carry the
- * grouping; there is no border, because the dialog is the border.
- */
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h3 className="border-b border-border/50 pb-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-        {title}
-      </h3>
-      <dl className="text-xs">{children}</dl>
-    </section>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-border/25 py-1.5 last:border-0">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="text-right font-medium tabular-nums text-foreground">{value}</dd>
-    </div>
   );
 }
 

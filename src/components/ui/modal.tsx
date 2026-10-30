@@ -35,7 +35,9 @@ export function Modal({
     <dialog
       ref={ref}
       onClose={onClose}
-      className={`${
+      // text-left: a dialog opened from a centred table cell (a Payout button)
+      // is that cell's DOM child and would otherwise centre every label in it.
+      className={`text-left ${
         width ?? (wide ? "w-[min(72rem,96vw)]" : "w-[min(40rem,94vw)]")
       } rounded-[20px] border border-border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/40 backdrop:backdrop-blur-xs`}
     >

@@ -376,6 +376,46 @@ export async function setProjectStatus(args: {
 }
 
 /**
+ * Public Project Portal (owner, 29 Oct 2026) — turns /p/<name> on or off for
+ * one Project. Audited like every Project change; the link itself is not
+ * stored, so there is nothing else to keep in step.
+ */
+export async function setProjectPublicPortal(args: {
+  idempotencyKey: string;
+  actorRef: string;
+  actorRole: string;
+  projectId: string;
+  on: boolean;
+}) {
+  return runCommand(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "PROJECT_PUBLIC_PORTAL",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { projectId: args.projectId, on: args.on },
+    },
+    async (tx) => {
+      const project = await tx.project.findUniqueOrThrow({ where: { id: args.projectId } });
+      if (project.isExternalResaleGroup) blocked("An External Resale Property Group has no Plots of its own to show.");
+      if (project.publicPortal === args.on) blocked(`The Public Portal is already ${args.on ? "on" : "off"}.`);
+
+      await tx.project.update({ where: { id: args.projectId }, data: { publicPortal: args.on } });
+      return {
+        result: { projectId: args.projectId, on: args.on },
+        audit: {
+          entity: "Project",
+          entityId: args.projectId,
+          action: args.on ? "PUBLIC_PORTAL_ON" : "PUBLIC_PORTAL_OFF",
+          before: { publicPortal: project.publicPortal },
+          after: { publicPortal: args.on },
+        },
+      };
+    }
+  );
+}
+
+/**
  * PLC spec §3.1 — a new version is prepared as a Draft. It changes nothing:
  * inventory keeps using the published version until the draft is published.
  */

@@ -12,7 +12,7 @@ import {
   type Action,
   type StaffRole,
 } from "./permissions";
-import { SESSION_COOKIE_MEMBER, SESSION_COOKIE_STAFF, verifySession } from "./session";
+import { SESSION_COOKIE_STAFF, verifySession } from "./session";
 
 export type StaffActor = {
   context: "STAFF";
@@ -20,16 +20,6 @@ export type StaffActor = {
   staffAccountId: string;
   role: StaffRole;
   extraPermissions: string[];
-  name: string;
-};
-
-export type MemberActor = {
-  context: "MEMBER";
-  accountId: string;
-  /** MemberProfile.id — the key every portal command is scoped to. */
-  memberProfileId: string;
-  personId: string;
-  memberId: string;
   name: string;
 };
 
@@ -54,37 +44,6 @@ export async function currentStaff(): Promise<StaffActor | null> {
     extraPermissions: account.extraPermissions,
     name: account.person.fullName,
   };
-}
-
-export async function currentMember(): Promise<MemberActor | null> {
-  const token = (await cookies()).get(SESSION_COOKIE_MEMBER)?.value;
-  const payload = verifySession(token, "MEMBER");
-  if (!payload) return null;
-
-  const account = await db.portalAccount.findUnique({
-    where: { id: payload.accountId },
-    include: { memberProfile: { include: { person: true } } },
-  });
-  if (!account || account.status !== "ACTIVE") return null;
-  if (account.sessionVersion !== payload.sessionVersion) return null;
-  // Deactivation disables portal access immediately (PRD §13).
-  if (account.memberProfile.status !== "ACTIVE") return null;
-
-  return {
-    context: "MEMBER",
-    accountId: account.id,
-    memberProfileId: account.memberProfile.id,
-    personId: account.memberProfile.personId,
-    memberId: account.memberProfile.memberId,
-    name: account.memberProfile.person.fullName,
-  };
-}
-
-/** Guards the Member portal. The staff context is never accepted here. */
-export async function requireMember(): Promise<MemberActor> {
-  const actor = await currentMember();
-  if (!actor) redirect("/portal/login");
-  return actor;
 }
 
 /** Guards a page or server action. Redirects when signed out, throws when denied. */

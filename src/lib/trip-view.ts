@@ -1,6 +1,6 @@
 // A Member's Trip, grouped by Project programme — SSOT §40, §47, §54, §56;
-// Change Pack §68, §70. Safe for the Member portal: credits and rewards only,
-// never a Customer's identity, and no value.
+// Change Pack §68, §70. Credits and rewards only, never a Customer's identity,
+// and no value.
 
 import { db } from "@/lib/db";
 
@@ -18,7 +18,7 @@ export type TripProgrammeView = {
   banked: number;
   held: number;
   expired: number;
-  /** CP §68 — every credit of the programme, oldest first (staff view; empty in the portal). */
+  /** CP §68 — every credit of the programme, oldest first. */
   credits: Array<{
     id: string;
     type: string;
@@ -53,26 +53,6 @@ export type TripProgrammeView = {
 /** Credit states a sale only reaches once it qualified; PENDING and REVERSED never did. */
 const QUALIFYING = new Set(["QUALIFIED", "ALLOCATED", "USED", "HELD", "EXPIRED"]);
 
-/** Reads and groups everything for one Member. */
-export async function tripOfMember(memberProfileId: string) {
-  const [credits, buckets] = await Promise.all([
-    db.tripCredit.findMany({
-      where: { memberProfileId },
-      select: {
-        projectId: true,
-        programmeCode: true,
-        creditType: true,
-        state: true,
-        bucketId: true,
-        expiresAt: true,
-        settingsVersion: { select: { tripTotalTarget: true, tripMinOwnCredits: true, tripMaxReferenceCredits: true, tripTermsVersionRef: true } },
-      },
-    }),
-    db.tripBucket.findMany({ where: { memberProfileId }, include: { reward: true }, orderBy: { openedAt: "desc" } }),
-  ]);
-  return tripProgrammes(credits, buckets);
-}
-
 /** CP §68 — the Member's Trip, grouped by Project programme. */
 export async function tripProgrammes(
   credits: {
@@ -82,7 +62,7 @@ export async function tripProgrammes(
     state: string;
     bucketId: string | null;
     expiresAt: Date | null;
-    // The staff view passes these for the credit list; the portal does not.
+    // Passed for the credit list on the Member's page.
     id?: string;
     qualificationRoute?: string | null;
     qualifiedAt?: Date | null;

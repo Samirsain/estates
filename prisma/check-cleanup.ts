@@ -235,9 +235,6 @@ export async function purgeScope(db: PrismaClient, scope: PurgeScope) {
 
   // Identity last: everything above referenced it.
   await db.bankDetail.deleteMany({ where: { personId: { in: personIds } } });
-  await db.portalAccount.deleteMany({
-    where: { memberProfile: { personId: { in: personIds } } },
-  });
   await db.memberProfile.updateMany({
     where: { personId: { in: personIds } },
     data: { invitedByMemberId: null },

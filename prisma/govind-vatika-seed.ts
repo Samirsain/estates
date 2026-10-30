@@ -30,7 +30,7 @@ import { MEMBER_TERMS_VERSION } from "@/lib/terms";
 import { aadhaarLastFour, blindIndex, encryptSensitive, normaliseAadhaar } from "@/lib/security/identity";
 import { activateMember } from "@/lib/services/network-service";
 import { enterBankDetails } from "@/lib/services/bank-service";
-import { recordCustomerTermsAcceptance, verifyAadhaar } from "@/lib/services/customer-closer-service";
+import { verifyAadhaar } from "@/lib/services/customer-closer-service";
 import { closeEnquiry, createEnquiry, recordFollowUp } from "@/lib/services/enquiry-service";
 import { cancelHold, createHold } from "@/lib/services/hold-service";
 import {
@@ -556,13 +556,6 @@ async function story(projectId: string, plotId: string) {
 
   step("Resale: Sanjay refers Neeraj, who books G-21 — Sold By Customer Sanjay");
   const sanjayCustomer = await db.customerProfile.findUniqueOrThrow({ where: { personId: sanjay.id } });
-  await recordCustomerTermsAcceptance({
-    ...crm,
-    idempotencyKey: key(),
-    customerProfileId: sanjayCustomer.id,
-    termsVersion: "CT-2026-10",
-    acceptedOn: new Date(),
-  });
   const neerajEnquiry = await enquiry(neeraj.id, "BY_CUSTOMER", "Sanjay's colleague; wants a ready corner Plot.", {
     sourceCustomerId: sanjayCustomer.id,
   });

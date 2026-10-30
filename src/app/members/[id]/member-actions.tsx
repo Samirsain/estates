@@ -9,7 +9,6 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -19,11 +18,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Modal } from "@/components/ui/modal";
 import { MemberDialog, ReraFields } from "../members-client";
-import PortalAccessDialog, { type PortalMode } from "./portal-access";
 import { InviterDialog } from "./trip-section";
 import { correctInviterAction } from "../trip-actions";
 import {
-  generateMemberAutoLoginLinkAction,
   setCommissionHoldAction,
   setMemberStatusAction,
   updateMemberReraAction,
@@ -48,7 +45,6 @@ type Dialog =
   | { kind: "HOLD"; hold: boolean }
   | { kind: "RERA" }
   | { kind: "INVITER" }
-  | { kind: "PORTAL"; mode: PortalMode }
   | null;
 
 export function MemberActions({
@@ -56,24 +52,20 @@ export function MemberActions({
   canActivate,
   canDeactivate,
   canCorrectInviter,
-  portal,
 }: {
   member: MemberActionsView;
   canActivate: boolean;
   canDeactivate: boolean;
   canCorrectInviter: boolean;
-  /** The portal account, when there is one and this actor may manage it. */
-  portal: { locked: boolean } | null;
 }) {
   const router = useRouter();
   const [dialog, setDialog] = React.useState<Dialog>(null);
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<{ ok: boolean; text: string } | null>(null);
-  const [copied, setCopied] = React.useState(false);
 
   const active = member.status === "ACTIVE";
   // Nothing in the menu is available to a reader, so the trigger is not either.
-  if (!active && !canDeactivate && !canActivate && !canCorrectInviter) return null;
+  if (!canDeactivate && !canActivate && !canCorrectInviter) return null;
 
   async function run(action: () => Promise<ActionResult>) {
     if (busy) return;
@@ -88,46 +80,6 @@ export function MemberActions({
     }
   }
 
-  /**
-   * The whole welcome message, not just the link: the Member ID, the first
-   * password and the one-click way in. It goes straight to the clipboard
-   * rather than onto a page somebody might leave open, and the plain portal
-   * login stands in when the signed link cannot be issued.
-   */
-  async function copyInviteLink() {
-    setNotice(null);
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const result = await generateMemberAutoLoginLinkAction(member.memberId);
-
-    const link =
-      result.ok && result.linkPath
-        ? `${origin}${result.linkPath}`
-        : `${origin}/portal/login?loginId=${member.memberId}`;
-    // The password is printed only while the account still has its initial
-    // one — the server checks. Once changed or reset, the invite points the
-    // Member at their own password instead of one that no longer works.
-    const passwordLine =
-      result.ok && result.initialPassword
-        ? `🔑 Initial Password: ${result.initialPassword}\nPlease change it after you log in.`
-        : `🔑 Password: the one you set. Forgotten it? Ask the 3% Club office to reset it.`;
-    const text =
-      `🌟 Welcome to 3% Real Estate Club Member Portal!\n\n` +
-      `Hi ${member.name}, your Member account (${member.memberId}) is active.\n\n` +
-      `🔗 Instant Auto-Login Link (Direct Portal Access):\n${link}\n\n` +
-      `🆔 Member ID: ${member.memberId}\n${passwordLine}\n\n` +
-      `Click the link above to log in automatically and access your portal!`;
-
-    try {
-      await navigator.clipboard.writeText(text);
-      // Just the icon turning into a tick — nothing printed on the page.
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // A denied clipboard is not a failed action — the link exists either way.
-      setNotice({ ok: false, text: "Could not reach the clipboard. Try again from a focused tab." });
-    }
-  }
-
   return (
     <>
       <div className="flex flex-col items-end gap-1">
@@ -138,22 +90,6 @@ export function MemberActions({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {active && (
-              // The menu stays open so the tick can show the copy worked.
-              <DropdownMenuItem
-                onSelect={(e) => {
-                  e.preventDefault();
-                  void copyInviteLink();
-                }}
-              >
-                {copied ? (
-                  <Check className="mr-1.5 h-3.5 w-3.5 text-emerald-700" />
-                ) : (
-                  <Copy className="mr-1.5 h-3.5 w-3.5" />
-                )}
-                {copied ? "Copied" : "Copy invite link"}
-              </DropdownMenuItem>
-            )}
             {canActivate && (
               <DropdownMenuItem onSelect={() => setDialog({ kind: "RERA" })}>
                 Update RERA
@@ -162,16 +98,6 @@ export function MemberActions({
             {canCorrectInviter && (
               <DropdownMenuItem onSelect={() => setDialog({ kind: "INVITER" })}>
                 Correct inviter
-              </DropdownMenuItem>
-            )}
-            {portal?.locked && (
-              <DropdownMenuItem onSelect={() => setDialog({ kind: "PORTAL", mode: "UNLOCK" })}>
-                Unlock portal account
-              </DropdownMenuItem>
-            )}
-            {portal && (
-              <DropdownMenuItem onSelect={() => setDialog({ kind: "PORTAL", mode: "RESET_PASSWORD" })}>
-                Reset portal password
               </DropdownMenuItem>
             )}
             {canDeactivate && (
@@ -211,8 +137,8 @@ export function MemberActions({
           row={member}
           consequence={
             dialog.active
-              ? "Portal access is restored, the Member may act again, and unpaid commission eligibility is rechecked rather than assumed. Network positions are unchanged."
-              : "Portal access stops immediately, no new Member Enquiries, Hold Requests or Member-linked Booking Requests may be created, and every unpaid commission goes On Hold — Member Deactivated. Paid and Paid Early records stay historical, and Network positions stay exactly as they are."
+              ? "The Member may act again, and unpaid commission eligibility is rechecked rather than assumed. Network positions are unchanged."
+              : "No new Member-linked Booking Requests may be created, and every unpaid commission goes On Hold — Member Deactivated. Paid and Paid Early records stay historical, and Network positions stay exactly as they are."
           }
           busy={busy}
           onClose={() => setDialog(null)}
@@ -249,15 +175,6 @@ export function MemberActions({
           onSubmit={(inviterMemberId, reason) =>
             void run(() => correctInviterAction({ memberProfileId: member.id, inviterMemberId, reason }, newKey()))
           }
-        />
-      )}
-
-      {dialog?.kind === "PORTAL" && (
-        <PortalAccessDialog
-          memberProfileId={member.id}
-          memberId={member.memberId}
-          mode={dialog.mode}
-          onClose={() => setDialog(null)}
         />
       )}
 

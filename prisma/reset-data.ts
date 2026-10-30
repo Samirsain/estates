@@ -5,8 +5,7 @@
 // What survives: StaffAccount and the Person rows those accounts sit on, so
 // everyone can still sign in and the seeds have makers and checkers to act as.
 // Everything else goes — Projects, Plots, PLC versions, Enquiries, Holds,
-// Bookings, payments, commission, acquisitions, Members, Customers, portal
-// accounts, tasks, land inquiries, references, idempotency keys and the audit
+// Bookings, payments, commission, acquisitions, Members, Customers, tasks, land inquiries, references, idempotency keys and the audit
 // trail of all of it.
 //
 // GUARDED. It refuses to run anywhere ALLOW_CHECK_WRITES is not "true", which
@@ -93,7 +92,6 @@ async function main() {
   await db.plcRuleVersion.deleteMany({});
   await db.project.deleteMany({});
 
-  await db.portalAccount.deleteMany({});
   await db.memberTermsAcceptance.deleteMany({});
   await db.personMergeRequest.deleteMany({});
   await db.memberProfile.deleteMany({});

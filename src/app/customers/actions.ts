@@ -10,7 +10,7 @@ import { decryptSensitive, maskAadhaar, maskPan } from "@/lib/security/identity"
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { CommandError } from "@/lib/services/command";
-import { recordCustomerTermsAcceptance, verifyAadhaar } from "@/lib/services/customer-closer-service";
+import { verifyAadhaar } from "@/lib/services/customer-closer-service";
 
 export type CloserActionResult = { ok: true } | { ok: false; error: string };
 
@@ -18,30 +18,6 @@ const asResult = (error: unknown): CloserActionResult => ({
   ok: false,
   error: error instanceof CommandError || error instanceof Error ? error.message : "Action failed.",
 });
-
-/** v2.1 §22 — CRM records the Customer Terms version a Customer accepted. */
-export async function recordCustomerTermsAction(
-  customerProfileId: string,
-  termsVersion: string,
-  acceptedOn: string,
-  key: string
-): Promise<CloserActionResult> {
-  const actor = await requireStaff();
-  try {
-    await recordCustomerTermsAcceptance({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
-      customerProfileId,
-      termsVersion,
-      acceptedOn: new Date(`${acceptedOn}T00:00:00+05:30`),
-    });
-    revalidatePath(`/customers/${customerProfileId}`);
-    return { ok: true };
-  } catch (error) {
-    return asResult(error);
-  }
-}
 
 /** v2.1 §22, §77 — Accounts marks a recorded Aadhaar as Verified. */
 export async function verifyAadhaarAction(personId: string, key: string): Promise<CloserActionResult> {

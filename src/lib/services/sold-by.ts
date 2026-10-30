@@ -61,17 +61,12 @@ export async function validateSoldBy(
       blocked("A Sold By Customer must be an existing Customer with their own approved purchase.");
     }
 
-    // CP §17, §56.2; SSOT §26, §93 — the stricter closer rule: verified KYC and
-    // accepted Customer Terms before they can be selected at all (UAT LOY-02,
-    // LOY-03). No limit on how many closings (owner, 27 Oct 2026).
+    // CP §17, §56.2; SSOT §26, §93 — the stricter closer rule: verified KYC
+    // before they can be selected at all (UAT LOY-02). Customer Terms acceptance
+    // is no longer a condition (owner, 29 Oct 2026). No limit on how many
+    // closings (owner, 27 Oct 2026).
     if (person.aadhaarStatus !== "VERIFIED") {
       blocked("A Sold By Customer needs verified KYC. Verify their Aadhaar on their Customer page first.");
-    }
-    const terms = await tx.customerTermsAcceptance.count({
-      where: { customerProfile: { personId: soldByPersonId } },
-    });
-    if (terms === 0) {
-      blocked("A Sold By Customer must have accepted Customer Terms. Record the acceptance on their Customer page first.");
     }
   }
 }

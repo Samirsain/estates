@@ -68,13 +68,15 @@ export function Stat({
   label,
   value,
   hint,
+  className,
 }: {
   label: string;
   value: React.ReactNode;
   hint?: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="min-w-0 md:px-4 md:first:pl-0">
+    <div className={cn("min-w-0 md:px-4 md:first:pl-0", className)}>
       <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</dt>
       <dd className="mt-1 text-base font-semibold leading-tight text-foreground">{value}</dd>
       {hint && <dd className="mt-0.5 text-[11px] text-muted-foreground">{hint}</dd>}

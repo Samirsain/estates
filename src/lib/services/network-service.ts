@@ -7,7 +7,6 @@
 
 import type { Prisma } from "@prisma/client";
 import { BUYBACK_MIN_SOURCE_PAYMENT } from "@/lib/domain/commission";
-import { INITIAL_PORTAL_PASSWORD, hashPassword } from "@/lib/security/auth";
 import { blocked, nextReference, runCommand, type Tx } from "./command";
 import { CLOSING_LIMIT_PURPOSE, reassessCommission } from "./commission-service";
 import {
@@ -313,27 +312,6 @@ export async function activateMember(args: {
         );
       }
 
-      // Ensure PortalAccount exists so the Member can log into the Member Portal (PRD §17.1).
-      const existingPortal = await tx.portalAccount.findUnique({
-        where: { memberProfileId: member.id },
-      });
-      if (!existingPortal) {
-        const defaultPasswordHash = hashPassword(INITIAL_PORTAL_PASSWORD);
-        await tx.portalAccount.create({
-          data: {
-            memberProfileId: member.id,
-            loginId: member.memberId,
-            passwordHash: defaultPasswordHash,
-            status: "ACTIVE",
-          },
-        });
-      } else if (existingPortal.status !== "ACTIVE") {
-        await tx.portalAccount.update({
-          where: { id: existingPortal.id },
-          data: { status: "ACTIVE" },
-        });
-      }
-
       return {
         result: {
           memberProfileId: member.id,
@@ -354,8 +332,8 @@ export async function activateMember(args: {
 }
 
 /**
- * PRD §13 — deactivation disables portal access immediately, stops new Member
- * activity, and puts every unpaid commission On Hold — Member Deactivated while
+ * PRD §13 — deactivation stops new Member activity and puts every unpaid
+ * commission On Hold — Member Deactivated while
  * paid and Paid Early records remain historical. Reactivation rechecks unpaid eligibility rather than assuming it.
  */
 export async function setMemberStatus(args: {
@@ -382,7 +360,7 @@ export async function setMemberStatus(args: {
     async (tx) => {
       const member = await tx.memberProfile.findUniqueOrThrow({
         where: { id: args.memberProfileId },
-        include: { person: true, portalAccount: true },
+        include: { person: true },
       });
       if (!member.activationDate) blocked("This Member has not been activated yet.");
 
@@ -395,18 +373,6 @@ export async function setMemberStatus(args: {
         where: { id: member.id },
         data: { status: next },
       });
-
-      // Portal access is disabled immediately: bumping the session version
-      // invalidates any session already signed in (PRD §13, §17.1).
-      if (member.portalAccount) {
-        await tx.portalAccount.update({
-          where: { id: member.portalAccount.id },
-          data: {
-            status: args.active ? "ACTIVE" : "DISABLED",
-            sessionVersion: member.portalAccount.sessionVersion + 1,
-          },
-        });
-      }
 
       if (!args.active) {
         // Pending Member Hold Requests require CRM review; they are not closed

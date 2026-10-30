@@ -17,13 +17,17 @@ export interface InputProps
 export const NO_STEPPER =
   "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0";
 
+/*
+ * `block`, not `flex`: a flex date field in Chrome shrinks its text to the date
+ * and parks the calendar icon right after it, mid-field, instead of at the edge.
+ */
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type, onWheel, ...props }, ref) => {
     return (
       <input
         type={type}
         className={cn(
-          "flex h-10 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all",
+          "block h-10 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all",
           type === "number" && NO_STEPPER,
           className
         )}

@@ -389,7 +389,6 @@ async function wipe() {
     const memberIds = (
       await db.memberProfile.findMany({ where: { personId: { in: personIds } }, select: { id: true } })
     ).map((m) => m.id);
-    await db.portalAccount.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.memberTermsAcceptance.deleteMany({ where: { memberProfileId: { in: memberIds } } });
     await db.bankDetail.deleteMany({ where: { personId: { in: personIds } } });
     await db.memberProfile.deleteMany({ where: { personId: { in: personIds } } });

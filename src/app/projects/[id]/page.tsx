@@ -17,32 +17,17 @@ import { listProjects } from "@/lib/services/project-service";
 import CommissionSettings from "./commission-settings";
 import ProjectActions from "./project-actions";
 import { projectRowView } from "../row-view";
+import { ProjectIdentity } from "../project-identity";
 import { can } from "@/lib/security/permissions";
 import { db } from "@/lib/db";
 import { formatPercent } from "@/lib/tasks";
 import { plcDisplayComponents } from "@/lib/domain/inventory";
 import { plcRules } from "@/lib/services/plc-service";
 import { AppShell } from "@/components/app-shell";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, ArrowUpRight, Box, Layers, Map as MapIcon } from "lucide-react";
+import { ArrowLeft, ArrowUpRight } from "lucide-react";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_LABEL: Record<string, string> = {
-  SETUP_NOT_ACTIVE: "Unreleased",
-  ACTIVE: "Active",
-  SOLD_OUT: "Sold Out",
-  COMPLETED: "Completed",
-};
-
-const TYPE_LABEL: Record<string, string> = {
-  RESIDENTIAL: "Residential",
-  COMMERCIAL: "Commercial",
-  AGRICULTURAL: "Agricultural",
-  MIXED: "Mixed",
-};
 
 const PLOT_TYPE_LABEL: Record<string, string> = {
   RESIDENTIAL: "Residential",
@@ -59,13 +44,6 @@ const PLOT_TYPE_LABEL: Record<string, string> = {
 const SELLABLE = ["AVAILABLE"];
 const IN_PLAY = ["HOLD", "WAITING_FOR_BOOKING_APPROVAL"];
 const SOLD = ["BOOKED", "PAYMENT_COMPLETED", "DELIVERED"];
-
-function amenityList(amenities: string | null): string[] {
-  return (amenities ?? "")
-    .split("\n")
-    .map((a) => a.replace(/^[•\-*]\s*/, "").trim())
-    .filter(Boolean);
-}
 
 /**
  * A heading and its content. Sentence case, not the uppercase tracking every
@@ -153,26 +131,6 @@ export default async function ProjectDetailPage({
   const charges = publishedVersion
     ? plcDisplayComponents(plcRules(publishedVersion.components))
     : [];
-  const amenities = amenityList(project.amenities);
-
-  // Four facts, two and two, left and right (owner, 28 Oct 2026): where and
-  // what on the left, who builds it and its RERA on the right. The city is
-  // added only when the address does not already name it — "…Jaipur,
-  // Rajasthan 302029, Jaipur" said it twice.
-  const where =
-    project.location && project.city && !project.location.toLowerCase().includes(project.city.toLowerCase())
-      ? `${project.location}, ${project.city}`
-      : (project.location ?? project.city);
-  const factColumns: Array<Array<[string, string | null]>> = [
-    [
-      ["Location", where],
-      ["Type", project.isExternalResaleGroup ? "External Resale Property Group" : (TYPE_LABEL[project.type] ?? project.type)],
-    ],
-    [
-      ["Developer", project.developer],
-      ["RERA", project.reraNumber],
-    ],
-  ];
 
   return (
     <AppShell role={actor.role} actorName={actor.name} staffAccountId={actor.staffAccountId}>
@@ -192,83 +150,9 @@ export default async function ProjectDetailPage({
           )}
         </div>
 
-        {/* Identity. Four short facts that were four stacked rows, now one line
-            of name and one of everything else. */}
         <header>
-          <Card className="space-y-2 p-3">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <h1 className="text-xl font-bold tracking-tight">{project.name}</h1>
-              <Badge variant={project.status === "ACTIVE" ? "success" : "outline"}>
-                {STATUS_LABEL[project.status] ?? project.status}
-              </Badge>
-              <span className="text-xs text-muted-foreground">{project.projectCode}</span>
-            </div>
-
-            {/* The facts as label · value rows: left pair, right pair against
-                the card's right edge, then Amenities on the same label column,
-                its text starting where every other value starts (owner,
-                28 Oct 2026). One spacing for every row. */}
-            <div className="space-y-1 text-xs">
-              <div className="grid gap-x-8 gap-y-1 sm:grid-cols-[1fr_auto]">
-                {factColumns.map((column, i) => (
-                  <dl key={i} className="space-y-1">
-                    {column.map(([label, value]) => (
-                      <div key={label} className="flex gap-3">
-                        <dt className="w-16 shrink-0 text-muted-foreground">{label}</dt>
-                        <dd className="min-w-0 text-foreground">{value ?? "—"}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                ))}
-              </div>
-              {amenities.length > 0 && (
-                <div className="flex gap-3">
-                  <span className="w-16 shrink-0 text-muted-foreground">Amenities</span>
-                  {/* Columns as wide as their longest amenity, one fixed gap
-                      between them, so the spacing is even however long the
-                      names are. The dot hangs in the gap before the text, which
-                      starts where every other value starts. */}
-                  <ul className="grid min-w-0 gap-x-10 gap-y-1 sm:grid-cols-[repeat(2,max-content)] lg:grid-cols-[repeat(3,max-content)]">
-                    {amenities.map((a) => (
-                      <li key={a} className="relative text-foreground">
-                        <span className="absolute -left-2.5 top-[0.45em] h-1 w-1 rounded-full bg-primary/60" />
-                        {a}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-
-            {/* The same three links as the Project's card on the list, in the
-                same order and with the same names (owner, 28 Oct 2026).
-                noreferrer carries noopener: the opened tab cannot reach back
-                through window.opener and navigate this one. */}
-            {(project.driveUrl || project.locationUrl || project.renderUrl) && (
-              <div className="flex flex-wrap gap-2">
-                {project.driveUrl && (
-                  <Button size="xs" variant="outline" className="h-7 px-2.5 text-[11px]" asChild>
-                    <a href={project.driveUrl} target="_blank" rel="noreferrer">
-                      <Layers className="mr-1 h-3 w-3" /> Layout
-                    </a>
-                  </Button>
-                )}
-                {project.locationUrl && (
-                  <Button size="xs" variant="outline" className="h-7 px-2.5 text-[11px]" asChild>
-                    <a href={project.locationUrl} target="_blank" rel="noreferrer">
-                      <MapIcon className="mr-1 h-3 w-3" /> Location
-                    </a>
-                  </Button>
-                )}
-                {project.renderUrl && (
-                  <Button size="xs" variant="outline" className="h-7 px-2.5 text-[11px]" asChild>
-                    <a href={project.renderUrl} target="_blank" rel="noreferrer">
-                      <Box className="mr-1 h-3 w-3" /> 3D Visuals
-                    </a>
-                  </Button>
-                )}
-              </div>
-            )}
+          <Card className="p-4">
+            <ProjectIdentity project={project} />
           </Card>
         </header>
 

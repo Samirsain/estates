@@ -20,6 +20,7 @@ export function projectRowView(project: Awaited<ReturnType<typeof listProjects>>
     amenities: project.amenities,
     reraNumber: project.reraNumber,
     isExternalResaleGroup: project.isExternalResaleGroup,
+    publicPortal: project.publicPortal,
     plotCount: project._count.plots,
     plotTypeCounts: project.plotTypeCounts,
     roadWidths: project.roadWidths,

@@ -305,8 +305,8 @@ export default function LandInquiryForm({
         </Grid>
         {form.receivedFrom === "ANOTHER_DEALER" && (
           <p className="mt-2 text-[11px] text-muted-foreground">
-            A dealer&apos;s name and mobile are kept on this inquiry only. No Person, Customer,
-            Member or portal record is created for them, and the same dealer may appear on other
+            A dealer&apos;s name and mobile are kept on this inquiry only. No Person, Customer or
+            Member record is created for them, and the same dealer may appear on other
             inquiries as an unrelated pair of strings.
           </p>
         )}

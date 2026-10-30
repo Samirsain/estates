@@ -1,7 +1,6 @@
 "use client";
 
 // My Account — design.md §18; prd-corrections.md §17.1.
-// Members see this without the staff shell; staff see it inside their shell.
 
 import React from "react";
 import { KeyRound, ShieldCheck } from "lucide-react";
@@ -17,29 +16,16 @@ export default function AccountClient({
   loginId,
   name,
   role,
-  context,
 }: {
   loginId: string;
   name: string;
-  role: StaffRole | "MEMBER";
-  context: "STAFF" | "MEMBER";
+  role: StaffRole;
 }) {
-  const body = <PasswordCard loginId={loginId} name={name} />;
-
-  if (context === "MEMBER") {
-    return (
-      <main className="mx-auto w-full max-w-3xl space-y-4 p-4">
-        <h1 className="text-xl font-semibold">My Account</h1>
-        {body}
-      </main>
-    );
-  }
-
   return (
-    <AppShell role={role as StaffRole} actorName={name} staffAccountId={loginId}>
+    <AppShell role={role} actorName={name} staffAccountId={loginId}>
       <div className="space-y-4">
         <h1 className="text-xl font-semibold">My Account</h1>
-        {body}
+        <PasswordCard loginId={loginId} name={name} />
       </div>
     </AppShell>
   );

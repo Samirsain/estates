@@ -32,13 +32,12 @@ import {
   rejectCommissionPaidEarly,
   requestCommissionPaidEarly,
   markCommissionPaid,
-  memberCommissionView,
   reassessCommission,
 } from "@/lib/services/commission-service";
 import {
   createCommissionVersion,
 } from "@/lib/services/commission-settings-service";
-import { recordCustomerTermsAcceptance, verifyAadhaar } from "@/lib/services/customer-closer-service";
+import { verifyAadhaar } from "@/lib/services/customer-closer-service";
 import {
   cancelAcquisitionDeal,
   confirmPaymentGiven,
@@ -221,8 +220,8 @@ async function approveVersion(
 }
 
 /**
- * v2.1 §22 — a real Customer closer: their own approved purchase, Aadhaar
- * Verified, and accepted Customer Terms.
+ * v2.1 §22 — a real Customer closer: their own approved purchase and Aadhaar
+ * Verified. Customer Terms are no longer a condition (owner, 29 Oct 2026).
  */
 async function makeCloser(projectId: string, name: string, mobile: string, ready = true) {
   const closer = await makeEligiblePerson(name, mobile);
@@ -230,15 +229,6 @@ async function makeCloser(projectId: string, name: string, mobile: string, ready
   await bookAndApprove({ plotId: own.id, buyerPersonId: closer.id, soldByType: "THREE_PERCENT_CLUB" });
   if (ready) {
     await verifyAadhaar({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", personId: closer.id });
-    const profile = await db.customerProfile.findUniqueOrThrow({ where: { personId: closer.id } });
-    await recordCustomerTermsAcceptance({
-      idempotencyKey: key(),
-      actorRef: CRM,
-      actorRole: "CRM",
-      customerProfileId: profile.id,
-      termsVersion: "CT-TEST",
-      acceptedOn: today,
-    });
   }
   return closer;
 }
@@ -606,16 +596,6 @@ async function main() {
   assert.equal(saved.accountLastFour, "6655");
   assert.ok(!saved.accountCipher.includes("9988776655"), "the account number is encrypted at rest");
 
-  /* --------------------------- the Member portal never reveals the buyer */
-
-  const view = await memberCommissionView(seller.id);
-  const serialised = JSON.stringify(view);
-  assert.ok(view.length > 0, "the seller sees their own commission");
-  assert.ok(!serialised.includes(buyer.id), "no buyer identifier");
-  assert.ok(!serialised.includes(`${TAG} Buyer`), "no buyer name");
-  assert.ok(!serialised.includes("9600000003"), "no buyer mobile");
-  assert.ok(serialised.includes("DIRECT"), "type, percentage and status are shown");
-
   /* ========== AC-01, v2.1 §20 — classification frozen with the request ========== */
 
   const convert = await makeEligiblePerson("Converter", "9600000021");
@@ -820,8 +800,8 @@ async function main() {
     /one_current_loyalty_per_booking|Unique constraint/
   );
 
-  // UAT LOY-02, LOY-03 — no verified KYC, or no accepted Customer Terms, and
-  // the Customer cannot be selected as the closer at all (CP §17).
+  // UAT LOY-02 — no verified KYC and the Customer cannot be selected as the
+  // closer at all (CP §17). LOY-03 (Customer Terms) is gone (owner, 29 Oct 2026).
   const newCloser = await makeCloser(project.id, "NewCloser", "9600000091", false);
   const plotHold = await makePlot(project.id, "HOLD");
   const holdBuyer = await makeEligiblePerson("HoldBuyer", "9600000092");
@@ -832,30 +812,10 @@ async function main() {
     verifyAadhaar({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", personId: newCloser.id })
   );
   await verifyAadhaar({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", personId: newCloser.id });
-  await expectBlocked(/accepted Customer Terms/, closeFor);
-  const newCloserProfile = await db.customerProfile.findUniqueOrThrow({ where: { personId: newCloser.id } });
-  await expectBlocked(/future date/, () =>
-    recordCustomerTermsAcceptance({
-      idempotencyKey: key(),
-      actorRef: CRM,
-      actorRole: "CRM",
-      customerProfileId: newCloserProfile.id,
-      termsVersion: "CT-TEST",
-      acceptedOn: day(5),
-    })
-  );
-  await recordCustomerTermsAcceptance({
-    idempotencyKey: key(),
-    actorRef: CRM,
-    actorRole: "CRM",
-    customerProfileId: newCloserProfile.id,
-    termsVersion: "CT-TEST",
-    acceptedOn: today,
-  });
   const heldClose = await closeFor();
   await approve(heldClose);
   await pay(heldClose, "100", `${TAG}-HOLD`);
-  assert.equal((await recordOf(heldClose, "LOYALTY")).eligibility, "READY", "with both recorded the closer earns");
+  assert.equal((await recordOf(heldClose, "LOYALTY")).eligibility, "READY", "with KYC verified the closer earns");
 
   /* ============ v2.1 §21, §23 — repeat-purchase Loyalty is unlimited ============ */
 

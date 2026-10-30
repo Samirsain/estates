@@ -20,7 +20,6 @@ export default async function MembersPage() {
       include: {
         person: true,
         invitedByMember: { include: { person: true } },
-        portalAccount: { select: { status: true } },
         _count: { select: { invitedMembers: true, introducedCustomers: true } },
       },
       orderBy: { memberId: "asc" },
@@ -81,7 +80,6 @@ export default async function MembersPage() {
     reraNotApplicableReason: m.reraNotApplicableReason,
     commissionHold: m.commissionHold,
     commissionHoldReason: m.commissionHoldReason,
-    portalStatus: m.portalAccount?.status ?? null,
     // PRD RD-05 — normal users see the last four digits only. MD and Admin
     // ask for the whole value from the panel, which logs the read.
     aadhaarStatus: m.person.aadhaarStatus,
