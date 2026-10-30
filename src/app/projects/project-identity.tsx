@@ -116,12 +116,16 @@ export function ProjectIdentity({
         {where && <p className="mt-0.5 text-xs font-semibold text-muted-foreground">{where}</p>}
       </div>
 
-      {/* Amenities under a hairline, in even columns. On the Project's page
-          with no heading — the bulleted list says what it is; in More info
-          headed as the downloaded sheet heads it. */}
+      {/* Amenities under a hairline, in even columns, after a quiet
+          "Amenities" label (owner's card prompt, 30 Oct 2026) — a label, not a
+          heading; in More info headed as the downloaded sheet heads it. */}
       {amenities.length > 0 && (
         <div className="space-y-2 border-t border-border/60 pt-3">
-          {sections && <SheetHeading>Project Amenities</SheetHeading>}
+          {sections ? (
+            <SheetHeading>Project Amenities</SheetHeading>
+          ) : (
+            <p className="text-xs text-muted-foreground">Amenities</p>
+          )}
           <ul className="grid gap-x-8 gap-y-1.5 text-xs text-foreground sm:grid-cols-2 lg:grid-cols-3">
             {amenities.map((a) => (
               <li key={a} className="flex items-start gap-2">

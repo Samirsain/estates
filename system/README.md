@@ -47,9 +47,10 @@ too.
 | File | What it is |
 | --- | --- |
 | [`commission-rules-and-test-plan.md`](./commission-rules-and-test-plan.md) | The commission rulebook: every rule, formula and event, with worked examples, plus how it is tested. |
-| [`mock-data-v1.md`](./mock-data-v1.md) | First fictional UAT dataset. Built by `npm run uat:seed`. |
-| [`mock-data-v2.md`](./mock-data-v2.md) | Current fictional UAT dataset, covering the newly approved commission changes. Built by `npm run uat:seed:v2`. |
-| [`mock-data-showcase.md`](./mock-data-showcase.md) | One Project (SHW) with a Customer, Member and Plot in every state the screens show, and a list of things to try. Built by `npm run seed:showcase`. |
+| [`mock-data-v1.md`](./mock-data-v1.md) | First fictional UAT dataset. Its seed was removed on 30 Oct 2026; kept as a record. |
+| [`mock-data-v2.md`](./mock-data-v2.md) | Current fictional UAT dataset, covering the newly approved commission changes. Its seed was removed on 30 Oct 2026; kept as a record (§24 is the calculator's worked example). |
+| [`mock-data-showcase.md`](./mock-data-showcase.md) | One Project (SHW) with a Customer, Member and Plot in every state the screens show, and a list of things to try. Its seed was removed on 30 Oct 2026; kept as a record. |
+| [`../docs/Mock_Data_Guide.md`](../docs/Mock_Data_Guide.md), [`../docs/Testing_Todo.md`](../docs/Testing_Todo.md) | The current mock data (`npm run data:reset` then `npm run seed:fresh`) and what to test on it. The older demo datasets (`seed:demo`, `seed:all-cases`, `prisma/govind-vatika-seed.ts`) are not loaded since 30 Oct 2026. |
 | [`commission-test-brief.md`](./commission-test-brief.md) | The original plain-language brief that asked for the commission test — the question `commission-rules-and-test-plan.md` answers. |
 
 ## Go-live

@@ -59,6 +59,9 @@ export const AC_PROJECT: ProjectSpec = {
   city: "Jaipur",
   location: "Sitapura, Jaipur, Rajasthan",
   type: "RESIDENTIAL",
+  developer: "Test Nagar Developers Pvt. Ltd.",
+  reraNumber: "RAJ/P/2026/5001",
+  amenities: ["Clubhouse", "Swimming pool", "Park", "Gym", "Security", "Parking"],
   plc: [
     { category: "ROAD_WIDTH", threshold: "60.00", percent: "3.0000" },
     { category: "PARK_FACING", threshold: null, percent: "2.0000" },

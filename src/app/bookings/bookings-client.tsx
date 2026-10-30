@@ -957,7 +957,9 @@ export default function BookingsClient({
                   <td className="text-center tabular-nums">{row.paymentReceivedPercent}%</td>
                   {/* As on Acquisitions: Payment is the one action taken from
                       the list, gated exactly like Confirm Payment on the
-                      Booking's page. The rest need the record in front of you. */}
+                      Booking's page; once paid in full, Delivered takes its
+                      place, gated like the page's Delivered (owner, 30 Oct
+                      2026). The rest need the record in front of you. */}
                   <td className="text-center">
                     {["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
                     permissions.confirmPayment &&
@@ -968,6 +970,12 @@ export default function BookingsClient({
                         onClick={() => openDialog({ kind: "PAY", row })}
                       >
                         <Wallet className="mr-1 h-3 w-3" /> Payment
+                      </Button>
+                    ) : row.status === "PAYMENT_COMPLETED" &&
+                      permissions.recordFinalBuyers &&
+                      permissions.recordCompletion ? (
+                      <Button className={rowButton} onClick={() => openDialog({ kind: "DELIVER", row })}>
+                        <CheckCircle2 className="mr-1 h-3 w-3" /> Delivered
                       </Button>
                     ) : (
                       <span className="text-muted-foreground">—</span>

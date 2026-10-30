@@ -9,9 +9,9 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 
 /**
- * What one purge removes. The check scripts build it from their TAG; the mock
- * dataset (prisma/mock-v2-seed.ts) builds it from its own Projects and mobile
- * prefix, because its People carry real-looking names.
+ * What one purge removes. The check scripts build it from their TAG; the demo
+ * seeds (prisma/demo-seed.ts, prisma/all-cases-seed.ts) build it from their own
+ * Projects and mobile prefix, because their People carry real-looking names.
  */
 export type PurgeScope = {
   /** Prefix on actor refs, task numbers and task names the run wrote; null when it acted as real staff. */

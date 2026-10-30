@@ -1,9 +1,9 @@
-// The demo world (spec §2): three Jaipur Projects, their plots and PLC rules,
+// The demo world (spec §2): four selling Projects, their plots and PLC rules,
 // and the cast. Pure data — the toolkit turns it into records.
 
 export const MOBILE_PREFIX = "93";
 export const REF_PREFIXES = ["UTR26", "NEFT26", "RFD26"];
-export const PROJECT_CODES = ["SRE", "AH", "MBP", "RSL"];
+export const PROJECT_CODES = ["SRE", "AH", "MBP", "RSL", "KFE", "VR2", "MNP", "SBG"];
 
 type Side = "NORTH" | "SOUTH" | "EAST" | "WEST";
 export type PlotRow = {
@@ -18,7 +18,14 @@ export type ProjectSpec = {
   name: string;
   city: string;
   location: string;
-  type: "RESIDENTIAL" | "COMMERCIAL";
+  type: "RESIDENTIAL" | "COMMERCIAL" | "AGRICULTURAL";
+  /** What the Project card shows (owner's card prompt, 30 Oct 2026). */
+  developer?: string;
+  reraNumber?: string;
+  amenities?: string[];
+  locationUrl?: string;
+  driveUrl?: string;
+  renderUrl?: string;
   plc: { category: "ROAD_WIDTH" | "OPEN_SIDES" | "PARK_FACING"; threshold: string | null; percent: string }[];
   plots: PlotRow[];
 };
@@ -86,6 +93,12 @@ export const PROJECTS: Record<string, ProjectSpec> = {
     city: "Jaipur",
     location: "Jagatpura, Jaipur, Rajasthan",
     type: "RESIDENTIAL",
+    developer: "Shri Ram Buildcon Pvt. Ltd.",
+    reraNumber: "RAJ/P/2026/2104",
+    amenities: ["Clubhouse", "Swimming pool", "Central park", "Gym", "24x7 security", "Covered parking", "Children's play area", "JDA approved layout"],
+    locationUrl: "https://maps.google.com/?q=Jagatpura,+Jaipur",
+    driveUrl: "https://drive.google.com/drive/folders/shri-ram-enclave-layout",
+    renderUrl: "https://www.youtube.com/watch?v=shri-ram-enclave-3d",
     plc: [
       { category: "ROAD_WIDTH", threshold: "60.00", percent: "3.0000" },
       { category: "PARK_FACING", threshold: null, percent: "2.0000" },
@@ -99,6 +112,11 @@ export const PROJECTS: Record<string, ProjectSpec> = {
     city: "Jaipur",
     location: "Ajmer Road, Jaipur, Rajasthan",
     type: "RESIDENTIAL",
+    developer: "Aravali Infra Developers LLP",
+    reraNumber: "RAJ/P/2026/2689",
+    amenities: ["Villa plots on the park", "Jogging track", "Clubhouse", "Yoga lawn", "Gated entry", "Underground cabling", "Rainwater harvesting"],
+    locationUrl: "https://maps.google.com/?q=Ajmer+Road,+Jaipur",
+    driveUrl: "https://drive.google.com/drive/folders/aravali-heights-layout",
     plc: [
       { category: "ROAD_WIDTH", threshold: "60.00", percent: "3.0000" },
       { category: "PARK_FACING", threshold: null, percent: "3.0000" },
@@ -111,10 +129,123 @@ export const PROJECTS: Record<string, ProjectSpec> = {
     city: "Jaipur",
     location: "Mansarovar, Jaipur, Rajasthan",
     type: "COMMERCIAL",
+    developer: "Mansarovar Realty Group",
+    reraNumber: "RAJ/P/2026/3051",
+    amenities: ["80 ft main road frontage", "Visitor parking", "Power backup", "Lift-ready shops", "CCTV security"],
+    locationUrl: "https://maps.google.com/?q=Mansarovar,+Jaipur",
     plc: [{ category: "ROAD_WIDTH", threshold: "80.00", percent: "5.0000" }],
     plots: businessParkPlots(),
   },
+  KFE: {
+    code: "KFE",
+    name: "Kishangarh Farm Estates",
+    city: "Kishangarh",
+    location: "Ajmer Highway, Kishangarh, Rajasthan",
+    type: "AGRICULTURAL",
+    developer: "Kishangarh Agro Developers LLP",
+    reraNumber: "RAJ/P/2026/4127",
+    amenities: ["Farmhouse-ready plots", "Drip irrigation line", "Borewell water", "Boundary fencing", "Fruit tree plantation", "Gated entry"],
+    locationUrl: "https://maps.google.com/?q=Kishangarh,+Ajmer+Highway",
+    driveUrl: "https://drive.google.com/drive/folders/kishangarh-farm-estates-layout",
+    renderUrl: "https://www.youtube.com/watch?v=kishangarh-farm-estates-3d",
+    // Every PLC category, with bands, so the Plots reach each one.
+    plc: [
+      { category: "ROAD_WIDTH", threshold: "30.00", percent: "1.0000" },
+      { category: "ROAD_WIDTH", threshold: "40.00", percent: "2.0000" },
+      { category: "ROAD_WIDTH", threshold: "60.00", percent: "3.0000" },
+      { category: "OPEN_SIDES", threshold: "2.00", percent: "2.0000" },
+      { category: "OPEN_SIDES", threshold: "3.00", percent: "3.0000" },
+      { category: "PARK_FACING", threshold: null, percent: "2.0000" },
+    ],
+    plots: farmPlots(),
+  },
 };
+
+/**
+ * Projects that exist only to show every way a Project card can read (owner's
+ * card prompt, 30 Oct 2026): each status, no RERA, no developer, no
+ * amenities, a long name, and one taken off the Public Portal. No Plots.
+ */
+export const CARD_PROJECTS = [
+  {
+    code: "VR2",
+    name: "Vaishali Residency Phase 2",
+    type: "RESIDENTIAL" as const,
+    status: "SETUP_NOT_ACTIVE" as const,
+    developer: "Vaishali Homes Pvt. Ltd.",
+    location: "Vaishali Nagar, Jaipur, Rajasthan",
+    city: "Jaipur",
+    publicPortal: true,
+  },
+  {
+    code: "MNP",
+    name: "Malviya Nagar Plaza",
+    type: "COMMERCIAL" as const,
+    status: "SOLD_OUT" as const,
+    reraNumber: "RAJ/P/2025/1876",
+    location: "Malviya Nagar, Jaipur, Rajasthan",
+    city: "Jaipur",
+    amenities: ["Basement parking", "Lifts", "Fire safety", "Food court"],
+    publicPortal: true,
+  },
+  {
+    code: "SBG",
+    name: "Shree Balaji Royal Greens Township Phase 1 Extension",
+    type: "RESIDENTIAL" as const,
+    status: "COMPLETED" as const,
+    developer: "Shree Balaji Landmark Developers and Promoters Pvt. Ltd.",
+    reraNumber: "RAJ/P/2024/0932",
+    location: "Near Mahindra SEZ, Kalwara Road, off Ajmer Road, Jaipur, Rajasthan 302026",
+    city: "Jaipur",
+    amenities: [
+      "Clubhouse",
+      "Swimming pool",
+      "Gym",
+      "Central park",
+      "Jogging track",
+      "Children's play area",
+      "Temple",
+      "Community hall",
+      "24x7 security",
+      "CCTV surveillance",
+      "Covered parking",
+      "Power backup",
+    ],
+    locationUrl: "https://maps.google.com/?q=Kalwara+Road,+Jaipur",
+    driveUrl: "https://drive.google.com/drive/folders/shree-balaji-royal-greens-layout",
+    renderUrl: "https://www.youtube.com/watch?v=shree-balaji-royal-greens-3d",
+    publicPortal: false,
+  },
+];
+
+/**
+ * KF-01…KF-10 farmhouse plots and KF-C1, KF-C2 shops at the gate. KF-01 is the
+ * corner on the 60 ft highway road facing the orchard park (three open sides);
+ * 06–08 face the park; 09–10 sit on the 30 ft lane.
+ */
+function farmPlots(): PlotRow[] {
+  const farm = Array.from({ length: 10 }, (_, i) => {
+    const n = i + 1;
+    return {
+      plotNumber: `KF-${pad(n)}`,
+      plotType: "RESIDENTIAL" as const,
+      widthFt: "100",
+      lengthFt: n <= 4 ? "200" : "250",
+      boundaries:
+        n === 1
+          ? [road("NORTH", "60"), road("EAST", "40"), park("SOUTH"), plot("WEST")]
+          : [road("NORTH", n >= 9 ? "30" : "40"), n >= 6 && n <= 8 ? park("SOUTH") : plot("SOUTH"), plot("EAST"), plot("WEST")],
+    };
+  });
+  const shops = [1, 2].map((n) => ({
+    plotNumber: `KF-C${n}`,
+    plotType: "COMMERCIAL" as const,
+    widthFt: "30",
+    lengthFt: "50",
+    boundaries: [road("NORTH", "60"), n === 1 ? road("EAST", "40") : plot("EAST"), plot("SOUTH"), plot("WEST")],
+  }));
+  return [...farm, ...shops];
+}
 
 export type CastSpec = { name: string; kyc?: "none" | "available" | "verified"; bank?: boolean; address?: string; mobile?: string };
 

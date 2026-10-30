@@ -13,7 +13,8 @@ import { decideBookingRequest, submitBookingRequest } from "@/lib/services/booki
 import { confirmPaymentReceived } from "@/lib/services/payment-service";
 import { markCommissionPaid } from "@/lib/services/commission-service";
 import { CommandError } from "@/lib/services/command";
-import { CUSTOMERS, MEMBERS, MOBILE_PREFIX, PROJECTS, type CastSpec } from "./world.ts";
+import { createProject, setProjectPublicPortal, setProjectStatus } from "@/lib/services/project-service";
+import { CARD_PROJECTS, CUSTOMERS, MEMBERS, MOBILE_PREFIX, PROJECTS, type CastSpec } from "./world.ts";
 
 export const db = new PrismaClient();
 
@@ -144,10 +145,15 @@ export async function project(code: string) {
     data: {
       projectCode: spec.code,
       name: spec.name,
-      developer: "3% Real Estate Club",
+      developer: spec.developer ?? "3% Real Estate Club",
       location: spec.location,
       city: spec.city,
       type: spec.type,
+      reraNumber: spec.reraNumber ?? null,
+      amenities: spec.amenities?.join("\n") ?? null,
+      locationUrl: spec.locationUrl ?? null,
+      driveUrl: spec.driveUrl ?? null,
+      renderUrl: spec.renderUrl ?? null,
       status: "ACTIVE",
     },
   });
@@ -172,6 +178,36 @@ export async function project(code: string) {
     }
   }
   return { id: created.id, name: spec.name };
+}
+
+/** The Plot-less Projects that show every way a Project card reads (world.ts CARD_PROJECTS). */
+export async function cardProjects() {
+  for (const spec of CARD_PROJECTS) {
+    const { projectId } = await createProject({
+      idempotencyKey: key(),
+      actorRef: MD,
+      actorRole: "MD",
+      projectCode: spec.code,
+      name: spec.name,
+      type: spec.type,
+      developer: spec.developer,
+      reraNumber: spec.reraNumber,
+      location: spec.location,
+      city: spec.city,
+      amenities: spec.amenities?.join("\n"),
+      locationUrl: spec.locationUrl,
+      driveUrl: spec.driveUrl,
+      renderUrl: spec.renderUrl,
+      components: [],
+    });
+    projectIds[spec.code] = projectId;
+    if (spec.status !== "SETUP_NOT_ACTIVE") {
+      await setProjectStatus({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", projectId, status: spec.status, reason: "Demo: every Project card" });
+    }
+    if (!spec.publicPortal) {
+      await setProjectPublicPortal({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", projectId, on: false });
+    }
+  }
 }
 
 export async function settings(projectId: string, input: CommissionVersionInput) {
@@ -259,7 +295,7 @@ export async function enquiry(
   who: Who,
   projectCode: string,
   source: EnquirySource,
-  opts: { member?: Who; customer?: Who; followUpInDays?: number; remark?: string } = {}
+  opts: { member?: Who; customer?: Who; followUpInDays?: number; remark?: string; plot?: string } = {}
 ) {
   if (!crmAccountId) crmAccountId = (await db.staffAccount.findFirstOrThrow({ where: { staffAccountId: CRM } })).id;
   const customerProfileId = opts.customer
@@ -271,6 +307,7 @@ export async function enquiry(
     actorRole: "CRM",
     personId: who.id,
     projectId: projectIds[projectCode],
+    plotId: opts.plot ? plotId(opts.plot) : undefined,
     source,
     sourceMemberId: opts.member?.profileId ?? null,
     sourceCustomerId: customerProfileId,

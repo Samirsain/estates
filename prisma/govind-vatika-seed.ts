@@ -14,7 +14,7 @@
 //
 // G-21 then carries a Plot's whole life (story), one Booking carries every
 // correction a Booking can take (bookingStory: G-22 → G-23), and one Land
-// Inquiry fills every field and passes every stage (landStory).
+// Inquiry fills every field of the form and passes every stage (landStory).
 //
 // GUARDED and re-runnable: the Project is created once, only Plots it does not
 // have yet are added, and the story runs only on a G-21 with no history.
@@ -61,11 +61,10 @@ import {
 import {
   changeLandInquiryStage,
   createLandInquiry,
-  reassignLandInquiry,
   setLandInquiryStatus,
   updateLandInquiry,
 } from "@/lib/services/land-inquiry-service";
-import type { LandInquiryInput } from "@/lib/domain/land-inquiry";
+import { emptyInput, type LandInquiryInput } from "@/lib/domain/land-inquiry";
 import {
   confirmPaymentGiven,
   createAcquisition,
@@ -78,7 +77,6 @@ const MD = "STF-0001";
 const ACC = "STF-0003";
 const CRM = "STF-0005";
 const ACC2 = "STF-0004";
-const CRM2 = "STF-0006";
 const actor = { actorRef: MD, actorRole: "MD" };
 const accounts = { actorRef: ACC, actorRole: "ACCOUNTS" };
 const crm = { actorRef: CRM, actorRole: "CRM" };
@@ -879,9 +877,9 @@ async function bookingStory(projectId: string, fromPlotId: string, toPlotId: str
 
 /* ------------------------------------------- One Land Inquiry, every field */
 //
-// Every field filled and every multi-choice ticked, received from Kailash.
+// Every field the New Land Inquiry form asks filled, received from Kailash.
 // Then: three stages one by one → back a stage for a second visit → forward
-// again → reassigned to Anita → rates updated → Negotiation → Closed by CRM →
+// again → Edit details adds the late documents → Negotiation → Closed by CRM →
 // reopened by MD → Approved for Acquisition.
 
 const LAND = "GV-LAND-";
@@ -891,16 +889,13 @@ async function landStory() {
   const kailash = await db.person.findFirstOrThrow({
     where: { fullName: "Kailash Chand Sharma", primaryMobile: { startsWith: "92" } },
   });
-  const [rahul, anita] = await Promise.all(
-    [CRM, CRM2].map((staffAccountId) => db.staffAccount.findUniqueOrThrow({ where: { staffAccountId } }))
-  );
 
+  // Only what the New Land Inquiry form asks (owner, 30 Oct 2026); every other
+  // column keeps emptyInput()'s blank.
   const input: LandInquiryInput = {
+    ...emptyInput(),
     receivedFrom: "MEMBER",
     sourcePersonId: kailash.id,
-    anotherDealerMobile: null,
-    anotherDealerName: null,
-    assignedToId: rahul.id,
 
     district: "Jaipur",
     tehsil: "Sanganer",
@@ -918,56 +913,11 @@ async function landStory() {
     roadWidthValue: "18",
     roadWidthUnit: "MTR",
 
-    landCategory: "AGRICULTURAL",
     currentLandUse: "Wheat and mustard farming",
     masterPlanZonalUse: "Residential (Jaipur Master Plan 2025)",
 
-    status90A: "PENDING",
-    landConversionStatus: "NOT_STARTED",
-    changeLandUseStatus: "NOT_APPLICABLE",
-    pattaLeaseStatus: "UNKNOWN",
-
-    registrySaleDeedAvailable: "YES",
-    mutationComplete: "YES",
-    mortgageBankCharge: "NO",
-    courtCaseStay: "NO",
-    familyDispute: "UNKNOWN",
-    acquisitionNotice: "NO",
-    governmentRestriction: "NO",
-
-    approachRoad: "YES",
-    roadType: "Pakka (bitumen) road",
-    electricity: "YES",
-    water: "YES",
-    sewerage: "NO",
-    existingConstruction: "NO",
-    encroachment: "NO",
-    possessionStatus: "Owners in possession; land under cultivation",
-
-    ownerAskingRate: "8500000",
-    ownerAskingRateBasis: "PER_BIGHA",
-    totalAskingValue: "55250000",
-    negotiable: true,
-    dlcRate: "1150",
-    dlcRateBasis: "PER_SQ_M",
-    expectedPurchaseRate: "7200000",
-    expectedPurchaseRateBasis: "PER_BIGHA",
-    paymentExpectation: "25% on agreement, the balance within 90 days of registry",
-
     developmentPotential: ["RESIDENTIAL", "COMMERCIAL", "WAREHOUSE", "AGRICULTURE", "INDUSTRIAL", "FARMHOUSE", "OTHER"],
-    documentsReceived: [
-      "JAMABANDI",
-      "REGISTRY",
-      "MUTATION",
-      "BHU_NAKSHA",
-      "KHASRA_MAP",
-      "CONVERSION_ORDER_90A",
-      "PATTA",
-      "OWNER_ID",
-      "SITE_PHOTOS",
-      "LOCATION_MAP",
-    ],
-    evaluation: ["SITE_VISIT_REQUIRED", "LEGAL_VERIFICATION_REQUIRED", "REVENUE_VERIFICATION_REQUIRED"],
+    documentsReceived: ["JAMABANDI", "REGISTRY", "MUTATION", "OWNER_ID", "LOCATION_MAP"],
 
     owners: [
       { ownerName: "Ramesh Chand Meena", mobile: "9241000901", isPrimary: true },
@@ -993,15 +943,7 @@ async function landStory() {
   await stage("SITE_VISIT", "Second site visit with the surveyor to mark the boundary.");
   await stage("UNDER_VERIFICATION");
 
-  step("Reassigned to Anita; rates updated after talks");
-  await reassignLandInquiry({
-    ...crm,
-    idempotencyKey: key(),
-    id,
-    version: await version(),
-    assignedToId: anita.id,
-    reason: "Rahul is on leave; Anita handles Sanganer.",
-  });
+  step("Edit details: the rest of the documents came in after the visit");
   await updateLandInquiry({
     ...crm,
     idempotencyKey: key(),
@@ -1009,11 +951,14 @@ async function landStory() {
     version: await version(),
     input: {
       ...input,
-      assignedToId: anita.id,
-      ownerAskingRate: "8000000",
-      totalAskingValue: "52000000",
-      status90A: "APPROVED",
-      paymentExpectation: "20% on agreement, the balance within 120 days of registry",
+      documentsReceived: [
+        ...input.documentsReceived,
+        "BHU_NAKSHA",
+        "KHASRA_MAP",
+        "CONVERSION_ORDER_90A",
+        "PATTA",
+        "SITE_PHOTOS",
+      ],
     },
   });
 

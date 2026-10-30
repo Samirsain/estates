@@ -16,7 +16,6 @@ import { enterBankDetails } from "@/lib/services/bank-service";
 import { approveCommissionPaidEarly, markCommissionPaid, requestCommissionPaidEarly } from "@/lib/services/commission-service";
 import { openRecovery } from "@/lib/services/recovery-service";
 import { recordTokenRedemption } from "@/lib/services/royalty-service";
-import { bookTripReward, markTripTravelled, recordTripNominee } from "@/lib/services/trip-service";
 import { requestPersonMerge } from "@/lib/services/merge-service";
 import { recordFollowUp, closeEnquiry } from "@/lib/services/enquiry-service";
 import { changeLandInquiryStage, createLandInquiry } from "@/lib/services/land-inquiry-service";
@@ -35,6 +34,7 @@ import {
   ACC,
   ACC2,
   bankAccounts,
+  cardProjects,
   CRM,
   MD,
   customer,
@@ -74,7 +74,7 @@ on("2026-04-02", "Shri Ram Enclave launches", async () => {
   const sre = await project("SRE");
   await settings(sre.id, { ...base, directEnabled: true, directPercent: "3", loyaltyEnabled: true, loyaltyPercent: "1", royaltyTokensPerAward: 10, reason: "Launch terms for Shri Ram Enclave" });
 });
-on("2026-06-01", "Aravali Heights launches with its Trip programme", async () => {
+on("2026-06-01", "Aravali Heights launches with its Rewards programme", async () => {
   const ah = await project("AH");
   await settings(ah.id, {
     ...base,
@@ -83,7 +83,7 @@ on("2026-06-01", "Aravali Heights launches with its Trip programme", async () =>
     loyaltyEnabled: true,
     loyaltyPercent: "1.5",
     royaltyTokensPerAward: 15,
-    reason: "Launch terms for Aravali Heights, with the Goa Trip programme",
+    reason: "Launch terms for Aravali Heights, with the Rewards programme (3 sales = 1 Reward)",
     trip: {
       tripEnabled: true,
       tripTotalTarget: 3,
@@ -103,6 +103,11 @@ on("2026-08-01", "Mansarovar Business Park launches", async () => {
   const mbp = await project("MBP");
   await settings(mbp.id, { ...base, directEnabled: true, directPercent: "2", loyaltyEnabled: true, loyaltyPercent: "1", royaltyTokensPerAward: 20, reason: "Launch terms for Mansarovar Business Park" });
 });
+on("2026-09-01", "Kishangarh Farm Estates launches", async () => {
+  const kfe = await project("KFE");
+  await settings(kfe.id, { ...base, directEnabled: true, directPercent: "2.5", loyaltyEnabled: true, loyaltyPercent: "1", royaltyTokensPerAward: 10, reason: "Launch terms for Kishangarh Farm Estates" });
+});
+on("2026-10-01", "Projects that show every way a Project card reads", cardProjects);
 on("2026-08-16", "Shri Ram Enclave festive terms (settings version 2)", () =>
   settings(projectIds.SRE, { ...base, directEnabled: true, directPercent: "3.5", loyaltyEnabled: true, loyaltyPercent: "1", royaltyTokensPerAward: 15, reason: "Festive season: Direct 3.5% and 15 Royalty points from 16 Aug" })
 );
@@ -421,21 +426,10 @@ on("2026-09-23", "Purchase for Resale approved", () =>
   decideAcquisition({ idempotencyKey: key(), actorRef: ACC2, actorRole: "ACCOUNTS", acquisitionId: B.RS1, approve: true, note: "Title documents verified." })
 );
 
-/* --------------------------------------------------------- Trip and points */
+/* ---------------------------------------------------------- Royalty points */
 
-const rewardOf = async (memberKey: string) =>
-  db.tripReward.findFirstOrThrow({ where: { memberProfileId: P(memberKey).profileId }, orderBy: { earnedAt: "asc" } });
-
-on("2026-08-20", "Trip traveller recorded", async () => {
-  await recordTripNominee({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: (await rewardOf("M01")).id, recipient: "SPOUSE", recipientName: "Kiran Shekhawat" });
-});
-on("2026-08-25", "Trip booked", async () => {
-  await bookTripReward({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: (await rewardOf("M01")).id, bookingReference: "MakeMyTrip MMT-4471925 · Goa, 4N/5D", bookedOn: new Date() });
-});
-on("2026-09-15", "Trip travelled", async () => {
-  await markTripTravelled({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: (await rewardOf("M01")).id, travelledOn: new Date() });
-});
-
+// Rewards are not trips (owner, 22 Oct 2026): a Reward is earned and nothing
+// more is recorded on it — no traveller, no booking, no "travelled".
 const spend = (memberKey: string, tokens: number, recipient: "SELF" | "NON_FAMILY", recipientName: string, what: string) =>
   recordTokenRedemption({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", memberProfileId: P(memberKey).profileId!, tokens, redeemedOn: istDay(new Date()), recipient, recipientName, reference: what });
 // Used For is a Gift or a Voucher, for the Member (owner, 27 Oct 2026).
@@ -596,7 +590,7 @@ export async function tellStory() {
     await at(db, step.day, step.run, step.time);
   }
   // What the guide says about each person (spec §6).
-  notes("M01", "Top seller; invited Anita, Mukesh and Ramesh. Earned the Goa Trip (travelled 15 Sep).");
+  notes("M01", "Top seller; invited Anita, Mukesh and Ramesh. Earned his Aravali Heights Reward.");
   notes("M04", "Neha Joshi's Royalty Linked Member; earned 15 points on SR-27, spent 13.");
   notes("M07", "Direct on AH-06 paid early with MD approval.");
   notes("M08", "RERA registration expires 19 Oct — reminder on the Dashboard.");

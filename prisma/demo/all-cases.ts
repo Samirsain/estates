@@ -29,10 +29,10 @@ import { clearRecovery, closeAdjustmentWithoutRecovery, openRecovery, setOffReco
 import { setMemberStatus, updateMemberRera } from "@/lib/services/network-service";
 import { enterBankDetails } from "@/lib/services/bank-service";
 import { correctTokenRedemption, recordTokenRedemption } from "@/lib/services/royalty-service";
-import { correctInviter, markTripTravelled } from "@/lib/services/trip-service";
+import { correctInviter } from "@/lib/services/trip-service";
 import { requestPersonMerge } from "@/lib/services/merge-service";
 import { closeEnquiry, recordFollowUp } from "@/lib/services/enquiry-service";
-import { archiveLandInquiry, changeLandInquiryStage, createLandInquiry, reassignLandInquiry, setLandInquiryStatus } from "@/lib/services/land-inquiry-service";
+import { archiveLandInquiry, changeLandInquiryStage, createLandInquiry, setLandInquiryStatus } from "@/lib/services/land-inquiry-service";
 import { setRestriction } from "@/lib/services/inventory-service";
 import {
   cancelAcquisitionDeal,
@@ -62,7 +62,7 @@ const note = (k: string, text: string) => (NOTES[k] = NOTES[k] ? `${NOTES[k]} ${
 
 const VIJAY = "Vijay Rathore (Member)";
 const RAJAT = "Rajat Malpani (Customer)";
-const OTHER = "Project, Plots and Dashboard";
+const OTHER = "Project, Plots and Task List";
 const LANDS = "Land Inquiries";
 
 const P = (k: string) => people[k];
@@ -204,7 +204,6 @@ let buyerSeq = 0;
 const nextBuyer = () => `C${String(++buyerSeq).padStart(2, "0")}`;
 
 const VIJAY_ID = () => P("TM01").profileId!;
-const rewardsOfVijay = () => db.tripReward.findMany({ where: { memberProfileId: VIJAY_ID() }, orderBy: { earnedAt: "asc" } });
 const spend = (tokens: number, recipient: "SELF" | "NON_FAMILY", name: string, what: string) =>
   recordTokenRedemption({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", memberProfileId: VIJAY_ID(), tokens, redeemedOn: istDay(new Date()), recipient, recipientName: name, reference: what });
 
@@ -249,14 +248,14 @@ on("2026-04-03", "MD corrects Vijay's inviter", async () => {
   note("TM03", "Was entered as Vijay Rathore's inviter by mistake.");
 });
 
-/* ------------------------------------------------ the Reward: delivered */
+/* --------------------------------------------------- the Reward: earned */
 
 on("2026-04-05", "Vijay sells TN-01 and TN-02 (100%)", async () => {
   for (const plot of ["TN-01", "TN-02"]) await sale(plot, nextBuyer(), { member: "TM01" }, "100", "full");
 });
 on("2026-04-06", "Rohit Jain (invited by Vijay) sells TN-03 — Vijay's Reference Credit", async () => {
   await sale("TN-03", nextBuyer(), { member: "TM04" }, "100", "full");
-  kase(VIJAY, "TN-01, TN-02, TN-03", "Reward: two own sales + Rohit Jain's first sale (Reference) → earned → Mark Delivered", "Rewards section; Members invited.");
+  kase(VIJAY, "TN-01, TN-02, TN-03", "Reward: two own sales + Rohit Jain's first sale (Reference) → earned", "Rewards section; Members invited.");
   note("TM04", "Invited by Vijay Rathore; his first sale TN-03 gave Vijay a Reference Credit.");
 });
 
@@ -268,7 +267,7 @@ on("2026-04-08", "Rajat buys TN-20 through Vijay, jointly with Neha (30%)", asyn
   await submit("TN-20", "HC", { member: "TM01" }, { joint: "spouse", enquiryId: eq });
   await approve("TN-20");
   await pay("TN-20", "30");
-  kase(RAJAT, "TN-20", "First Plot: Enquiry by Member → Booking, joint with Neha 50/50, Sold By Vijay (Royalty link to Vijay, provisional until 100%)", "Properties; History.");
+  kase(RAJAT, "TN-20", "First Plot: Enquiry by Member → Booking, joint with Neha 50/50, Sold By Vijay (Royalty link to Vijay, provisional until 100%)", "Bookings; History.");
   kase(VIJAY, "TN-20", "Enquiry turned into a sale; Rajat Malpani becomes his Royalty linked Customer", "Requests and enquiries; Royalty linked Customers.");
   note("spouse", "Joint buyer with Rajat on TN-20; becomes Primary Customer of TN-28.");
 });
@@ -324,8 +323,8 @@ on("2026-06-05", "Vijay sells TN-61 while his RERA is expired", async () => {
 on("2026-06-10", "Vijay's RERA renewed (expires 20 Oct); Rajat's TN-24 cancelled", async () => {
   await updateMemberRera({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", memberProfileId: VIJAY_ID(), status: "REGISTERED", reraNumber: "RAJ/A/2026/TM01-02", expiryDate: new Date("2026-10-20T00:00:00+05:30") });
   await cancelAndRefund("TN-24", "Customer changed plans");
-  kase(VIJAY, "—", "RERA: Registered → Expired → Registered again; expires 20 Oct (task RERA Registration Expiring)", "Identity → RERA; History; Dashboard.");
-  kase(RAJAT, "TN-24", "Booking cancelled and refunded", "Properties; Booking History.");
+  kase(VIJAY, "—", "RERA: Registered → Expired → Registered again; expires 20 Oct (task RERA Registration Expiring)", "Identity → RERA; History; Task List.");
+  kase(RAJAT, "TN-24", "Booking cancelled and refunded", "Bookings; Booking History.");
 });
 
 on("2026-06-12", "Vijay sells TN-08 (30%)", () => sale("TN-08", nextBuyer(), { member: "TM01" }, "30"));
@@ -334,10 +333,7 @@ on("2026-06-15", "Rajat closes TN-41; buys TN-28, TN-29", async () => {
   await sale("TN-28", "HC", {}, "30");
   await sale("TN-29", "HC", {}, "30");
 });
-on("2026-06-20", "Vijay's Reward delivered; TN-20 shares 50/50 → 60/40", async () => {
-  // One Reward per Project (owner, 27 Oct 2026): Vijay has only this one.
-  const [reward] = await rewardsOfVijay();
-  await markTripTravelled({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", rewardId: reward.id, travelledOn: new Date() });
+on("2026-06-20", "TN-20 shares 50/50 → 60/40", async () => {
   const b = await db.booking.findUniqueOrThrow({ where: { id: B["TN-20"] }, include: { parties: { where: { kind: "COMMERCIAL" } } } });
   const [primary, extra] = [b.parties.find((p) => p.role === "PRIMARY")!, b.parties.find((p) => p.role === "ADDITIONAL")!];
   await changeOwnershipShares({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-20"], parties: [
@@ -360,7 +356,7 @@ on("2026-07-02", "Primary Customer changes: TN-28 approved, TN-29 rejected", asy
   const to = await customer(nextBuyer());
   await requestPrimaryCustomerChange({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-29"], toPersonId: to.id, reason: "Name corrected to the actual buyer" });
   await decidePrimaryCustomerChange({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", bookingId: B["TN-29"], approve: false, note: "Rejected — documents incomplete" });
-  kase(RAJAT, "TN-28, TN-29", "Primary Customer change approved (TN-28 → Neha) and rejected (TN-29)", "Properties; Booking History.");
+  kase(RAJAT, "TN-28, TN-29", "Primary Customer change approved (TN-28 → Neha) and rejected (TN-29)", "Bookings; Booking History.");
 });
 
 /* ------------------------------- cancellations, Change Plot, Recoveries */
@@ -381,7 +377,7 @@ on("2026-07-11", "Change Plots approved", async () => {
   await decideChangePlot({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", bookingId: B["TN-25"], approve: true, note: "Approved — new Plot is Available and the price is checked", appliedPercent: "30", schedule: SCHEDULES.standard() });
   B["TN-55"] = B["TN-61"];
   B["TN-26"] = B["TN-25"];
-  kase(RAJAT, "TN-25 → TN-26", "Change Plot approved", "Properties; Booking History.");
+  kase(RAJAT, "TN-25 → TN-26", "Change Plot approved", "Bookings; Booking History.");
 });
 on("2026-07-12", "Recoveries opened on Vijay (TN-05) and Prakash Goyal (TN-50)", async () => {
   const opened = await openRecovery({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", recordId: B["rec:TN-05"], noticeOn: new Date(), reference: "TREC-26-V01", reason: "Commission paid on a cancelled Booking" });
@@ -418,7 +414,7 @@ on("2026-07-25", "Vijay repays his Recovery; TN-20 Registry", async () => {
   await finalBuyers("TN-20", [["HC", "60"], ["spouse", "40"]]);
   await complete("TN-20", "REGISTRY", "HC");
   kase(VIJAY, "TN-05", "Recovery 1: paid Direct on a cancelled sale → Recovery opened → repaid", "Header: Recovery; History.");
-  kase(RAJAT, "TN-20", "Delivered by Allotment → reopened by MD → Delivered by Registry", "Properties; Booking History.");
+  kase(RAJAT, "TN-20", "Delivered by Allotment → reopened by MD → Delivered by Registry", "Bookings; Booking History.");
 });
 
 /* -------------------------------------- 1 August: the big month of sales */
@@ -506,7 +502,7 @@ on("2026-08-15", "Buybacks of TN-15 and TN-44; Sold By Correction on TN-31 rejec
 on("2026-08-16", "Buybacks approved", async () => {
   await approveBuyback("TN-15");
   await approveBuyback("TN-44");
-  kase(OTHER, "TN-15", "Approved Buyback, 25% reward gate met (task Reward Review — Approved Buyback); Payment Given follow-up", "Buyback / Resale; Dashboard.");
+  kase(OTHER, "TN-15", "Approved Buyback, 25% reward gate met (task Reward Review — Approved Buyback); Payment Given follow-up", "Buyback / Resale; Task List.");
 });
 on("2026-08-20", "Schedule revision on Rajat's TN-26 approved", async () => {
   await reviseSchedule({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-26"], lines: await laterSchedule("TN-26"), reason: "Bank loan disbursement delayed" });
@@ -523,7 +519,7 @@ on("2026-09-01", "Sold By on TN-30 corrected to Vijay; Rajat's TN-22 request rej
   await buyback("TN-27", "25", "TM01");
   const hold = await createHold({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", plotId: plotId("TN-C10"), personId: P("HC").id, remark: "Customer wants a site visit first" });
   await cancelHold({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", holdId: hold.holdId, reason: "Customer is no longer interested" });
-  kase(RAJAT, "TN-22", "Booking Request rejected (Payment Schedule Incorrect)", "Properties.");
+  kase(RAJAT, "TN-22", "Booking Request rejected (Payment Schedule Incorrect)", "Bookings.");
   kase(RAJAT, "TN-C10", "Hold cancelled", "Plot History.");
 
   const row = (i: number) => db.landInquiry.findUniqueOrThrow({ where: { id: B[`land:${i}`] } });
@@ -533,19 +529,16 @@ on("2026-09-01", "Sold By on TN-30 corrected to Vijay; Rajat's TN-22 request rej
   await setLandInquiryStatus({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", id: r.id, version: r.version, status: "CLOSED", reason: "Price too high" });
   r = await row(8);
   await setLandInquiryStatus({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", id: r.id, version: r.version, status: "WORKING", reason: "Price is now acceptable", restoredStage: "NEGOTIATION" });
-  const crm = await db.staffAccount.findFirstOrThrow({ where: { staffAccountId: CRM } });
-  r = await row(1);
-  await reassignLandInquiry({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", id: r.id, version: r.version, assignedToId: crm.id, reason: "Area handled by another person" });
   r = await row(9);
   await archiveLandInquiry({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", id: r.id, version: r.version, reason: "Duplicate inquiry" });
-  kase(LANDS, "—", "Land Inquiries closed, reopened, reassigned and archived", "Land Inquiries page (Include archived).");
+  kase(LANDS, "—", "Land Inquiries closed, reopened and archived", "Land Inquiries page (Include archived).");
 });
 on("2026-09-02", "MD approves the TN-30 correction; TN-27 Buyback approved, Buying Commission for Vijay", async () => {
   await decideSoldByCorrection({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", bookingId: B["TN-30"], approve: true, note: "Approved — customer confirmed who sold" });
   await approveBuyback("TN-27");
   await recordBuyingCommission({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", acquisitionId: B["BB:TN-27"], beneficiaryPersonId: P("TM01").id, percent: "1" });
-  kase(VIJAY, "TN-30", "Sold By corrected to him after Mohan Lal Saini was paid: his Direct On Hold · old recovery pending (task Double Commission — MD Approval)", "Commission; Dashboard (MD).");
-  kase(RAJAT, "TN-27", "Sells TN-27 back to the company after Registry (task Complete Registry for the papers)", "Properties → deals; Dashboard (CRM).");
+  kase(VIJAY, "TN-30", "Sold By corrected to him after Mohan Lal Saini was paid: his Direct On Hold · old recovery pending (task Double Commission — MD Approval)", "Commission; Task List (MD).");
+  kase(RAJAT, "TN-27", "Sells TN-27 back to the company after Registry (task Complete Registry for the papers)", "Bookings → deals; Task List (CRM).");
   note("TM06", "Was paid on TN-30, then Sold By moved to Vijay Rathore (task Paid Commission Conflict).");
 });
 
@@ -558,7 +551,7 @@ on("2026-09-05", "Paid Early requested on TN-16, TN-17; Vijay sells TN-07 from a
   await submit("TN-07", buyer, { member: "TM01" }, { enquiryId: eq });
   await approve("TN-07");
   await pay("TN-07", "30");
-  kase(VIJAY, "TN-07", "Enquiry by Member → Booking; Direct Ready, not paid (task Verify — Commission Paid)", "Commission; Dashboard (Accounts).");
+  kase(VIJAY, "TN-07", "Enquiry by Member → Booking; Direct Ready, not paid (task Verify — Commission Paid)", "Commission; Task List (Accounts).");
 });
 on("2026-09-06", "MD approves TN-16 and rejects TN-17; TN-16 paid early", async () => {
   await approveCommissionPaidEarly({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", recordId: (await record("TN-16", "DIRECT")).id, note: "Member has a good record" });
@@ -572,7 +565,7 @@ on("2026-09-10", "Rajat's TN-44 Buyback cancelled; enquiries", async () => {
   await enquiry(await customer("e1"), C, "BY_MEMBER", { member: P("TM01"), followUpInDays: 3, remark: "Customer wants a site visit" });
   B["eq:HC"] = await enquiry(P("HC"), C, "EXISTING_CUSTOMER", { followUpInDays: 50, remark: "Looking for a specific size or facing" });
   B["eq:e2"] = await enquiry(await customer("e2"), C, "BY_CUSTOMER", { customer: P("HC"), followUpInDays: 50, remark: "Asked for the price list and brochure" });
-  kase(RAJAT, "TN-44", "Approved Buyback cancelled (task Reward Review — Buyback Unwind)", "Properties → deals; Dashboard.");
+  kase(RAJAT, "TN-44", "Approved Buyback cancelled (task Reward Review — Buyback Unwind)", "Bookings → deals; Task List.");
 });
 on("2026-09-15", "TN-15 resold while the Buyback is unpaid; Rajat's enquiries followed up and closed", async () => {
   await submit("TN-15", nextBuyer(), { member: "TM01" });
@@ -599,11 +592,11 @@ on("2026-09-19", "Vijay deactivated with a Hold Request waiting", async () => {
 on("2026-09-19", "CRM rejects the request; MD reactivates Vijay", async () => {
   await decideHoldRequest({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", requestId: B["hr:e6"], approve: false, note: "Rejected — buyer details incomplete" });
   await setMemberStatus({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", memberProfileId: VIJAY_ID(), active: true, reason: "Reactivated — issue resolved, Member is back" });
-  kase(VIJAY, "TN-80", "Deactivated with a Hold Request waiting (task Plot Hold by Deactivated Member) → reactivated; his unpaid lines held, then rechecked", "Header status; History; Dashboard (Completed).");
+  kase(VIJAY, "TN-80", "Deactivated with a Hold Request waiting (task Plot Hold by Deactivated Member) → reactivated; his unpaid lines held, then rechecked", "Header status; History; Task List (Completed).");
 }, "12:00");
 on("2026-09-25", "Commission Hold on Vijay; Rajat sells an outside property for resale", async () => {
   await applyMemberCommissionHold({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", memberProfileId: VIJAY_ID(), hold: true, reason: "Hold — KYC, RERA or bank documents pending" });
-  const group = await db.project.create({ data: { projectCode: "ALLR", name: "Test Resale Properties", city: "Jaipur", location: "Jaipur, Rajasthan", type: "RESIDENTIAL", status: "ACTIVE", isExternalResaleGroup: true } });
+  const group = await db.project.create({ data: { projectCode: "ALLR", name: "Test Resale Bookings", city: "Jaipur", location: "Jaipur, Rajasthan", type: "RESIDENTIAL", status: "ACTIVE", isExternalResaleGroup: true } });
   projectIds.ALLR = group.id;
   const made = await createAcquisition({
     idempotencyKey: key(),
@@ -627,7 +620,7 @@ on("2026-09-28", "Commission Hold removed; resale deal approved", async () => {
   await applyMemberCommissionHold({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", memberProfileId: VIJAY_ID(), hold: false, reason: "Removed — documents received" });
   await decideAcquisition({ idempotencyKey: key(), actorRef: ACC2, actorRole: "ACCOUNTS", acquisitionId: B["RS"], approve: true, note: "Approved — papers and seller details checked" });
   kase(VIJAY, "—", "Commission Hold applied, then removed", "History; Commission.");
-  kase(RAJAT, "GV-12", "Sells an outside property for resale; next instalment overdue (task Payment Given Follow-Up)", "Properties → deals.");
+  kase(RAJAT, "GV-12", "Sells an outside property for resale; next instalment overdue (task Payment Given Follow-Up)", "Bookings → deals.");
 });
 
 /* ---------------------------------------------------------- October */
@@ -642,7 +635,7 @@ on("2026-10-01", "TN-27 Buyback paid in full — Vijay's Buying Commission Ready
 });
 on("2026-10-03", "Vijay's Booking Request on TN-C02 waits more than 7 days", async () => {
   await submit("TN-C02", nextBuyer(), { member: "TM01" });
-  kase(VIJAY, "TN-C02", "Booking Request waiting over 7 days (task Verify — Booking Payment turns urgent)", "Sales; Dashboard (Accounts).");
+  kase(VIJAY, "TN-C02", "Booking Request waiting over 7 days (task Verify — Booking Payment turns urgent)", "Sales; Task List (Accounts).");
 });
 on("2026-10-05", "Buyback of TN-14 started, only 10% given", async () => {
   await buyback("TN-14", "10");
@@ -650,7 +643,7 @@ on("2026-10-05", "Buyback of TN-14 started, only 10% given", async () => {
 });
 on("2026-10-08", "Rajat enters a joint bank account with Neha", async () => {
   await enterBankDetails({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", personId: P("HC").id, accountHolder: "Rajat & Neha Malpani", ...bankAccounts.spouse, jointAccountProof: "Passbook page naming both holders" });
-  kase(RAJAT, "—", "Joint bank account with Neha waiting for Accounts (task Check Joint Bank Account — Approval)", "Bank; History; Dashboard (Accounts).");
+  kase(RAJAT, "—", "Joint bank account with Neha waiting for Accounts (task Check Joint Bank Account — Approval)", "Bank; History; Task List (Accounts).");
 });
 on("2026-10-10", "Trip programme closes (settings version 2); Rajat's TN-23 request", async () => {
   await settings(projectIds[C], { ...base, directEnabled: true, directPercent: "3", loyaltyEnabled: true, loyaltyPercent: "1", royaltyTokensPerAward: 10, reason: "Reward added / removed", trip: trip(new Date("2026-10-12T00:00:00+05:30"), new Date("2026-12-31T23:59:00+05:30")) });
@@ -659,7 +652,7 @@ on("2026-10-10", "Trip programme closes (settings version 2); Rajat's TN-23 requ
 });
 on("2026-10-11", "Rajat's TN-23 request corrected and sent again", async () => {
   await reviseBookingRequest({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-23"], parties: [{ personId: P("HC").id, role: "PRIMARY", sharePercent: null }], soldByType: "THREE_PERCENT_CLUB", soldByPersonId: null, bookingDate: new Date(), customerType: "INVESTOR", schedule: SCHEDULES.standard(), reason: "Payment schedule corrected as Accounts asked" });
-  kase(RAJAT, "TN-23", "Booking Request corrected and sent again (version 2), waiting for Accounts", "Properties; Dashboard: \"Corrected and sent again to Accounts\".");
+  kase(RAJAT, "TN-23", "Booking Request corrected and sent again (version 2), waiting for Accounts", "Bookings; Task List: \"Corrected and sent again to Accounts\".");
 });
 on("2026-10-12", "Cancellation of TN-11 and Change Plot TN-12 → TN-13 waiting; Rajat's TN-29 schedule and TN-21 cancellation", async () => {
   await cancelBooking({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-11"], reason: "Payment Not Received" });
@@ -667,9 +660,9 @@ on("2026-10-12", "Cancellation of TN-11 and Change Plot TN-12 → TN-13 waiting;
   await reviseSchedule({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-29"], lines: await laterSchedule("TN-29"), reason: "Customer asked for more time" });
   await cancelBooking({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-21"], reason: "Other", remark: "Customer changed plans" });
   await decideCancellation({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", bookingId: B["TN-21"], approve: false, note: "Rejected — customer withdrew the cancellation" });
-  kase(VIJAY, "TN-11", "Direct On Hold · refund pending (task Verify — Refund)", "Commission; Dashboard.");
-  kase(VIJAY, "TN-12 → TN-13", "Direct On Hold · change plot pending (task Verify — Change Plot)", "Commission; Dashboard.");
-  kase(RAJAT, "TN-29", "Schedule revision waiting (task Verify — Payment Schedule)", "Dashboard (Accounts).");
+  kase(VIJAY, "TN-11", "Direct On Hold · refund pending (task Verify — Refund)", "Commission; Task List.");
+  kase(VIJAY, "TN-12 → TN-13", "Direct On Hold · change plot pending (task Verify — Change Plot)", "Commission; Task List.");
+  kase(RAJAT, "TN-29", "Schedule revision waiting (task Verify — Payment Schedule)", "Task List (Accounts).");
   kase(RAJAT, "TN-21", "Cancellation requested and rejected — Booking continues", "Booking History.");
 });
 on("2026-10-13", "Sold By Correction on TN-32 waiting; Paid Early on TN-18 waiting; Rajat's Hold extended; manual tasks", async () => {
@@ -678,8 +671,8 @@ on("2026-10-13", "Sold By Correction on TN-32 waiting; Paid Early on TN-18 waiti
   const hold = await createHold({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", plotId: plotId("TN-C12"), personId: P("HC").id, sourcedByType: "MEMBER", sourcedByPersonId: P("TM01").id, remark: "Waiting for bank loan approval" });
   const ext = await requestHoldExtension({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", holdId: hold.holdId, reason: "Waiting for bank loan approval", requestedHours: 24 });
   await decideHoldExtension({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", requestId: ext.extensionRequestId, approve: true, note: "Approved — genuine reason given" });
-  kase(VIJAY, "TN-32", "Sold By Correction to Sunil Bhati waiting (task Sold By Correction — MD Approval)", "Dashboard (MD).");
-  kase(VIJAY, "TN-18", "Paid Early waiting for MD (task Early Commission — Pay After Approval)", "Dashboard (MD).");
+  kase(VIJAY, "TN-32", "Sold By Correction to Sunil Bhati waiting (task Sold By Correction — MD Approval)", "Task List (MD).");
+  kase(VIJAY, "TN-18", "Paid Early waiting for MD (task Early Commission — Pay After Approval)", "Task List (MD).");
   kase(RAJAT, "TN-C12", "Active Hold sourced by Vijay, extension approved by MD", "Plot page → Hold history.");
 
   const vijay = await db.memberProfile.findUniqueOrThrow({ where: { id: VIJAY_ID() } });
@@ -689,7 +682,7 @@ on("2026-10-13", "Sold By Correction on TN-32 waiting; Paid Early on TN-18 waiti
     await ensureTask(tx, { recordKind: "Project", recordId: projectIds[C], recordName: "Test Nagar (All Cases)", purpose: "MANUAL:TN DAILY COLLECTION CHECK", title: "Daily collection check — Test Nagar", assigneeRole: "ACCOUNTS", dueAt: new Date("2026-10-15T17:00:00+05:30"), recurrence: "DAILY", origin: "MANUAL" });
     await ensureTask(tx, { recordKind: "Project", recordId: projectIds[C], recordName: "Test Nagar (All Cases)", purpose: "MANUAL:TN BANK STATEMENT", title: "Match the bank statement for Test Nagar", assigneeRole: "ACCOUNTS", assigneeStaffId: acc.id, dueAt: new Date("2026-10-14T11:00:00+05:30"), origin: "MANUAL", latestResult: "Follow up on pending payment" });
   });
-  kase(OTHER, "—", "Manual tasks: one on Vijay's page, a daily one for Accounts, one for a named person (overdue)", "Dashboard; Vijay's page → Add Task.");
+  kase(OTHER, "—", "Manual tasks: one on Vijay's page, a daily one for Accounts, one for a named person (overdue)", "Task List; Vijay's page → Add Task.");
 });
 on("2026-10-14", "Settings version 3 for 1 Nov; Vijay's own request with a commission conflict", async () => {
   await settings(projectIds[C], { ...base, effectiveFrom: new Date("2026-11-01T00:00:00+05:30"), directEnabled: true, directPercent: "3.5", loyaltyEnabled: true, loyaltyPercent: "1", royaltyTokensPerAward: 12, reason: "Offer for a limited time" });
@@ -701,13 +694,13 @@ on("2026-10-14", "Settings version 3 for 1 Nov; Vijay's own request with a commi
   } catch (error) {
     if (!(error instanceof CommandError)) throw error;
   }
-  kase(VIJAY, "TN-C06", "Buys as an active Member with Sold By 3% Club → approval refused (task Commission Conflict — Correct Sold By)", "Dashboard (Accounts).");
+  kase(VIJAY, "TN-C06", "Buys as an active Member with Sold By 3% Club → approval refused (task Commission Conflict — Correct Sold By)", "Task List (Accounts).");
 
   // The database refuses an approved deal below 20% Payment Given
   // (acquisition_approval_threshold), so this task cannot arise from the screens today.
   kase(OTHER, "TN-15", "Selling Buyback/Resale Plot (task 14) cannot happen today: an approved deal can never fall below 20% Payment Given", "—");
 }, "12:00");
-on("2026-10-15", "Vijay's portal Hold Requests", async () => {
+on("2026-10-15", "Vijay's Hold Requests", async () => {
   const vijay = await db.memberProfile.findUniqueOrThrow({ where: { id: VIJAY_ID() } });
   const req = async (plot: string, who: string) =>
     submitHoldRequest({ idempotencyKey: key(), actorRef: `MEMBER:${vijay.memberId}`, memberProfileId: vijay.id, personId: (await customer(who)).id, plotId: plotId(plot) });
@@ -718,7 +711,7 @@ on("2026-10-15", "Vijay's portal Hold Requests", async () => {
   const withdrawn = await req("TN-C14", "e7");
   await withdrawHoldRequest({ idempotencyKey: key(), actorRef: `MEMBER:${vijay.memberId}`, memberProfileId: vijay.id, requestId: withdrawn.holdRequestId });
   await req("TN-60", "h7");
-  kase(VIJAY, "TN-59, TN-C13, TN-C14, TN-60", "Portal Hold Requests: approved → Hold, rejected, withdrawn by him, one waiting for CRM", "Requests and enquiries; Plots → Hold Requests.");
+  kase(VIJAY, "TN-59, TN-C13, TN-C14, TN-60", "Hold Requests: approved → Hold, rejected, withdrawn by him, one waiting for CRM", "Requests and enquiries; Plots → Hold Requests.");
 }, "08:30");
 
 note("TM01", "THE MEMBER TO OPEN: every Member rule is on his page.");

@@ -113,7 +113,7 @@ async function main() {
   // The Phase 1 seed owns a baseline the check suites rely on — one Person with
   // a known Aadhaar to collide against, and the demo Project. It is upsert-based
   // and safe to re-run, so it is the first thing to do after a reset.
-  console.log("Next: npm run db:seed, then npm run seed:mock-v2 (the Business Model v2 UAT dataset).");
+  console.log("Next: npm run seed:fresh (docs/Mock_Data_Guide.md, docs/Testing_Todo.md).");
   await db.$disconnect();
 }
 

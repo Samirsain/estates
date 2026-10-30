@@ -42,7 +42,7 @@ async function main() {
 
   // Scoped to the demo's own deal: the all-cases dataset (seed:all-cases) has a Ready one too.
   assert.equal(await db.commissionRecord.count({ where: { acquisition: { plot: { project: { projectCode: "AH" } } }, eligibility: "READY", payment: "NOT_PAID" } }), 1, "the AH-05 Buying Commission is Ready");
-  assert.ok(await db.tripReward.count({ where: { state: "TRAVELLED" } }), "a Trip travelled");
+  assert.ok(await db.tripReward.count({ where: { state: "EARNED" } }), "a Reward earned");
   assert.ok(await db.tokenRedemption.count(), "Royalty points spent");
   assert.ok((await db.landInquiry.count()) >= 10, "ten Land Inquiries");
   console.log("demo verify OK");

@@ -1239,9 +1239,8 @@ Seeded accounts sign in with `STF-0001` through `STF-0008` and the password the 
 | `npm run rotate:key` | Re-encrypt protected fields onto new `SENSITIVE_KEY` (dry run without `--confirm`) |
 | `npm run db:constraints` | Re-apply database controls (safe to re-run) |
 | `npm run data:reset` | Reset data (dev only) |
-| `npm run demo` | Run demo scenario |
-| `npm run seed:mock-v2` | Seed mock v2 business model data |
-| `npm run seed:showcase` | Seed showcase data |
+| `npm run seed:demo` | Seed the demo story (see docs/Demo_Data_Guide.md) |
+| `npm run seed:all-cases` | Seed Test Nagar, every rule case (see docs/All_Cases_Guide.md) |
 | `npm run reset:password` | Reset a staff password |
 | `npm run db:studio` | Open Prisma Studio for direct DB browsing |
 

@@ -97,7 +97,13 @@ Rules that shape it:
 
 ## 1.3 The 14 sections
 
-The create form, the edit form and the detail page all carry the same numbered
+> **Since 30 Oct 2026 (owner):** the create and edit form carry 7 sections since
+> 19 Oct — 1–5 below, then Development Potential (with Current Land Use and
+> Master Plan / Zonal Use) and Documents Received. The detail page shows only
+> those 7 (status and stage are heading badges), and mock data fills only what the form asks. Sections 6–10
+> and 13–14 below (and Assigned To) are no longer on any screen; their columns stay.
+
+The create form, the edit form and the detail page all carried the same numbered
 sections in the same order.
 
 | # | Section | Fields |
