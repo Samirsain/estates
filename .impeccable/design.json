@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-31T00:00:00Z",
+  "title": "Design System: 3% Real Estate Club",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Club Orange", "canonical": "hsl(16 76% 43%)", "tonalRamp": ["#3a1608", "#5c220c", "#832f11", "#c1471a", "#e2602f", "#ec8a63", "#f4b79e", "#fbe4da"] },
+      "primary-focus": { "role": "primary", "displayName": "Ember Focus", "canonical": "hsl(16 76% 48%)", "tonalRamp": ["#3a1608", "#5c220c", "#8f3313", "#d74f1d", "#e6714a", "#ee9572", "#f5bea8", "#fbe6dd"] },
+      "accent-book": { "role": "secondary", "displayName": "Book Blue", "canonical": "hsl(212 76% 43%)", "tonalRamp": ["#081f3a", "#0c305c", "#114283", "#1a68c1", "#2f84e2", "#63a5ec", "#9ec8f4", "#daeafb"] },
+      "destructive": { "role": "tertiary", "displayName": "Delete Crimson", "canonical": "hsl(350 72% 42%)", "tonalRamp": ["#36080f", "#560d19", "#7d1426", "#b81e38", "#dc3d58", "#e66f83", "#f0a6b2", "#fadde2"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "hsl(240 6% 12%)", "tonalRamp": ["#1d1d1f", "#333336", "#4a4a4e", "#6e6e73", "#8e8e93", "#aeaeb2", "#d2d2d7", "#f5f5f7"] },
+      "canvas": { "role": "neutral", "displayName": "Canvas", "canonical": "hsl(0 0% 100%)" },
+      "parchment": { "role": "neutral", "displayName": "Parchment", "canonical": "hsl(240 9% 96%)" },
+      "pearl": { "role": "neutral", "displayName": "Pearl", "canonical": "hsl(240 20% 98%)" },
+      "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "hsl(0 0% 88%)" },
+      "placeholder": { "role": "neutral", "displayName": "Hint Grey", "canonical": "hsl(0 0% 64%)" },
+      "status-available": { "role": "status", "displayName": "Available Green", "canonical": "#10b981", "tonalRamp": ["#022c22", "#064e3b", "#047857", "#059669", "#10b981", "#34d399", "#a7f3d0", "#ecfdf5"] },
+      "status-hold": { "role": "status", "displayName": "Hold Amber", "canonical": "#fbbf24", "tonalRamp": ["#451a03", "#78350f", "#b45309", "#d97706", "#f59e0b", "#fbbf24", "#fde68a", "#fffbeb"] },
+      "status-sold": { "role": "status", "displayName": "Sold Red", "canonical": "#ef4444", "tonalRamp": ["#2a0505", "#7f1d1d", "#b91c1c", "#dc2626", "#ef4444", "#f87171", "#fecaca", "#fef2f2"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "h1 page titles in the CRM." },
+      "headline": { "displayName": "Headline", "purpose": "h2 section heads." },
+      "title": { "displayName": "Title", "purpose": "h3 card and dialog heads." },
+      "body": { "displayName": "Body", "purpose": "All running copy; 15px is the dense working size." },
+      "table": { "displayName": "Table", "purpose": "Dense operational tables, a step below body." },
+      "label": { "displayName": "Label", "purpose": "Field labels, group heads, chip text, count captions; sentence case." }
+    },
+    "shadows": [
+      { "name": "modal", "value": "0 25px 50px -12px rgba(0,0,0,0.25)", "purpose": "CRM dialogs, over a 40% black backdrop." },
+      { "name": "menu", "value": "0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)", "purpose": "Dropdown menus on a 95% opaque blurred surface." },
+      { "name": "sheet", "value": "0 -12px 40px -12px rgba(0,0,0,0.25)", "purpose": "Portal Plot details sheet, cast upward." },
+      { "name": "segment", "value": "0 1px 2px 0 rgba(0,0,0,0.05)", "purpose": "Selected half of a segmented control." },
+      { "name": "pressed-rule", "value": "inset 0 -3px 0 0 <status-rule>", "purpose": "Pressed count-as-filter cell; not elevation." }
+    ],
+    "motion": [
+      { "name": "ease-out-expo", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "The one curve for both portal animations." },
+      { "name": "sheet-up", "value": "translateY(100%) to 0, 320ms", "purpose": "Plot details sheet rising; motion-safe only." },
+      { "name": "plot-flip", "value": "scaleY 1 to 0.08 to 1, 700ms", "purpose": "A Plot whose status changed on live refresh turns over once; motion-safe only." },
+      { "name": "colors", "value": "150ms ease (Tailwind transition-colors)", "purpose": "Hover and pressed colour changes everywhere else." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one interactive colour on a pill; every primary action.",
+      "html": "<button class=\"ds-btn-primary\">Save</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 22px; border: none; border-radius: 9999px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-size: 14px; font-weight: 400; transition: background-color 150ms; cursor: pointer; } .ds-btn-primary:hover { background: hsl(var(--ring)); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px hsl(var(--ring)); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary actions: canvas pill, hairline, orange label.",
+      "html": "<button class=\"ds-btn-outline\">Download PDF</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; height: 40px; padding: 0 22px; border: 1px solid hsl(var(--border)); border-radius: 9999px; background: hsl(var(--card)); color: hsl(var(--primary)); font-size: 14px; transition: background-color 150ms; cursor: pointer; } .ds-btn-outline:hover { background: hsl(var(--accent)); } .ds-btn-outline:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px hsl(var(--ring)); }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Delete and other irreversible actions only.",
+      "html": "<button class=\"ds-btn-danger\">Delete</button>",
+      "css": ".ds-btn-danger { display: inline-flex; align-items: center; height: 40px; padding: 0 22px; border: none; border-radius: 9999px; background: hsl(var(--destructive)); color: #fff; font-size: 14px; cursor: pointer; transition: background-color 150ms; } .ds-btn-danger:hover { background: hsl(var(--destructive) / 0.9); } .ds-btn-danger:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px hsl(var(--ring)); }"
+    },
+    {
+      "name": "Portal Search Field",
+      "kind": "input",
+      "refersTo": "input-search-portal",
+      "description": "44px search with a leading icon; 16px text on phones.",
+      "html": "<label class=\"ds-search\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/></svg><input placeholder=\"Plot number\"></label>",
+      "css": ".ds-search { position: relative; display: block; } .ds-search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: hsl(var(--muted-foreground)); pointer-events: none; } .ds-search input { display: block; width: 100%; height: 44px; padding: 0 12px 0 40px; border: 1px solid hsl(var(--input)); border-radius: 12px; background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: 16px; } .ds-search input::placeholder { color: hsl(var(--placeholder)); } .ds-search input:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(var(--ring)); }"
+    },
+    {
+      "name": "Project Strip",
+      "kind": "nav",
+      "refersTo": "project-strip-chip",
+      "description": "Sticky row of Project chips, each with its availability bar; the open one inverts to ink.",
+      "html": "<nav class=\"ds-strip\"><a class=\"ds-strip-chip\">Ganpati Estate<span class=\"ds-bar\"><i style=\"flex-grow:12;background:#10b981\"></i><i style=\"flex-grow:3;background:#fbbf24\"></i><i style=\"flex-grow:9;background:#ef4444\"></i></span></a><a class=\"ds-strip-chip ds-on\" aria-current=\"page\">Emporio<span class=\"ds-bar\"><i style=\"flex-grow:20;background:#10b981\"></i><i style=\"flex-grow:2;background:#fbbf24\"></i><i style=\"flex-grow:5;background:#ef4444\"></i></span></a></nav>",
+      "css": ".ds-strip { display: flex; gap: 8px; padding: 10px 16px; border-bottom: 1px solid hsl(var(--border) / 0.7); background: hsl(var(--background)); } .ds-strip-chip { display: flex; flex-direction: column; gap: 6px; width: 160px; padding: 8px 12px; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: 12px; font-weight: 600; text-decoration: none; transition: background-color 150ms; cursor: pointer; } .ds-strip-chip:hover { background: hsl(var(--secondary)); } .ds-strip-chip.ds-on { background: hsl(var(--foreground)); border-color: hsl(var(--foreground)); color: hsl(var(--background)); } .ds-strip-chip:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(var(--ring)); } .ds-bar { display: flex; gap: 2px; height: 4px; overflow: hidden; border-radius: 9999px; } .ds-bar i { height: 100%; flex-basis: 0; border-radius: 9999px; }"
+    },
+    {
+      "name": "Availability Bar with Counts-as-Filter",
+      "kind": "custom",
+      "refersTo": "availability-bar",
+      "description": "The portal signature: proportional status bar flush over three joined count buttons; pressed takes the status wash and an inset bottom rule.",
+      "html": "<div class=\"ds-avail\"><div class=\"ds-avail-bar\"><i style=\"flex-grow:20;background:#10b981\"></i><i style=\"flex-grow:2;background:#fbbf24;opacity:.2\"></i><i style=\"flex-grow:5;background:#ef4444;opacity:.2\"></i></div><div class=\"ds-avail-row\"><button aria-pressed=\"true\" class=\"ds-on\"><span class=\"ds-dot\" style=\"background:#10b981\"></span><b>20</b> Available</button><button><span class=\"ds-dot\" style=\"background:#fbbf24\"></span><b>2</b> Hold</button><button><span class=\"ds-dot\" style=\"background:#ef4444\"></span><b>5</b> Sold / Booked</button></div></div>",
+      "css": ".ds-avail { overflow: hidden; border: 1px solid hsl(var(--border) / 0.8); border-radius: 12px; background: hsl(var(--card)); } .ds-avail-bar { display: flex; gap: 2px; height: 6px; } .ds-avail-bar i { flex-basis: 0; border-radius: 9999px; transition: opacity 300ms; } .ds-avail-row { display: grid; grid-template-columns: repeat(3, 1fr); } .ds-avail-row button { display: flex; align-items: center; gap: 6px; min-height: 48px; padding: 8px 14px; border: none; border-left: 1px solid hsl(var(--border) / 0.7); background: transparent; color: hsl(var(--foreground)); font-size: 12px; font-weight: 500; text-align: left; cursor: pointer; transition: background-color 150ms; } .ds-avail-row button:first-child { border-left: none; } .ds-avail-row button:hover { background: hsl(var(--secondary) / 0.7); } .ds-avail-row button.ds-on { background: #ecfdf5; box-shadow: inset 0 -3px 0 0 #059669; } .ds-avail-row button:focus-visible { outline: none; box-shadow: inset 0 0 0 2px hsl(var(--ring)); } .ds-avail-row b { font-size: 16px; font-variant-numeric: tabular-nums; } .ds-dot { width: 8px; height: 8px; border-radius: 9999px; }"
+    },
+    {
+      "name": "Plot Tiles",
+      "kind": "custom",
+      "refersTo": "plot-tile-available",
+      "description": "Status-filled tiles with the Plot number in the status's dark ink.",
+      "html": "<div class=\"ds-tiles\"><button class=\"ds-tile ds-a\">101</button><button class=\"ds-tile ds-h\">102</button><button class=\"ds-tile ds-s\">103</button></div>",
+      "css": ".ds-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 8px; } .ds-tile { height: 48px; border: 1px solid; border-radius: 11px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; transition: filter 150ms; } .ds-tile:hover { filter: brightness(0.95); } .ds-tile:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px hsl(var(--foreground)); } .ds-a { background: #10b981; border-color: #059669; color: #022c22; } .ds-h { background: #fbbf24; border-color: #f59e0b; color: #451a03; } .ds-s { background: #ef4444; border-color: #dc2626; color: #2a0505; }"
+    },
+    {
+      "name": "Plan | List Segmented Control",
+      "kind": "chip",
+      "refersTo": "segmented-control",
+      "description": "Parchment track; selected half is canvas with a small shadow.",
+      "html": "<div class=\"ds-seg\"><button aria-pressed=\"true\" class=\"ds-on\">Plan</button><button>List</button></div>",
+      "css": ".ds-seg { display: inline-flex; padding: 4px; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--secondary)); } .ds-seg button { height: 34px; padding: 0 12px; border: none; border-radius: 11px; background: transparent; color: hsl(var(--muted-foreground)); font-size: 12px; font-weight: 600; cursor: pointer; transition: color 150ms, background-color 150ms; } .ds-seg button:hover { color: hsl(var(--foreground)); } .ds-seg button.ds-on { background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); } .ds-seg button:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(var(--ring)); }"
+    },
+    {
+      "name": "Facing Chip",
+      "kind": "chip",
+      "refersTo": "chip-facing",
+      "description": "Quiet parchment pill for a Plot's facing lines.",
+      "html": "<span class=\"ds-chip\">East facing</span>",
+      "css": ".ds-chip { display: inline-block; padding: 4px 12px; border: 1px solid hsl(var(--border)); border-radius: 9999px; background: hsl(var(--secondary)); color: hsl(var(--foreground)); font-size: 12px; font-weight: 600; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat container: 16px corners, hairline, no shadow.",
+      "html": "<div class=\"ds-card\"><strong>About this project</strong><p>Amenities, location and documents.</p></div>",
+      "css": ".ds-card { padding: 16px; border: 1px solid hsl(var(--border) / 0.7); border-radius: 16px; background: hsl(var(--card)); color: hsl(var(--card-foreground)); transition: border-color 200ms; } .ds-card strong { display: block; font-size: 14px; font-weight: 600; } .ds-card p { margin: 2px 0 0; font-size: 12px; color: hsl(var(--muted-foreground)); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Gallery Ledger",
+    "overview": "The system is Apple's museum-gallery language turned to operational records: white and parchment canvases, ink type with tight negative tracking, hairline dividers in place of borders-as-decoration, and chrome that recedes so the records can be read. `src/app/globals.css` holds every value; `system/apple-design-reference.md` holds the reasoning. The project departs from that reference on one thing, the interactive colour: the logo's own orange hue, darkened until white text on it clears AA, replaces Action Blue.\n\nIt is dense by intent. Body copy sits at 15px rather than the reference's 17px marketing size, tables a step below, so a Plot row stays on one line. Hierarchy is carried by size and weight, not by grey: labels and helper text are set in the body ink because the owner found a mid-grey too faint.\n\nThe Public Project Portal (`/p`, `/p/[slug]`) is a surface inside this world, not a new one (owner, 31 Oct 2026: same colours and type, better layout). It adds a status vocabulary (green, amber, red) and one signature device, the availability bar.",
+    "keyCharacteristics": [
+      "One interactive colour; everything pressable is orange or sits in a neutral pill.",
+      "Flat chrome separated by hairlines and a change of canvas; only floating layers lift.",
+      "Pill buttons, softly rounded containers, no sharp corners anywhere.",
+      "No web font; the platform face with SF Pro first.",
+      "Status is green, amber, red, and nothing else."
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "Club Orange is the only colour that means \"press this\". Book Blue is the single sanctioned exception, for Book only.", "section": "colors" },
+      { "name": "The Three Lights Rule", "body": "Plot status is green, amber or red. No fourth status colour, no brand orange on a status.", "section": "colors" },
+      { "name": "The Dark Number Rule", "body": "A Plot number on a status fill is printed in that status's dark ink, never white: white measured 2.5:1 on the green and 3.8:1 on the red.", "section": "colors" },
+      { "name": "The Ink Not Grey Rule", "body": "Labels and helper text use the body ink; hierarchy comes from size and weight. Grey is reserved for placeholders.", "section": "typography" },
+      { "name": "The Tabular Figures Rule", "body": "Every Plot number, count, area and RERA number uses tabular numerals so columns of figures align.", "section": "typography" },
+      { "name": "The Flat Chrome Rule", "body": "Nav, headers, cards and tiles carry no shadow. If it does not float and dismiss, it does not lift.", "section": "elevation" }
+    ],
+    "dos": [
+      "**Do** take every colour from `globals.css` tokens or the status families above; the frontmatter is normative.",
+      "**Do** use Club Orange for actions, links, selection and active nav, and keep Book Blue for Book alone.",
+      "**Do** print Plot numbers in the status's dark ink on every status fill.",
+      "**Do** separate chrome with a hairline and a canvas change; lift only modals, menus and sheets.",
+      "**Do** keep portal touch targets at 44-48px and the phone search field at 16px.",
+      "**Do** wrap any new animation in `motion-safe` and reuse the `cubic-bezier(0.22, 1, 0.36, 1)` curve.",
+      "**Do** use tabular numerals for every figure."
+    ],
+    "donts": [
+      "**Don't** introduce a second interactive colour beyond Book Blue, or use the logo's bright #FF7844 / #E85C31 under white text.",
+      "**Don't** add a fourth status colour or put status meaning in orange.",
+      "**Don't** set Plot numbers in white on a status fill.",
+      "**Don't** put a shadow on nav, headers, cards or tiles.",
+      "**Don't** paint decorative gradients; the only gradient is the CRM nav's edge-fade mask. No edge glow or fade on the Public Portal.",
+      "**Don't** set labels or helper text in grey; grey is the placeholder's alone."
+    ]
+  }
+}

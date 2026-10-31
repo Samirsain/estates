@@ -100,7 +100,8 @@ export function ProjectIdentity({
             </Badge>
             <span className="text-xs font-semibold text-muted-foreground">{project.projectCode}</span>
           </div>
-          <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-2 sm:justify-center">
+          {/* A full line of its own on a phone, so RERA never squeezes the developer's name. */}
+          <div className="flex flex-1 basis-full flex-wrap items-center gap-x-6 gap-y-2 sm:basis-0 sm:justify-center">
             <Badge variant="outline">{type}</Badge>
             {project.developer && (
               <p className="text-xs font-semibold text-foreground">

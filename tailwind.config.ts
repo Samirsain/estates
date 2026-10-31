@@ -49,6 +49,22 @@ const config: Config = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      // Public Portal: a Plot whose status changes on the live refresh turns
+      // over once; the Plot details sheet rises from the bottom edge.
+      keyframes: {
+        "plot-flip": {
+          "0%, 100%": { transform: "scaleY(1)" },
+          "50%": { transform: "scaleY(0.08)" },
+        },
+        "sheet-up": {
+          from: { transform: "translateY(100%)" },
+          to: { transform: "translateY(0)" },
+        },
+      },
+      animation: {
+        "plot-flip": "plot-flip 0.7s cubic-bezier(0.22, 1, 0.36, 1)",
+        "sheet-up": "sheet-up 0.32s cubic-bezier(0.22, 1, 0.36, 1)",
+      },
     },
   },
   plugins: [],

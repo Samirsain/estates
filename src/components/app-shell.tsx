@@ -185,7 +185,9 @@ export function AppShell({
         }`}
       >
         <div className="flex shrink-0 items-center gap-3 px-4 py-3 md:py-4">
-          <img src="/logo.svg" alt="" className="h-6 w-6 shrink-0" />
+          <a href="/" aria-label="Home" className="shrink-0">
+            <img src="/logo.svg" alt="" className="h-6 w-6" />
+          </a>
           <div
             className={`hidden whitespace-nowrap transition-opacity md:block ${
               menuOpen ? "md:opacity-100" : "md:opacity-0"

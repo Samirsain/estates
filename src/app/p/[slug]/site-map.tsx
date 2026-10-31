@@ -6,8 +6,10 @@
 // does not show (Not Available, Not for Sale, Pledge) stays an empty outline,
 // so the plan is whole without a fourth colour.
 //
-// On a phone the plan opens zoomed in and scrolls inside its own frame; the
-// page itself never scrolls sideways.
+// On a phone the plan opens zoomed in and slides sideways inside its own frame;
+// the page itself never scrolls sideways. The frame grows to the plan's height,
+// so it never scrolls up and down inside the page, and on a touch screen it
+// draws no scrollbar — the finger moves it (owner, 31 Oct 2026).
 
 import React from "react";
 import { Minus, Plus } from "lucide-react";
@@ -15,11 +17,11 @@ import type { SiteLayout } from "@/lib/project-layouts";
 import { PUBLIC_STATUS_LABEL, type PublicPlotStatus } from "@/lib/domain/public-portal";
 import type { PublicPlot } from "./portal-client";
 
-/** The tiles' three colours, as SVG fills; the number is white on green and red, dark on amber. */
+/** The tiles' three colours, as SVG fills; the number in the same dark inks as the tiles. */
 const FILL: Record<PublicPlotStatus, { shape: string; text: string }> = {
-  AVAILABLE: { shape: "fill-emerald-500 stroke-emerald-700", text: "fill-white" },
+  AVAILABLE: { shape: "fill-emerald-500 stroke-emerald-700", text: "fill-emerald-950" },
   HOLD: { shape: "fill-amber-400 stroke-amber-600", text: "fill-amber-950" },
-  SOLD: { shape: "fill-red-500 stroke-red-700", text: "fill-white" },
+  SOLD: { shape: "fill-red-500 stroke-red-700", text: "fill-[#2a0505]" },
 };
 
 const ZOOMS = [1, 1.6, 2.2, 3, 4];
@@ -32,12 +34,15 @@ export default function SiteMap({
   plots,
   isDimmed,
   ringedId,
+  changed,
   onSelect,
 }: {
   layout: SiteLayout;
   plots: PublicPlot[];
   isDimmed: (plot: PublicPlot) => boolean;
   ringedId: string | null;
+  /** Plots whose status just changed on the live refresh; each turns over once. */
+  changed: ReadonlySet<string>;
   onSelect: (id: string) => void;
 }) {
   const byNumber = React.useMemo(() => new Map(plots.map((p) => [p.number, p])), [plots]);
@@ -45,8 +50,11 @@ export default function SiteMap({
   const [zoom, setZoom] = React.useState(1);
 
   // A phone opens the plan large enough to read a number and tap a 15 ft shop,
-  // scrolled to its middle, where most of the Plots are.
+  // scrolled to its middle, where most of the Plots are — or to the ringed
+  // Plot, when the plan was opened by "Show on site plan" or a search.
   const centre = React.useRef(false);
+  const ringed = React.useRef(ringedId);
+  ringed.current = ringedId;
   React.useEffect(() => {
     if (!window.matchMedia("(max-width: 640px)").matches) return;
     centre.current = true;
@@ -57,7 +65,9 @@ export default function SiteMap({
     const el = frame.current;
     if (!centre.current || !el) return;
     centre.current = false;
-    el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2;
+    const target = ringed.current ? document.getElementById(`plan-${ringed.current}`) : null;
+    if (target) target.scrollIntoView({ block: "center", inline: "center" });
+    else el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2;
   }, [zoom]);
 
   /** Zooms about the middle of what is in view, so the Plot being looked at stays put. */
@@ -77,33 +87,38 @@ export default function SiteMap({
     zoomTo(ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, (i === -1 ? ZOOMS.length - 1 : i) + dir))]);
   };
 
+  // No fade on the plan's edges (owner, 31 Oct 2026): the Plots cut off at
+  // the frame's edge are the sign there is more plan to slide to.
+
   const [vx, vy, vw, vh] = layout.viewBox;
   const bar = 50 * layout.scale;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] text-muted-foreground">Tap a Plot for its details · drawn to scale</p>
-        <div className="flex items-center gap-1" role="group" aria-label="Zoom">
+    <figure className="overflow-hidden rounded-2xl border border-border/70 bg-white">
+      {/* The plan's own bar: what to do, and zoom. Above the plan rather than
+          floating on it, so the controls never cover a Plot (at Fit nothing can
+          be scrolled out from under them), and a phone sees them at once. */}
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-card py-1 pl-3.5 pr-1">
+        <figcaption className="text-[11px] text-muted-foreground">Tap a Plot for its size and facing</figcaption>
+        <div role="group" aria-label="Zoom" className="flex shrink-0 items-center gap-0.5">
           <ZoomButton label="Zoom out" disabled={zoom <= ZOOMS[0]} onClick={() => step(-1)}>
-            <Minus className="h-3.5 w-3.5" />
+            <Minus className="h-4 w-4" />
           </ZoomButton>
           <button
             type="button"
             onClick={() => zoomTo(1)}
-            className="h-8 rounded-full border border-border bg-card px-3 text-xs font-medium text-muted-foreground hover:text-foreground"
+            className="h-9 rounded-full px-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Fit
           </button>
           <ZoomButton label="Zoom in" disabled={zoom >= ZOOMS[ZOOMS.length - 1]} onClick={() => step(1)}>
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-4 w-4" />
           </ZoomButton>
         </div>
       </div>
-
       <div
         ref={frame}
-        className="max-h-[70vh] overflow-auto overscroll-contain rounded-xl border border-border/70 bg-white"
+        className="overflow-x-auto overflow-y-hidden overscroll-x-contain [@media(pointer:coarse)]:[scrollbar-width:none] [@media(pointer:coarse)]:[&::-webkit-scrollbar]:hidden"
       >
         <div style={{ width: `${zoom * 100}%` }}>
           <svg
@@ -182,7 +197,7 @@ export default function SiteMap({
                       textAnchor="middle"
                       dominantBaseline="central"
                       fontSize={size}
-                      className="pointer-events-none fill-stone-400 font-mono font-semibold"
+                      className="pointer-events-none fill-stone-400 font-semibold tabular-nums"
                     >
                       {label}
                     </text>
@@ -204,9 +219,9 @@ export default function SiteMap({
                       onSelect(plot.id);
                     }
                   }}
-                  className={`cursor-pointer outline-none transition-opacity hover:brightness-95 focus-visible:[&>polygon]:stroke-slate-900 focus-visible:[&>polygon]:[stroke-width:3.5] ${
+                  className={`origin-center cursor-pointer outline-none transition-opacity [transform-box:fill-box] hover:brightness-95 focus-visible:[&>polygon]:stroke-slate-900 focus-visible:[&>polygon]:[stroke-width:3.5] ${
                     isDimmed(plot) ? "opacity-20" : ""
-                  }`}
+                  } ${changed.has(plot.id) ? "motion-safe:animate-plot-flip" : ""}`}
                 >
                   <polygon
                     points={points(shape.points)}
@@ -219,7 +234,7 @@ export default function SiteMap({
                     textAnchor="middle"
                     dominantBaseline="central"
                     fontSize={size}
-                    className={`pointer-events-none font-mono font-bold ${FILL[plot.status].text}`}
+                    className={`pointer-events-none font-bold tabular-nums ${FILL[plot.status].text}`}
                   >
                     {label}
                   </text>
@@ -237,7 +252,7 @@ export default function SiteMap({
           </svg>
         </div>
       </div>
-    </div>
+    </figure>
   );
 }
 
@@ -258,7 +273,7 @@ function ZoomButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40"
+      className="flex h-9 w-9 items-center justify-center rounded-full text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30"
     >
       {children}
     </button>

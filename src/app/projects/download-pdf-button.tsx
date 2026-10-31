@@ -10,14 +10,14 @@ import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { downloadProjectSheet, type ProjectSheet } from "@/lib/pdf/project-sheet";
 
-export default function DownloadPdfButton({ sheet }: { sheet: ProjectSheet }) {
+export default function DownloadPdfButton({ sheet, className }: { sheet: ProjectSheet; className?: string }) {
   const [saving, setSaving] = React.useState(false);
 
   return (
     <Button
       size="xs"
       variant="outline"
-      className="rounded-full"
+      className={className ?? "rounded-full"}
       disabled={saving}
       onClick={async () => {
         setSaving(true);
