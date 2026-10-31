@@ -30,8 +30,6 @@ import {
   type BookingPartyInput,
 } from "@/lib/services/booking-service";
 import { db } from "@/lib/db";
-import { locationChargeLabel } from "@/lib/domain/inventory";
-import { creditStatus } from "@/lib/domain/trip";
 import { decideCancellation } from "@/lib/services/cancellation-service";
 import { plcSnapshotHistory } from "@/lib/services/project-service";
 import { decideChangePlot, submitChangePlot } from "@/lib/services/change-plot-service";
@@ -900,14 +898,6 @@ export async function loadBookingDetail(bookingId: string) {
             percent: string;
             evidence: string;
           }>,
-          /**
-           * What the charge is for, in the vocabulary the Plot list uses.
-           * Read from the Plot's sides as they stand, not from the snapshot: a
-           * snapshot freezes percentages, never the shape of the Plot. Correct
-           * a side later and the percentages here stay frozen while this line
-           * follows the correction — which is the honest pair of facts.
-           */
-          position: locationChargeLabel(booking.plot.boundaries),
           version: booking.plcSnapshot.ruleVersion.version,
           frozenAt: booking.plcSnapshot.frozenAt.toISOString(),
           isCurrent: booking.plcSnapshot.isCurrent,
@@ -991,36 +981,6 @@ export async function loadBookingDetail(bookingId: string) {
       correctsEntryId: e.correctsEntryId,
     })),
     // DESIGN §14.1 — eligibility and payment are shown as two separate fields.
-    // CP §90 — the safe reward summary: this Booking's non-cash credits.
-    rewards: [
-      ...(
-        await db.tripCredit.findMany({
-          where: { sourceBookingId: bookingId },
-          include: { memberProfile: { select: { memberId: true } } },
-          orderBy: { createdAt: "asc" },
-        })
-      ).map((t) => {
-        // Owner-approved 21 Oct 2026: Pending / Counted / Not Counted, one short reason.
-        const { status, reason } = creditStatus({ state: t.state, route: t.qualificationRoute, reversalReason: t.reversalReason });
-        return {
-          kind: t.creditType === "OWN_SALE" ? "Own-Sale Reward Credit" : "Reference Credit",
-          member: t.memberProfile.memberId,
-          state: status,
-          detail: reason,
-        };
-      }),
-      ...(
-        await db.royaltyAward.findMany({
-          where: { triggerBookingId: bookingId },
-          include: { memberProfile: { select: { memberId: true } } },
-        })
-      ).map((r) => ({
-        kind: "Royalty Points",
-        member: r.memberProfile.memberId,
-        state: r.state.toLowerCase(),
-        detail: `${r.tokens} points${r.holdReason ? ` · ${r.holdReason.replaceAll("_", " ").toLowerCase()}` : ""}${r.reversalReason && r.state === "REVERSED" ? ` · ${r.reversalReason}` : ""}`,
-      })),
-    ],
     commissions: commissions.map((c) => ({
       id: c.id,
       type: c.type,

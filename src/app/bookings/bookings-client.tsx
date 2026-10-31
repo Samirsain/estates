@@ -656,7 +656,7 @@ export default function BookingsClient({
           underneath the list, which put a form-length panel inside a table and
           left the actions stranded in a seventh column. */}
       {focusRow ? (
-        <div className="mx-auto max-w-5xl space-y-4">
+        <div className="space-y-4">
           {/* Back and what is under way on the left; History, the one next step
               and More on the right — as on the Customer, Member and Plot pages. */}
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -706,36 +706,13 @@ export default function BookingsClient({
                   <Badge variant={statusVariant(focusRow.status)}>
                     {STATUS_LABEL[focusRow.status] ?? focusRow.status}
                   </Badge>
-                  {/* The historical classification stays visible on the record
-                      itself, not only as a count on the Dashboard. */}
-                  {focusRow.originalClassification && (
-                    <Badge
-                      variant="outline"
-                      title="Frozen with the Booking Request and permanent after Accounts approval."
-                    >
-                      {focusRow.originalClassification === "MEMBER" ? "Member business" : "Customer business"}
-                    </Badge>
-                  )}
                 </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {focusRow.bookingNumber && `${focusRow.bookingNumber} · `}
-                  booked {formatIstDate(focusRow.bookingDate)} · submitted by {focusRow.submittedByRef}
-                </p>
                 <p className="mt-1 text-sm">
                   <Link href={`/plots/${focusRow.plotId}`} className="font-medium text-primary hover:underline">
                     {focusRow.plotNumber} · {focusRow.project}
                   </Link>
                   <span className="text-muted-foreground"> · {humanise(focusRow.plotType)}</span>
                 </p>
-                {/* The one case the classification has to explain itself: the
-                    buyer has become a Member since, and the Booking still counts
-                    as Customer business. */}
-                {focusRow.originalClassification === "CUSTOMER" && focusRow.buyerMemberIdNow && (
-                  <p className="mt-1 max-w-prose text-[11px] text-amber-800">
-                    {focusRow.primaryCustomer} has since been activated as {focusRow.buyerMemberIdNow}; this
-                    Booking keeps the classification it was approved under.
-                  </p>
-                )}
               </div>
 
               <dl className="flex flex-wrap gap-x-10 gap-y-3">
@@ -912,14 +889,6 @@ export default function BookingsClient({
                     {row.primaryCustomerId && (
                       <span className="block text-[11px] text-muted-foreground">
                         {row.primaryCustomer}
-                      </span>
-                    )}
-                    {row.originalClassification === "CUSTOMER" && row.buyerMemberIdNow && (
-                      <span
-                        className="block text-[11px] text-amber-800"
-                        title="Frozen at Accounts approval. The buyer has since been activated as a Member; this Booking stays Customer business."
-                      >
-                        Customer business · now {row.buyerMemberIdNow}
                       </span>
                     )}
                   </td>
@@ -1788,9 +1757,9 @@ function BookingDetailPanel({
           (approve) => ({ kind: "SCHEDULE_DECIDE", row, approve })
         )}
 
-      {/* 3 Customers · 4 PLC · 5 Terms */}
-      <div className="grid items-start gap-4 md:grid-cols-3">
-        <Section title="Customers" icon={<Users className="h-3.5 w-3.5" />}>
+      {/* 3 Customers · 4 PLC · 5 Commission and Rewards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Section title="Customers" icon={<Users className="h-3.5 w-3.5" />} fill>
           <ul className="space-y-1.5 text-xs">
             {currentParties.map((p) => (
               <li key={`${p.personId}-${p.effectiveFrom}`} className="flex justify-between gap-3">
@@ -1810,9 +1779,9 @@ function BookingDetailPanel({
               </li>
             ))}
           </ul>
-          {finalBuyers.length > 0 && (
+          {finalBuyers.length > 0 && !finalSame && (
             <p className="mt-3 border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
-              {finalSame ? "Final buyers: the same ✓" : "Final buyers differ — see Allotment / Registry below."}
+              Final buyers differ — see Allotment / Registry below.
             </p>
           )}
         </Section>
@@ -1820,11 +1789,12 @@ function BookingDetailPanel({
         {/* PLC spec §15.3 — the frozen Booking PLC. Percentage only: no rupee
             value is derived from it here or anywhere else. */}
         <Section
-          title={detail.plc ? `PLC · ${Number(detail.plc.totalPercent).toFixed(2)}% frozen` : "PLC"}
+          title={detail.plc ? `PLC · ${Number(detail.plc.totalPercent).toFixed(2)}%` : "PLC"}
           icon={<Percent className="h-3.5 w-3.5" />}
+          fill
         >
           {!detail.plc ? (
-            <p className="text-xs text-muted-foreground">No PLC snapshot is frozen against this Booking.</p>
+            <p className="text-xs text-muted-foreground">No PLC on this Booking.</p>
           ) : (
             <div className="space-y-2 text-xs">
               {detail.plc.components.length === 0 ? (
@@ -1842,12 +1812,6 @@ function BookingDetailPanel({
                   ))}
                 </ul>
               )}
-              {detail.plc.position.length > 0 && <p className="font-medium">{detail.plc.position.join(" · ")}</p>}
-              <p className="text-[11px] text-muted-foreground">
-                Frozen {formatIst(detail.plc.frozenAt)}
-                {detail.plc.correctionReason ? " · corrected" : " · original freeze"}
-                {detail.plc.isCurrent ? "" : " · superseded"} — a later change to the Project PLC does not move it.
-              </p>
               {detail.plc.correctionReason && (
                 <p className="text-[11px] text-amber-800">
                   Corrected by {detail.plc.correctedBy} — {detail.plc.correctionReason}
@@ -1873,7 +1837,7 @@ function BookingDetailPanel({
         </Section>
 
         {/* v2.1 §15, §16 — the terms frozen with the request. */}
-        <Section title="Terms" icon={<Layers className="h-3.5 w-3.5" />}>
+        <Section title="Commission and Rewards" icon={<Layers className="h-3.5 w-3.5" />} fill>
           {row.commissionTerms ? (
             <ul className="space-y-1.5 text-xs">
               <li className="flex justify-between gap-3">
@@ -1894,13 +1858,9 @@ function BookingDetailPanel({
                   <span className="tabular-nums">{row.royaltyTokens} points</span>
                 </li>
               )}
-              <li className="flex justify-between gap-3">
-                <span className="text-muted-foreground">Settings</span>
-                <span>Version {row.commissionTerms.version}</span>
-              </li>
             </ul>
           ) : (
-            <p className="text-xs text-muted-foreground">No commission settings were frozen with this request.</p>
+            <p className="text-xs text-muted-foreground">No Commission and Rewards on this Booking.</p>
           )}
         </Section>
       </div>
@@ -2006,22 +1966,6 @@ function BookingDetailPanel({
       {/* 7 Commission — percentages only; the CRM stores no payout amount.
           Eligibility and payment are separate statuses. */}
       <Section title="Commission" icon={<Percent className="h-3.5 w-3.5" />}>
-        {/* CP §90 — non-cash rewards this sale created; no value attaches to them. */}
-        {detail.rewards.length > 0 && (
-          <ul className="mb-3 space-y-1 rounded-lg border border-border/60 p-2.5 text-xs">
-            {detail.rewards.map((r, i) => (
-              <li key={i} className="flex flex-wrap justify-between gap-2">
-                <span>
-                  {r.kind} · {r.member}
-                </span>
-                <span className="text-muted-foreground">
-                  {r.state} · {r.detail}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-
         {commissions.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             Commission is generated when Accounts approves the Booking Request.
