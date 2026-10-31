@@ -5,10 +5,12 @@
 // three-colour legend, every Plot as a tile in its status colour, and the
 // selected Plot's details.
 //
-// The CRM stores no position for a Plot on the site plan, so the tiles are in
-// plot-number order, a section per Plot type; the Layout button in the header
-// opens the real plan. Nor does it store a price or a description for a Plot,
-// so the details are what it does hold: size, area and facing.
+// A Project with a traced site plan (lib/project-layouts) opens on that plan,
+// each Plot in its status colour (owner, 30 Oct 2026); Plot list shows the
+// tiles. Without one the tiles are all there is: plot-number order, a section
+// per Plot type, and the Layout button in the header opens the real plan. The
+// CRM stores no price or description for a Plot, so the details are what it
+// does hold: size, area and facing.
 
 import React from "react";
 import { Search } from "lucide-react";
@@ -17,6 +19,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { PUBLIC_STATUS_LABEL, type PublicPlotStatus } from "@/lib/domain/public-portal";
+import type { SiteLayout } from "@/lib/project-layouts";
+import SiteMap from "./site-map";
 
 export type PublicPlot = {
   id: string;
@@ -43,8 +47,18 @@ const typeRank = (type: string) => (TYPE_ORDER.includes(type) ? TYPE_ORDER.index
 /** "p 105", "P-105" and "p105" are the same Plot to someone typing on a phone. */
 const plain = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-export default function PublicPortalClient({ plots, hasLayout }: { plots: PublicPlot[]; hasLayout: boolean }) {
+export default function PublicPortalClient({
+  plots,
+  hasLayout,
+  layout,
+}: {
+  plots: PublicPlot[];
+  hasLayout: boolean;
+  layout: SiteLayout | null;
+}) {
   const [filter, setFilter] = React.useState<PublicPlotStatus | "ALL">("ALL");
+  const [view, setView] = React.useState<"PLAN" | "LIST">(layout ? "PLAN" : "LIST");
+  const onPlan = layout !== null && view === "PLAN";
   const [query, setQuery] = React.useState("");
   // Held by id, not by value: when the page refreshes itself the open Plot
   // shows its new status rather than the one it had when it was opened.
@@ -58,8 +72,10 @@ export default function PublicPortalClient({ plots, hasLayout }: { plots: Public
   const exact = wanted ? plots.find((p) => plain(p.number) === wanted) ?? null : null;
 
   React.useEffect(() => {
-    if (exact) document.getElementById(`plot-${exact.id}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [exact]);
+    if (!exact) return;
+    const id = onPlan ? `plan-${exact.id}` : `plot-${exact.id}`;
+    document.getElementById(id)?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  }, [exact, onPlan]);
 
   const visible = plots.filter((p) => filter === "ALL" || p.status === filter);
   // Residential first, as Plot Inventory lists them, whatever the numbers sort to.
@@ -100,6 +116,23 @@ export default function PublicPortalClient({ plots, hasLayout }: { plots: Public
               inputMode="search"
             />
           </label>
+          {layout && (
+            <div role="group" aria-label="View" className="flex rounded-full border border-border bg-card p-0.5">
+              {(["PLAN", "LIST"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={view === value}
+                  onClick={() => setView(value)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    view === value ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {value === "PLAN" ? "Site plan" : "Plot list"}
+                </button>
+              ))}
+            </div>
+          )}
           <div role="group" aria-label="Filter by status" className="flex flex-wrap gap-1">
             {(["ALL", ...STATUSES] as const).map((value) => (
               <button
@@ -127,15 +160,23 @@ export default function PublicPortalClient({ plots, hasLayout }: { plots: Public
               {PUBLIC_STATUS_LABEL[status]}
             </span>
           ))}
-          {hasLayout && (
+          {hasLayout && !onPlan && (
             <span className="ml-auto text-[11px] font-normal text-muted-foreground">
               In plot-number order · the Layout button above opens the site plan
             </span>
           )}
         </div>
 
-        {/* The Plots, a section per type */}
-        {visible.length === 0 ? (
+        {/* The site plan, or the Plots as tiles, a section per type */}
+        {onPlan ? (
+          <SiteMap
+            layout={layout}
+            plots={plots}
+            isDimmed={(plot) => (filter !== "ALL" && plot.status !== filter) || !matches(plot)}
+            ringedId={exact?.id ?? null}
+            onSelect={setSelectedId}
+          />
+        ) : visible.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border/70 px-3 py-6 text-center text-xs text-muted-foreground">
             {plots.length === 0 ? "No Plots to show yet." : "No Plot has this status right now."}
           </p>

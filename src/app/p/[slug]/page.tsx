@@ -20,6 +20,7 @@ import { formatPercent, formatPlotSize, formatQuantity } from "@/lib/tasks";
 import { locationChargeLabel, plcDisplayComponents } from "@/lib/domain/inventory";
 import { projectSlug, publicPlotStatus } from "@/lib/domain/public-portal";
 import { plcRules } from "@/lib/services/plc-service";
+import { siteLayout } from "@/lib/project-layouts";
 import type { ProjectSheet } from "@/lib/pdf/project-sheet";
 import { Card } from "@/components/ui/card";
 import {
@@ -174,7 +175,11 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
       <Card className="p-4">
         <ProjectIdentity project={project} />
       </Card>
-      <PublicPortalClient plots={shown} hasLayout={Boolean(project.driveUrl)} />
+      <PublicPortalClient
+        plots={shown}
+        hasLayout={Boolean(project.driveUrl)}
+        layout={siteLayout(project.projectCode)}
+      />
     </main>
   );
 }
