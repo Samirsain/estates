@@ -290,8 +290,8 @@ export function runManagementActionClear(_now: Date = new Date()): Promise<JobRe
     let changed = 0;
     for (const task of open) {
       await db.$transaction(async (tx) => {
-        const deal = await tx.acquisition.findUnique({ where: { id: task.recordId }, select: { plotId: true } });
-        if (deal && (await hasBuyerProcess(tx, deal.plotId))) return;
+        const deal = await tx.acquisition.findUnique({ where: { id: task.recordId }, select: { plotId: true, sourceBookingId: true } });
+        if (deal && (await hasBuyerProcess(tx, deal.plotId, deal.sourceBookingId))) return;
         await completeTask(tx, task.id, "SYSTEM", "The Hold or Booking on this Plot has ended.");
         changed += 1;
       });

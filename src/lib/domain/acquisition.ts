@@ -140,8 +140,30 @@ export function cancelAcquisition(hasBuyerProcess: boolean): Check {
   return OK;
 }
 
-export function plotStateAfterAcquisitionCancelled(): PlotOutcome {
-  return { status: "NOT_AVAILABLE", message: DEAL_CANCELLED_MESSAGE, isResale: true };
+/**
+ * Where a cancelled deal leaves its Plot; null leaves it exactly as it is. An
+ * outside property we bought stays Not Available — Deal Cancelled (PRD §11.4).
+ * A Buyback only ever took its old sale's Plot: still pending, that sale holds
+ * it; approved, the unwind restores the sale (CR-016), and the Plot goes back
+ * to how the approval found it.
+ */
+export function plotStateAfterAcquisitionCancelled(deal: {
+  type: "BUYBACK" | "PURCHASE_FOR_RESALE";
+  status: "PENDING_APPROVAL" | "APPROVED";
+  /** The approved Buyback's `sourceBookingRestore`. */
+  restore: { status: string; plotStatus?: PlotStatus; plotIsResale?: boolean } | null;
+}): PlotOutcome | null {
+  if (deal.type === "PURCHASE_FOR_RESALE") {
+    return { status: "NOT_AVAILABLE", message: DEAL_CANCELLED_MESSAGE, isResale: true };
+  }
+  if (deal.status !== "APPROVED" || !deal.restore) return null;
+  return {
+    // Snapshots from before the Plot was kept in them: a live sale's status
+    // (Booked, Payment Completed, Delivered) is its Plot's status too.
+    status: deal.restore.plotStatus ?? (deal.restore.status as PlotStatus),
+    message: null,
+    isResale: deal.restore.plotIsResale ?? false,
+  };
 }
 
 /* ------------------------------------- Payment Given correction outcomes */

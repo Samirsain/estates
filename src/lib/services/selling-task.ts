@@ -10,14 +10,18 @@ import { closeTasksFor } from "./task-service";
 
 export const SELLING_TASK_PURPOSE = "MANAGEMENT_ACTION_REQUIRED";
 
-/** Whether a buyer still has a live Hold or Booking on the Plot. */
-export async function hasBuyerProcess(tx: Tx, plotId: string | null): Promise<boolean> {
+/**
+ * Whether a buyer still has a live Hold or Booking on the Plot. A Buyback's own
+ * old sale (`exceptBookingId`) is the one being taken back, not a new buyer.
+ */
+export async function hasBuyerProcess(tx: Tx, plotId: string | null, exceptBookingId?: string | null): Promise<boolean> {
   if (!plotId) return false;
   const [holds, bookings] = await Promise.all([
     tx.hold.count({ where: { plotId, status: "ACTIVE" } }),
     tx.booking.count({
       where: {
         plotId,
+        ...(exceptBookingId ? { id: { not: exceptBookingId } } : {}),
         status: { in: ["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED", "REFUND_PENDING", "DELIVERED"] },
       },
     }),

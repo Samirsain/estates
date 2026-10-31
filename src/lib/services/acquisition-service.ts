@@ -26,6 +26,7 @@ import {
   validateSchedule,
   type BookingStatus,
 } from "@/lib/domain/booking";
+import type { PlotStatus } from "@/lib/domain/inventory";
 import { blocked, lockKey, lockPlot, nextReference, runCommand, type Tx } from "./command";
 import {
   applyAllocation,
@@ -526,7 +527,7 @@ export async function correctPaymentGiven(args: {
 
       await applyAllocation(tx, schedule.id, allocations, 1);
 
-      const buyerProcess = await hasBuyerProcess(tx, acquisition.plotId);
+      const buyerProcess = await hasBuyerProcess(tx, acquisition.plotId, acquisition.sourceBookingId);
       const outcome = resolvePaymentGivenCorrection({
         previousPercent: acquisition.paymentGivenPercent.toString(),
         newPercent: progress.toString(),
@@ -837,6 +838,9 @@ export async function decideAcquisition(args: {
               closedAt: acquisition.sourceBooking.closedAt?.toISOString() ?? null,
               closeReason: acquisition.sourceBooking.closeReason,
               completionId: priorCompletion?.id ?? null,
+              // Read before this approval moved the Plot, so an unwind puts it back.
+              plotStatus: acquisition.plot?.status ?? null,
+              plotIsResale: acquisition.plot?.isResale ?? false,
             },
             // SSOT §61 — papers given out on the old sale must come back
             // before the Buyback is stable.
@@ -972,6 +976,9 @@ type BuybackRestore = {
   closedAt: string | null;
   closeReason: string | null;
   completionId: string | null;
+  /** Absent on snapshots taken before the Plot was kept in them. */
+  plotStatus?: PlotStatus;
+  plotIsResale?: boolean;
 };
 
 /**
@@ -1175,7 +1182,7 @@ export async function cancelAcquisitionDeal(args: {
         blocked(`This acquisition is ${acquisition.status.replaceAll("_", " ").toLowerCase()}.`);
       }
 
-      const buyerProcess = await hasBuyerProcess(tx, acquisition.plotId);
+      const buyerProcess = await hasBuyerProcess(tx, acquisition.plotId, acquisition.sourceBookingId);
       const allowed = cancelAcquisition(buyerProcess);
       if (!allowed.ok) blocked(allowed.reason);
 
@@ -1186,11 +1193,16 @@ export async function cancelAcquisitionDeal(args: {
         data: { status: "CANCELLED", closedReason: args.reason },
       });
 
-      if (acquisition.plotId) {
-        const state = plotStateAfterAcquisitionCancelled();
+      // Read before the unwind below consumes the snapshot.
+      const state = plotStateAfterAcquisitionCancelled({
+        type: acquisition.type,
+        status: acquisition.status as "PENDING_APPROVAL" | "APPROVED",
+        restore: acquisition.sourceBookingRestore as BuybackRestore | null,
+      });
+      if (acquisition.plotId && state) {
         await tx.plot.update({
           where: { id: acquisition.plotId },
-          data: { status: state.status },
+          data: { status: state.status, isResale: state.isResale },
         });
         await tx.plotEvent.create({
           data: {
@@ -1198,7 +1210,7 @@ export async function cancelAcquisitionDeal(args: {
             actorRef: args.actorRef,
             action: "CANCELLED",
             toStatus: state.status,
-            reason: `${args.reason} — ${state.message}`,
+            reason: state.message ? `${args.reason} — ${state.message}` : args.reason,
           },
         });
       }

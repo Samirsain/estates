@@ -1557,9 +1557,22 @@ const blockedCancel = cancelAcquisition(true);
 assert.equal(blockedCancel.ok, false);
 assert.match(asReason(blockedCancel), /Complete the acquisition or unwind the buyer process/);
 
-const acqCancelled = plotStateAfterAcquisitionCancelled();
-assert.equal(acqCancelled.status, "NOT_AVAILABLE");
-assert.equal(acqCancelled.message, DEAL_CANCELLED_MESSAGE);
+// PRD §11.4 — an outside property we bought stays Not Available — Deal Cancelled.
+const acqCancelled = plotStateAfterAcquisitionCancelled({ type: "PURCHASE_FOR_RESALE", status: "APPROVED", restore: null });
+assert.equal(acqCancelled?.status, "NOT_AVAILABLE");
+assert.equal(acqCancelled?.message, DEAL_CANCELLED_MESSAGE);
+// A pending Buyback took nothing: its old sale still holds the Plot.
+assert.equal(plotStateAfterAcquisitionCancelled({ type: "BUYBACK", status: "PENDING_APPROVAL", restore: null }), null);
+// CR-016 — an approved one restores the old sale, and the Plot as the approval found it.
+assert.deepEqual(
+  plotStateAfterAcquisitionCancelled({ type: "BUYBACK", status: "APPROVED", restore: { status: "BOOKED", plotStatus: "BOOKED", plotIsResale: false } }),
+  { status: "BOOKED", message: null, isResale: false }
+);
+// A snapshot taken before the Plot was recorded in it falls back to the sale's status.
+assert.deepEqual(
+  plotStateAfterAcquisitionCancelled({ type: "BUYBACK", status: "APPROVED", restore: { status: "PAYMENT_COMPLETED" } }),
+  { status: "PAYMENT_COMPLETED", message: null, isResale: false }
+);
 
 /* --------------------------- PRD §11.3 Payment Given correction paths */
 

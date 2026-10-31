@@ -383,13 +383,43 @@ async function main() {
     acquisitionId: buyback.acquisitionId,
     reason: "Seller withdrew.",
   });
+  // CR-016 — the old sale is restored, and its Plot goes back with it.
   const cancelledPlot = await db.plot.findUniqueOrThrow({ where: { id: plotA.id } });
-  assert.equal(cancelledPlot.status, "NOT_AVAILABLE", "a cancelled deal is not sellable (PRD §11.4)");
-  assert.equal(
-    (await db.booking.findUniqueOrThrow({ where: { id: bookingA.bookingId } })).activeProcess,
-    "NONE",
-    "the Booking is released from Buyback Pending"
-  );
+  assert.equal(cancelledPlot.status, "BOOKED", "the Plot follows the restored Booking");
+  assert.equal(cancelledPlot.isResale, false, "and loses the RESALE tag the approval gave it");
+  const restoredA = await db.booking.findUniqueOrThrow({ where: { id: bookingA.bookingId } });
+  assert.equal(restoredA.status, "BOOKED", "the old sale is restored");
+  assert.equal(restoredA.activeProcess, "NONE", "the Booking is released from Buyback Pending");
+
+  // A pending Buyback can be cancelled: its own Booking is not a new buyer, and it keeps its Plot.
+  const plotP = await makePlot(project.id, "P");
+  const bookingP = await submitBookingRequest({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    plotId: plotP.id,
+    parties: [{ personId: seller.id, role: "PRIMARY" }],
+    soldByType: "THREE_PERCENT_CLUB",
+    bookingDate: today,
+    schedule: [{ seq: 1, percent: "100", dueDate: today }],
+  });
+  await decideBookingRequest({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", bookingId: bookingP.bookingId, approve: true, note: "Verified." });
+  const pending = await createAcquisition({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    type: "BUYBACK",
+    sourceBookingId: bookingP.bookingId,
+    sellerPersonId: seller.id,
+    arrangedByType: "THREE_PERCENT_CLUB",
+    purchaseDate: today,
+    remark: "Owner wants to exit.",
+    schedule: GIVEN_SCHEDULE,
+  });
+  await cancelAcquisitionDeal({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", acquisitionId: pending.acquisitionId, reason: "Price not agreed" });
+  assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotP.id } })).status, "BOOKED", "a pending Buyback leaves the Plot with its Booking");
+  const keptP = await db.booking.findUniqueOrThrow({ where: { id: bookingP.bookingId } });
+  assert.deepEqual([keptP.status, keptP.activeProcess], ["BOOKED", "NONE"], "the Booking carries on, released from Buyback Pending");
   // UAT BUY-08 — the early payment now needs an Accounts adjustment (CP §53, §64 T21).
   assert.equal(
     (await db.commissionRecord.findUniqueOrThrow({ where: { id: commission.recordId } })).payment,
