@@ -37,7 +37,7 @@
     "backfill:reward-tasks": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/backfill-reward-tasks.ts",
     "data:reset": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reset-data.ts",
     "seed:demo": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/demo-seed.ts",
-    "seed:fresh": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/fresh-seed.ts",
+    "seed:fresh": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/fresh-seed.ts && node --env-file=.env --import ./prisma/alias-loader.mjs prisma/ganpati-emporio-seed.ts && node --env-file=.env --import ./prisma/alias-loader.mjs prisma/ganpati-emporio-sales-seed.ts && node --env-file=.env --import ./prisma/alias-loader.mjs prisma/land-inquiry-seed.ts && node --env-file=.env --import ./prisma/alias-loader.mjs prisma/buyback-seed.ts && node --env-file=.env --import ./prisma/alias-loader.mjs prisma/ganpati-emporio-cases-seed.ts",
     "seed:all-cases": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/all-cases-seed.ts",
     "demo:verify": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/demo/verify.ts",
     "rotate:key": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/rotate-key.ts",
