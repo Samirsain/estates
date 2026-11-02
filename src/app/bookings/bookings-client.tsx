@@ -825,7 +825,7 @@ export default function BookingsClient({
           <table className="w-full min-w-[58rem] border-collapse text-sm">
             <thead className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th className="px-3 py-1">Plot No.</th>
+                <th className="px-3 py-1">Plot · Type / Project</th>
                 <th className="px-3 py-1 text-center">Size (W × L)</th>
                 <th className="px-3 py-1">Customer</th>
                 <th className="px-3 py-1">Sold By</th>
@@ -842,21 +842,22 @@ export default function BookingsClient({
                 >
                   {/* As on Plot Inventory: the Plot number is the way into the
                       Booking, with its Project and type under it. */}
+                  {/* Owner 2 Nov — Plot No. · Type, the Project under it. */}
                   <td>
-                    <button
-                      type="button"
-                      className="block text-left font-semibold text-primary hover:underline"
-                      onClick={() => router.push(`/bookings/${row.id}`)}
-                    >
-                      {row.plotNumber}
-                    </button>
-                    <span className="block text-[11px] font-medium text-foreground">
-                      {row.project}
+                    <span className="block">
+                      <button
+                        type="button"
+                        className="text-left font-semibold text-primary hover:underline"
+                        onClick={() => router.push(`/bookings/${row.id}`)}
+                      >
+                        {row.plotNumber}
+                      </button>
                       <span className="text-muted-foreground">
                         {" · "}
                         {humanise(row.plotType)}
                       </span>
                     </span>
+                    <span className="block text-[11px] font-medium text-foreground">{row.project}</span>
                   </td>
                   {/* An irregular Plot has no width and length to print, only
                       the area somebody measured — so it prints that instead of
@@ -2671,8 +2672,11 @@ export function BookingFormDialog({
 
   return (
     <Modal title={title} onClose={onClose}>
+      {/* Owner 2 Nov — four groups in task order, split by a hairline: the
+          Plot, who buys it, how it was sold, how it is paid. The actions stay
+          pinned to the dialog's foot however long the form runs. */}
       <form
-        className="space-y-3"
+        className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
@@ -2697,6 +2701,7 @@ export function BookingFormDialog({
           });
         }}
       >
+        <div className="space-y-3">
         {fixedPlot ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Project">
@@ -2784,15 +2789,9 @@ export function BookingFormDialog({
             </dd>
           </dl>
         )}
+        </div>
 
-        {plot?.holdPersonName && (
-          <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
-            This Plot is on Hold for {plot.holdPersonName}. The Primary Customer must be that Person,
-            and the remaining Hold time freezes on submission.
-          </p>
-        )}
-
-        <section className="space-y-2.5">
+        <section className="space-y-2.5 border-t border-border/60 pt-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Customer
@@ -2812,11 +2811,20 @@ export function BookingFormDialog({
             )}
           </div>
 
+          {/* With several buyers every row shares one grid, so the Share %
+              and Remove columns line up — the Primary row keeps an empty
+              Remove cell. On a phone the search takes the whole line. */}
           {parties.map((party, index) => (
             <div key={index} className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
+              <div
+                className={
+                  parties.length > 1
+                    ? "grid grid-cols-[minmax(0,1fr)_4rem] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_4rem]"
+                    : undefined
+                }
+              >
                 <PersonPicker
-                  className="flex-1"
+                  className={parties.length > 1 ? "col-span-2 sm:col-span-1" : undefined}
                   required
                   value={party.personId}
                   onChange={(id) => patch(index, { personId: id })}
@@ -2826,7 +2834,7 @@ export function BookingFormDialog({
                 />
                 {parties.length > 1 && (
                   <Input
-                    className="h-9 w-28 text-xs"
+                    className="h-9 w-full text-xs"
                     placeholder="Share %"
                     type="number"
                     step="0.0001"
@@ -2838,16 +2846,19 @@ export function BookingFormDialog({
                     }
                   />
                 )}
-                {index > 0 && (
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="ghost"
-                    onClick={() => setParties(parties.filter((_, i) => i !== index))}
-                  >
-                    Remove
-                  </Button>
-                )}
+                {parties.length > 1 &&
+                  (index > 0 ? (
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => setParties(parties.filter((_, i) => i !== index))}
+                    >
+                      Remove
+                    </Button>
+                  ) : (
+                    <span aria-hidden />
+                  ))}
               </div>
 
               {party.personId === "NEW" && (
@@ -2880,7 +2891,7 @@ export function BookingFormDialog({
 
           <Button
             type="button"
-            size="sm"
+            size="xs"
             variant="outline"
             onClick={() =>
               setParties([...parties, { personId: "", role: "ADDITIONAL", sharePercent: "" }])
@@ -2890,7 +2901,9 @@ export function BookingFormDialog({
           </Button>
         </section>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        {/* Who sold it sits beside how it was sold; the Booking Date flows
+            after, and only a backdated one asks why, across the full width. */}
+        <div className="grid gap-3 border-t border-border/60 pt-4 sm:grid-cols-2">
           <Field label="Sold By">
             <select
               className={inputClass}
@@ -2902,6 +2915,15 @@ export function BookingFormDialog({
               <option value="CUSTOMER">Customer</option>
             </select>
           </Field>
+          {soldByType !== "THREE_PERCENT_CLUB" && (
+            <SoldByPicker
+              key={soldByType}
+              name="soldByPersonId"
+              type={soldByType}
+              people={people}
+              members={members}
+            />
+          )}
           <Field label="Booking Date">
             <Input
               className="h-9 text-xs"
@@ -2912,25 +2934,18 @@ export function BookingFormDialog({
               onChange={(e) => setBookingDate(e.target.value)}
             />
           </Field>
-          {soldByType !== "THREE_PERCENT_CLUB" && (
-            <SoldByPicker
-              key={soldByType}
-              name="soldByPersonId"
-              type={soldByType}
-              people={people}
-              members={members}
-            />
+          {bookingDate < today && (
+            <div className="sm:col-span-2">
+              <Field label="Reason for the backdated Booking Date — compulsory">
+                <RemarkSelect presets="backdatedBooking" name="bookingDateReason" className="h-9 text-xs" required />
+              </Field>
+            </div>
           )}
         </div>
 
-        {/* Only a backdated Booking has to say why */}
-        {bookingDate < today && (
-          <Field label="Reason for the backdated Booking Date — compulsory">
-            <RemarkSelect presets="backdatedBooking" name="bookingDateReason" className="h-9 text-xs" required />
-          </Field>
-        )}
-
-        <ScheduleEditor schedule={schedule} setSchedule={setSchedule} minDate={today} />
+        <div className="border-t border-border/60 pt-4">
+          <ScheduleEditor schedule={schedule} setSchedule={setSchedule} minDate={today} />
+        </div>
 
         {requireReason && (
           <Field label="Reason for replacing this request — compulsory">
@@ -2938,7 +2953,11 @@ export function BookingFormDialog({
           </Field>
         )}
 
-        <div className="flex justify-end gap-2 pt-2">
+        {/* Pinned to the dialog's foot: the dialog is the scroller, so Submit
+            never sits below the fold on a laptop. The negative margins cancel
+            the Modal's padding so the hairline runs edge to edge; the bottom
+            one is !important because space-y on the form resets it to 0. */}
+        <div className="sticky bottom-0 -mx-5 !-mb-5 flex justify-end gap-2 border-t border-border/60 bg-card px-5 py-3">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Back
           </Button>
@@ -2970,13 +2989,20 @@ function ScheduleEditor({
       <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Payment Schedule
       </h3>
+      {/* One grid for every instalment — number, %, due date, Remove — so a
+          row never breaks over two lines on a phone, and the Remove column
+          lines up with the Customer rows above it. */}
       {schedule.map((line, index) => (
-        <div key={index} className="flex flex-wrap items-center gap-2">
-          <span className="flex h-9 w-6 items-center justify-center text-xs font-medium text-muted-foreground">
+        <div
+          key={index}
+          className="grid grid-cols-[1.25rem_4.5rem_minmax(0,1fr)_4rem] items-center gap-2 sm:grid-cols-[1.5rem_minmax(0,1fr)_minmax(0,1fr)_4rem]"
+        >
+          <span className="text-center text-xs font-medium tabular-nums text-muted-foreground">
             {line.seq}
           </span>
           <Input
-            className="h-9 w-24 min-w-0 text-xs sm:w-32"
+            className="h-9 w-full min-w-0 text-xs"
+            aria-label={`Instalment ${line.seq} percent`}
             type="number"
             step="0.01"
             min="0"
@@ -2997,7 +3023,8 @@ function ScheduleEditor({
             }
           />
           <Input
-            className="h-9 w-40 min-w-0 flex-1 text-xs sm:w-44 sm:flex-none"
+            className="h-9 w-full min-w-0 text-xs"
+            aria-label={`Instalment ${line.seq} due date`}
             type="date"
             min={index === 0 ? minDate : addDays(schedule[index - 1].dueDate, 1)}
             required
@@ -3011,7 +3038,7 @@ function ScheduleEditor({
               )
             }
           />
-          {schedule.length > 1 && (
+          {schedule.length > 1 ? (
             <Button
               type="button"
               size="xs"
@@ -3020,6 +3047,8 @@ function ScheduleEditor({
             >
               Remove
             </Button>
+          ) : (
+            <span aria-hidden />
           )}
         </div>
       ))}
@@ -3245,9 +3274,8 @@ function SharesDialog({
 }
 
 /**
- * Sold By is picked by identity: the Member ID or the Customer ID chooses the
- * row, and the name sits under it — the code is what a form or a payout sheet
- * carries, the name is how the office checks it is the right person.
+ * Sold By is picked by identity: the Member ID or the Customer ID with the
+ * name, shown once, in the field itself (owner 2 Nov — no second copy under it).
  */
 function SoldByPicker({
   name,
@@ -3271,7 +3299,6 @@ function SoldByPicker({
             code: p.customerId!,
             name: `${p.fullName} · ${p.mobileMasked}`,
           }));
-  const chosen = options.find((o) => o.id === picked);
 
   return (
     <Field label={type === "MEMBER" ? "Selling Member" : "Closing Customer"}>
@@ -3287,13 +3314,6 @@ function SoldByPicker({
         }
         options={options.map((o) => ({ id: o.id, label: `${o.code} · ${o.name}` }))}
       />
-      {chosen && (
-        <p className="mt-1 leading-tight">
-          <span className="text-xs font-semibold tabular-nums">{chosen.code}</span>
-          <br />
-          <span className="text-[11px] text-muted-foreground">{chosen.name}</span>
-        </p>
-      )}
     </Field>
   );
 }

@@ -186,8 +186,7 @@ export default function AcquisitionsClient({
             <table className="w-full min-w-[62rem] border-collapse text-sm">
               <thead className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-1">Plot</th>
-                  <th className="px-3 py-1">Deal</th>
+                  <th className="px-3 py-1">Plot · Type / Project</th>
                   <th className="px-3 py-1">Seller</th>
                   <th className="px-3 py-1">Arranged by</th>
                   <th className="px-3 py-1 text-center">Payment Given</th>
@@ -199,9 +198,9 @@ export default function AcquisitionsClient({
                 {visible.map((row) => (
                   <React.Fragment key={row.id}>
                     <tr className="h-14 border-b border-border/60 align-middle transition-colors hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-2">
-                      {/* As on Plot Inventory: the Plot leads, with its Project
-                          and type under it. It opens the deal — everything
-                          that used to unfold under this row now has a page. */}
+                      {/* Owner 2 Nov — Plot No. · Type, the Project under it.
+                          No Deal column; the deal filter above still narrows
+                          the list. The Plot opens the deal's own page. */}
                       <td>
                         <Link
                           href={`/acquisitions/${row.id}`}
@@ -209,21 +208,13 @@ export default function AcquisitionsClient({
                         >
                           {row.plotNumber}
                         </Link>
-                        <span className="block text-[11px] font-medium text-foreground">
-                          {row.project}
-                          {row.plotType && (
-                            <span className="text-muted-foreground">
-                              {" · "}
-                              {row.plotType.charAt(0) + row.plotType.slice(1).toLowerCase().replaceAll("_", " ")}
-                            </span>
-                          )}
-                        </span>
-                      </td>
-                      <td>
-                        {TYPE_LABEL[row.type] ?? row.type}
-                        {row.location && (
-                          <span className="block text-[11px] text-muted-foreground">{row.location}</span>
+                        {row.plotType && (
+                          <span className="text-muted-foreground">
+                            {" · "}
+                            {row.plotType.charAt(0) + row.plotType.slice(1).toLowerCase().replaceAll("_", " ")}
+                          </span>
                         )}
+                        <span className="block text-[11px] font-medium text-foreground">{row.project}</span>
                       </td>
                       <td>
                         <PersonLink personId={row.sellerPersonId} name={row.seller} />

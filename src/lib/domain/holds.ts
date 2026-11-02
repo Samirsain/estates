@@ -55,6 +55,13 @@ export function extensionRequiresMd(extensionCount: number): boolean {
   return extensionCount >= 1;
 }
 
+/** Owner 2 Nov — an extension is asked for in whole days, 1 to 7. Stored as hours. */
+export const MAX_EXTENSION_DAYS = 7;
+
+export function isValidExtensionHours(hours: number): boolean {
+  return Number.isInteger(hours) && hours % 24 === 0 && hours >= 24 && hours <= MAX_EXTENSION_DAYS * 24;
+}
+
 export type ExtensionDecision =
   | { outcome: "APPROVED"; newExpiresAt: Date }
   | { outcome: "REJECTED" }

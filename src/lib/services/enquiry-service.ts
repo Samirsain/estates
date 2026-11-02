@@ -4,6 +4,7 @@ import type { EnquirySource, FollowUpOutcome } from "@prisma/client";
 import { db } from "@/lib/db";
 import { formatIst } from "@/lib/tasks";
 import { FOLLOW_UP_OUTCOME_LABEL, validateSource } from "@/lib/domain/enquiry";
+import { isValidMobile, normaliseMobile } from "@/lib/domain/land-inquiry";
 import { blocked, nextReference, runCommand, type Tx } from "./command";
 import { completeTask, ensureTask, reviseTask } from "./task-service";
 
@@ -17,11 +18,15 @@ export const ENQUIRY_FOLLOW_UP_PURPOSE = "ENQUIRY_FOLLOW_UP";
  */
 export async function linkOrCreatePerson(
   tx: Tx,
-  input: { fullName: string; mobile: string; city?: string }
+  input: { fullName: string; mobile: string; altMobile?: string; city?: string }
 ) {
   const fullName = input.fullName.trim();
   const primaryMobile = input.mobile.replace(/\s/g, "");
   if (!fullName || !primaryMobile) blocked("Enter the buyer's name and mobile number.");
+  const altMobile = input.altMobile?.trim() ? normaliseMobile(input.altMobile) : null;
+  if (altMobile && !isValidMobile(altMobile)) {
+    blocked("Enter a 10-digit alternate mobile number, or leave it blank.");
+  }
 
   const existing = await tx.person.findFirst({
     where: {
@@ -33,7 +38,7 @@ export async function linkOrCreatePerson(
   if (existing) return existing;
 
   return tx.person.create({
-    data: { fullName, primaryMobile, city: input.city?.trim() || null },
+    data: { fullName, primaryMobile, altMobile, city: input.city?.trim() || null },
   });
 }
 
@@ -84,7 +89,7 @@ export type CreateEnquiryInput = {
    * idempotency key replays before this runs twice, and primaryMobile is
    * deliberately not unique.
    */
-  newPerson?: { fullName: string; mobile: string; city?: string } | null;
+  newPerson?: { fullName: string; mobile: string; altMobile?: string; city?: string } | null;
   projectId: string;
   plotId?: string | null;
   /**

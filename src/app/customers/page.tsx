@@ -46,6 +46,8 @@ export default async function CustomersPage() {
         personId: true,
         booking: {
           select: {
+            id: true,
+            bookingNumber: true,
             bookingDate: true,
             // Two Bookings can share a date, so the later submission breaks the
             // tie and the Project column names one deal, not whichever row the
@@ -75,7 +77,10 @@ export default async function CustomersPage() {
       (party.booking.bookingDate.getTime() === newest.bookingDate.getTime() &&
         party.booking.submittedAt > newest.submittedAt);
     if (isNewer) latest.set(party.personId, party.booking);
-    allDeals.set(party.personId, [...(allDeals.get(party.personId) ?? []), party.booking]);
+    // One entry per Booking: a Person can sit on the same Booking more than
+    // once among its party rows, which listed the same deal twice.
+    const deals = allDeals.get(party.personId) ?? [];
+    if (!deals.some((b) => b.id === party.booking.id)) allDeals.set(party.personId, [...deals, party.booking]);
   }
 
   const rows: CustomerRowView[] = customers.map((c) => ({
@@ -93,10 +98,11 @@ export default async function CustomersPage() {
     plotNumber: latest.get(c.personId)?.plot.plotNumber ?? null,
     plotType: latest.get(c.personId)?.plot.plotType.replaceAll("_", " ") ?? null,
     plotId: latest.get(c.personId)?.plot.id ?? null,
-    // Every deal but the one the row shows, read on hover over "+N more booked".
+    // Every deal but the one the row shows, read on hover over the "+N" pill.
+    // The Booking Number leads, so two Bookings on one Plot read apart.
     otherBookings: (allDeals.get(c.personId) ?? [])
-      .filter((b) => b !== latest.get(c.personId))
-      .map((b) => `${b.project.name} · Plot ${b.plot.plotNumber}`),
+      .filter((b) => b.id !== latest.get(c.personId)?.id)
+      .map((b) => `${b.bookingNumber} · ${b.project.name} · Plot ${b.plot.plotNumber}`),
     closingLoyaltyUsed: closing.get(c.personId) ?? 0,
   }));
 

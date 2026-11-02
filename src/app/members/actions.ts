@@ -378,11 +378,8 @@ export async function loadMemberDetail(memberProfileId: string) {
       bookingNumber:
         c.booking ? (c.booking.bookingNumber ?? "Booking Request") : c.acquisition ? "Buyback / Resale" : "—",
       project: c.booking?.project.name ?? c.acquisition?.plot?.project.name ?? c.acquisition?.propertyName ?? "—",
-      plot: c.booking
-        ? `${c.booking.plot.plotType.replaceAll("_", " ")} ${c.booking.plot.plotNumber}`
-        : c.acquisition?.plot
-          ? `${c.acquisition.plot.plotType.replaceAll("_", " ")} ${c.acquisition.plot.plotNumber}`
-          : (c.acquisition?.propertyNumber ?? "—"),
+      plot: c.booking?.plot.plotNumber ?? c.acquisition?.plot?.plotNumber ?? c.acquisition?.propertyNumber ?? "—",
+      plotType: c.booking?.plot.plotType ?? c.acquisition?.plot?.plotType ?? null,
       type: c.type,
       percent: c.percent.toFixed(2),
       milestonePercent: c.milestonePercent.toFixed(0),

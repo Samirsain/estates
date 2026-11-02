@@ -71,6 +71,7 @@ import {
   type Boundary,
   type PlcComponentRule,
 } from "@/lib/domain/inventory";
+import { MAX_EXTENSION_DAYS } from "@/lib/domain/holds";
 import {
   cancelHoldAction,
   createHoldAction,
@@ -763,7 +764,8 @@ function HoldHistory({ plot }: { plot: PlotRowView }) {
         {extensions.map((e, i) => (
           <li key={i} className="text-[11px] text-foreground">
             <span className="text-muted-foreground">
-              {formatIst(e.at)} · {e.byRef} · +{e.hours}h ·{" "}
+              {formatIst(e.at)} · {e.byRef} · +
+              {e.hours % 24 === 0 ? `${e.hours / 24} ${e.hours === 24 ? "day" : "days"}` : `${e.hours}h`} ·{" "}
               {EXTENSION_STATUS_LABEL[e.status] ?? e.status} ·{" "}
             </span>
             {e.reason}
@@ -1134,7 +1136,7 @@ export default function PlotsClient({
             <table className="w-full min-w-[62rem] border-collapse text-sm">
               <thead className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-1">Plot</th>
+                  <th className="px-3 py-1">Plot · Type / Project</th>
                   <th className="w-[9.5rem] px-3 py-1 text-center">Size (W × L)</th>
                   <th className="px-3 py-1 text-center">Area</th>
                   <th className="px-3 py-1 text-center">Status</th>
@@ -1249,9 +1251,8 @@ export default function PlotsClient({
                     // different line.
                     className="h-14 border-b border-border/60 align-middle transition-colors hover:bg-secondary/50"
                   >
-                    {/* The Plot is the subject; the Project and type are what
-                        it belongs to, so they read under it rather than as a
-                        column repeating one name down the whole list. */}
+                    {/* Owner 2 Nov — as on Buyback and Enquiries: Plot No. ·
+                        Type, the Project under it. */}
                     <td className="px-3 py-2">
                       <Link
                         href={`/plots/${plot.id}`}
@@ -1259,16 +1260,11 @@ export default function PlotsClient({
                       >
                         {plot.plotNumber}
                       </Link>
-                      <span className="block text-[11px] font-medium text-foreground">
-                        {plot.project}
-                        {/* The Project names the Plot; its type only classifies
-                            it, and one word repeated down the whole column does
-                            not need the same weight. */}
-                        <span className="text-muted-foreground">
-                          {" · "}
-                          {PLOT_TYPE_LABEL[plot.plotType] ?? plot.plotType}
-                        </span>
+                      <span className="text-muted-foreground">
+                        {" · "}
+                        {PLOT_TYPE_LABEL[plot.plotType] ?? plot.plotType}
                       </span>
+                      <span className="block text-[11px] font-medium text-foreground">{plot.project}</span>
                     </td>
                     {/* The sides the Plot is measured by. An irregular Plot has
                         none — it carries an exact area instead, which the next
@@ -1710,7 +1706,6 @@ export default function PlotsClient({
         <ConfirmDialog
           title="Cancel Hold"
           plot={dialog.plot}
-          consequence="The Plot returns under its restriction rule: Available when unrestricted, Not Available when Not for Sale or Pledge is active."
           busy={busy}
           onClose={() => setDialog(null)}
           fields={
@@ -1728,24 +1723,19 @@ export default function PlotsClient({
         <ConfirmDialog
           title="Request Hold extension"
           plot={dialog.plot}
-          consequence={`Requesting an extension does not pause the Hold timer. Current expiry: ${formatIstDateTime(
-            dialog.plot.hold.expiresAt
-          )}. ${
-            dialog.plot.hold.extensionCount >= 1
-              ? "This is a further extension, so MD approval is required."
-              : "This is the first extension, which CRM may approve."
-          }`}
           busy={busy}
           onClose={() => setDialog(null)}
           fields={
             <>
-              <Field label="Additional hours">
+              <Field label={`Additional days (1–${MAX_EXTENSION_DAYS})`}>
                 <input
-                  name="hours"
+                  name="days"
                   type="number"
                   min={1}
-                  max={168}
-                  defaultValue={24}
+                  max={MAX_EXTENSION_DAYS}
+                  step={1}
+                  defaultValue={1}
+                  required
                   className={inputClass}
                   onWheel={(e) => e.currentTarget.blur()}
                 />
@@ -1761,7 +1751,7 @@ export default function PlotsClient({
               requestExtensionAction(
                 dialog.plot.hold!.id,
                 String(f.get("reason")),
-                Number(f.get("hours")),
+                Number(f.get("days")) * 24,
                 newKey()
               )
             )

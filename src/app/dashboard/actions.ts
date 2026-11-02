@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { blocked, CommandError, runCommand } from "@/lib/services/command";
 import { completeTask, ensureTask, reviseTask } from "@/lib/services/task-service";
-import { FOLLOW_UP_PURPOSES } from "@/lib/tasks";
+import { FOLLOW_UP_PURPOSES, reviseGroup, reviseProblem } from "@/lib/tasks";
 import type { StaffRole } from "@/lib/security/permissions";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
@@ -63,6 +63,11 @@ export async function reviseTaskAction(
         payload: { taskId, dueAtIso, result, remark },
       },
       async (tx) => {
+        // Owner, 2 Nov 2026 — the Result must be one of this task's group, and a
+        // remark is compulsory where the group or "Other" asks for one.
+        const task = await tx.task.findUniqueOrThrow({ where: { id: taskId }, select: { purpose: true, decision: true } });
+        const problem = reviseProblem(reviseGroup(task), result, remark);
+        if (problem) blocked(problem);
         await reviseTask(tx, taskId, actor.staffAccountId, new Date(dueAtIso), result, remark);
         return {
           result: { taskId },

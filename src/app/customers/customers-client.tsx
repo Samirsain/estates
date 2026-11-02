@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { AppShell } from "@/components/app-shell";
 import { Input } from "@/components/ui/input";
+import { LIST_TD, LIST_TH } from "@/components/ui/list-table";
 import { type StaffRole } from "@/lib/tasks";
 
 /** Filters sit inline and size to their content, unlike a form field. */
@@ -42,34 +43,6 @@ export type CustomerRowView = {
   /** v2.1 §21 — Customer-closing Loyalty events qualified (no cap since 27 Oct 2026). */
   closingLoyaltyUsed: number;
 };
-
-/** The fact, and under it what qualifies it. Every cell reads the same way. */
-/**
- * A fact and what qualifies it — two lines, and never a third. A long Project
- * name used to wrap onto a second line and push its own qualifier onto a
- * third, so one long name made the whole row taller than the ones around it.
- * Both lines truncate and the full text is on hover.
- */
-function Cell({
-  value,
-  under,
-  title,
-}: {
-  value: React.ReactNode;
-  under?: React.ReactNode;
-  title?: string;
-}) {
-  return (
-    <>
-      <span className="block truncate text-foreground" title={title}>
-        {value}
-      </span>
-      {under && (
-        <span className="block truncate text-[11px] text-muted-foreground">{under}</span>
-      )}
-    </>
-  );
-}
 
 /** RESIDENTIAL → Residential. A type is a word, not a shout. */
 function typeWord(value: string): string {
@@ -118,8 +91,10 @@ export default function CustomersClient({
 
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
-      <div className="mx-auto max-w-6xl space-y-3">
-        <header>
+      {/* Owner 2 Nov — the same page as Members: one rhythm, one header
+          height (min-h-9 holds the line a header button would), one grid. */}
+      <div className="mx-auto max-w-6xl space-y-4">
+        <header className="flex min-h-9 flex-wrap items-end justify-between gap-3">
           <h1 className="text-2xl font-bold tracking-tight">Customers</h1>
         </header>
 
@@ -141,7 +116,7 @@ export default function CustomersClient({
             </optgroup>
           </select>
           <Input
-            className="h-9 w-72"
+            className="h-9 w-80"
             placeholder="Search Customer ID, name, city, Project or Plot"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -152,37 +127,34 @@ export default function CustomersClient({
         <div className="overflow-x-auto">
           {/* A rule between rows, not a filled block behind each one: ten of
               them fit on a laptop screen without the page turning into stripes. */}
-          <table className="w-full min-w-[58rem] border-collapse text-xs">
-            {/* Widths follow what each column can actually hold: a masked
-                mobile is always ten characters, a Customer ID nine and a
-                Member ID eight, so they are given exactly that and no more.
-                The two that vary without a ceiling — the name and the Project
-                — take what is left. */}
-            <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-              <tr className="border-b border-border">
-                <th className="w-[7rem] px-3 py-1.5">Customer ID</th>
-                <th className="w-[9.5rem] px-3 py-1.5">Name</th>
-                <th className="w-[7.5rem] px-3 py-1.5">Mobile</th>
-                <th className="w-[7.5rem] px-3 py-1.5">City</th>
-                <th className="w-[11rem] px-3 py-1.5">Project</th>
-                <th className="w-[8rem] px-3 py-1.5">Plot</th>
+          {/* Owner 2 Nov — edge to edge, equal spacing, every column centred.
+              A grid, not table layout: each column takes its content's width
+              and the spare width is shared equally between all six, so the
+              gaps match and the row rule still runs unbroken. The roles keep
+              it a table for screen readers. Same grid as Members. */}
+          <table role="table" className="grid w-full min-w-[62rem] grid-cols-[repeat(6,auto)] text-xs">
+            <thead role="rowgroup" className="contents text-[11px] uppercase tracking-wide text-muted-foreground">
+              <tr role="row" className="contents">
+                <th role="columnheader" className={LIST_TH}>Customer ID</th>
+                <th role="columnheader" className={LIST_TH}>Name</th>
+                <th role="columnheader" className={LIST_TH}>Mobile</th>
+                <th role="columnheader" className={LIST_TH}>City</th>
+                <th role="columnheader" className={LIST_TH}>Plot · Type / Project</th>
+                <th role="columnheader" className={LIST_TH}>More Bookings</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup" className="contents">
               {visible.length === 0 && (
-                <tr>
-                  <td colSpan={6}className="px-3 py-10 text-center text-sm text-muted-foreground">
+                <tr role="row" className="contents">
+                  <td role="cell" className="col-span-full px-3 py-10 text-center text-sm text-muted-foreground">
                     No Customers yet. A Customer ID is created when the first Hold is placed, or
                     at the first Booking Request when no Hold came before it.
                   </td>
                 </tr>
               )}
               {visible.map((row) => (
-                <tr
-                  key={row.id}
-                  className="h-14 border-b border-border/60 align-middle last:border-0 hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-1.5"
-                >
-                  <td className="whitespace-nowrap">
+                <tr key={row.id} role="row" className="group contents">
+                  <td role="cell" className={LIST_TD}>
                     <button
                       type="button"
                       className="block font-bold text-primary hover:underline"
@@ -191,37 +163,53 @@ export default function CustomersClient({
                       {row.customerId}
                     </button>
                   </td>
-                  <td className="max-w-[9.5rem]">
-                    <Link
-                      href={`/customers/${row.id}`}
-                      className="block truncate text-foreground hover:underline"
-                      title={row.name}
-                    >
+                  <td role="cell" className={LIST_TD}>
+                    <Link href={`/customers/${row.id}`} className="text-foreground hover:underline">
                       {row.name}
                     </Link>
                   </td>
-                  <td className="whitespace-nowrap">{row.mobileMasked}</td>
-                  <td className="truncate" title={row.city}>{row.city}</td>
-                  <td className="max-w-[11rem]">
-                    <Cell
-                      value={row.project ?? "—"}
-                      title={row.project ?? undefined}
-                      under={
-                        row.otherBookings.length > 0 ? (
+                  <td role="cell" className={`${LIST_TD} tabular-nums`}>{row.mobileMasked}</td>
+                  <td role="cell" className={LIST_TD}>{row.city}</td>
+                  {/* Owner 2 Nov — Plot No. · Type, the Project under it. */}
+                  <td role="cell" className={LIST_TD}>
+                    <span
+                      className="block truncate text-foreground"
+                      title={row.plotNumber ? `${row.plotNumber}${row.plotType ? ` · ${typeWord(row.plotType)}` : ""}` : undefined}
+                    >
+                      {row.plotNumber && row.plotId ? (
+                        <Link href={`/plots/${row.plotId}`} className="font-semibold text-primary hover:underline">
+                          {row.plotNumber}
+                        </Link>
+                      ) : (
+                        (row.plotNumber ?? "—")
+                      )}
+                      {row.plotType && <span className="text-muted-foreground"> · {typeWord(row.plotType)}</span>}
+                    </span>
+                    {row.project && (
+                      <span className="block truncate text-[11px] font-medium text-foreground" title={row.project}>
+                        {row.project}
+                      </span>
+                    )}
+                  </td>
+                  {/* Owner 2 Nov — the other deals have their own column: a
+                      "+2" pill, and the list on hover or keyboard focus. */}
+                  <td role="cell" className={LIST_TD}>
+                    {row.otherBookings.length > 0 ? (
                           // Portalled, so the table's scroll box cannot clip it.
                           <Tooltip.Root>
                             <Tooltip.Trigger asChild>
-                              <span
-                                tabIndex={0}
-                                className="cursor-default underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:text-foreground"
+                              <button
+                                type="button"
+                                aria-label={`${row.otherBookings.length} more booked: ${row.otherBookings.join(", ")}`}
+                                className="inline-flex h-6 min-w-[2.25rem] cursor-default items-center justify-center rounded-full border border-border bg-secondary px-2 text-xs font-semibold tabular-nums text-foreground hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                               >
-                                +{row.otherBookings.length} more booked
-                              </span>
+                                +{row.otherBookings.length}
+                              </button>
                             </Tooltip.Trigger>
                             <Tooltip.Portal>
                               <Tooltip.Content
                                 side="bottom"
-                                align="start"
+                                align="center"
                                 sideOffset={6}
                                 className="z-50 rounded-xl border border-border/80 bg-popover/95 px-3 py-2 text-xs text-popover-foreground shadow-lg backdrop-blur-md"
                               >
@@ -236,27 +224,9 @@ export default function CustomersClient({
                               </Tooltip.Content>
                             </Tooltip.Portal>
                           </Tooltip.Root>
-                        ) : null
-                      }
-                    />
-                  </td>
-                  <td className="max-w-[8rem]">
-                    <Cell
-                      value={
-                        row.plotNumber && row.plotId ? (
-                          <Link
-                            href={`/plots/${row.plotId}`}
-                            className="text-primary hover:underline"
-                          >
-                            {row.plotNumber}
-                          </Link>
-                        ) : (
-                          (row.plotNumber ?? "—")
-                        )
-                      }
-                      title={row.plotNumber ?? undefined}
-                      under={row.plotType ? typeWord(row.plotType) : null}
-                    />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                 </tr>
               ))}

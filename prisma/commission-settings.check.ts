@@ -56,8 +56,9 @@ async function main() {
   );
   await assert.rejects(createCommissionVersion({ idempotencyKey: key(), ...MD, projectId, ...terms, reason: " " }), /reason/);
 
-  // docss/11 §1 — the Royalty points rate is a whole number, above 0, on every version.
-  for (const bad of [0, -5, 2.5, 1_000_001, null as unknown as number]) {
+  // docss/11 §1 — a set Royalty points rate is a whole number, above 0. Null
+  // (Royalty switched off, owner 2 Nov) is allowed.
+  for (const bad of [0, -5, 2.5, 1_000_001]) {
     await assert.rejects(
       createCommissionVersion({ idempotencyKey: key(), ...MD, projectId, ...terms, royaltyTokensPerAward: bad }),
       /Royalty points/,

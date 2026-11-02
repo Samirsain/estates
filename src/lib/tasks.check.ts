@@ -17,6 +17,9 @@ import {
   type TaskView,
   recordHref,
   recordReference,
+  REVISE_RESULTS,
+  reviseGroup,
+  reviseProblem,
   shownRecordName,
 } from "./tasks.ts";
 
@@ -244,5 +247,17 @@ assert.equal(shownRecordName("REQ-000057 · Shri Ram Enclave SR-03"), "Booking R
 assert.equal(shownRecordName("ACQ-000002 · BUYING 1.00%"), "Buyback / Resale · BUYING 1.00%");
 assert.equal(shownRecordName("BKG-000054 · Govind Vatika G-21"), "BKG-000054 · Govind Vatika G-21");
 assert.equal(shownRecordName("MEM-000017"), "MEM-000017");
+
+// Owner, 2 Nov 2026 — Revise offers the task group's own Result and Remark.
+assert.equal(reviseGroup({ purpose: "BOOKING_REVIEW", decision: true }), "DECISION", "any decision task is group A");
+assert.equal(reviseGroup({ purpose: "ENQUIRY_FOLLOW_UP" }), "ENQUIRY");
+assert.equal(reviseGroup({ purpose: "FINAL_BUYER_DETAILS" }), "CUSTOMER_DETAILS");
+assert.equal(reviseGroup({ purpose: "MANUAL:WEEKLY SITE REVIEW" }), "MANUAL", "an unlisted purpose is a manual task");
+assert.ok(Object.values(REVISE_RESULTS).every((list) => list.at(-1) === "Other"), "every Result list ends with Other");
+assert.equal(reviseProblem("CUSTOMER_DETAILS", "Not Answered", ""), "Pick a Result from the list for this task.", "a call Result is refused on paperwork");
+assert.equal(reviseProblem("CUSTOMER_DETAILS", "Partly Received", ""), null, "no remark needed off Other");
+assert.equal(reviseProblem("CUSTOMER_DETAILS", "Other", " "), "Write a remark for this revision.", "Other needs a remark");
+assert.equal(reviseProblem("INTERNAL", "Waiting for MD", ""), "Write a remark for this revision.", "a review always needs a remark");
+assert.equal(reviseProblem("DECISION", "Sent to MD", "Sent to MD for a decision"), null);
 
 console.log("tasks.check.ts OK");

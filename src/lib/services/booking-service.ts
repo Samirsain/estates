@@ -155,8 +155,8 @@ function reviewSnapshot(input: {
     directPercent: string | null;
     loyaltyPercent: string | null;
   };
-  /** docss/11 §1 — the Royalty token rate this request version froze. */
-  royaltyTokensPerAward: number;
+  /** docss/11 §1 — the Royalty token rate this request version froze; null when Royalty is off. */
+  royaltyTokensPerAward: number | null;
 }) {
   return canonicalSnapshot({
     projectId: input.projectId,

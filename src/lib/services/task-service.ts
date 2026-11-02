@@ -214,7 +214,7 @@ export async function taskSubjects(
               id: true,
               bookingNumber: true,
               project: { select: { name: true } },
-              plot: { select: { id: true, plotNumber: true } },
+              plot: { select: { id: true, plotNumber: true, plotType: true } },
               primaryPerson: { select: personSelect },
             },
           })
@@ -225,7 +225,7 @@ export async function taskSubjects(
             select: {
               id: true,
               project: { select: { name: true } },
-              plot: { select: { id: true, plotNumber: true } },
+              plot: { select: { id: true, plotNumber: true, plotType: true } },
               person: { select: personSelect },
             },
           })
@@ -245,7 +245,7 @@ export async function taskSubjects(
       plotIds.length
         ? db.plot.findMany({
             where: { id: { in: plotIds } },
-            select: { id: true, plotNumber: true, project: { select: { name: true } } },
+            select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true } } },
           })
         : [],
       acquisitionIds.length
@@ -255,7 +255,7 @@ export async function taskSubjects(
               id: true,
               propertyName: true,
               propertyNumber: true,
-              plot: { select: { id: true, plotNumber: true, project: { select: { name: true } } } },
+              plot: { select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true } } } },
               sellerPerson: { select: personSelect },
             },
           })
@@ -270,7 +270,7 @@ export async function taskSubjects(
                   id: true,
                   bookingNumber: true,
                   project: { select: { name: true } },
-                  plot: { select: { id: true, plotNumber: true } },
+                  plot: { select: { id: true, plotNumber: true, plotType: true } },
                 },
               },
               acquisition: {
@@ -278,7 +278,7 @@ export async function taskSubjects(
                   id: true,
                   propertyName: true,
                   propertyNumber: true,
-                  plot: { select: { id: true, plotNumber: true, project: { select: { name: true } } } },
+                  plot: { select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true } } } },
                 },
               },
               beneficiaryPerson: { select: personSelect },
@@ -315,6 +315,7 @@ export async function taskSubjects(
     add(b.id, {
       project: b.project.name,
       plot: b.plot.plotNumber,
+      plotType: b.plot.plotType,
       plotId: b.plot.id,
       // REQ, ENQ and ACQ numbers are off the screens (ID Guide §5): the record
       // reads as what it is, and the Plot and Name columns say which one.
@@ -326,6 +327,7 @@ export async function taskSubjects(
     add(e.id, {
       project: e.project.name,
       plot: e.plot?.plotNumber ?? null,
+      plotType: e.plot?.plotType ?? null,
       plotId: e.plot?.id ?? null,
       reference: "Enquiry",
       ...party(e.person),
@@ -357,6 +359,7 @@ export async function taskSubjects(
     add(p.id, {
       project: p.project.name,
       plot: p.plotNumber,
+      plotType: p.plotType,
       plotId: p.id,
       reference: null,
       partyRef: null,
@@ -370,6 +373,7 @@ export async function taskSubjects(
     add(a.id, {
       project: a.plot?.project.name ?? a.propertyName,
       plot: a.plot?.plotNumber ?? a.propertyNumber,
+      plotType: a.plot?.plotType ?? null,
       plotId: a.plot?.id ?? null,
       reference: "Buyback / Resale",
       ...party(a.sellerPerson),
@@ -381,6 +385,7 @@ export async function taskSubjects(
     add(r.id, {
       project: r.booking?.project.name ?? deal?.plot?.project.name ?? deal?.propertyName ?? null,
       plot: r.booking?.plot.plotNumber ?? deal?.plot?.plotNumber ?? deal?.propertyNumber ?? null,
+      plotType: r.booking?.plot.plotType ?? deal?.plot?.plotType ?? null,
       plotId: r.booking?.plot.id ?? deal?.plot?.id ?? null,
       reference: r.booking ? (r.booking.bookingNumber ?? "Booking Request") : deal ? "Buyback / Resale" : null,
       // A Commission review happens on the Booking (or the deal), so the row

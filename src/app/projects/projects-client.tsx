@@ -37,6 +37,11 @@ export type ProjectRowView = {
   location: string | null;
   locationUrl: string | null;
   driveUrl: string | null;
+  /**
+   * Owner 2 Nov — where Layout opens: the Project's Public Portal page
+   * ("/p/<slug>") when the portal draws its site plan, else the Drive link.
+   */
+  layoutUrl: string | null;
   renderUrl: string | null;
   city: string | null;
   amenities: string | null;
@@ -243,9 +248,9 @@ export default function ProjectsClient({
                   the name, where the sheet and the PDF also put it. */}
               <div className="mt-auto flex items-center justify-between gap-2 border-t border-border/50 pt-2">
                 <div className="flex min-w-0 flex-nowrap items-center gap-1">
-                  {project.driveUrl && (
+                  {project.layoutUrl && (
                     <Button size="xs" variant="outline" className={CARD_PILL} asChild>
-                      <a href={project.driveUrl} target="_blank" rel="noreferrer noopener">
+                      <a href={project.layoutUrl} target="_blank" rel="noreferrer noopener">
                         <Layers className="mr-1 h-2.5 w-2.5" /> Layout
                       </a>
                     </Button>
@@ -358,7 +363,7 @@ function ProjectInfoDialog({
             reraNumber: project.reraNumber,
             where: projectWhere(project),
             locationUrl: project.locationUrl,
-            driveUrl: project.driveUrl,
+            layoutUrl: project.layoutUrl,
             renderUrl: project.renderUrl,
             amenities: amenityList(project.amenities),
             inventory,
@@ -734,19 +739,15 @@ function ProjectDialog({
 }) {
   // SSOT §12–§14; CP §8 — the Project is created with its Commercial &
   // Rewards settings, the same fields a later version uses. Saved as version 1,
-  // approved by the MD creating it.
-  const [withCommission, setWithCommission] = React.useState(canPrepareCommission);
+  // approved by the MD creating it. Owner 2 Nov — no "Rewards settings"
+  // toggle: the settings are always open and always saved with the Project.
   const draft = useCommercialRewardsDraft(null, [], "Initial Project settings");
-  const commissionProblem = withCommission ? draft.problem : null;
+  const commissionProblem = canPrepareCommission ? draft.problem : null;
   // The problem shows once Create is pressed, not while the form is being filled.
   const [tried, setTried] = React.useState(false);
 
   return (
-    <Modal
-      title="New Project"
-      description="Created as Unreleased. Make it Active only when it is ready to sell. The Project Code cannot be changed later."
-      onClose={onClose}
-    >
+    <Modal title="New Project" onClose={onClose}>
       <form
         className="space-y-3"
         onSubmit={(e) => {
@@ -758,7 +759,7 @@ function ProjectDialog({
             projectCode: String(form.get("projectCode")),
             isExternalResaleGroup: false,
             components: [],
-            commission: canPrepareCommission && withCommission ? draft.value : null,
+            commission: canPrepareCommission ? draft.value : null,
           });
         }}
       >
@@ -776,20 +777,8 @@ function ProjectDialog({
 
         {canPrepareCommission && (
           <div className="space-y-3 border-t border-border/60 pt-3">
-            <label className="flex items-center gap-2 text-xs font-semibold">
-              <input
-                type="checkbox"
-                checked={withCommission}
-                onChange={(e) => setWithCommission(e.target.checked)}
-              />
-              Rewards settings
-            </label>
-            {withCommission && (
-              <>
-                {draft.fields}
-                {tried && commissionProblem && <p className="text-xs text-red-700">{commissionProblem}</p>}
-              </>
-            )}
+            {draft.fields}
+            {tried && commissionProblem && <p className="text-xs text-red-700">{commissionProblem}</p>}
           </div>
         )}
 

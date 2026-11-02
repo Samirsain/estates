@@ -61,10 +61,6 @@ export type CalcProjectView = {
   location: string | null;
   /** v2.1 §12 — the Project's Active commission settings; null when none are approved. */
   terms: FrozenTerms | null;
-  /** CP §72 — the Project's Trip Programme as a non-cash indicator, or null. */
-  trip: string | null;
-  /** docss/11 — Royalty tokens per qualifying purchase on the Active settings; null when not set. */
-  royaltyTokens: number | null;
 };
 
 /** One sale-commission component, with the milestone the engine gives it. */
@@ -568,11 +564,6 @@ export default function CalculatorClient({
     return notes;
   }
 
-  /** Whether the engine had both parties and actually answered. */
-  const engineRan =
-    Boolean(person(buyerPersonId)) &&
-    (soldByType === "THREE_PERCENT_CLUB" || Boolean(person(soldByPersonId)));
-
   /** What is still missing, in the order the form asks for it. */
   const blocker = !projectId
     ? "Select a Project."
@@ -612,15 +603,6 @@ export default function CalculatorClient({
             </Button>
           )}
         </div>
-
-        {/* CP §72 — non-cash rewards are eligibility indicators only, never a value. */}
-        {projectId && (
-          <p className="text-xs text-muted-foreground">
-            Rewards:{" "}
-            {projects.find((p) => p.id === projectId)?.trip ?? "no Rewards on this Project"} · Royalty:{" "}
-            {projects.find((p) => p.id === projectId)?.royaltyTokens ?? "no"} points per qualifying purchase. Non-cash; no expiry.
-          </p>
-        )}
 
         {/* Everything chosen sits on one row. Nothing below repeats it. */}
         <Card className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -954,20 +936,9 @@ export default function CalculatorClient({
               </div>
             )}
 
-            {/* An empty panel with the fields above it explains itself. The
-                engine's own silence does not: it answered, and the answer was
-                nothing, which is worth saying. */}
-            {splits.length === 0 && !conflict && engineRan && (
-              <p className="rounded-xl border border-border/60 bg-secondary p-3 text-xs text-muted-foreground">
-                The engine generates no commission line for this combination — a first direct 3%
-                Club purchase earns nothing (prd-complete §14.5).
-              </p>
-            )}
-
-            {/* Both commissions, always — Direct, then Loyalty. A combination
-                that earns one still shows the other's row, reading N/A, because
-                "this deal pays no Loyalty Points" is an answer somebody came here for
-                and a missing row is not one (v2.1 §11). */}
+            {/* Owner 2 Nov — only the commissions this deal pays get a row; an
+                all-N/A row is hidden, and with no line at all the table goes too. */}
+            {splits.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[26rem] text-xs">
                 <thead className="border-b border-border/60 text-left text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
@@ -1003,6 +974,8 @@ export default function CalculatorClient({
                           : verdict?.state === "READY"
                             ? "Ready"
                             : "On hold";
+
+                    if (status === "N/A" && !percent && !amount) return null;
 
                     const why = record
                       ? [
@@ -1074,6 +1047,7 @@ export default function CalculatorClient({
                 </tbody>
               </table>
             </div>
+            )}
 
             {splits.length > 0 && (
               <>

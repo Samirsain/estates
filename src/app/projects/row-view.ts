@@ -2,9 +2,15 @@
 // the shape the Edit, PLC versions and Change status dialogs are built on.
 
 import type { listProjects } from "@/lib/services/project-service";
+import { projectSlug } from "@/lib/domain/public-portal";
+import { siteLayout } from "@/lib/project-layouts";
 import type { ProjectRowView } from "./projects-client";
 
 export function projectRowView(project: Awaited<ReturnType<typeof listProjects>>[number]): ProjectRowView {
+  // Owner 2 Nov — Layout opens the Public Portal page when it draws this
+  // Project's site plan. Same visibility rule as portalProjects(), so the
+  // link never leads to a 404.
+  const onPortal = project.publicPortal && !project.isExternalResaleGroup && project.status !== "SETUP_NOT_ACTIVE";
   return {
     id: project.id,
     projectCode: project.projectCode,
@@ -15,6 +21,8 @@ export function projectRowView(project: Awaited<ReturnType<typeof listProjects>>
     location: project.location,
     locationUrl: project.locationUrl,
     driveUrl: project.driveUrl,
+    layoutUrl:
+      onPortal && siteLayout(project.projectCode) ? `/p/${projectSlug(project.name)}` : project.driveUrl,
     renderUrl: project.renderUrl,
     city: project.city,
     amenities: project.amenities,

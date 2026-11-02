@@ -178,7 +178,7 @@ export default async function CustomerDetailPage({
             ...bookingRef,
             primaryPersonId: true,
             project: { select: { name: true } },
-            plot: { select: { id: true, plotNumber: true } },
+            plot: { select: { id: true, plotNumber: true, plotType: true } },
             primaryPerson: { select: { fullName: true, customerProfile: { select: { id: true, customerId: true } } } },
           },
         },
@@ -563,7 +563,7 @@ export default async function CustomerDetailPage({
                 <thead className="border-b border-border/50">
                   <tr>
                     <th className={CTH}>Booking</th>
-                    <th className={CTH}>Project &amp; Plot</th>
+                    <th className={CTH}>Plot · Type / Project</th>
                     <th className={CTH}>Status</th>
                     <th className={CTH}>Ownership</th>
                     <th className={CTH}>Sold By</th>
@@ -598,16 +598,18 @@ export default async function CustomerDetailPage({
                             {b.bookingNumber}
                           </Link>
                         </td>
+                        {/* Owner 2 Nov — Plot No. · Type, the Project under it. */}
                         <td className={CTD}>
-                          <Link
-                            href={`/plots/${b.plot.id}`}
-                            className="font-semibold text-primary hover:underline"
-                          >
-                            {b.plot.plotNumber}
-                          </Link>
-                          <span className={SUB}>
-                            {titleWords(b.plot.plotType)} · {b.project.name}
+                          <span className="block">
+                            <Link
+                              href={`/plots/${b.plot.id}`}
+                              className="font-semibold text-primary hover:underline"
+                            >
+                              {b.plot.plotNumber}
+                            </Link>
+                            <span className="text-muted-foreground"> · {titleWords(b.plot.plotType)}</span>
                           </span>
+                          <span className="block text-[11px] font-medium text-foreground">{b.project.name}</span>
                         </td>
                         <td className={CTD}>
                           <span className="font-medium">{words(b.status)}</span>
@@ -689,7 +691,7 @@ export default async function CustomerDetailPage({
                 <thead className="border-b border-border/50">
                   <tr>
                     <th className={CTH}>Booking ID</th>
-                    <th className={CTH}>Project &amp; Plot</th>
+                    <th className={CTH}>Plot · Type / Project</th>
                     <th className={CTH}>Buyer</th>
                     <th className={CTH}>%</th>
                     <th className={CTH}>Eligibility</th>
@@ -714,13 +716,18 @@ export default async function CustomerDetailPage({
                       <td className={CTD}>
                         {c.booking ? (
                           <>
-                            <Link
-                              href={`/plots/${c.booking.plot.id}`}
-                              className="font-semibold text-primary hover:underline"
-                            >
-                              {plotName(c.booking.plot)}
-                            </Link>
-                            <span className={SUB}>{c.booking.project.name}</span>
+                            <span className="block">
+                              <Link
+                                href={`/plots/${c.booking.plot.id}`}
+                                className="font-semibold text-primary hover:underline"
+                              >
+                                {plotName(c.booking.plot)}
+                              </Link>
+                              <span className="text-muted-foreground"> · {titleWords(c.booking.plot.plotType)}</span>
+                            </span>
+                            <span className="block text-[11px] font-medium text-foreground">
+                              {c.booking.project.name}
+                            </span>
                           </>
                         ) : (
                           "—"

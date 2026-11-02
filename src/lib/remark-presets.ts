@@ -320,10 +320,72 @@ export const REMARK_PRESETS = {
     "Rejected — different people in the same family",
     "Rejected — not enough proof",
   ],
-  reviseTask: [
+  // Revise, one list per task group (owner, 2 Nov 2026 — doc "Task List —
+  // Task Types aur Revise ke Result / Remark"; lib/tasks reviseGroup).
+  reviseDecision: [
+    "Payment proof not received yet",
+    "Amount not yet matched with bank",
+    "Amount does not match the request",
+    "Asked the requester for corrected details",
+    "Sent to MD for a decision",
+  ],
+  reviseEnquiry: [
     "Customer asked to call later",
     "Customer not answering",
-    "Waiting for documents from the customer",
+    "Wants a site visit",
+    "Comparing with other projects",
+    "Budget issue",
+    "Wants a different plot",
+  ],
+  revisePayment: [
+    "Customer promised to pay by the new date",
+    "Customer not answering",
+    "Waiting for bank loan",
+    "Cheque to be deposited",
+    "Customer asked for more time",
+  ],
+  revisePaymentGiven: [
+    "Funds expected by the new date",
+    "Seller bank details pending",
+    "Waiting for MD to release payment",
+    "Seller not answering",
+  ],
+  reviseRecovery: [
+    "Member promised to return by the new date",
+    "Member not answering",
+    "Will adjust against next payout",
+    "Member disputes the amount, sent to MD",
+  ],
+  reviseCustomerDetails: [
+    "Aadhaar / PAN copy pending",
+    "Asked customer to send details on WhatsApp",
+    "Some details received, rest pending",
+    "Customer not answering",
+  ],
+  revisePapers: [
+    "Registry appointment booked for the new date",
+    "Waiting for customer to come and sign",
+    "Stamp duty payment pending",
+    "Papers sent to the lawyer",
+  ],
+  reviseInternal: [
+    "Checking the records",
+    "Sent to MD for a decision",
+    "Waiting for Sold By correction",
+    "Recovery amount being worked out",
+  ],
+  reviseDeactivatedHold: [
+    "Member asked to wait",
+    "Sent to MD to decide whether to honour the request",
+  ],
+  reviseRera: [
+    "Renewal application submitted",
+    "Documents being collected",
+    "Waiting for the RERA office",
+  ],
+  reviseManual: [
+    "Rescheduled as asked",
+    "Waiting for information",
     "Waiting for a decision from Accounts or MD",
   ],
   addTask: [

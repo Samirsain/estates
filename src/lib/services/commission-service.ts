@@ -82,14 +82,9 @@ export async function freezeAtSubmission(
     where: { projectId: args.projectId, status: "ACTIVE" },
   });
   if (!version) blocked("This Project has no approved commission settings.");
-  // docss/11 §1 — never substitute a missing rate: a version prepared before
-  // Royalty Tokens cannot be frozen until a version with a rate replaces it.
-  if (version.royaltyTokensPerAward === null) {
-    blocked(
-      "This Project's approved settings have no Royalty points rate. MD must create a new settings " +
-        "version with one before a Booking Request can be submitted."
-    );
-  }
+  // Owner 2 Nov — a version with no Royalty rate has Royalty switched off. The
+  // request freezes null and the Royalty award skips it; nothing substitutes
+  // a rate (docss/11 §1 still holds — no fallback, no zero award).
   const buyer = await tx.memberProfile.findUnique({
     where: { personId: args.buyerPersonId },
     select: { status: true },

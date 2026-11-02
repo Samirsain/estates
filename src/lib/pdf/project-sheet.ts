@@ -28,7 +28,8 @@ export type ProjectSheet = {
   /** The address line as the screen prints it (projectWhere). */
   where: string | null;
   locationUrl: string | null;
-  driveUrl: string | null;
+  /** Layout: a Drive link, or the Project's Public Portal page ("/p/<slug>"). */
+  layoutUrl: string | null;
   renderUrl: string | null;
   amenities: string[];
   /** The count cards, Total Plots first; null for an External Resale Property Group. */
@@ -168,7 +169,7 @@ function draw(doc: Doc, sheet: ProjectSheet, amenitiesShown: number): number {
   // Only a link that is a web address prints, as a pill you click; one never
   // added, or not a link at all, prints nothing rather than a dead pill.
   const links = [
-    { label: "Layout", url: sheet.driveUrl },
+    { label: "Layout", url: sheet.layoutUrl },
     { label: "Location", url: sheet.locationUrl },
     { label: "3D Visuals", url: sheet.renderUrl },
   ].filter((link): link is { label: string; url: string } => isWebAddress(link.url));
@@ -177,7 +178,9 @@ function draw(doc: Doc, sheet: ProjectSheet, amenitiesShown: number): number {
     let at = LEFT;
     for (const link of links) {
       const width = pill(doc, at, y, link.label, { size: 9, text: ACCENT, fill: [255, 255, 255], border: ACCENT_SOFT, tall: true });
-      doc.link(at, y - 5, width, 7.4, { url: link.url.trim() });
+      // A portal path ("/p/<slug>") becomes this site's full address, so the
+      // pill opens from the saved file too. The sheet is drawn in the browser.
+      doc.link(at, y - 5, width, 7.4, { url: new URL(link.url.trim(), window.location.origin).href });
       at += width + 4;
     }
     y += 12;
@@ -321,8 +324,9 @@ export function headline(text: string): string {
 }
 
 /** Only a web address is a link worth printing; a blank or a stray word is not. */
+/** A link worth printing: a web address, or a Public Portal page on this site ("/p/<slug>", owner 2 Nov). */
 export function isWebAddress(url: string | null): url is string {
-  return Boolean(url && /^https?:\/\/\S+$/i.test(url.trim()));
+  return Boolean(url && (/^https?:\/\/\S+$/i.test(url.trim()) || /^\/p\/[a-z0-9-]+$/.test(url)));
 }
 
 /** A file name a file manager will accept on every platform. */

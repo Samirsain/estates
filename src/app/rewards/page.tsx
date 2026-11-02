@@ -27,6 +27,9 @@ const TABS = [
 
 const TH = "px-2 py-1.5 text-left font-medium text-muted-foreground";
 const TD = "px-2 py-1.5";
+/** RESIDENTIAL → Residential; null stays null. */
+const typeWord = (t: string | null | undefined) =>
+  t ? t.charAt(0) + t.slice(1).toLowerCase().replaceAll("_", " ") : null;
 
 export default async function RewardsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const actor = await requireStaff("REPORT_VIEW");
@@ -63,8 +66,7 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
                 <tr>
                   <th className={TH}>Beneficiary</th>
                   <th className={TH}>Benefit</th>
-                  <th className={TH}>Project</th>
-                  <th className={TH}>Plot</th>
+                  <th className={TH}>Plot · Type / Project</th>
                   <th className={TH}>Eligibility</th>
                   <th className={TH}>Payment</th>
                 </tr>
@@ -83,23 +85,32 @@ export default async function RewardsPage({ searchParams }: { searchParams: Prom
                           : "Buying"}{" "}
                       {c.percent.toFixed(2)}%
                     </td>
+                    {/* Owner 2 Nov — Plot No. · Type, the Project under it. The
+                        Plot opens the Booking or deal, where the work is done. */}
                     <td className={TD}>
-                      {c.booking?.project.name ??
-                        c.acquisition?.plot?.project.name ??
-                        c.acquisition?.propertyName ??
-                        "—"}
-                    </td>
-                    <td className={TD}>
-                      {/* The Plot opens the Booking or deal, where the work is done. */}
-                      <Link
-                        className="text-primary hover:underline"
-                        href={c.booking ? `/bookings?booking=${c.booking.id}` : `/acquisitions/${c.acquisition?.id}`}
-                      >
-                        {c.booking?.plot.plotNumber ??
-                          c.acquisition?.plot?.plotNumber ??
-                          c.acquisition?.propertyNumber ??
+                      <span className="block">
+                        <Link
+                          className="font-semibold text-primary hover:underline"
+                          href={c.booking ? `/bookings?booking=${c.booking.id}` : `/acquisitions/${c.acquisition?.id}`}
+                        >
+                          {c.booking?.plot.plotNumber ??
+                            c.acquisition?.plot?.plotNumber ??
+                            c.acquisition?.propertyNumber ??
+                            "—"}
+                        </Link>
+                        {typeWord(c.booking?.plot.plotType ?? c.acquisition?.plot?.plotType) && (
+                          <span className="text-muted-foreground">
+                            {" · "}
+                            {typeWord(c.booking?.plot.plotType ?? c.acquisition?.plot?.plotType)}
+                          </span>
+                        )}
+                      </span>
+                      <span className="block text-[11px] font-medium text-foreground">
+                        {c.booking?.project.name ??
+                          c.acquisition?.plot?.project.name ??
+                          c.acquisition?.propertyName ??
                           "—"}
-                      </Link>
+                      </span>
                     </td>
                     <td className={TD}>
                       {eligibilityLabel(c.eligibility)}

@@ -145,7 +145,9 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
     reraNumber: project.reraNumber,
     where,
     locationUrl: project.locationUrl,
-    driveUrl: project.driveUrl,
+    // Owner 2 Nov — a Project whose site plan is drawn here points Layout at
+    // this page, so the PDF's Layout pill opens the live plan.
+    layoutUrl: siteLayout(project.projectCode) ? `/p/${slug}` : project.driveUrl,
     renderUrl: project.renderUrl,
     amenities,
     inventory: [

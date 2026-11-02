@@ -94,6 +94,15 @@
     scrollbar-gutter: stable;
   }
 
+  /* An open menu (Radix) locks scroll and adds the scrollbar's width as a
+     body margin to stop a jump — but the gutter above already holds that
+     space, so the page lost it twice and squeezed 15px while a menu was open
+     (Task List → Action, owner 2 Nov). The gutter alone is enough. `html`
+     outranks the rule Radix injects at runtime. */
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
+  }
+
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/15 selection:text-primary;
     font-feature-settings: "rlig" 1, "calt" 1;

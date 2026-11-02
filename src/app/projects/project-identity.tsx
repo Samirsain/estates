@@ -58,7 +58,7 @@ type IdentityFields = Pick<
   | "location"
   | "city"
   | "amenities"
-  | "driveUrl"
+  | "layoutUrl"
   | "locationUrl"
   | "renderUrl"
 >;
@@ -76,7 +76,7 @@ export function ProjectIdentity({
 }) {
   const amenities = amenityList(project.amenities);
   const links = [
-    { label: "Layout", url: project.driveUrl, Icon: Layers },
+    { label: "Layout", url: project.layoutUrl, Icon: Layers },
     { label: "Location", url: project.locationUrl, Icon: MapIcon },
     { label: "3D Visuals", url: project.renderUrl, Icon: Box },
   ].filter((link): link is typeof link & { url: string } => isWebAddress(link.url));

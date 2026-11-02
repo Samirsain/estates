@@ -19,7 +19,6 @@ import {
 } from "@/lib/domain/commission";
 import { validateTokenQuantity } from "@/lib/domain/tokens";
 import { formatIst } from "@/lib/tasks";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -81,70 +80,12 @@ const loyalty = (v: CommissionVersionView) =>
   v.loyaltyEnabled && v.loyaltyPercent ? `${rateLabel(v.loyaltyPercent)}%` : "Disabled";
 
 /** The Rewards rule in the words the Member profile uses. */
-const rewards = (v: CommissionVersionView) => (v.trip ? `${v.trip.target} sales = 1 Reward` : "Disabled");
-
-/** One group of the version's terms: a quiet heading over label-left, value-right rows. */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h3 className="text-xs font-semibold text-foreground">{title}</h3>
-      <dl className="mt-1">{children}</dl>
-    </section>
-  );
-}
-
-/** The same row as the facts in the card, so the box and its Details read alike. */
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-border/40 py-1.5 text-xs last:border-0">
-      <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="text-right font-medium tabular-nums text-foreground">{children}</dd>
-    </div>
-  );
-}
-
-function Terms({ v, plotNo }: { v: CommissionVersionView; plotNo: (id: string) => string }) {
-  return (
-    <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-      <Section title="Commission">
-        <Row label="Rate">{direct(v)}</Row>
-        {v.directEnabled && <Row label="Payment">25% Payment Received · self-purchase 100%</Row>}
-      </Section>
-      <Section title="Loyalty Points">
-        <Row label="Rate">{loyalty(v)}</Row>
-        {v.loyaltyEnabled && <Row label="Payment">100% Payment Received</Row>}
-        {v.loyaltyExceptionReason && <Row label="MD commercial exception">{v.loyaltyExceptionReason}</Row>}
-      </Section>
-      <Section title="Royalty Points">
-        <Row label="Points per qualifying Royalty">
-          {v.royaltyTokensPerAward != null
-            ? `${v.royaltyTokensPerAward} points`
-            : "Not set — Booking Requests are refused until a version sets it"}
-        </Row>
-        <Row label="Earned by">The Royalty Linked Member, once per Customer</Row>
-      </Section>
-      <Section title="Rewards">
-        {v.trip ? (
-          <>
-            <Row label="Target">{v.trip.target}</Row>
-            <Row label="Minimum Own-Sale Credits">{v.trip.minOwn}</Row>
-            <Row label="Maximum Reference Credits">{v.trip.maxRef}</Row>
-            <Row label="Excluded Plots">
-              {v.trip.excludedPlotIds.length ? v.trip.excludedPlotIds.map((id) => plotNo(id)).join(", ") : "None"}
-            </Row>
-            {v.trip.sharedPools.length > 0 && (
-              <Row label="Shared credit pools">
-                {v.trip.sharedPools.map((sp) => `${plotNo(sp.plotId)} → ${plotNo(sp.parentPlotId)}`).join(", ")}
-              </Row>
-            )}
-          </>
-        ) : (
-          <Row label="Status">Disabled</Row>
-        )}
-      </Section>
-    </div>
-  );
-}
+// Owner 2 Nov — "3 sales (2-1)": the target, then minimum Own and maximum
+// Reference credits, so the split reads at a glance.
+const rewards = (v: CommissionVersionView) =>
+  v.trip ? `${v.trip.target} sales (${v.trip.minOwn}-${v.trip.maxRef}) = 1 Reward` : "Disabled";
+const royaltyLabel = (v: CommissionVersionView) =>
+  v.royaltyTokensPerAward != null ? `${v.royaltyTokensPerAward} points` : "Disabled";
 
 /** The event Update → Edit commission sends to open the new-version form. */
 export const OPEN_COMMISSION_FORM = "commission:new-version";
@@ -160,18 +101,14 @@ export default function CommissionSettings({
   versions: CommissionVersionView[];
   plots: PlotOption[];
 }) {
-  const plotNo = (id: string) => plots.find((p) => p.id === id)?.plotNumber ?? "?";
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
   const [editing, setEditing] = React.useState(false);
-  const [showAll, setShowAll] = React.useState(false);
-
 
   const active = versions.find((v) => v.status === "ACTIVE") ?? null;
   const open =
     versions.find((v) => v.status === "DRAFT" || v.status === "PENDING_APPROVAL" || v.status === "APPROVED") ?? null;
-  const history = versions.filter((v) => v !== active && v !== open);
   const isMd = role === "MD";
   // Update → Edit commission, at the top of the page, opens this form.
   React.useEffect(() => {
@@ -193,8 +130,8 @@ export default function CommissionSettings({
   }
 
   // One of three boxes beside Inventory and the PLC (owner, 28 Oct 2026): the
-  // terms in force as rows, the way the PLC box reads; every section of every
-  // version, and the history, open under Details.
+  // terms in force as rows, the way the PLC box reads. No Details popup
+  // (owner, 2 Nov 2026).
   const fact = (label: string, value: React.ReactNode) => (
     <div className="flex items-baseline justify-between gap-4 border-b border-border/40 py-1.5 last:border-0">
       <dt className="text-xs text-muted-foreground">{label}</dt>
@@ -207,11 +144,6 @@ export default function CommissionSettings({
       <section className="space-y-2">
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-xs font-semibold text-foreground">Commission and Rewards</h2>
-          {(active || open || history.length > 0) && (
-            <button type="button" onClick={() => setShowAll(true)} className="text-xs text-primary hover:underline">
-              Details
-            </button>
-          )}
         </div>
 
         {notice && (
@@ -224,7 +156,7 @@ export default function CommissionSettings({
           <dl>
             {fact("Commission", direct(active))}
             {fact("Loyalty Points", loyalty(active))}
-            {fact("Royalty", `${active.royaltyTokensPerAward ?? "—"} points`)}
+            {fact("Royalty", royaltyLabel(active))}
             {fact("Rewards", rewards(active))}
           </dl>
         ) : (
@@ -240,70 +172,6 @@ export default function CommissionSettings({
           </p>
         )}
       </section>
-
-      {showAll && (
-        <Modal
-          title="Commission and Rewards"
-          description="Applicable Commission is Project-specific and disclosed before the relevant Booking."
-          wide
-          onClose={() => setShowAll(false)}
-        >
-          <div className="space-y-3">
-            {active ? (
-              <div className="space-y-3 rounded-lg border border-border/60 p-3">
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="font-semibold">Version {active.version}</span>
-                  <Badge variant="success">Active</Badge>
-                  {active.effectiveFrom && (
-                    <span className="text-muted-foreground">since {formatIst(active.effectiveFrom)}</span>
-                  )}
-                </div>
-                <Terms v={active} plotNo={plotNo} />
-              </div>
-            ) : (
-              <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-800">
-                No settings yet. Booking Requests on this Project cannot be submitted until MD creates a version.
-              </p>
-            )}
-
-            {open && (
-              <div className="space-y-3 rounded-lg border border-dashed border-border p-3">
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-semibold">Version {open.version}</span>
-                  <Badge variant={STATUS[open.status].variant}>{STATUS[open.status].label}</Badge>
-                  {open.effectiveFrom && <span className="text-muted-foreground">takes effect {formatIst(open.effectiveFrom)}</span>}
-                </div>
-                <Terms v={open} plotNo={plotNo} />
-              </div>
-            )}
-
-            {history.length > 0 && (
-              <details className="text-xs">
-                <summary className="cursor-pointer text-muted-foreground">Version History — read-only ({history.length})</summary>
-                <ul className="mt-1.5 space-y-1.5">
-                  {history.map((v) => (
-                    <li key={v.id}>
-                      <details className="rounded-lg border border-border/40 p-2">
-                        <summary className="flex cursor-pointer flex-wrap gap-x-2">
-                          <span className="font-medium">Version {v.version}</span>
-                          <Badge variant={STATUS[v.status].variant}>{STATUS[v.status].label}</Badge>
-                          <span className="text-muted-foreground">
-                            Commission {direct(v)} · Loyalty Points {loyalty(v)} · Royalty {v.royaltyTokensPerAward ?? "—"} points ·
-                            Rewards {rewards(v)}
-                          </span>
-                        </summary>
-                        <div className="mt-2">
-                          <Terms v={v} plotNo={plotNo} />
-                        </div>
-                      </details>
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            )}
-          </div>
-        </Modal>
-      )}
 
       {editing && (
         <VersionForm
@@ -345,6 +213,10 @@ export function useCommercialRewardsDraft(
     start?.loyaltyPercent ? rateLabel(start.loyaltyPercent) : "1"
   );
   const [royaltyTokens, setRoyaltyTokens] = React.useState(String(start?.royaltyTokensPerAward ?? ""));
+  // Owner 2 Nov — Royalty has its own checkbox like the two rates; off saves
+  // no rate, so this Project's sales earn no Royalty award. A new version
+  // starts as the one it copies; a brand-new Project starts with it on.
+  const [royaltyEnabled, setRoyaltyEnabled] = React.useState(start ? start.royaltyTokensPerAward !== null : true);
   // Reason and Effective From sit under Rewards (owner, 29 Oct 2026). Without
   // Rewards the audit still gets a reason, and the version takes effect when saved.
   const [reasonText, setReasonText] = React.useState(defaultReason ?? "");
@@ -378,7 +250,9 @@ export function useCommercialRewardsDraft(
         : !(whole(maxRef) >= 0 && whole(maxRef) <= whole(target))
           ? "Maximum Reference Credits must be from 0 to the Total Target."
           : null;
-  const tokenCheck = validateTokenQuantity("Royalty points per qualifying purchase", whole(royaltyTokens));
+  const tokenCheck = royaltyEnabled
+    ? validateTokenQuantity("Royalty points per purchase", whole(royaltyTokens))
+    : ({ ok: true } as const);
   // In the order the fields read, top to bottom.
   const problem = !check.ok
     ? check.reason
@@ -395,7 +269,7 @@ export function useCommercialRewardsDraft(
   const value: CommissionDraftInput = {
     ...terms,
     loyaltyExceptionReason: showException ? terms.loyaltyExceptionReason : null,
-    royaltyTokensPerAward: whole(royaltyTokens),
+    royaltyTokensPerAward: royaltyEnabled ? whole(royaltyTokens) : null,
     reason,
     effectiveFrom: startsAt && startsAt > today ? startsAt.toISOString() : null,
     // CP §7.4 — the checkbox is off the form (owner, 29 Oct 2026); MD saving
@@ -440,14 +314,24 @@ export function useCommercialRewardsDraft(
           onEnabled={setLoyaltyEnabled}
           onValue={setLoyaltyPercent}
         />
-        <Field label="Royalty points per qualifying purchase">
+        <div className="space-y-1">
+          <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={royaltyEnabled}
+              onChange={(e) => setRoyaltyEnabled(e.target.checked)}
+            />
+            Royalty points per purchase
+          </label>
           <Input
+            aria-label="Royalty points per purchase"
             inputMode="numeric"
-            placeholder="e.g. 10"
-            value={royaltyTokens}
+            disabled={!royaltyEnabled}
+            placeholder={royaltyEnabled ? "e.g. 10" : "Disabled"}
+            value={royaltyEnabled ? royaltyTokens : ""}
             onChange={(e) => setRoyaltyTokens(e.target.value)}
           />
-        </Field>
+        </div>
       </div>
 
       <div className="space-y-3 border-t border-border/60 pt-3">
@@ -487,7 +371,8 @@ export function useCommercialRewardsDraft(
                 </div>
               </fieldset>
             )}
-            <div className="grid items-end gap-3 sm:grid-cols-2">
+            {/* Top-aligned, so the two labels always share a line. */}
+            <div className="grid items-start gap-3 sm:grid-cols-2">
               <Field label="Effective From">
                 <Input type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />
               </Field>

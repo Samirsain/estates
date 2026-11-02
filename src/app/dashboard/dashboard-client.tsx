@@ -40,8 +40,28 @@ import {
   FOLLOW_UP_PURPOSES,
   recordHref,
   recordReference,
+  REVISE_RESULTS,
+  reviseGroup,
+  reviseRemarkRequired,
+  type ReviseGroup,
 } from "@/lib/tasks";
 import { RemarkSelect } from "@/components/ui/remark-select";
+import type { RemarkPresetKey } from "@/lib/remark-presets";
+
+/** Each Revise group's Remark presets (owner, 2 Nov 2026). */
+const REVISE_REMARKS: Record<ReviseGroup, RemarkPresetKey> = {
+  DECISION: "reviseDecision",
+  ENQUIRY: "reviseEnquiry",
+  PAYMENT: "revisePayment",
+  PAYMENT_GIVEN: "revisePaymentGiven",
+  RECOVERY: "reviseRecovery",
+  CUSTOMER_DETAILS: "reviseCustomerDetails",
+  PAPERS: "revisePapers",
+  INTERNAL: "reviseInternal",
+  DEACTIVATED_HOLD: "reviseDeactivatedHold",
+  RERA: "reviseRera",
+  MANUAL: "reviseManual",
+};
 
 const VIEWS: { id: TaskView; label: string }[] = [
   { id: "TODAY", label: "Today" },
@@ -256,8 +276,7 @@ export default function DashboardClient({
                 different x in every row. Widths are set once, here. */}
             <table className="w-full min-w-[68rem] table-fixed text-xs">
               <colgroup>
-                <col className="w-[12%]" />
-                <col className="w-[6%]" />
+                <col className="w-[18%]" />
                 <col className="w-[11%]" />
                 <col className="w-[10%]" />
                 <col className="w-[12%]" />
@@ -270,8 +289,7 @@ export default function DashboardClient({
                 <tr className="border-b border-border">
                   {/* The same clear left border the rows carry, so the
                       heading starts where the Project under it does. */}
-                  <th className="border-l-4 border-l-transparent py-2 pl-3 pr-2 font-semibold">Project</th>
-                  <th className="px-2 py-2 font-semibold">Plot</th>
+                  <th className="border-l-4 border-l-transparent py-2 pl-3 pr-2 font-semibold">Plot · Type / Project</th>
                   <th className="px-2 py-2 font-semibold">Booking No.</th>
                   <th className="px-2 py-2 font-semibold">Member / Customer</th>
                   <th className="px-2 py-2 font-semibold">Name</th>
@@ -301,26 +319,28 @@ export default function DashboardClient({
                       key={task.id}
                       className="border-b border-border/60 align-top last:border-b-0 hover:bg-secondary/50"
                     >
+                      {/* Owner 2 Nov — Plot No. · Type, the Project under it.
+                          The number is the way into the Plot, as everywhere
+                          else it is printed. */}
                       <td className={`py-2 pl-3 pr-2 ${state.row}`}>
-                        <span className="block truncate" title={task.subject?.project ?? undefined}>
-                          {task.subject?.project ?? "—"}
+                        <span className="block truncate" title={task.subject?.plot ?? undefined}>
+                          {task.subject?.plotId && task.subject.plot ? (
+                            <Link href={`/plots/${task.subject.plotId}`} className="font-semibold text-primary hover:underline">
+                              {task.subject.plot}
+                            </Link>
+                          ) : (
+                            (task.subject?.plot ?? "—")
+                          )}
+                          {task.subject?.plotType && (
+                            <span className="text-muted-foreground">
+                              {" · "}
+                              {task.subject.plotType.charAt(0) + task.subject.plotType.slice(1).toLowerCase().replaceAll("_", " ")}
+                            </span>
+                          )}
                         </span>
-                      </td>
-                      {/* A plot number is one token — it never wraps. It is
-                          also the way into the Plot, as it is everywhere else
-                          the number is printed. */}
-                      <td className="px-2 py-2">
-                        {task.subject?.plotId && task.subject.plot ? (
-                          <Link
-                            href={`/plots/${task.subject.plotId}`}
-                            className="block truncate text-primary hover:underline"
-                            title={task.subject.plot}
-                          >
-                            {task.subject.plot}
-                          </Link>
-                        ) : (
-                          <span className="block truncate" title={task.subject?.plot ?? undefined}>
-                            {task.subject?.plot ?? "—"}
+                        {task.subject?.project && (
+                          <span className="block truncate text-[11px] font-medium text-foreground" title={task.subject.project}>
+                            {task.subject.project}
                           </span>
                         )}
                       </td>
@@ -574,6 +594,11 @@ function ReviseDialog({
   onClose: () => void;
   onSubmit: (dueAt: string, result: string, remark: string) => void;
 }) {
+  // Owner, 2 Nov 2026 — the task's own group decides the Result and Remark lists.
+  const group = reviseGroup(task);
+  const results = REVISE_RESULTS[group];
+  const [result, setResult] = React.useState(results[0]);
+  const remarkRequired = reviseRemarkRequired(group, result);
   return (
     <Modal
       title="Revise task"
@@ -607,16 +632,21 @@ function ReviseDialog({
           </Field>
         </div>
         <Field label="Result">
-          <select name="result" required defaultValue="Contacted" className={inputClass}>
-            {["Contacted", "Not Answered", "Call Later", "Site Visit Planned", "Booking Discussion", "Other"].map(
-              (o) => (
-                <option key={o}>{o}</option>
-              )
-            )}
+          <select
+            name="result"
+            required
+            value={result}
+            onChange={(e) => setResult(e.target.value)}
+            className={inputClass}
+          >
+            {results.map((o) => (
+              <option key={o}>{o}</option>
+            ))}
           </select>
         </Field>
-        <Field label="Remark (compulsory for extensions and decisions)">
-          <RemarkSelect presets="reviseTask" name="remark" />
+        <Field label={remarkRequired ? "Remark — compulsory" : "Remark"}>
+          {/* key: a change of preset list starts the box fresh. */}
+          <RemarkSelect key={group} presets={REVISE_REMARKS[group]} name="remark" required={remarkRequired} />
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>

@@ -54,14 +54,16 @@ export function RemarkSelect({
     onChange?.(c === OTHER ? t : c);
   };
 
+  // Owner 2 Nov — "Other" opens its text box beside the drop-down, not under
+  // it, so picking it never adds a line and shifts the rest of the form.
   return (
-    <div className="space-y-1.5">
+    <div className="flex gap-2">
       <select
         value={choice}
         required={required}
         disabled={disabled}
         onChange={(e) => set(e.target.value, text)}
-        className={cn(fieldClass, className)}
+        className={cn(fieldClass, className, choice === OTHER && "w-28 shrink-0")}
       >
         <option value="">{required ? "Pick one" : "None"}</option>
         {options.map((o) => (
@@ -80,7 +82,7 @@ export function RemarkSelect({
           disabled={disabled}
           placeholder="Type it here"
           onChange={(e) => set(OTHER, e.target.value)}
-          className={cn(fieldClass, className)}
+          className={cn(fieldClass, className, "min-w-0 flex-1")}
         />
       )}
       {name && <input type="hidden" name={name} value={current} />}

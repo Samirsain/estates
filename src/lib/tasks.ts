@@ -41,6 +41,8 @@ export type TaskSubject = {
   /** The Plot behind that number, where there is one — a Plot Number on a
    *  screen opens the Plot. Null on an external property, which has no Plot. */
   plotId: string | null;
+  /** That Plot's type (RESIDENTIAL…), shown beside the number; absent off a Plot. */
+  plotType?: string | null;
   /** MEM-000218 or CUS-3390 — the Person the task is about. */
   partyRef: string | null;
   /** That Person's name. */
@@ -379,6 +381,73 @@ export function shownRecordName(name: string): string {
  * (owner, 14 Oct 2026).
  */
 export const FOLLOW_UP_PURPOSES: readonly string[] = ["ENQUIRY_FOLLOW_UP", "PAYMENT_FOLLOW_UP", "PAYMENT_GIVEN_FOLLOW_UP"];
+
+/**
+ * Owner, 2 Nov 2026 (doc "Task List — Task Types aur Revise ke Result /
+ * Remark"): Revise offers the Result and Remark of the task's own group, not
+ * the Enquiry call list on every task. A decision task (Approve / Reject) is
+ * group A whatever its purpose; anything not listed — a manual task — is F.
+ */
+export type ReviseGroup =
+  | "DECISION"
+  | "ENQUIRY"
+  | "PAYMENT"
+  | "PAYMENT_GIVEN"
+  | "RECOVERY"
+  | "CUSTOMER_DETAILS"
+  | "PAPERS"
+  | "INTERNAL"
+  | "DEACTIVATED_HOLD"
+  | "RERA"
+  | "MANUAL";
+
+const REVISE_GROUP_OF: Record<string, ReviseGroup> = {
+  ENQUIRY_FOLLOW_UP: "ENQUIRY",
+  PAYMENT_FOLLOW_UP: "PAYMENT",
+  PAYMENT_GIVEN_FOLLOW_UP: "PAYMENT_GIVEN",
+  RECOVERY_FOLLOW_UP: "RECOVERY",
+  FINAL_BUYER_DETAILS: "CUSTOMER_DETAILS",
+  ALLOTMENT_REGISTRY: "PAPERS",
+  BUYBACK_PAPERS: "PAPERS",
+  COMMISSION_CONFLICT: "INTERNAL",
+  BUYBACK_COMMISSION_REVIEW: "INTERNAL",
+  BUYBACK_UNWIND_REVIEW: "INTERNAL",
+  MANAGEMENT_ACTION_REQUIRED: "INTERNAL",
+  DEACTIVATED_MEMBER_REQUEST_REVIEW: "DEACTIVATED_HOLD",
+  RERA_EXPIRY: "RERA",
+};
+
+export function reviseGroup(task: { purpose: string; decision?: boolean | null }): ReviseGroup {
+  if (task.decision) return "DECISION";
+  return REVISE_GROUP_OF[task.purpose] ?? "MANUAL";
+}
+
+/** Each group's Result choices, in the doc's order; every list ends with Other. */
+export const REVISE_RESULTS: Record<ReviseGroup, readonly string[]> = {
+  DECISION: ["Review in Progress", "Waiting for Documents", "Waiting for Clarification", "Sent to MD", "Other"],
+  ENQUIRY: ["Contacted", "Not Answered", "Call Later", "Site Visit Planned", "Booking Discussion", "Other"],
+  PAYMENT: ["Contacted", "Not Answered", "Promised to Pay", "Asked for More Time", "Other"],
+  PAYMENT_GIVEN: ["Payment in Process", "Waiting for Funds", "Waiting for Seller Documents", "Seller Not Reachable", "Other"],
+  RECOVERY: ["Contacted", "Not Answered", "Promised to Return", "Adjust from Next Payout", "Disputed", "Other"],
+  CUSTOMER_DETAILS: ["Details Requested", "Partly Received", "Waiting for Documents", "Customer Not Reachable", "Other"],
+  PAPERS: ["Papers Being Prepared", "Waiting for Customer Signature", "Registry Date Booked", "Waiting for Stamp Duty / Fees", "Other"],
+  INTERNAL: ["Review in Progress", "Waiting for Accounts", "Waiting for MD", "Waiting for Correction", "Other"],
+  DEACTIVATED_HOLD: ["Checking with Member", "Waiting for MD", "Other"],
+  RERA: ["Renewal Applied", "Waiting for Documents", "Waiting for RERA Office", "Other"],
+  MANUAL: ["In Progress", "Waiting on Someone Else", "Postponed", "Other"],
+};
+
+/** The doc: a remark is always written on a decision or an internal review (groups A and D), and on Other everywhere. */
+export function reviseRemarkRequired(group: ReviseGroup, result: string): boolean {
+  return group === "DECISION" || group === "INTERNAL" || group === "DEACTIVATED_HOLD" || result === "Other";
+}
+
+/** Why a revision is refused, or null — the server's check at the trust boundary. */
+export function reviseProblem(group: ReviseGroup, result: string, remark: string): string | null {
+  if (!REVISE_RESULTS[group].includes(result)) return "Pick a Result from the list for this task.";
+  if (reviseRemarkRequired(group, result) && remark.trim().length === 0) return "Write a remark for this revision.";
+  return null;
+}
 
 export function recordHref(
   record: { kind: RecordKind | string; id: string },

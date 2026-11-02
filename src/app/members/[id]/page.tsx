@@ -589,15 +589,6 @@ export default async function MemberDetailPage({
   ].sort((x, y) => y.at.getTime() - x.at.getTime());
   const otherBookingLines = shownCommissions.filter((c) => c.bookingId && !soldIds.has(c.bookingId));
 
-  const current = commissions.filter((c) => c.isCurrent && (onSold(c) || c.acquisition));
-  const paid = (c: (typeof current)[number]) => c.payment === "PAID" || c.payment === "PAID_EARLY";
-  const commissionSummary = [
-    `${current.filter(paid).length} commission paid`,
-    `${current.filter((c) => !paid(c) && c.eligibility === "READY").length} ready to pay`,
-    `${current.filter((c) => !paid(c) && c.eligibility === "ON_HOLD").length} on hold`,
-    `${current.filter((c) => !paid(c) && c.eligibility === "MILESTONE_PENDING").length} payment pending`,
-  ].join(" · ");
-
   /* Indirect Benefits — who this Member brought in. */
   const royaltyActive = royaltyLinkedCustomers.filter((c) =>
     customerActivity.some(
@@ -689,8 +680,7 @@ export default async function MemberDetailPage({
         <thead className="border-b border-border/50">
           <tr>
             <th className={TH}>Booking</th>
-            <th className={TH}>Project</th>
-            <th className={TH}>Plot</th>
+            <th className={TH}>Plot · Type / Project</th>
             <th className={TH}>Customer</th>
             <th className={TH}>Status</th>
             <th className={TH}>Payment</th>
@@ -708,16 +698,19 @@ export default async function MemberDetailPage({
                 </Link>
                 <span className={SUB}>{formatIst(d.at)}</span>
               </td>
-              <td className={`${TD} font-medium`}>{d.project}</td>
+              {/* Owner 2 Nov — Plot No. · Type, the Project under it. */}
               <td className={TD}>
-                {d.plotId ? (
-                  <Link href={`/plots/${d.plotId}`} className="font-semibold text-primary hover:underline">
-                    {d.plotNumber}
-                  </Link>
-                ) : (
-                  <span className="font-semibold">{d.plotNumber}</span>
-                )}
-                {d.plotType && <span className={SUB}>{titleWords(d.plotType)}</span>}
+                <span className="block">
+                  {d.plotId ? (
+                    <Link href={`/plots/${d.plotId}`} className="font-semibold text-primary hover:underline">
+                      {d.plotNumber}
+                    </Link>
+                  ) : (
+                    <span className="font-semibold">{d.plotNumber}</span>
+                  )}
+                  {d.plotType && <span className="text-muted-foreground"> · {titleWords(d.plotType)}</span>}
+                </span>
+                <span className="block text-[11px] font-medium text-foreground">{d.project}</span>
               </td>
               <td className={TD}>
                 <PersonLink
@@ -1078,10 +1071,7 @@ export default async function MemberDetailPage({
             </p>
           ) : (
             <>
-              <p className="pb-2 text-[11px] text-muted-foreground">
-                {realBookings.length} Bookings
-                {acquisitionLines.length > 0 && ` · ${acquisitionLines.length} Buyback / Resale`} · {commissionSummary}
-              </p>
+              {/* Owner 2 Nov — no count line above the table. */}
               {dealRows.length > 8 ? (
                 <ShowMore count={dealRows.length - 8}>{dealTable(dealRows, 8)}</ShowMore>
               ) : (

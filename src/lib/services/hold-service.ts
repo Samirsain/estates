@@ -11,6 +11,8 @@ import {
   holdExpiry,
   holdRequestExpiry,
   isHoldExpired,
+  isValidExtensionHours,
+  MAX_EXTENSION_DAYS,
 } from "@/lib/domain/holds";
 import { canAllocate, plotReturnState } from "@/lib/domain/inventory";
 import { blocked, lockPlot, runCommand, type Tx } from "./command";
@@ -282,6 +284,9 @@ export async function requestHoldExtension(args: {
   requestedHours: number;
 }) {
   if (!args.reason.trim()) blocked("A compulsory reason is required to request a Hold extension.");
+  if (!isValidExtensionHours(args.requestedHours)) {
+    blocked(`A Hold extension is 1 to ${MAX_EXTENSION_DAYS} days.`);
+  }
   return runCommand(
     {
       idempotencyKey: args.idempotencyKey,

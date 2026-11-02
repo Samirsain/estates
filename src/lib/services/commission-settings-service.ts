@@ -32,8 +32,12 @@ export type CommissionVersionInput = CommissionTermsInput & {
   effectiveFrom?: Date | null;
   /** SSOT §12.3; CP §7.1 — absent means the Trip Programme is Disabled. */
   trip?: TripSettingsInput & TripInventoryInput;
-  /** docss/11 §1 — whole tokens a qualifying Royalty earns on this Project. Required. */
-  royaltyTokensPerAward: number;
+  /**
+   * docss/11 §1 — whole tokens a qualifying Royalty earns on this Project.
+   * Owner 2 Nov — null means Royalty is switched off for this version: its
+   * sales earn no Royalty award, and Booking Requests still go through.
+   */
+  royaltyTokensPerAward: number | null;
   /** CP §7.4 — MD confirms the Rewards economics were reviewed. Required when Rewards are on. */
   economicsReviewed?: boolean;
 };
@@ -88,8 +92,10 @@ export function checkPreparable(actorRole: string, input: CommissionVersionInput
   if (!input.reason.trim()) blocked("A compulsory reason is required for a commission settings version.");
   const valid = validateCommissionTerms(input);
   if (!valid.ok) blocked(valid.reason);
-  const tokens = validateTokenQuantity("Royalty points per qualifying purchase", input.royaltyTokensPerAward);
-  if (!tokens.ok) blocked(tokens.reason);
+  if (input.royaltyTokensPerAward !== null) {
+    const tokens = validateTokenQuantity("Royalty points per purchase", input.royaltyTokensPerAward);
+    if (!tokens.ok) blocked(tokens.reason);
+  }
   if (input.effectiveFrom && input.effectiveFrom.getTime() <= Date.now()) {
     blocked("Effective from must be in the future, or left empty to take effect now.");
   }

@@ -10,7 +10,7 @@ export async function rewardLists() {
       where: { isCurrent: true, payment: { in: ["NOT_PAID", "ACCOUNTS_ADJUSTMENT_REQUIRED"] }, eligibility: { in: ["READY", "ON_HOLD"] } },
       include: {
         beneficiaryPerson: { select: { id: true, fullName: true } },
-        booking: { select: { id: true, bookingNumber: true, project: { select: { name: true } }, plot: { select: { plotNumber: true } } } },
+        booking: { select: { id: true, bookingNumber: true, project: { select: { name: true } }, plot: { select: { plotNumber: true, plotType: true } } } },
         // A Purchase for Resale has no Plot until approval, only the outside
         // property's own name and number.
         acquisition: {
@@ -19,7 +19,7 @@ export async function rewardLists() {
             acquisitionNo: true,
             propertyName: true,
             propertyNumber: true,
-            plot: { select: { plotNumber: true, project: { select: { name: true } } } },
+            plot: { select: { plotNumber: true, plotType: true, project: { select: { name: true } } } },
           },
         },
       },

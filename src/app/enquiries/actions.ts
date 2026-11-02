@@ -20,6 +20,7 @@ export async function createEnquiryAction(
     personId: string;
     fullName: string;
     mobile: string;
+    altMobile: string;
     city: string;
     projectId: string;
     plotId: string;
@@ -42,7 +43,7 @@ export async function createEnquiryAction(
       personId: input.personId || null,
       newPerson: input.personId
         ? null
-        : { fullName: input.fullName, mobile: input.mobile, city: input.city },
+        : { fullName: input.fullName, mobile: input.mobile, altMobile: input.altMobile, city: input.city },
       projectId: input.projectId,
       plotId: input.plotId || null,
       plotRequirement: input.plotRequirement,

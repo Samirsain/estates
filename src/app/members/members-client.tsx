@@ -30,6 +30,8 @@ import {
 } from "./actions";
 import { PersonPicker } from "@/components/person-picker";
 import { RemarkSelect } from "@/components/ui/remark-select";
+import { LIST_TD, LIST_TH } from "@/components/ui/list-table";
+import { cn } from "@/lib/utils";
 import type { RemarkPresetKey } from "@/lib/remark-presets";
 
 /** Filters sit inline and size to their content, unlike a form field. */
@@ -164,10 +166,10 @@ export default function MembersClient({
   return (
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
       <div className="mx-auto max-w-6xl space-y-4">
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Members</h1>
-          </div>
+        {/* Owner 2 Nov — the same page as Customers: one rhythm, one header
+            height, one grid. */}
+        <header className="flex min-h-9 flex-wrap items-end justify-between gap-3">
+          <h1 className="text-2xl font-bold tracking-tight">Members</h1>
           {permissions.activate && (
             <Button size="sm" variant="gradient" onClick={() => setDialog({ kind: "ACTIVATE" })}>
               <Plus className="mr-1 h-4 w-4" /> Activate Member
@@ -187,7 +189,7 @@ export default function MembersClient({
             <option value="DEACTIVATED">Deactivated</option>
           </select>
           <Input
-            className="h-9 w-64"
+            className="h-9 w-80"
             placeholder="Search Member ID, name, city or RERA number"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -218,44 +220,44 @@ export default function MembersClient({
           </Card>
         )}
 
-        {/* Same table as Plots, Customers and Enquiries: a rule between rows,
-            no block of colour behind each one, and every column wide enough for
-            what it holds so nothing wraps to a third line. */}
+        {/* Owner 2 Nov — edge to edge, equal spacing, every column centred:
+            the same grid table as Customers (components/ui/list-table). */}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[62rem] border-collapse text-xs">
-            <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-              <tr className="border-b border-border">
+          <table role="table" className="grid w-full min-w-[62rem] grid-cols-[repeat(6,auto)] text-xs">
+            <thead role="rowgroup" className="contents text-[11px] uppercase tracking-wide text-muted-foreground">
+              <tr role="row" className="contents">
                 {/* One fact per column. Position and Member since moved into
                     the Member's own panel — they are read when a Member is
                     being looked at, not scanned down a list — and what the list
                     is scanned for took their place. */}
-                <th className="w-[7rem] px-3 py-1.5">Member ID</th>
-                <th className="w-[11rem] px-3 py-1.5">Name</th>
-                <th className="w-[8rem] px-3 py-1.5">Mobile</th>
-                <th className="w-[8rem] px-3 py-1.5">City</th>
-                <th className="w-[11rem] px-3 py-1.5">Invited by</th>
-                <th className="w-[6rem] px-3 py-1.5 text-center">Total Deals</th>
+                <th role="columnheader" className={LIST_TH}>Member ID</th>
+                <th role="columnheader" className={LIST_TH}>Name</th>
+                <th role="columnheader" className={LIST_TH}>Mobile</th>
+                <th role="columnheader" className={LIST_TH}>City</th>
+                <th role="columnheader" className={LIST_TH}>Invited by</th>
+                <th role="columnheader" className={LIST_TH}>Total Deals</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup" className="contents">
               {visible.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                <tr role="row" className="contents">
+                  <td role="cell" className="col-span-full px-3 py-10 text-center text-sm text-muted-foreground">
                     No Members match these filters.
                   </td>
                 </tr>
               )}
-              {visible.map((row) => (
+              {visible.map((row) => {
+                // A Deactivated Member's row is tinted red; twMerge lets its
+                // hover replace the list's own.
+                const td = cn(LIST_TD, row.status !== "ACTIVE" && "bg-red-500/5 text-red-700 group-hover:bg-red-500/10");
+                return (
                 <React.Fragment key={row.id}>
                   <tr
-                    className={`h-14 border-b border-border/60 align-middle leading-tight last:border-0 [&>td]:px-3 [&>td]:py-1 ${
-                      row.status === "ACTIVE"
-                        ? "hover:bg-secondary/50"
-                        : "bg-red-500/5 text-red-700 hover:bg-red-500/10"
-                    }`}
+                    role="row"
+                    className="group contents"
                     title={row.status === "ACTIVE" ? undefined : "Deactivated"}
                   >
-                    <td className="whitespace-nowrap">
+                    <td role="cell" className={td}>
                       <button
                         type="button"
                         className="font-bold text-primary hover:underline"
@@ -265,8 +267,8 @@ export default function MembersClient({
                         {row.memberId}
                       </button>
                     </td>
-                    <td>
-                      <Link href={`/members/${row.id}`} className="hover:underline">
+                    <td role="cell" className={td}>
+                      <Link href={`/members/${row.id}`} className="text-foreground hover:underline">
                         {row.name}
                       </Link>
                       {/* These qualify the Member, not the name — they stay
@@ -275,15 +277,17 @@ export default function MembersClient({
                         <span className="block text-[11px] text-amber-800">Commission Hold</span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap tabular-nums">{row.mobile}</td>
-                    <td className="whitespace-nowrap">{row.city}</td>
-                    <td>
+                    <td role="cell" className={cn(td, "tabular-nums")}>{row.mobile}</td>
+                    <td role="cell" className={td}>{row.city}</td>
+                    {/* Two lines read like the Customers Plot cell: the code in
+                        orange, the name under it a size smaller. */}
+                    <td role="cell" className={td}>
                       {row.invitedBy ? (
-                        <Link href={`/members/${row.invitedBy.id}`} className="group">
-                          <span className="block font-semibold text-primary group-hover:underline">
+                        <Link href={`/members/${row.invitedBy.id}`} className="group/inviter block">
+                          <span className="block font-semibold text-primary group-hover/inviter:underline">
                             {row.invitedBy.memberId}
                           </span>
-                          <span className="block font-semibold text-foreground group-hover:underline">
+                          <span className="block text-[11px] font-medium text-foreground">
                             {row.invitedBy.name}
                           </span>
                         </Link>
@@ -291,7 +295,7 @@ export default function MembersClient({
                         <span className="font-semibold">3% Club</span>
                       )}
                     </td>
-                    <td className="text-center tabular-nums">
+                    <td role="cell" className={cn(td, "tabular-nums")}>
                       {row.dealCount > 0 ? (
                         <span className="font-semibold text-foreground">{row.dealCount}</span>
                       ) : (
@@ -300,8 +304,8 @@ export default function MembersClient({
                     </td>
                   </tr>
                   {openId === row.id && (
-                    <tr>
-                      <td colSpan={6} className="px-1 pb-3">
+                    <tr role="row" className="contents">
+                      <td role="cell" className="col-span-full px-1 pb-3">
                         <MemberDetailPanel
                           row={row}
                           detail={detail}
@@ -313,7 +317,8 @@ export default function MembersClient({
                     </tr>
                   )}
                 </React.Fragment>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -350,7 +355,6 @@ export default function MembersClient({
                     branchName: String(f.get("branchName") ?? ""),
                     accountNumber: String(f.get("accountNumber")),
                     ifsc: String(f.get("ifsc")),
-                    jointAccountProof: String(f.get("jointAccountProof") ?? ""),
                   },
                   newKey()
                 )
@@ -374,9 +378,6 @@ export default function MembersClient({
                 <Input name="ifsc" required placeholder="HDFC0001234" />
               </Field>
             </div>
-            <Field label="Joint account? Proof of the holders (only if this account is shared with another Person)">
-              <Input name="jointAccountProof" placeholder="e.g. Passbook page naming both holders, verified at branch" />
-            </Field>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setDialog(null)}>
                 Back
@@ -529,8 +530,7 @@ function MemberDetailPanel({
                 <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="py-1">Booking</th>
-                    <th className="py-1">Project</th>
-                    <th className="py-1">Plot</th>
+                    <th className="py-1">Plot · Type / Project</th>
                     <th className="py-1">Type</th>
                     <th className="py-1 text-right">%</th>
                     <th className="py-1">Eligibility</th>
@@ -548,8 +548,19 @@ function MemberDetailPanel({
                           </span>
                         )}
                       </td>
-                      <td className="py-1">{c.project}</td>
-                      <td className="whitespace-nowrap py-1">{c.plot}</td>
+                      {/* Owner 2 Nov — Plot No. · Type, the Project under it. */}
+                      <td className="py-1">
+                        <span className="block whitespace-nowrap">
+                          <span className="font-semibold">{c.plot}</span>
+                          {c.plotType && (
+                            <span className="text-muted-foreground">
+                              {" · "}
+                              {c.plotType.charAt(0) + c.plotType.slice(1).toLowerCase().replaceAll("_", " ")}
+                            </span>
+                          )}
+                        </span>
+                        <span className="block text-[11px] font-medium text-foreground">{c.project}</span>
+                      </td>
                       <td className="py-1">{c.type}</td>
                       <td className="py-1 text-right tabular-nums">{c.percent}</td>
                       <td className="py-1">

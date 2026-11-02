@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, ChevronDown, Plus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { PersonLink } from "@/components/person-link";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -163,7 +164,8 @@ export default function EnquiriesClient({
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const focused = focus ? rows.find((r) => r.id === focus) ?? null : null;
-  const [statusFilter, setStatusFilter] = React.useState(focused && focused.status !== "ACTIVE" ? "ALL" : "ACTIVE");
+  // Owner 2 Nov — the list opens on every status; the filter narrows it.
+  const [statusFilter, setStatusFilter] = React.useState("ALL");
   const [assigneeFilter, setAssigneeFilter] = React.useState("ALL");
   const [search, setSearch] = React.useState("");
   // null when closed; otherwise the Person the form opens with ("" for nobody).
@@ -229,7 +231,7 @@ export default function EnquiriesClient({
             onChange={(e) => setStatusFilter(e.target.value)}
             aria-label="Filter by status"
           >
-            {["ACTIVE", "BOOKED", "CLOSED", "ALL"].map((s) => (
+            {["ALL", "ACTIVE", "BOOKED", "CLOSED"].map((s) => (
               <option key={s} value={s}>
                 {s === "ALL" ? "All statuses" : humanise(s)}
               </option>
@@ -301,10 +303,10 @@ export default function EnquiriesClient({
                   <th className="px-3 py-1">Name</th>
                   <th className="w-[7.5rem] px-3 py-1">Mobile</th>
                   <th className="w-[7rem] px-3 py-1">City</th>
-                  <th className="px-3 py-1">Plot</th>
+                  <th className="px-3 py-1">Plot · Type / Project</th>
                   <th className="w-[9.5rem] px-3 py-1">Source</th>
                   <th className="w-[8rem] px-3 py-1">Follow-up</th>
-                  {canManage && <th className="w-[6rem] px-3 py-1 text-center">Action</th>}
+                  <th className="w-[6rem] px-3 py-1 text-center">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -323,11 +325,19 @@ export default function EnquiriesClient({
                     <td className="whitespace-nowrap">{e.mobileMasked}</td>
                     <td>{e.city || "—"}</td>
                     <td>
-                      {/* Three kinds of interest, and the column says which:
-                          a Plot in inventory, something asked for that is not
-                          in it yet, or the Project itself. */}
+                      {/* Owner 2 Nov — as on Buyback: Plot No. · Type, the
+                          Project under it. No Plot → what was asked for, or
+                          General. */}
                       {e.plot !== "General" ? (
-                        <span className="block font-semibold">{e.plot}</span>
+                        <span className="block">
+                          <span className="font-semibold">{e.plot}</span>
+                          {e.plotType && (
+                            <span className="text-muted-foreground">
+                              {" · "}
+                              {humanise(e.plotType)}
+                            </span>
+                          )}
+                        </span>
                       ) : e.plotRequirement ? (
                         <span className="block italic" title={e.plotRequirement}>
                           {e.plotRequirement}
@@ -336,15 +346,7 @@ export default function EnquiriesClient({
                         <span className="block text-muted-foreground">General</span>
                       )}
                       {e.project && (
-                        <span className="block text-[11px] font-medium text-foreground">
-                          {e.project}
-                          {e.plotType && (
-                            <span className="text-muted-foreground">
-                              {" · "}
-                              {humanise(e.plotType)}
-                            </span>
-                          )}
-                        </span>
+                        <span className="block text-[11px] font-medium text-foreground">{e.project}</span>
                       )}
                     </td>
                     <td>
@@ -374,17 +376,34 @@ export default function EnquiriesClient({
                         under={e.nextFollowUpAt ? `next ${formatIstDate(e.nextFollowUpAt)}` : null}
                       />
                     </td>
-                    {canManage && (
-                      <td className="whitespace-nowrap text-center">
-                        {/* One button, the same shape the Plot row uses when a
-                            row has more than one thing to do: a named trigger,
-                            the choice behind it. Two pills side by side at the
-                            edge of a row read as a pair fighting for the same
-                            job. What ends the Enquiry is red inside the menu. */}
-                        {e.status === "ACTIVE" && (
+                    {/* Owner 2 Nov — every row says where it stands: Update
+                        (yellow) while Active, Booked (green), Closed (red, the
+                        reason on hover). */}
+                    <td className="whitespace-nowrap text-center">
+                        {e.status === "BOOKED" ? (
+                          <Badge variant="success" className="h-6 w-20 justify-center">
+                            Booked
+                          </Badge>
+                        ) : e.status === "CLOSED" ? (
+                          <Badge
+                            variant="destructive"
+                            className="h-6 w-20 justify-center"
+                            title={e.closeReason ?? undefined}
+                          >
+                            Closed
+                          </Badge>
+                        ) : !canManage ? (
+                          <Badge variant="warning" className="h-6 w-20 justify-center">
+                            Active
+                          </Badge>
+                        ) : (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button size="xs" className="h-6 w-20 px-2 text-[11px]" disabled={busy}>
+                              <Button
+                                size="xs"
+                                className="h-6 w-20 bg-amber-400 px-2 text-[11px] text-amber-950 hover:bg-amber-500"
+                                disabled={busy}
+                              >
                                 Update
                                 <ChevronDown className="ml-0.5 h-3 w-3" />
                               </Button>
@@ -402,8 +421,7 @@ export default function EnquiriesClient({
                             </DropdownMenuContent>
                           </DropdownMenu>
                         )}
-                      </td>
-                    )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -443,9 +461,6 @@ export default function EnquiriesClient({
 
       {closing && (
         <Modal title={`Close enquiry · ${closing.name}`} onClose={() => setClosing(null)}>
-          <p className="text-xs text-muted-foreground">
-            Closing the Enquiry completes its Pending follow-up task. A Close reason is compulsory.
-          </p>
           <form
             className="space-y-3"
             onSubmit={async (ev) => {
@@ -592,6 +607,7 @@ function CreateEnquiryDialog({
             personId: personId === "NEW" ? "" : personId,
             fullName: String(f.get("fullName") ?? ""),
             mobile: String(f.get("mobile") ?? ""),
+            altMobile: String(f.get("altMobile") ?? ""),
             city: String(f.get("city") ?? ""),
             projectId,
             plotId,
@@ -749,7 +765,7 @@ function CreateEnquiryDialog({
           )}
 
           {personId === "NEW" && (
-            <div className="grid gap-2 sm:col-span-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
               <Input className="h-9 text-xs" name="fullName" placeholder="Full name" required />
               <Input
                 className="h-9 text-xs"
@@ -757,6 +773,13 @@ function CreateEnquiryDialog({
                 placeholder="Mobile"
                 inputMode="numeric"
                 required
+              />
+              <Input
+                className="h-9 text-xs"
+                name="altMobile"
+                placeholder="Alternate Mobile (optional)"
+                inputMode="numeric"
+                aria-label="Alternate Mobile"
               />
               <Input className="h-9 text-xs" name="city" placeholder="City" />
             </div>
@@ -811,13 +834,11 @@ function FollowUpDialog({
   }, [enquiry.id]);
 
   return (
-    <Modal title={`Follow-up · ${enquiry.name}`} onClose={onClose}>
+    // Owner 2 Nov — the heading is "Follow-up", centred; the name is in the box under it.
+    <Modal title="Follow-up" centerTitle onClose={onClose}>
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {enquiry.name} · {enquiry.project} · {enquiry.plot}
-        </p>
-        <p className="mt-1 text-muted-foreground">
-          Recording a follow-up reuses the same Pending task for this Enquiry and moves its due date.
         </p>
       </div>
 

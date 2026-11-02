@@ -55,6 +55,7 @@ import {
   extensionRequiresMd,
   holdExpiry,
   holdRequestExpiry,
+  isValidExtensionHours,
   isWorkingDay,
   openPositionCount,
 } from "./holds.ts";
@@ -596,6 +597,13 @@ assert.equal(
 const late = decideExtension(true, expiry, 24, new Date("2026-08-22T06:00:01Z"));
 assert.equal(late.outcome, "EXPIRED", "an expired Hold can never be revived by an old request");
 assert.equal(decideExtension(false, expiry, 24, new Date("2026-08-20T06:00:00Z")).outcome, "REJECTED");
+
+// An extension is 1 to 7 whole days.
+assert.equal(isValidExtensionHours(24), true);
+assert.equal(isValidExtensionHours(168), true);
+assert.equal(isValidExtensionHours(192), false, "8 days is over the limit");
+assert.equal(isValidExtensionHours(0), false);
+assert.equal(isValidExtensionHours(36), false, "half a day is not a whole day");
 
 /* ------------------------------------------- Member Hold Request expiry */
 

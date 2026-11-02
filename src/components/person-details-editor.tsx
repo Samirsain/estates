@@ -56,7 +56,6 @@ export function PersonDetailsEditor({
       {open && (
         <Modal
           title="Edit details"
-          description="Name and mobile are required. Everything else can be filled in whenever it is known. Aadhaar and PAN are not edited here."
           onClose={() => setOpen(false)}
         >
           {error && (
@@ -169,7 +168,6 @@ export function PersonDetailsEditor({
                     branchName: get("branchName"),
                     accountNumber: get("accountNumber"),
                     ifsc: get("ifsc"),
-                    jointAccountProof: get("jointAccountProof"),
                   },
                   globalThis.crypto.randomUUID()
                 );
@@ -222,10 +220,6 @@ export function PersonDetailsEditor({
                   required
                   defaultValue={bank?.accountHolder ?? person.fullName}
                 />
-              </Field>
-              {/* CP §57 — one verified account = one Person; a genuine joint account goes to Accounts/MD. */}
-              <Field label="Joint account? Proof of the holders (only if shared with another Person)">
-                <Input name="jointAccountProof" placeholder="e.g. Passbook page naming both holders" />
               </Field>
 
               <div className="flex justify-end pt-1">

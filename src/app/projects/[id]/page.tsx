@@ -152,7 +152,7 @@ export default async function ProjectDetailPage({
 
         <header>
           <Card className="p-4">
-            <ProjectIdentity project={project} />
+            <ProjectIdentity project={projectRowView(project)} />
           </Card>
         </header>
 
