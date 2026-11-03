@@ -26,7 +26,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -77,8 +76,8 @@ const SWIPE =
 const isOn = (pathname: string, href: string) => pathname === href || pathname.startsWith(href + "/");
 
 /**
- * The Public Project Portal's one link, left of Calculator (owner, 29 Oct
- * 2026): /p lists every Project not turned off on its own page, so this is the
+ * The Public Project Portal's one link, at the right end of the tab bar under
+ * Sign out (owner, 3 Nov 2026; was left of Calculator from 29 Oct): /p lists every Project not turned off on its own page, so this is the
  * address to share. Copy for WhatsApp; Open in a new tab, since it is the
  * public site and not a CRM page.
  */
@@ -91,15 +90,11 @@ function PublicPortalMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" variant="outline" className="ml-2 shrink-0 self-center">
-          <Globe className="mr-1 h-4 w-4" /> Public Portal <ChevronDown className="ml-1 h-3.5 w-3.5" />
+        <Button size="sm" variant="outline" className="ml-auto shrink-0 self-center">
+          <Globe className="mr-1 h-4 w-4" /> Public Portal <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72">
-        <p className="truncate px-2 py-1.5 text-xs font-semibold text-foreground" title={link}>
-          {link}
-        </p>
-        <DropdownMenuSeparator />
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuItem
           // The menu stays open so the tick can show the copy worked.
           onSelect={(e) => {
@@ -314,12 +309,12 @@ export function AppShell({
                 </a>
               );
             })}
-            <PublicPortalMenu />
             <Button asChild size="sm" className="ml-2 shrink-0 self-center">
               <a href="/calculator" aria-current={isOn(pathname, "/calculator") ? "page" : undefined}>
                 <Calculator className="mr-1 h-4 w-4" /> Calculator
               </a>
             </Button>
+            <PublicPortalMenu />
           </nav>
         </header>
 
