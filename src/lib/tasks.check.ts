@@ -19,6 +19,7 @@ import {
   recordReference,
   REVISE_RESULTS,
   reviseGroup,
+  taskFilter,
   reviseProblem,
   shownRecordName,
 } from "./tasks.ts";
@@ -259,5 +260,14 @@ assert.equal(reviseProblem("CUSTOMER_DETAILS", "Partly Received", ""), null, "no
 assert.equal(reviseProblem("CUSTOMER_DETAILS", "Other", " "), "Write a remark for this revision.", "Other needs a remark");
 assert.equal(reviseProblem("INTERNAL", "Waiting for MD", ""), "Write a remark for this revision.", "a review always needs a remark");
 assert.equal(reviseProblem("DECISION", "Sent to MD", "Sent to MD for a decision"), null);
+
+// Owner, 3 Nov 2026 — the Task filter is a few types, Verify on its own.
+assert.equal(taskFilter({ purpose: "REFUND_REVIEW", title: "Verify — Refund", decision: true }), "Verify");
+assert.equal(taskFilter({ purpose: "SOLD_BY_CORRECTION_REVIEW", title: "Sold By Correction — MD Approval", decision: true }), "Approval");
+assert.equal(taskFilter({ purpose: "PAYMENT_FOLLOW_UP", title: "Payment Follow-Up" }), "Follow-Up");
+assert.equal(taskFilter({ purpose: "ALLOTMENT_REGISTRY", title: "Prepare Allotment / Registry" }), "Details & Papers");
+assert.equal(taskFilter({ purpose: "TRIP_REWARD_FULFILMENT", title: "Reward Earned" }), "Reward");
+assert.equal(taskFilter({ purpose: "MANUAL:CALL BACK", title: "Call back" }), "Manual");
+assert.equal(taskFilter({ purpose: "SOMETHING_NEW", title: "Something New" }), "Other", "an unknown system task is not Manual");
 
 console.log("tasks.check.ts OK");

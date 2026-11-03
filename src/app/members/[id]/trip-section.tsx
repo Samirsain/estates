@@ -151,10 +151,11 @@ export default function TripSection({
                               Mark Delivered
                             </Button>
                           )
+                        ) : p.rewards.some((r) => r.state === "TRAVELLED") ? (
+                          <span className="font-semibold text-emerald-700">Delivered</span>
                         ) : (
-                          p.rewards.some((r) => r.state === "TRAVELLED") && (
-                            <span className="font-semibold text-emerald-700">Delivered</span>
-                          )
+                          // Still counting (1/3, 2/3 …): no Reward earned yet.
+                          !done(p.project) && <span className={cn("font-semibold", STATUS_TONE.Pending)}>Pending</span>
                         )}
                       </span>
                     </td>

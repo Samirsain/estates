@@ -422,6 +422,34 @@ export function reviseGroup(task: { purpose: string; decision?: boolean | null }
   return REVISE_GROUP_OF[task.purpose] ?? "MANUAL";
 }
 
+/** The Task List's Task filter (owner, 3 Nov 2026): a few types, not one per
+ *  title. Built on the Revise groups; Verify splits off the other decisions. */
+export const TASK_FILTERS = ["Verify", "Approval", "Follow-Up", "Details & Papers", "Review", "Reward", "RERA", "Manual", "Other"] as const;
+export type TaskFilter = (typeof TASK_FILTERS)[number];
+
+const FILTER_OF: Record<ReviseGroup, TaskFilter> = {
+  DECISION: "Approval",
+  ENQUIRY: "Follow-Up",
+  PAYMENT: "Follow-Up",
+  PAYMENT_GIVEN: "Follow-Up",
+  RECOVERY: "Follow-Up",
+  CUSTOMER_DETAILS: "Details & Papers",
+  PAPERS: "Details & Papers",
+  INTERNAL: "Review",
+  DEACTIVATED_HOLD: "Review",
+  RERA: "RERA",
+  MANUAL: "Manual",
+};
+
+export function taskFilter(task: { purpose: string; title: string; decision?: boolean | null }): TaskFilter {
+  if (task.decision && task.title.startsWith("Verify")) return "Verify";
+  if (task.purpose === "TRIP_REWARD_FULFILMENT") return "Reward";
+  const group = reviseGroup(task);
+  // Only a task typed in through Add Task is Manual.
+  if (group === "MANUAL" && !task.purpose.startsWith("MANUAL:")) return "Other";
+  return FILTER_OF[group];
+}
+
 /** Each group's Result choices, in the doc's order; every list ends with Other. */
 export const REVISE_RESULTS: Record<ReviseGroup, readonly string[]> = {
   DECISION: ["Review in Progress", "Waiting for Documents", "Waiting for Clarification", "Sent to MD", "Other"],

@@ -43,6 +43,8 @@ import {
   REVISE_RESULTS,
   reviseGroup,
   reviseRemarkRequired,
+  TASK_FILTERS,
+  taskFilter,
   type ReviseGroup,
 } from "@/lib/tasks";
 import { RemarkSelect } from "@/components/ui/remark-select";
@@ -122,6 +124,12 @@ export default function DashboardClient({
   // all of it. Everyone else opens on their own work and has no toggle.
   const [showAllAssignees, setShowAllAssignees] = React.useState(seesAllWork);
   const [range, setRange] = React.useState<DateRange | undefined>();
+  // One Task filter over every view: "" is all tasks. Only types that have a task are offered.
+  const [taskType, setTaskType] = React.useState("");
+  const taskTypes = React.useMemo(() => {
+    const present = new Set(tasks.map(taskFilter));
+    return TASK_FILTERS.filter((f) => present.has(f));
+  }, [tasks]);
   const [revising, setRevising] = React.useState<Task | null>(null);
   const [detailing, setDetailing] = React.useState<Task | null>(null);
   const [adding, setAdding] = React.useState(false);
@@ -140,11 +148,11 @@ export default function DashboardClient({
 
   const visible = React.useMemo(() => {
     if (!now) return [];
-    const scoped = showAllAssignees
-      ? tasks
-      : tasks.filter((t) => t.assigneeRole === role);
+    const scoped = tasks.filter(
+      (t) => (showAllAssignees || t.assigneeRole === role) && (!taskType || taskFilter(t) === taskType)
+    );
     return sortTasks(filterTasks(scoped, view, now, range), now);
-  }, [tasks, view, now, range, role, showAllAssignees]);
+  }, [tasks, view, now, range, role, showAllAssignees, taskType]);
 
 
   /** Every write carries a fresh idempotency key, so a double click writes once. */
@@ -189,6 +197,17 @@ export default function DashboardClient({
         </header>
 
         <div className="flex flex-wrap items-center gap-2">
+          <select
+            aria-label="Task"
+            value={taskType}
+            onChange={(e) => setTaskType(e.target.value)}
+            className="h-8 max-w-full rounded-xl border border-border/60 bg-secondary/50 px-3 text-xs font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/40"
+          >
+            <option value="">All Tasks</option>
+            {taskTypes.map((t) => (
+              <option key={t}>{t}</option>
+            ))}
+          </select>
           {VIEWS.map((v) => (
             <button
               key={v.id}
