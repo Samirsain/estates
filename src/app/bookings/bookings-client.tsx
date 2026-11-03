@@ -2073,12 +2073,6 @@ function BookingDetailPanel({
                             Early approved by {c.earlyApprovedByRef} · {formatIst(c.earlyApprovedAt)}
                           </span>
                         )}
-                        {c.reference && (
-                          <span className="block text-[11px] text-muted-foreground">
-                            {c.reference}
-                            {c.paidOn ? ` · ${formatIst(c.paidOn)}` : ""}
-                          </span>
-                        )}
                         {!c.isCurrent && c.closedReason && (
                           <span className="block text-[11px]">{c.closedReason}</span>
                         )}
@@ -2092,6 +2086,14 @@ function BookingDetailPanel({
                         ))}
                       </td>
                       <td className="whitespace-nowrap">
+                        {/* Owner, 3 Nov 2026 — once paid the Action cell had nothing in it;
+                            the payout's reference (NEFT / UTR) and date sit here instead. */}
+                        {c.reference && (
+                          <span className="block text-[11px] text-muted-foreground">
+                            {c.reference}
+                            {c.paidOn ? ` · ${formatIst(c.paidOn)}` : ""}
+                          </span>
+                        )}
                         {permissions.approvePaidEarly && c.isCurrent && c.holdReason === "OLD_RECOVERY_PENDING" && (
                           <Button
                             size="xs"
