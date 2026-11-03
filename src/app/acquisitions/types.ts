@@ -32,8 +32,12 @@ export type AcquisitionRowView = {
   location: string | null;
   seller: string;
   sellerPersonId: string;
+  /** Customer ID, else Member ID — null when the Person holds neither. */
+  sellerCode: string | null;
   arrangedBy: string;
   arrangedByPersonId: string | null;
+  /** Member ID, else Customer ID — null for 3% Club. */
+  arrangedByCode: string | null;
   arrangedByType: string;
   sourceBooking: string | null;
   purchaseDate: string;
@@ -42,7 +46,7 @@ export type AcquisitionRowView = {
   decisionNote: string | null;
   closedReason: string | null;
   submittedByRef: string;
-  instalments: Array<{ seq: number; scheduled: string; received: string; dueDate: string }>;
+  instalments: Array<{ seq: number; scheduled: string; received: string; dueDate: string; givenOn: string | null }>;
   entries: EntryView[];
   commission: {
     recordId: string;
@@ -50,6 +54,7 @@ export type AcquisitionRowView = {
     earlyApproved: boolean;
     beneficiary: string;
     beneficiaryPersonId: string;
+    beneficiaryCode: string | null;
     percent: string;
     eligibility: string;
     payment: string;

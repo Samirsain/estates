@@ -9,7 +9,7 @@
 import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Field, Modal } from "@/components/ui/modal";
+import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
 import { istDay, remainingPercent } from "@/lib/tasks";
 import { PaymentPercentInput } from "@/app/bookings/bookings-client";
@@ -22,7 +22,7 @@ import {
   recordBuyingCommissionAction,
   type ActionResult,
 } from "./actions";
-import { newKey, type Dialog, type PersonView } from "./types";
+import { newKey, type AcquisitionRowView, type Dialog, type EntryView, type PersonView } from "./types";
 import { RemarkSelect } from "@/components/ui/remark-select";
 
 export function FormDialog({
@@ -70,6 +70,46 @@ export function FormDialog({
 }
 
 /** Whichever dialog is open, or nothing. */
+/**
+ * Correct Payment Given opens on the latest confirmed entry; with several, the
+ * form picks another, as Correct Payment Received does (owner, 3 Nov 2026).
+ * The entry being corrected is taken off the total first, exactly as
+ * correctPaymentGiven does server-side, so its own percentage is not counted
+ * against itself.
+ */
+function CorrectGivenFields({ row, first }: { row: AcquisitionRowView; first: EntryView }) {
+  const confirmed = row.entries.filter((e) => e.status === "CONFIRMED");
+  const [entry, setEntry] = React.useState(first);
+  const max = remainingPercent(Number(row.paymentGivenPercent) - Number(entry.percent));
+  return (
+    <>
+      <input type="hidden" name="entryId" value={entry.id} />
+      {confirmed.length > 1 && (
+        <Field label="Payment to correct">
+          <select
+            className={inputClass}
+            value={entry.id}
+            onChange={(ev) => setEntry(confirmed.find((e) => e.id === ev.target.value) ?? entry)}
+          >
+            {confirmed.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.reference} · {e.percent}%
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+      {/* Keyed on the entry, so picking another one refills its figures. */}
+      <Field label={`Corrected percentage (%) — up to ${max}%`}>
+        <PaymentPercentInput key={entry.id} max={max} defaultValue={entry.percent} />
+      </Field>
+      <Field label="Payment Date">
+        <Input key={entry.id} type="date" name="paidOn" required defaultValue={istDay(entry.paidOn)} />
+      </Field>
+    </>
+  );
+}
+
 export function AcquisitionDialogs({
   dialog,
   people,
@@ -133,14 +173,14 @@ export function AcquisitionDialogs({
     return (
       <FormDialog
         title="Correct Payment Given"
-        subtitle={`entry ${dialog.entry.percent}% · ${dialog.entry.reference}`}
+        subtitle={dialog.row.property}
         busy={busy}
         onClose={onClose}
         onSubmit={(f) =>
           run(() =>
             correctPaymentGivenAction(
               {
-                entryId: dialog.entry.id,
+                entryId: String(f.get("entryId")),
                 percent: String(f.get("percent")),
                 paidOn: String(f.get("paidOn")),
                 reference: String(f.get("reference")),
@@ -151,24 +191,7 @@ export function AcquisitionDialogs({
           )
         }
       >
-        {/* The entry being corrected is taken off the total first, exactly as
-            correctPaymentGiven does server-side, so its own percentage is not
-            counted against itself. */}
-        <Field
-          label={`Corrected percentage (%) — up to ${remainingPercent(
-            Number(dialog.row.paymentGivenPercent) - Number(dialog.entry.percent)
-          )}%`}
-        >
-          <PaymentPercentInput
-            max={remainingPercent(
-              Number(dialog.row.paymentGivenPercent) - Number(dialog.entry.percent)
-            )}
-            defaultValue={dialog.entry.percent}
-          />
-        </Field>
-        <Field label="Payment Date">
-          <Input type="date" name="paidOn" required defaultValue={istDay(dialog.entry.paidOn)} />
-        </Field>
+        <CorrectGivenFields row={dialog.row} first={dialog.entry} />
         <Field label="Replacement Payment Reference No.">
           <Input name="reference" required />
         </Field>

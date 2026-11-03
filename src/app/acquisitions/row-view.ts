@@ -5,10 +5,15 @@
 import { Prisma } from "@prisma/client";
 import type { AcquisitionRowView } from "./types";
 
+// The Customer ID / Member ID a Person is known by, for the Parties box.
+const withCodes = {
+  include: { customerProfile: { select: { customerId: true } }, memberProfile: { select: { memberId: true } } },
+} as const;
+
 export const acquisitionInclude = {
   plot: { include: { project: true } },
-  sellerPerson: true,
-  arrangedByPerson: true,
+  sellerPerson: withCodes,
+  arrangedByPerson: withCodes,
   sourceBooking: { include: { plot: true, project: true } },
   paymentEntries: {
     include: { externalReference: true },
@@ -18,14 +23,33 @@ export const acquisitionInclude = {
     where: { status: "ACTIVE" },
     include: { instalments: { orderBy: { seq: "asc" } } },
   },
-  commissions: { where: { isCurrent: true }, include: { beneficiaryPerson: true } },
+  commissions: { where: { isCurrent: true }, include: { beneficiaryPerson: withCodes } },
 } satisfies Prisma.AcquisitionInclude;
+
+type Coded = {
+  customerProfile: { customerId: string } | null;
+  memberProfile: { memberId: string } | null;
+};
+/** A seller is first a Customer; whoever arranges or earns is first a Member. */
+const customerFirst = (p: Coded) => p.customerProfile?.customerId ?? p.memberProfile?.memberId ?? null;
+const memberFirst = (p: Coded) => p.memberProfile?.memberId ?? p.customerProfile?.customerId ?? null;
 
 type AcquisitionWithRelations = Prisma.AcquisitionGetPayload<{
   include: typeof acquisitionInclude;
 }>;
 
 export function toAcquisitionRow(a: AcquisitionWithRelations): AcquisitionRowView {
+  // Owner 3 Nov — the date each instalment was given: the latest confirmed
+  // entry that put money on its seq (allocations are by seq, as on a Booking).
+  const givenOnBySeq = new Map<number, Date>();
+  for (const e of a.paymentEntries) {
+    if (e.status !== "CONFIRMED") continue;
+    for (const al of e.allocations as { seq: number; percent: string }[]) {
+      const last = givenOnBySeq.get(al.seq);
+      if (Number(al.percent) > 0 && (!last || e.paidOn > last)) givenOnBySeq.set(al.seq, e.paidOn);
+    }
+  }
+
   return {
     id: a.id,
     acquisitionNo: a.acquisitionNo,
@@ -43,8 +67,10 @@ export function toAcquisitionRow(a: AcquisitionWithRelations): AcquisitionRowVie
     location: a.location,
     seller: a.sellerPerson.fullName,
     sellerPersonId: a.sellerPersonId,
+    sellerCode: customerFirst(a.sellerPerson),
     arrangedBy: a.arrangedByPerson ? a.arrangedByPerson.fullName : "3% Club",
     arrangedByPersonId: a.arrangedByPersonId ?? null,
+    arrangedByCode: a.arrangedByPerson ? memberFirst(a.arrangedByPerson) : null,
     arrangedByType: a.arrangedByType,
     sourceBooking: a.sourceBooking
       ? `${a.sourceBooking.bookingNumber ?? "Booking Request"} · ${a.sourceBooking.project.name} ${a.sourceBooking.plot.plotNumber}`
@@ -64,6 +90,7 @@ export function toAcquisitionRow(a: AcquisitionWithRelations): AcquisitionRowVie
       scheduled: i.scheduledPercent.toFixed(2),
       received: i.receivedPercent.toFixed(2),
       dueDate: i.dueDate.toISOString(),
+      givenOn: givenOnBySeq.get(i.seq)?.toISOString() ?? null,
     })),
     entries: a.paymentEntries.map((e) => ({
       id: e.id,
@@ -80,6 +107,7 @@ export function toAcquisitionRow(a: AcquisitionWithRelations): AcquisitionRowVie
           earlyApproved: a.commissions[0].earlyApprovedAt !== null,
           beneficiary: a.commissions[0].beneficiaryPerson.fullName,
           beneficiaryPersonId: a.commissions[0].beneficiaryPersonId,
+          beneficiaryCode: memberFirst(a.commissions[0].beneficiaryPerson),
           percent: a.commissions[0].percent.toFixed(2),
           eligibility: a.commissions[0].eligibility,
           payment: a.commissions[0].payment,
