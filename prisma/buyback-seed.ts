@@ -4,7 +4,8 @@
 //
 //   Buyback (Bookings on Ganpati Estate Emporio)
 //     GEE 12  Delivered → bought back: 25%, approved, Buying Commission, 75%,
-//             Registry papers back — Stable Buyback Completion, commission paid
+//             its date corrected, Registry papers back — Stable Buyback
+//             Completion, commission paid. Every step the deal page takes.
 //     GEE 19  approved at 30% after a Payment Given correction — Payment Pending
 //     GEE 14  20% given, waiting for Accounts
 //     GEE 24  rejected      GEE 23  approved, then cancelled — its Booking restored
@@ -44,7 +45,7 @@ const day = (d: string) => new Date(`${d}T11:00:00+05:30`);
 type By = "CLUB" | string;
 type Step =
   | [string, "pay", string, string] // percent, Remark
-  | [string, "correct", string, string] // the first entry's right percent, reason
+  | [string, "correct", string, string, string?] // the latest entry's right percent, reason, right paid-on day
   | [string, "approve" | "reject" | "cancel", string]
   | [string, "commission", string] // percent, to the arranger
   | [string, "papers"]
@@ -102,6 +103,7 @@ const DEALS: Deal[] = [
       ["2026-10-03", "approve", "Approved — Advance Payment Given checked"],
       ["2026-10-03", "commission", "1"],
       ["2026-10-24", "pay", "75", "Final payment"],
+      ["2026-10-25", "correct", "75", "Wrong payment date entered", "2026-10-23"],
       ["2026-10-27", "papers"],
       ["2026-10-28", "commissionPaid", "Paid after 100% Payment Given"],
     ],
@@ -249,8 +251,8 @@ async function main() {
             return A.confirmPaymentGiven({ ...ACC, ...base, percent: step[2], paidOn: new Date(), reference: ref(i), remark: step[3] });
           case "correct": {
             // The checker is a different Accounts login than the one who entered it.
-            const entry = await db.paymentGivenEntry.findFirstOrThrow({ where: { acquisitionId, status: "CONFIRMED" }, orderBy: { recordedAt: "asc" } });
-            return A.correctPaymentGiven({ ...ACC2, idempotencyKey: base.idempotencyKey, entryId: entry.id, percent: step[2], paidOn: entry.paidOn, reference: ref(i), reason: step[3] });
+            const entry = await db.paymentGivenEntry.findFirstOrThrow({ where: { acquisitionId, status: "CONFIRMED" }, orderBy: { recordedAt: "desc" } });
+            return A.correctPaymentGiven({ ...ACC2, idempotencyKey: base.idempotencyKey, entryId: entry.id, percent: step[2], paidOn: step[4] ? day(step[4]) : entry.paidOn, reference: ref(i), reason: step[3] });
           }
           case "approve":
           case "reject":

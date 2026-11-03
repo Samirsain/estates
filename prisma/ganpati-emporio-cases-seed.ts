@@ -79,7 +79,7 @@ const CAST: Record<string, Spec> = {
   G1: { name: "Gurpreet Singh Sidhu", kyc: "verified", bank: true, address: "House 14, Sector 9, Hanumangarh Jn.", nickname: "Sidhu sahab", altMobile: mobile(81), email: "gurpreet.sidhu@example.in", dob: "1981-04-13" },
   G2: { name: "Manpreet Kaur Sandhu", kyc: "verified", bank: true, address: "52, Ward 7, Hanumangarh Town" },
   G3: { name: "Rakesh Kumar Godara", kyc: "verified", bank: true, address: "Godara Market, Sangaria Road" },
-  H1: { name: "Simranjeet Kaur Brar", kyc: "verified", bank: true, address: "House 7, Sector 12, Hanumangarh Jn.", nickname: "Simran ji", altMobile: mobile(82), email: "simranjeet.brar@example.in", dob: "1987-09-22" },
+  H1: { name: "Simranjeet Kaur Brar", kyc: "verified", bank: true, address: "House 7, Sector 12, Hanumangarh Jn.", altMobile: mobile(82), email: "simranjeet.brar@example.in", dob: "1987-09-22" },
   H2: { name: "Jaspreet Singh Brar", kyc: "verified", bank: true, address: "House 7, Sector 12, Hanumangarh Jn.", email: "jaspreet.brar@example.in", dob: "1984-02-05" },
   b1: { name: "Harvinder Singh Gill", kyc: "verified" },
   b2: { name: "Sunita Rani Kaswan", kyc: "verified" },

@@ -71,7 +71,7 @@ const DETAILS: Record<string, { nickname?: string; altMobile?: string; email?: s
   F03: { altMobile: mobile(43), dateOfBirth: "1975-11-03" },
   F04: { nickname: "Sonal di", email: "sonal.agarwal@example.in" },
   F05: { dateOfBirth: "1986-05-19" },
-  deepika: { nickname: "Deepika ji", altMobile: mobile(51), email: "deepika.sharma@example.in", dateOfBirth: "1988-06-21" },
+  deepika: { altMobile: mobile(51), email: "deepika.sharma@example.in", dateOfBirth: "1988-06-21" },
   amit: { email: "amit.sharma@example.in", dateOfBirth: "1985-02-11" },
   manoj: { altMobile: mobile(52), dateOfBirth: "1983-09-09" },
   naveen: { email: "naveen.k@example.in" },

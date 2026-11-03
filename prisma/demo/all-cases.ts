@@ -108,7 +108,6 @@ async function submit(plot: string, buyerKey: string, by: SoldBy = {}, opts: { s
       : [{ personId: buyer.id, role: "PRIMARY" as const, sharePercent: null }],
     ...soldByOf(by),
     bookingDate: new Date(),
-    customerType: "END_USER",
     schedule: SCHEDULES[opts.schedule ?? "standard"](),
     enquiryId: opts.enquiryId ?? null,
   });
@@ -651,7 +650,7 @@ on("2026-10-10", "Trip programme closes (settings version 2); Rajat's TN-23 requ
   kase(VIJAY, "TN-20, TN-15", "Programme closed; with his Reward already earned, these do not count and no task is raised", "Rewards section.");
 });
 on("2026-10-11", "Rajat's TN-23 request corrected and sent again", async () => {
-  await reviseBookingRequest({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-23"], parties: [{ personId: P("HC").id, role: "PRIMARY", sharePercent: null }], soldByType: "THREE_PERCENT_CLUB", soldByPersonId: null, bookingDate: new Date(), customerType: "INVESTOR", schedule: SCHEDULES.standard(), reason: "Payment schedule corrected as Accounts asked" });
+  await reviseBookingRequest({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", bookingId: B["TN-23"], parties: [{ personId: P("HC").id, role: "PRIMARY", sharePercent: null }], soldByType: "THREE_PERCENT_CLUB", soldByPersonId: null, bookingDate: new Date(), schedule: SCHEDULES.standard(), reason: "Payment schedule corrected as Accounts asked" });
   kase(RAJAT, "TN-23", "Booking Request corrected and sent again (version 2), waiting for Accounts", "Bookings; Task List: \"Corrected and sent again to Accounts\".");
 });
 on("2026-10-12", "Cancellation of TN-11 and Change Plot TN-12 → TN-13 waiting; Rajat's TN-29 schedule and TN-21 cancellation", async () => {

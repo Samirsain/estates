@@ -256,7 +256,6 @@ export async function sell(
     soldByType: soldBy.member ? "MEMBER" : soldBy.customer ? "CUSTOMER" : "THREE_PERCENT_CLUB",
     soldByPersonId: soldBy.member?.id ?? soldBy.customer?.id ?? null,
     bookingDate: new Date(),
-    customerType: "END_USER",
     schedule: SCHEDULES[opts.schedule ?? "standard"](),
     // Linked, so approval marks the Enquiry Booked and closes its follow-up.
     enquiryId: opts.enquiryId ?? null,
