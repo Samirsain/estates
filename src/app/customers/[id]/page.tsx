@@ -17,7 +17,9 @@ import {
   eligibilityLabel,
   experienceSince,
   payoutStep,
+  recoveryStep,
 } from "@/lib/domain/commission";
+import { adjustmentsWaiting } from "@/lib/services/recovery-service";
 import { PayoutCell } from "@/app/members/[id]/payout-button";
 import { validateFinalBuyers } from "@/lib/domain/completion";
 import { formatIst, formatIstDateTime } from "@/lib/tasks";
@@ -182,6 +184,7 @@ export default async function CustomerDetailPage({
             primaryPerson: { select: { fullName: true, customerProfile: { select: { id: true, customerId: true } } } },
           },
         },
+        recoveries: { select: { id: true, recoveryNo: true, status: true, clearedAt: true }, orderBy: { openedAt: "desc" } },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -252,6 +255,7 @@ export default async function CustomerDetailPage({
   );
   const canCompleteDetails = can(actor.role, "FINAL_BUYER_RECORD", actor.extraPermissions);
   const canPayCommission = can(actor.role, "COMMISSION_PROCESS", actor.extraPermissions);
+  const adjusting = await adjustmentsWaiting(commissions.map((c) => c.id));
 
   /* --------------------------------------------------------------- history */
 
@@ -781,6 +785,8 @@ export default async function CustomerDetailPage({
                           awaitingMd={!!c.earlyRequestedAt && !c.earlyApprovedAt}
                           recordId={c.id}
                           buying={!!c.acquisitionId}
+                          recovery={recoveryStep(c, adjusting.has(c.id))}
+                          canRecover={actor.role === "ACCOUNTS"}
                           label={`${c.type === "LOYALTY" ? "Loyalty Points" : words(c.type)} ${c.percent.toFixed(2)}% · ${
                             (c.booking ? (c.booking.bookingNumber ?? "Booking Request") : "")
                           }`}

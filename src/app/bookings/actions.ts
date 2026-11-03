@@ -5,6 +5,7 @@
 // control (DESIGN §1), and the domain services re-check state on top of this.
 
 import {
+  adjustmentsWaiting,
   approveBeforeOldRecovery,
   clearRecovery,
   closeAdjustmentWithoutRecovery,
@@ -37,7 +38,6 @@ import {
   approveCommissionPaidEarly,
   rejectCommissionPaidEarly,
   requestCommissionPaidEarly,
-  ADJUSTMENT_PURPOSE,
   listCommissionForBooking,
   markCommissionPaid,
 } from "@/lib/services/commission-service";
@@ -859,19 +859,7 @@ export async function loadBookingDetail(bookingId: string) {
   if (!booking) return null;
   const commissions = await listCommissionForBooking(bookingId);
   // CP §64 T21 — which records have an Accounts adjustment waiting.
-  const adjustmentsWaiting = new Set(
-    (
-      await db.task.findMany({
-        where: {
-          recordKind: "Commission",
-          recordId: { in: commissions.map((c) => c.id) },
-          purpose: ADJUSTMENT_PURPOSE,
-          status: "PENDING",
-        },
-        select: { recordId: true },
-      })
-    ).map((t) => t.recordId)
-  );
+  const waiting = await adjustmentsWaiting(commissions.map((c) => c.id));
 
   // PLC spec §15.3 — the panel shows the frozen snapshot. The correction chain
   // is only fetched when this snapshot actually replaced an earlier one.
@@ -1008,7 +996,7 @@ export async function loadBookingDetail(bookingId: string) {
       earlyRequestedAt: c.earlyRequestedAt?.toISOString() ?? null,
       earlyRequestReason: c.earlyRequestReason,
       // CP §54, §64 — the adjustment and Recovery state Accounts acts on.
-      adjustmentWaiting: adjustmentsWaiting.has(c.id),
+      adjustmentWaiting: waiting.has(c.id),
       recoveries: c.recoveries.map((r) => ({
         id: r.id,
         recoveryNo: r.recoveryNo,

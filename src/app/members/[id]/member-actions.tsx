@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Modal } from "@/components/ui/modal";
+import { useHashOpen } from "@/lib/hash-open";
 import { MemberDialog, ReraFields } from "../members-client";
 import { InviterDialog } from "./trip-section";
 import { correctInviterAction } from "../trip-actions";
@@ -64,6 +65,10 @@ export function MemberActions({
   const [notice, setNotice] = React.useState<{ ok: boolean; text: string } | null>(null);
 
   const active = member.status === "ACTIVE";
+  // The Payout column's buttons open these by link (#update-rera …).
+  useHashOpen("update-rera", () => canActivate && setDialog({ kind: "RERA" }));
+  useHashOpen("remove-commission-hold", () => canDeactivate && member.commissionHold && setDialog({ kind: "HOLD", hold: false }));
+  useHashOpen("reactivate-member", () => canDeactivate && !active && setDialog({ kind: "STATUS", active: true }));
   // Nothing in the menu is available to a reader, so the trigger is not either.
   if (!canDeactivate && !canActivate && !canCorrectInviter) return null;
 

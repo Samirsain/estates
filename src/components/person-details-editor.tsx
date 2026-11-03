@@ -15,6 +15,7 @@ import { Field, Modal } from "@/components/ui/modal";
 import { updatePersonDetailsAction, type PersonDetails } from "@/app/people/actions";
 import { enterBankDetailsAction } from "@/app/members/actions";
 import { RemarkSelect } from "@/components/ui/remark-select";
+import { useHashOpen } from "@/lib/hash-open";
 
 export function PersonDetailsEditor({
   personId,
@@ -45,6 +46,8 @@ export function PersonDetailsEditor({
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // A Payout "Add Bank" button opens this by link.
+  useHashOpen("edit-details", () => setOpen(true));
 
   return (
     <>

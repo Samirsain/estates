@@ -701,6 +701,32 @@ export function payoutStep(
 }
 
 /**
+ * A paid benefit that became invalid (Recovery Pending): where its Recovery
+ * stands, so a profile offers Recover until it is done (owner, 3 Nov 2026).
+ * OPEN = Accounts has not opened one yet; NONE = closed without a Recovery.
+ */
+export type RecoveryStep =
+  | { kind: "OPEN" }
+  | { kind: "PENDING"; recoveryId: string; recoveryNo: string }
+  | { kind: "RECOVERED"; on: Date | null }
+  | { kind: "NONE" };
+
+/** The button that completes what holds an unpaid line: a page or dialog to open, or Recover. */
+export type PayoutFix = { label: string; href: string } | { label: string; recover: RecoveryStep };
+
+export function recoveryStep(
+  c: { payment: string; recoveries: { id: string; recoveryNo: string; status: string; clearedAt: Date | null }[] },
+  adjustmentWaiting: boolean
+): RecoveryStep | null {
+  if (c.payment !== "ACCOUNTS_ADJUSTMENT_REQUIRED") return null;
+  const open = c.recoveries.find((r) => r.status === "OUTSTANDING");
+  if (open) return { kind: "PENDING", recoveryId: open.id, recoveryNo: open.recoveryNo };
+  if (adjustmentWaiting) return { kind: "OPEN" };
+  const cleared = c.recoveries.find((r) => r.status === "CLEARED");
+  return cleared ? { kind: "RECOVERED", on: cleared.clearedAt } : { kind: "NONE" };
+}
+
+/**
  * PRD §6.11 — no second commission-payment task is created when the normal
  * milestone is later reached, and Paid Early is excluded from Not Paid totals.
  */

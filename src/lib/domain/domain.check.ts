@@ -108,6 +108,7 @@ import {
 } from "./booking.ts";
 import {
   payoutStep,
+  recoveryStep,
   BUYBACK_MIN_SOURCE_PAYMENT,
   afterAffectingChange,
   anniversaryDay,
@@ -2891,6 +2892,17 @@ assert.equal(publicPlotStatus("HOLD", "NONE"), "HOLD");
 assert.equal(publicPlotStatus("WAITING_FOR_BOOKING_APPROVAL", "NONE"), "HOLD", "a Booking Request still holds the Plot");
 for (const sold of ["BOOKED", "PAYMENT_COMPLETED", "DELIVERED", "REFUND_PENDING"]) {
   assert.equal(publicPlotStatus(sold, "NONE"), "SOLD", sold);
+}
+
+// Owner, 3 Nov 2026 — a Recovery Pending line offers Recover until it is recovered.
+{
+  const rec = (status: string) => ({ id: "r1", recoveryNo: "REC-000001", status, clearedAt: new Date("2026-10-20") });
+  const owed = (recoveries: ReturnType<typeof rec>[]) => ({ payment: "ACCOUNTS_ADJUSTMENT_REQUIRED", recoveries });
+  assert.equal(recoveryStep({ payment: "PAID", recoveries: [] }, true), null, "only a Recovery Pending line");
+  assert.equal(recoveryStep(owed([]), true)?.kind, "OPEN", "no Recovery opened yet");
+  assert.equal(recoveryStep(owed([rec("OUTSTANDING")]), false)?.kind, "PENDING");
+  assert.equal(recoveryStep(owed([rec("CLEARED")]), false)?.kind, "RECOVERED", "cleared reads Recovered, not Recovery Pending");
+  assert.equal(recoveryStep(owed([]), false)?.kind, "NONE", "closed without a Recovery");
 }
 
 console.log("domain.check.ts OK");

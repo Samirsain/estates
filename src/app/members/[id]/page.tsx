@@ -15,7 +15,8 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can, canViewField } from "@/lib/security/permissions";
 import { maskAadhaar, maskMobile, maskPan } from "@/lib/security/identity";
-import { eligibilityLabel, experienceSince, payoutStep } from "@/lib/domain/commission";
+import { eligibilityLabel, experienceSince, payoutStep, recoveryStep, type PayoutFix } from "@/lib/domain/commission";
+import { adjustmentsWaiting } from "@/lib/services/recovery-service";
 import { formatIst, formatIstDateTime, istDay } from "@/lib/tasks";
 import { auditHistory, mergeHistory, newestFirst } from "@/lib/profile-history";
 import { TYPE_LABEL } from "@/app/acquisitions/types";
@@ -260,6 +261,8 @@ export default async function MemberDetailPage({
             project: true,
             plot: true,
             primaryPerson: { include: { customerProfile: { select: { customerId: true } } } },
+            // A Buyback waiting on this Booking: its deal page decides it (Payout "Decide Buyback").
+            buybacks: { where: { status: "PENDING_APPROVAL" }, select: { id: true } },
           },
         },
         acquisition: {
@@ -268,6 +271,7 @@ export default async function MemberDetailPage({
             sellerPerson: { include: { customerProfile: { select: { customerId: true } } } },
           },
         },
+        recoveries: { select: { id: true, recoveryNo: true, status: true, clearedAt: true }, orderBy: { openedAt: "desc" } },
       },
       orderBy: [{ isCurrent: "desc" }, { createdAt: "desc" }],
       take: 100,
@@ -390,6 +394,54 @@ export default async function MemberDetailPage({
 
   const experience = experienceSince(member.activationDate);
   const canPayCommission = can(actor.role, "COMMISSION_PROCESS", actor.extraPermissions);
+  const adjusting = await adjustmentsWaiting(commissions.map((c) => c.id));
+  const canDeactivate = can(actor.role, "MEMBER_DEACTIVATE", actor.extraPermissions);
+  const may = (p: Parameters<typeof can>[1]) => can(actor.role, p, actor.extraPermissions);
+  /** Owner, 3 Nov 2026 — every hold on an unpaid line gets the button that completes it, for whoever may. */
+  const fixFor = (c: (typeof commissions)[number]): PayoutFix | null => {
+    if (c.payment !== "NOT_PAID") return null;
+    const booking = c.booking ? `/bookings/${c.booking.id}` : null;
+    const deal = c.acquisition ? `/acquisitions/${c.acquisition.id}` : null;
+    if (c.eligibility === "MILESTONE_PENDING") {
+      if (booking) return may("PAYMENT_RECEIVED_CONFIRM") ? { label: "Record Payment", href: `${booking}?open=PAY` } : null;
+      return deal && may("PAYMENT_GIVEN_CONFIRM") ? { label: "Payment Given", href: deal } : null;
+    }
+    if (c.eligibility !== "ON_HOLD") return null;
+    switch (c.holdReason) {
+      case "REFUND_PENDING":
+        return booking && may("CANCELLATION_DECIDE") ? { label: "Decide Refund", href: booking } : null;
+      case "CHANGE_PLOT_PENDING":
+        return booking && may("CHANGE_PLOT_DECIDE") ? { label: "Decide Change Plot", href: booking } : null;
+      case "BUYBACK_PENDING": {
+        const pending = c.booking?.buybacks[0];
+        return pending && may("ACQUISITION_DECIDE") ? { label: "Decide Buyback", href: `/acquisitions/${pending.id}` } : null;
+      }
+      case "PAYMENT_PENDING":
+        return deal && may("PAYMENT_GIVEN_CONFIRM") ? { label: "Payment Given", href: deal } : null;
+      case "RERA_PENDING":
+      case "RERA_EXPIRED":
+        return canManage ? { label: "Update RERA", href: "#update-rera" } : null;
+      case "MEMBER_COMMISSION_HOLD":
+        return canDeactivate ? { label: "Remove Hold", href: "#remove-commission-hold" } : null;
+      case "MEMBER_DEACTIVATED":
+        return canDeactivate ? { label: "Reactivate", href: "#reactivate-member" } : null;
+      case "BANK_VERIFICATION_PENDING":
+        return may("PERSON_DETAILS_EDIT") && may("BANK_DETAILS_ENTER") ? { label: "Add Bank", href: "#edit-details" } : null;
+      case "RECOVERY_OUTSTANDING": {
+        const owed = openRecoveries[0];
+        return owed && actor.role === "ACCOUNTS"
+          ? { label: "Recover", recover: { kind: "PENDING", recoveryId: owed.id, recoveryNo: owed.recoveryNo } }
+          : null;
+      }
+      case "OLD_RECOVERY_PENDING":
+        return booking && actor.role === "MD" ? { label: "Approve Before Recovery", href: booking } : null;
+      case "RECOVERY_CIRCUMVENTION_REVIEW":
+        return actor.role === "ACCOUNTS" || actor.role === "MD" ? { label: "Review", href: "/rewards?tab=reviews" } : null;
+      default:
+        // Aadhaar pending: no screen enters an Aadhaar after the Member is made.
+        return null;
+    }
+  };
   const canManage = can(actor.role, "MEMBER_ACTIVATE", actor.extraPermissions);
 
   // An invited Member's first sale: the one that used their Reference, else
@@ -748,6 +800,9 @@ export default async function MemberDetailPage({
                     recordId={c.id}
                     buying={!!c.acquisition}
                     label={`${words(c.type)} ${c.percent.toFixed(2)}% · ${d.ref} · ${d.plotNumber}`}
+                    recovery={recoveryStep(c, adjusting.has(c.id))}
+                    canRecover={actor.role === "ACCOUNTS"}
+                    fix={fixFor(c)}
                   />
                 ))}
               </td>
@@ -819,7 +874,7 @@ export default async function MemberDetailPage({
                 reraNotApplicableReason: member.reraNotApplicableReason,
               }}
               canActivate={canManage}
-              canDeactivate={can(actor.role, "MEMBER_DEACTIVATE", actor.extraPermissions)}
+              canDeactivate={canDeactivate}
               canCorrectInviter={actor.role === "MD"}
             />
             {can(actor.role, "PERSON_DETAILS_EDIT", actor.extraPermissions) && (

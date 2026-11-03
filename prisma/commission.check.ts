@@ -1122,7 +1122,7 @@ async function main() {
   const t22 = await tasksOn(directR1.id, "RECOVERY_FOLLOW_UP");
   assert.equal(t22.length, 1, "one T22");
   assert.equal(t22[0].dueAt.getTime(), opened.dueOn.getTime());
-  await expectBlocked(/already outstanding/, () =>
+  await expectBlocked(/already pending/, () =>
     openRecovery({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", recordId: directR1.id, noticeOn: today, reference: "y", reason: "y" })
   );
 
@@ -1131,7 +1131,7 @@ async function main() {
   const r2Entry = await pay(saleR2, "30", `${TAG} UTR R2`);
   const directR2 = await recordOf(saleR2, "DIRECT");
   assert.equal(`${directR2.eligibility}|${directR2.holdReason}`, "ON_HOLD|RECOVERY_OUTSTANDING");
-  await expectBlocked(/Recovery REC-\d+ outstanding/, () => payDirect(directR2.id, `${TAG} PAID R2`));
+  await expectBlocked(/Recovery REC-\d+ pending/, () => payDirect(directR2.id, `${TAG} PAID R2`));
 
   // Set off in part: R2's Direct settles some of it; the Recovery stays open.
   await setOffRecovery({
@@ -1148,6 +1148,9 @@ async function main() {
   const setOff = await db.commissionRecord.findUniqueOrThrow({ where: { id: directR2.id } });
   assert.equal(setOff.payment, "PAID", "the set-off benefit is Paid");
   assert.match(setOff.paymentRemarks ?? "", /Set off against Recovery REC-/);
+  // Owner, 3 Nov 2026 — a set-off is the payout, so the Recovery hold on it goes: Paid, not "On Hold · Recovery Pending".
+  assert.equal(setOff.eligibility, "READY", "a set-off benefit is no longer held");
+  assert.equal(setOff.holdReason, null, "no Recovery Pending hold left on a paid benefit");
   assert.equal((await db.recovery.findUniqueOrThrow({ where: { id: opened.recoveryId } })).status, "OUTSTANDING");
 
   // UAT CTL-03 — cleared as repaid: what it held is released, T22 closes.

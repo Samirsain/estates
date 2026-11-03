@@ -8,6 +8,7 @@
 // cleared when repaid, or set off against a later benefit of the same Person.
 // The amounts themselves stay outside the CRM.
 
+import { db } from "@/lib/db";
 import { notFutureDated } from "@/lib/domain/booking";
 import { formatIst } from "@/lib/tasks";
 import { blocked, lockKey, nextReference, runCommand, type Tx } from "./command";
@@ -32,6 +33,15 @@ type Actor = { idempotencyKey: string; actorRef: string; actorRole: string };
 /** CP §77 — Accounts creates and handles Recovery. */
 function accountsOnly(role: string) {
   if (role !== "ACCOUNTS") blocked("Only Accounts handles Recovery.");
+}
+
+/** CP §64 T21 — which of these commission records have an Accounts adjustment waiting. */
+export async function adjustmentsWaiting(recordIds: string[]): Promise<Set<string>> {
+  const tasks = await db.task.findMany({
+    where: { recordKind: "Commission", recordId: { in: recordIds }, purpose: ADJUSTMENT_PURPOSE, status: "PENDING" },
+    select: { recordId: true },
+  });
+  return new Set(tasks.map((t) => t.recordId));
 }
 
 /** Serialises every change to one Person's Recoveries. */
@@ -379,9 +389,18 @@ export async function setOffRecovery(
 
       const note = args.note.trim();
       const reference = await createCommissionReference(tx, args.reference, args.setOffOn, args.actorRef);
+      // The set-off is the payout, so the Recovery hold on this benefit goes with
+      // it: Paid, not "On Hold · Recovery Pending" (owner, 3 Nov 2026).
+      if (record.eligibility !== "READY") {
+        await tx.commissionEvent.create({
+          data: { recordId: record.id, actorRef: args.actorRef, action: "ELIGIBILITY_CHANGED", fromState: record.eligibility, toState: "READY", reason: `Set off against ${recovery.recoveryNo}` },
+        });
+      }
       await tx.commissionRecord.update({
         where: { id: record.id },
         data: {
+          eligibility: "READY",
+          holdReason: null,
           payment: "PAID",
           paidOn: args.setOffOn,
           paidByRef: args.actorRef,

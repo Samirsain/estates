@@ -5,17 +5,26 @@
 // straight away; Accounts asks MD first, then pays once approved. Every field
 // is typed in, and each step uses the same server action as the Booking and
 // Buyback screens, so a payout recorded here is the one recorded there.
+// Recovery Pending → Recover (owner, 3 Nov 2026): Accounts opens the Recovery,
+// then marks it repaid, with the Bookings screen's own actions.
 
 import React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { istDay } from "@/lib/tasks";
-import { markCommissionPaidAction, requestCommissionPaidEarlyAction } from "@/app/bookings/actions";
+import { RemarkSelect } from "@/components/ui/remark-select";
+import {
+  clearRecoveryAction,
+  markCommissionPaidAction,
+  openRecoveryAction,
+  requestCommissionPaidEarlyAction,
+} from "@/app/bookings/actions";
 import { markBuyingCommissionPaidAction } from "@/app/acquisitions/actions";
 
-import type { PayoutStep } from "@/lib/domain/commission";
+import type { PayoutFix, PayoutStep, RecoveryStep } from "@/lib/domain/commission";
 import { formatIst } from "@/lib/tasks";
 
 const PAID_LABEL: Record<string, string> = {
@@ -35,6 +44,9 @@ export function PayoutCell({
   recordId,
   buying,
   label,
+  recovery = null,
+  canRecover = false,
+  fix = null,
 }: {
   payment: string;
   paidOn: Date | null;
@@ -44,7 +56,38 @@ export function PayoutCell({
   recordId: string;
   buying: boolean;
   label: string;
+  /** Where a Recovery Pending line's Recovery stands (recoveryStep). */
+  recovery?: RecoveryStep | null;
+  /** Accounts — the only role that handles Recovery. */
+  canRecover?: boolean;
+  /** What completes the hold on an unpaid line (Update RERA, Decide Refund…). */
+  fix?: PayoutFix | null;
 }) {
+  if (recovery?.kind === "RECOVERED" || recovery?.kind === "NONE") {
+    return (
+      <span className="block">
+        <span className={`font-medium ${recovery.kind === "RECOVERED" ? "text-emerald-700" : "text-muted-foreground"}`}>
+          {recovery.kind === "RECOVERED" ? "Recovered" : "No Recovery"}
+        </span>
+        {recovery.kind === "RECOVERED" && recovery.on && (
+          <span className="block text-[11px] text-muted-foreground">{formatIst(recovery.on)}</span>
+        )}
+      </span>
+    );
+  }
+  if (recovery) {
+    return (
+      <span className="block space-y-1">
+        <span className="block font-medium text-amber-700">
+          Recovery Pending
+          {recovery.kind === "PENDING" && (
+            <span className="block text-[11px] font-normal text-muted-foreground">{recovery.recoveryNo}</span>
+          )}
+        </span>
+        {canRecover && <RecoverButton step={recovery} recordId={recordId} label={label} />}
+      </span>
+    );
+  }
   if (payment !== "NOT_PAID") {
     // Paid, Paid Early, Recovery Pending (paid, now to recover) or Cancelled.
     const tone =
@@ -56,8 +99,14 @@ export function PayoutCell({
       </span>
     );
   }
-  if (step) return <PayoutButton step={step} recordId={recordId} buying={buying} label={label} />;
-  return <span className="block text-muted-foreground">{awaitingMd ? "Pay Early · awaiting MD" : "—"}</span>;
+  if (!step && !fix) return <span className="block text-muted-foreground">{awaitingMd ? "Pay Early · awaiting MD" : "—"}</span>;
+  return (
+    <span className="inline-flex flex-wrap items-center justify-center gap-1">
+      {awaitingMd && <span className="block w-full text-[11px] text-muted-foreground">Pay Early · awaiting MD</span>}
+      {step && <PayoutButton step={step} recordId={recordId} buying={buying} label={label} />}
+      {fix && <FixButton fix={fix} recordId={recordId} label={label} />}
+    </span>
+  );
 }
 
 const TITLE: Record<PayoutStep, string> = {
@@ -162,5 +211,109 @@ export function PayoutButton({
         </Modal>
       )}
     </>
+  );
+}
+
+/** Recover: Open Recovery while none is open, then Recovery repaid to finish it. */
+function RecoverButton({ step, recordId, label }: { step: RecoveryStep; recordId: string; label: string }) {
+  const router = useRouter();
+  const [key, setKey] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const today = istDay(new Date());
+  const opening = step.kind === "OPEN";
+
+  return (
+    <>
+      <Button
+        type="button"
+        size="xs"
+        onClick={() => {
+          setError(null);
+          setKey(globalThis.crypto.randomUUID());
+        }}
+      >
+        Recover
+      </Button>
+      {key && (
+        <Modal
+          title={opening ? "Open Recovery" : "Recovery repaid"}
+          description={step.kind === "PENDING" ? `${label} · ${step.recoveryNo}` : label}
+          width="w-[min(24rem,94vw)]"
+          onClose={() => setKey(null)}
+        >
+          <form
+            className="space-y-3"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              setBusy(true);
+              const result =
+                step.kind === "PENDING"
+                  ? await clearRecoveryAction({ recoveryId: step.recoveryId, note: String(f.get("note")) }, key)
+                  : await openRecoveryAction(
+                      {
+                        recordId,
+                        noticeOn: String(f.get("noticeOn")),
+                        reference: String(f.get("reference")),
+                        reason: String(f.get("reason")),
+                      },
+                      key
+                    );
+              setBusy(false);
+              if (!result.ok) {
+                setError(result.error);
+                return;
+              }
+              setKey(null);
+              router.refresh();
+            }}
+          >
+            <p className="text-xs text-muted-foreground">
+              {opening
+                ? "The Recovery opens as Recovery Pending, due 15 days after the notice date. New cash payouts to this Person are held. When the money is back, use Recover again to mark it repaid."
+                : "The Recovery is cleared as repaid, and payouts it was holding are released if nothing else holds them."}
+            </p>
+            {opening ? (
+              <>
+                <Field label="Notice date">
+                  <Input name="noticeOn" type="date" defaultValue={today} max={today} required />
+                </Field>
+                <Field label="Accounts Recovery Reference">
+                  <Input name="reference" required />
+                </Field>
+                <Field label="Reason (compulsory)">
+                  <RemarkSelect presets="openRecovery" name="reason" required />
+                </Field>
+              </>
+            ) : (
+              <Field label="Note (compulsory)">
+                <RemarkSelect presets="recoveryRepaid" name="note" required />
+              </Field>
+            )}
+            {error && <p className="text-xs text-red-700">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setKey(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={busy}>
+                {busy ? "Saving…" : opening ? "Open Recovery" : "Mark Repaid"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+/** The hold's own completing step: a link to where it is done, or Recover in place. */
+function FixButton({ fix, recordId, label }: { fix: PayoutFix; recordId: string; label: string }) {
+  if ("recover" in fix) return <RecoverButton step={fix.recover} recordId={recordId} label={label} />;
+  return (
+    <Button asChild size="xs" variant="outline">
+      {/* A #name opens this page's own dialog (useHashOpen); a path opens that page. */}
+      {fix.href.startsWith("#") ? <a href={fix.href}>{fix.label}</a> : <Link href={fix.href}>{fix.label}</Link>}
+    </Button>
   );
 }

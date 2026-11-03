@@ -445,6 +445,15 @@ export default function BookingsClient({
     ) {
       return { kind: "CHANGE_PLOT", row };
     }
+    // Record Payment, opened from a Plot or a Member's Payout button.
+    if (
+      initialOpen === "PAY" &&
+      ["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
+      permissions.confirmPayment &&
+      Number(remainingPercent(row.paymentReceivedPercent)) > 0
+    ) {
+      return { kind: "PAY", row };
+    }
     return null;
   });
   const [openId, setOpenId] = React.useState<string | null>(focusId);
