@@ -264,7 +264,8 @@ assert.equal(reviseProblem("DECISION", "Sent to MD", "Sent to MD for a decision"
 // Owner, 3 Nov 2026 — the Task filter is a few types, Verify on its own.
 assert.equal(taskFilter({ purpose: "REFUND_REVIEW", title: "Verify — Refund", decision: true }), "Verify");
 assert.equal(taskFilter({ purpose: "SOLD_BY_CORRECTION_REVIEW", title: "Sold By Correction — MD Approval", decision: true }), "Approval");
-assert.equal(taskFilter({ purpose: "PAYMENT_FOLLOW_UP", title: "Payment Follow-Up" }), "Follow-Up");
+assert.equal(taskFilter({ purpose: "PAYMENT_FOLLOW_UP", title: "Payment Follow-Up" }), "Payment Follow-Up");
+assert.equal(taskFilter({ purpose: "ENQUIRY_FOLLOW_UP", title: "Enquiry Follow-Up" }), "Enquiry Follow-Up");
 assert.equal(taskFilter({ purpose: "ALLOTMENT_REGISTRY", title: "Prepare Allotment / Registry" }), "Details & Papers");
 assert.equal(taskFilter({ purpose: "TRIP_REWARD_FULFILMENT", title: "Reward Earned" }), "Reward");
 assert.equal(taskFilter({ purpose: "MANUAL:CALL BACK", title: "Call back" }), "Manual");

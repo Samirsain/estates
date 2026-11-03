@@ -34,7 +34,7 @@ import { Section, Stat } from "@/components/record-section";
 import HistoryButton from "@/app/members/[id]/history-button";
 import ShowMore from "@/app/members/[id]/show-more";
 import { Input } from "@/components/ui/input";
-import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { Field, Modal, ModalError, inputClass } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
 import { capShare, round2, shareRoom, shareSum } from "@/lib/domain/shares";
 import {
@@ -284,7 +284,6 @@ const SOLD_BY_LABEL: Record<string, string> = {
 const REJECT_REASONS = [
   ["PAYMENT_SCHEDULE_INCORRECT", "Payment Schedule Incorrect"],
   ["INCOMPLETE_DETAILS", "Incomplete Details"],
-  ["PAYMENT_NOT_RECEIVED", "Payment Not Received"],
   ["OTHER", "Other"],
 ] as const;
 
@@ -484,6 +483,7 @@ export default function BookingsClient({
    */
   async function openDialog(next: Dialog) {
     setDialog(next);
+    setNotice(null);
     setCancelReason("");
     if (!next || !("row" in next)) return;
     if (detail?.id === next.row.id) return;
@@ -556,6 +556,9 @@ export default function BookingsClient({
   function moreMenu(row: BookingRowView) {
     const loaded = detail?.id === row.id ? detail : null;
     const live = ["BOOKED", "PAYMENT_COMPLETED"].includes(row.status);
+    // Owner 3 Nov — at 100% paid (Payment Completed, Delivered) there is no
+    // schedule left to revise and no Sold By to correct.
+    const paymentDue = Number(remainingPercent(row.paymentReceivedPercent)) > 0;
     const items: Array<{ label: string; open: Dialog; danger?: boolean }> = [];
     if (row.status === "REQUEST_PENDING" && permissions.submit) items.push({ label: "Revise request", open: { kind: "REVISE", row } });
     if (loaded) {
@@ -564,18 +567,32 @@ export default function BookingsClient({
         items.push({ label: "Change Primary Customer", open: { kind: "CUSTOMER_CHANGE", row } });
       }
       if (
-        (live || row.status === "DELIVERED") &&
+        live &&
+        paymentDue &&
         permissions.raiseSoldBy &&
         !loaded.soldByCorrections.some((c) => c.status === "PENDING")
       ) {
         items.push({ label: "Sold By Correction", open: { kind: "SOLD_BY", row } });
       }
       if (
+        live &&
+        paymentDue &&
         permissions.reviseSchedule &&
         loaded.scheduleVersions.some((v) => v.status === "ACTIVE") &&
         !loaded.scheduleVersions.some((v) => v.status === "PENDING")
       ) {
         items.push({ label: "Revise Payment Schedule", open: { kind: "SCHEDULE", row } });
+      }
+      // Owner 3 Nov — one Correct Payment Received here, not on the payment's
+      // row and with no Reference No in its name. It opens on the latest
+      // confirmed payment; the form picks another when there are several.
+      const confirmed = loaded.paymentEntries.filter((e) => e.status === "CONFIRMED");
+      if (permissions.correctPayment && confirmed.length > 0) {
+        const e = confirmed[0];
+        items.push({
+          label: "Correct Payment Received",
+          open: { kind: "CORRECT", row, entryId: e.id, percent: e.percent, reference: e.reference },
+        });
       }
     }
     // PRD §5.1 — Change Plot applies before Delivered, one process at a time.
@@ -660,6 +677,7 @@ export default function BookingsClient({
   );
 
   return (
+    <ModalError.Provider value={dialog && notice?.kind === "error" ? notice.text : null}>
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
       {/* One Booking gets the page to itself. The row used to unfold this
           underneath the list, which put a form-length panel inside a table and
@@ -820,8 +838,8 @@ export default function BookingsClient({
         {noticeCard}
 
         {/* Plot Inventory's table: a rule between rows, no block of colour
-            behind each one. The Booking Number is the page it opens, not a
-            column of its own. */}
+            behind each one. The Booking ID opens the Booking and the Plot
+            number opens the Plot (owner, 3 Nov 2026). */}
         {visible.length === 0 ? (
           <Card className="p-10 text-center">
             <p className="text-sm font-semibold">No Bookings match these filters.</p>
@@ -831,9 +849,10 @@ export default function BookingsClient({
           </Card>
         ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[58rem] border-collapse text-sm">
+          <table className="w-full min-w-[64rem] border-collapse text-sm">
             <thead className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               <tr>
+                <th className="px-3 py-1">Booking ID</th>
                 <th className="px-3 py-1">Plot · Type / Project</th>
                 <th className="px-3 py-1 text-center">Size (W × L)</th>
                 <th className="px-3 py-1">Customer</th>
@@ -849,18 +868,18 @@ export default function BookingsClient({
                   key={row.id}
                   className="h-14 border-b border-border/60 align-middle transition-colors hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-2"
                 >
-                  {/* As on Plot Inventory: the Plot number is the way into the
-                      Booking, with its Project and type under it. */}
+                  {/* A Request not yet booked has no Booking Number; its Request number stands in. */}
+                  <td className="whitespace-nowrap">
+                    <Link href={`/bookings/${row.id}`} className="font-semibold tabular-nums text-primary hover:underline">
+                      {row.bookingNumber ?? row.requestNo}
+                    </Link>
+                  </td>
                   {/* Owner 2 Nov — Plot No. · Type, the Project under it. */}
                   <td>
                     <span className="block">
-                      <button
-                        type="button"
-                        className="text-left font-semibold text-primary hover:underline"
-                        onClick={() => router.push(`/bookings/${row.id}`)}
-                      >
+                      <Link href={`/plots/${row.plotId}`} className="font-semibold text-primary hover:underline">
                         {row.plotNumber}
-                      </button>
+                      </Link>
                       <span className="text-muted-foreground">
                         {" · "}
                         {humanise(row.plotType)}
@@ -1075,7 +1094,6 @@ export default function BookingsClient({
         <ActionDialog
           title="Confirm Payment Received"
           row={dialog.row}
-          consequence={`Payment Received This Time is incremental, not cumulative. It lands on the oldest unpaid instalment first. Received so far is ${dialog.row.paymentReceivedPercent}%, so at most ${remainingPercent(dialog.row.paymentReceivedPercent)}% remains.`}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1126,9 +1144,8 @@ export default function BookingsClient({
 
       {dialog?.kind === "CORRECT" && (
         <ActionDialog
-          title="Correct Payment Entry"
+          title="Correct Payment Received"
           row={dialog.row}
-          consequence={`The original entry of ${dialog.percent}% against reference ${dialog.reference} is never deleted — it and its reference become Superseded, and the replacement links to them. A correction must be verified by a different staff account.`}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1146,8 +1163,32 @@ export default function BookingsClient({
             )
           }
         >
+          {(() => {
+            const confirmed = (detail?.paymentEntries ?? []).filter((e) => e.status === "CONFIRMED");
+            return (
+              confirmed.length > 1 && (
+                <Field label="Payment to correct">
+                  <select
+                    className={inputClass}
+                    value={dialog.entryId}
+                    onChange={(ev) => {
+                      const e = confirmed.find((x) => x.id === ev.target.value);
+                      if (e) setDialog({ ...dialog, entryId: e.id, percent: e.percent, reference: e.reference });
+                    }}
+                  >
+                    {confirmed.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.reference} · {e.percent}%
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )
+            );
+          })()}
           <Field label="Corrected percentage (%)">
-            <Input name="percent" type="number" step="0.0001" min="0.0001" max="100" defaultValue={dialog.percent} required />
+            {/* Keyed on the payment, so picking another one refills its percentage. */}
+            <Input key={dialog.entryId} name="percent" type="number" step="0.0001" min="0.0001" max="100" defaultValue={dialog.percent} required />
           </Field>
           <Field label="Payment Date">
             <Input name="paidOn" type="date" defaultValue={istDay(new Date())} max={istDay(new Date())} required />
@@ -1177,11 +1218,6 @@ export default function BookingsClient({
         <ActionDialog
           title={dialog.approve ? "Approve schedule revision" : "Reject schedule revision"}
           row={dialog.row}
-          consequence={
-            dialog.approve
-              ? "Received portions carry forward locked. The old schedule stays in History as Superseded."
-              : "The live schedule is unchanged and the revision stays in History as Rejected."
-          }
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1213,7 +1249,6 @@ export default function BookingsClient({
         <ActionDialog
           title="Change Primary Customer"
           row={dialog.row}
-          consequence={`${dialog.row.primaryCustomer} remains the official commercial Booking Customer until Accounts approves. The Booking Number, Plot, Payment Received percentage and Payment Reference Numbers all carry forward unchanged.`}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1245,17 +1280,12 @@ export default function BookingsClient({
       {dialog?.kind === "SOLD_BY" && (
         <Modal
           title={`Sold By Correction — ${dialog.row.bookingNumber ?? "Booking Request"}`}
-          description="Nothing changes until MD approves. Booking and Payment history are never touched by this correction."
           onClose={() => setDialog(null)}
         >
           <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
             <p className="font-semibold text-foreground">
               Current: {SOLD_BY_LABEL[dialog.row.soldByType] ?? dialog.row.soldByType}
               {dialog.row.soldByName ? ` · ${dialog.row.soldByName}` : ""}
-            </p>
-            <p className="mt-1 text-muted-foreground">
-              On approval the old commission records are superseded and new valid ones are created.
-              Anything already Paid or Paid Early becomes Recovery Pending.
             </p>
           </div>
           <SoldByForm
@@ -1276,11 +1306,6 @@ export default function BookingsClient({
         <ActionDialog
           title={dialog.approve ? "Approve Sold By Correction" : "Reject Sold By Correction"}
           row={dialog.row}
-          consequence={
-            dialog.approve
-              ? "The attribution moves, old commission records are superseded and new valid ones are created. Paid and Paid Early records become Recovery Pending. Booking and Payment history are unchanged."
-              : "The attribution and every commission record stay exactly as they are."
-          }
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1302,7 +1327,7 @@ export default function BookingsClient({
           consequence={
             dialog.early
               ? `${dialog.label}. Eligibility is not Ready, so this is Paid Early: MD has approved it, remarks are compulsory, eligibility keeps updating separately, and no second payment task is raised when the required payment is received. It can never be marked Paid again.`
-              : `${dialog.label}. The record is Ready and is recorded as Paid against the reference below.`
+              : undefined
           }
           busy={busy}
           onClose={() => setDialog(null)}
@@ -1337,7 +1362,7 @@ export default function BookingsClient({
         <ActionDialog
           title="Approve Paid Early"
           row={dialog.row}
-          consequence={`${dialog.label}. Approving lets Accounts process this commission before its eligibility conditions are met. Your name and the time are stored on the commission record permanently.`}
+          consequence={dialog.label}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1359,7 +1384,7 @@ export default function BookingsClient({
         <ActionDialog
           title="Pay before the old Recovery"
           row={dialog.row}
-          consequence={`${dialog.label}. The old beneficiary's paid record on this Booking is still to be recovered. Approving lets this corrected beneficiary be paid now.`}
+          consequence={dialog.label}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1504,7 +1529,7 @@ export default function BookingsClient({
         <ActionDialog
           title="Reject Paid Early"
           row={dialog.row}
-          consequence={`${dialog.label}. The request is cleared; the commission waits for its normal eligibility, and Accounts may ask again.`}
+          consequence={dialog.label}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1634,6 +1659,7 @@ export default function BookingsClient({
         </ActionDialog>
       )}
     </AppShell>
+    </ModalError.Provider>
   );
 }
 
@@ -1701,13 +1727,6 @@ function BookingDetailPanel({
 
   return (
     <div className="space-y-4">
-      {row.status === "REQUEST_PENDING" && (
-        <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
-          Submitted values are locked while Accounts reviews them. To change one, use{" "}
-          <span className="font-semibold">More → Revise request</span> — it replaces this request and keeps the old one in
-          History.
-        </p>
-      )}
 
       {/* Decisions waiting on this Booking, each with its Approve and Reject. */}
       {row.status === "REFUND_PENDING" &&
@@ -1875,103 +1894,109 @@ function BookingDetailPanel({
         </Section>
       </div>
 
-      {/* 6 Payments — the schedule, then every confirmed entry. Part payment is
-          allowed and there is no separate Partially Received status. */}
-      <Section
-        title="Payments"
-        icon={<Wallet className="h-3.5 w-3.5" />}
-        aside={<span className="text-[11px] text-muted-foreground tabular-nums">{Number(row.paymentReceivedPercent)}% received</span>}
-      >
-        {liveSchedule ? (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[34rem] text-xs">
-              <thead className="border-b border-border/60">
-                <tr>
-                  <th className={CTH}>#</th>
-                  <th className={CTH}>Due date</th>
-                  <th className={CTH}>Scheduled</th>
-                  <th className={CTH}>Received</th>
-                  <th className={CTH}>Remaining</th>
-                  <th className={CTH}>Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/40">
-                {liveSchedule.instalments.map((i) => (
-                  <tr key={i.seq}>
-                    <td className={CTD}>{i.seq}</td>
-                    <td className={`${CTD} tabular-nums`}>{formatIst(i.dueDate)}</td>
-                    <td className={`${CTD} tabular-nums`}>{i.scheduled}%</td>
-                    <td className={`${CTD} tabular-nums`}>{i.received}%</td>
-                    <td className={`${CTD} tabular-nums`}>{i.remaining}%</td>
-                    <td className={CTD}>
-                      <Badge
-                        variant={i.status === "RECEIVED" ? "success" : i.status === "OVERDUE" ? "destructive" : "outline"}
-                      >
-                        {i.status.charAt(0) + i.status.slice(1).toLowerCase()}
-                      </Badge>
-                    </td>
+      {/* 6 Payments — the schedule beside every confirmed entry, two boxes
+          (owner, 3 Nov 2026). Part payment is allowed and there is no separate
+          Partially Received status. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Section
+          title="Payment Schedule"
+          icon={<Wallet className="h-3.5 w-3.5" />}
+          fill
+        >
+          {liveSchedule ? (
+            <div className="overflow-x-auto">
+              {/* Owner 3 Nov — the due date with its percentage under it, then
+                  Received; no Remaining or Status column. */}
+              <table className="w-full text-xs">
+                <thead className="border-b border-border/60">
+                  <tr>
+                    <th className={CTH}>#</th>
+                    <th className={CTH}>Due date</th>
+                    <th className={CTH}>Received</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            The schedule becomes live when Accounts approves the Booking Request.
-          </p>
-        )}
-
-        <div className="mt-4 border-t border-border/60 pt-3">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Payment entries</p>
-          {detail.paymentEntries.length === 0 ? (
-            <p className="mt-2 text-xs text-muted-foreground">No payment confirmed yet.</p>
-          ) : (
-            <MaybeMore count={supersededEntries.length}>
-              <ul className="mt-2 divide-y divide-border/40 text-xs">
-                {[...detail.paymentEntries]
-                  .sort((a, b) => Number(a.status === "SUPERSEDED") - Number(b.status === "SUPERSEDED"))
-                  .map((e) => (
-                    <li
-                      key={e.id}
-                      className={`flex-wrap items-center justify-between gap-2 py-2 ${
-                        e.status === "SUPERSEDED" ? "hidden group-data-[open]/more:flex" : "flex"
-                      }`}
-                    >
-                      <span className={e.status === "SUPERSEDED" ? "text-muted-foreground line-through" : ""}>
-                        <span className="tabular-nums">{e.percent}%</span> · {e.reference}
-                        <span className="ml-2 text-[11px] text-muted-foreground">
-                          paid {formatIst(e.paidOn)} · entered {formatIst(e.recordedAt)} · {e.confirmedByRef}
-                        </span>
-                        {e.payerName && (
-                          <span className="ml-2 text-[11px] text-amber-800">
-                            paid by {e.payerName}
-                            {e.payerReference ? ` (${e.payerReference})` : ""}
-                          </span>
-                        )}
-                      </span>
-                      <span className="flex items-center gap-2">
-                        <Badge variant={e.status === "SUPERSEDED" ? "outline" : "success"}>
-                          {e.status === "SUPERSEDED" ? "Corrected" : "Confirmed"}
-                        </Badge>
-                        {e.status === "CONFIRMED" && permissions.correctPayment && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              onAction({ kind: "CORRECT", row, entryId: e.id, percent: e.percent, reference: e.reference })
-                            }
-                          >
-                            Correct
-                          </Button>
-                        )}
-                      </span>
-                    </li>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {liveSchedule.instalments.map((i) => (
+                    <tr key={i.seq}>
+                      <td className={CTD}>{i.seq}</td>
+                      <td className={`${CTD} tabular-nums`}>
+                        {formatIst(i.dueDate)}
+                        <span className="block text-[11px] text-muted-foreground">{i.scheduled}%</span>
+                      </td>
+                      {/* Owner 3 Nov — Received reads like Due date: the date, the percentage under it. */}
+                      <td className={`${CTD} tabular-nums`}>
+                        {i.receivedOn ? formatIst(i.receivedOn) : "—"}
+                        <span className="block text-[11px] text-muted-foreground">{i.received}%</span>
+                      </td>
+                    </tr>
                   ))}
-              </ul>
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              The schedule becomes live when Accounts approves the Booking Request.
+            </p>
+          )}
+        </Section>
+
+        <Section title="Received Payment Details" fill>
+          {detail.paymentEntries.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No payment confirmed yet.</p>
+          ) : (
+            // Owner 3 Nov — Sr No, Reference No, Date, %, Status. Corrected
+            // entries sit last, behind Show more.
+            <MaybeMore count={supersededEntries.length}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="border-b border-border/60">
+                    <tr>
+                      <th className={CTH}>Sr No</th>
+                      <th className={CTH}>Reference No</th>
+                      <th className={CTH}>Date</th>
+                      <th className={CTH}>%</th>
+                      <th className={CTH}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40">
+                    {[...detail.paymentEntries]
+                      .sort((a, b) => Number(a.status === "SUPERSEDED") - Number(b.status === "SUPERSEDED"))
+                      .map((e, index) => (
+                        <tr
+                          key={e.id}
+                          className={
+                            e.status === "SUPERSEDED"
+                              ? "hidden text-muted-foreground line-through group-data-[open]/more:table-row"
+                              : undefined
+                          }
+                        >
+                          <td className={`${CTD} tabular-nums`}>{index + 1}</td>
+                          <td className={CTD}>
+                            {e.reference}
+                            {/* Only when someone other than the Customer paid. */}
+                            {e.payerName && (
+                              <span className="block text-[11px] text-amber-800">
+                                paid by {e.payerName}
+                                {e.payerReference ? ` (${e.payerReference})` : ""}
+                              </span>
+                            )}
+                          </td>
+                          <td className={`${CTD} tabular-nums`}>{formatIst(e.paidOn)}</td>
+                          <td className={`${CTD} tabular-nums`}>{e.percent}%</td>
+                          <td className={CTD}>
+                            <Badge variant={e.status === "SUPERSEDED" ? "outline" : "success"}>
+                              {e.status === "SUPERSEDED" ? "Corrected" : "Confirmed"}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             </MaybeMore>
           )}
-        </div>
-      </Section>
+        </Section>
+      </div>
 
       {/* 7 Commission — percentages only; the CRM stores no payout amount.
           Eligibility and payment are separate statuses. */}
@@ -2307,7 +2332,8 @@ function ActionDialog({
 }: {
   title: string;
   row: BookingRowView;
-  consequence: string;
+  /** Left out, the box shows the Booking alone (owner, 3 Nov — no line on a plain Mark Paid). */
+  consequence?: string;
   busy: boolean;
   children: React.ReactNode;
   onClose: () => void;
@@ -2319,7 +2345,7 @@ function ActionDialog({
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber} · {row.primaryCustomer}
         </p>
-        <p className="mt-1 text-muted-foreground">{consequence}</p>
+        {consequence && <p className="mt-1 text-muted-foreground">{consequence}</p>}
       </div>
       <form
         className="space-y-4"
@@ -2444,9 +2470,6 @@ function SubmittedSnapshotView({
               loyalty: snapshot.commissionTerms.loyaltyPercent,
             })}
           </p>
-          <p className="text-[11px] text-muted-foreground">
-            Frozen with this request. Approving it makes these terms permanent for the Booking.
-          </p>
         </section>
       )}
 
@@ -2490,8 +2513,7 @@ export function ReviewDialog({
   onClose: () => void;
   onSubmit: (input: {
     approve: boolean;
-    rejectReason: "PAYMENT_SCHEDULE_INCORRECT" | "INCOMPLETE_DETAILS" | "PAYMENT_NOT_RECEIVED" | "OTHER" | "";
-    requestClaimedPayment: boolean;
+    rejectReason: "PAYMENT_SCHEDULE_INCORRECT" | "INCOMPLETE_DETAILS" | "OTHER" | "";
     note: string;
   }) => void;
 }) {
@@ -2550,7 +2572,6 @@ export function ReviewDialog({
           onSubmit({
             approve,
             rejectReason: approve ? "" : (String(f.get("rejectReason")) as "OTHER"),
-            requestClaimedPayment: f.get("claimed") === "on",
             note: String(f.get("note")),
           });
         }}
@@ -2564,12 +2585,7 @@ export function ReviewDialog({
           </Button>
         </div>
 
-        {approve ? (
-          <p className="text-xs text-muted-foreground">
-            Approval issues the permanent Booking Number, ends the Hold and makes the Plot Booked.
-            Accounts may approve at 0% Payment Received.
-          </p>
-        ) : (
+        {!approve && (
           <>
             <Field label="Rejection reason">
               <select name="rejectReason" required className={inputClass} defaultValue="">
@@ -2583,14 +2599,6 @@ export function ReviewDialog({
                 ))}
               </select>
             </Field>
-            <label className="flex items-start gap-2 text-xs text-muted-foreground">
-              <input type="checkbox" name="claimed" className="mt-0.5" />
-              <span>
-                The request specifically claimed a payment had been received. Payment Not Received is
-                valid only in that case — Accounts may approve at 0%, so zero payment alone is not a
-                reason.
-              </span>
-            </label>
           </>
         )}
 
@@ -3119,7 +3127,6 @@ function ScheduleDialog({
   return (
     <Modal
       title={`Revise Remaining Payment Schedule — ${row.bookingNumber ?? "Booking Request"}`}
-      description="Received portions stay locked. Only the unpaid percentage may be split, combined or moved, and Accounts approves the revision."
       onClose={onClose}
       wide
     >
@@ -3184,7 +3191,6 @@ function SharesDialog({
   return (
     <Modal
       title={`Change ownership shares — ${row.bookingNumber ?? "Booking Request"}`}
-      description="Old and new shares both stay in History. The Primary Customer cannot be replaced here — that needs Accounts approval."
       onClose={onClose}
       wide
     >
@@ -3594,10 +3600,6 @@ export function FinalBuyersDialog({
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber}
-        </p>
-        <p className="mt-1 text-muted-foreground">
-          Aadhaar comes from the Person record and must already be recorded. A single final buyer may
-          leave the share blank and is treated as 100%; several must total exactly 100%.
         </p>
       </div>
 
@@ -4062,16 +4064,11 @@ export function CompletionDialog({
   return (
     <Modal
       title="Record Allotment / Registry"
-      description="One route only. There is no Allotment-then-Registry sequence."
       onClose={onClose}
     >
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber}
-        </p>
-        <p className="mt-1 text-muted-foreground">
-          Completing the route sets the Booking and Plot to Delivered once, and Papers Legally
-          Transferred becomes Yes automatically.
         </p>
       </div>
 
@@ -4197,14 +4194,6 @@ function CancellationDecisionDialog({
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber} · {row.primaryCustomer}
-        </p>
-        <p className="mt-1 text-muted-foreground">
-          {approve
-            ? "The Booking becomes Cancelled and the Plot returns through the one restriction-aware rule. No RESALE tag is added."
-            : "The exact previous Booking, Plot, payment and commission state is restored, and the rolling follow-up resumes."}
-        </p>
-        <p className="mt-1 text-muted-foreground">
-          Payment Received on this Booking: {row.paymentReceivedPercent}%
         </p>
       </div>
 
@@ -4380,11 +4369,6 @@ function ChangePlotDecisionDialog({
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber}
-        </p>
-        <p className="mt-1 text-muted-foreground">
-          {approve
-            ? "The same Booking Number continues on the replacement Plot. Existing Payment Reference Numbers stay linked to this Booking, and the old Plot returns to inventory with no RESALE tag."
-            : "The original Plot and the reserved replacement are both restored exactly. The temporary PLC snapshot leaves current use and stays in History."}
         </p>
       </div>
 

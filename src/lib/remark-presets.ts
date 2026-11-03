@@ -176,7 +176,6 @@ export const REMARK_PRESETS = {
   reviseSchedule: [
     "Customer asked for more time",
     "Bank loan disbursement delayed",
-    "Instalments rearranged as agreed with the customer",
     "Dates corrected as per the agreement",
   ],
   decideSchedule: [

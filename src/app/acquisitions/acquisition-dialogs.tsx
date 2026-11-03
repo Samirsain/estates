@@ -36,7 +36,7 @@ export function FormDialog({
 }: {
   title: string;
   subtitle: string;
-  consequence: string;
+  consequence?: string;
   busy: boolean;
   children: React.ReactNode;
   onClose: () => void;
@@ -46,7 +46,7 @@ export function FormDialog({
     <Modal title={title} onClose={onClose}>
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">{subtitle}</p>
-        <p className="mt-1 text-muted-foreground">{consequence}</p>
+        {consequence && <p className="mt-1 text-muted-foreground">{consequence}</p>}
       </div>
       <form
         className="space-y-3"
@@ -90,7 +90,6 @@ export function AcquisitionDialogs({
       <FormDialog
         title="Confirm Payment Given"
         subtitle={dialog.row.property}
-        consequence="Percentage only, allocated to the oldest unpaid instalment first. The reference must be unique across Payment Received and Payment Given."
         busy={busy}
         onClose={onClose}
         onSubmit={(f) =>
@@ -135,7 +134,6 @@ export function AcquisitionDialogs({
       <FormDialog
         title="Correct Payment Given"
         subtitle={`entry ${dialog.entry.percent}% · ${dialog.entry.reference}`}
-        consequence="The original entry is superseded, never deleted. Falling below 100% shows Payment Pending again and steps the Buying Commission back; below 20% the property stops being sellable."
         busy={busy}
         onClose={onClose}
         onSubmit={(f) =>
@@ -186,11 +184,6 @@ export function AcquisitionDialogs({
       <FormDialog
         title={dialog.approve ? "Approve deal" : "Reject deal"}
         subtitle={dialog.row.property}
-        consequence={
-          dialog.approve
-            ? "The property enters normal inventory as Available + RESALE. A Buyback closes the old Booking as Buyback Completed and removes the previous Customer from the allocation."
-            : "The prior state is restored exactly and the Booking is released from Buyback Pending."
-        }
         busy={busy}
         onClose={onClose}
         onSubmit={(f) =>
@@ -252,7 +245,6 @@ export function AcquisitionDialogs({
       <FormDialog
         title="Cancel deal"
         subtitle={dialog.row.property}
-        consequence="The property becomes Not Available — Deal Cancelled and must not remain sellable. Payment Given history stays, and Accounts adjustment work is created where payment already happened."
         busy={busy}
         onClose={onClose}
         onSubmit={(f) =>
@@ -270,7 +262,6 @@ export function AcquisitionDialogs({
     <FormDialog
       title="Record Buying Commission"
       subtitle={`Arranged by ${dialog.row.arrangedBy}`}
-      consequence="One beneficiary per deal, at most 5%, payable only at 100% Payment Given. The seller cannot be the beneficiary."
       busy={busy}
       onClose={onClose}
       onSubmit={(f) =>

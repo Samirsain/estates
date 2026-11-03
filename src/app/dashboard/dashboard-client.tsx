@@ -621,7 +621,7 @@ function ReviseDialog({
   return (
     <Modal
       title="Revise task"
-      description={`${task.title} — ${recordReference(task.record) ?? task.record.name}. The task stays Pending and the new date, result and remark are recorded.`}
+      description={`${task.title} — ${recordReference(task.record) ?? task.record.name}`}
       onClose={onClose}
     >
       <form

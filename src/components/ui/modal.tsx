@@ -8,6 +8,13 @@ import React from "react";
 import { X } from "lucide-react";
 import { NO_STEPPER } from "./input";
 
+/**
+ * A screen's last action error, shown inside whichever dialog is open. A modal
+ * <dialog> sits in the top layer, so a notice on the page behind it is never
+ * seen and a refused Confirm looks like nothing happened.
+ */
+export const ModalError = React.createContext<string | null>(null);
+
 export function Modal({
   title,
   description,
@@ -30,6 +37,7 @@ export function Modal({
 }) {
   const ref = React.useRef<HTMLDialogElement>(null);
   React.useEffect(() => ref.current?.showModal(), []);
+  const error = React.useContext(ModalError);
 
   return (
     <dialog
@@ -57,6 +65,11 @@ export function Modal({
             <h2 className="text-base font-semibold">{title}</h2>
             {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
           </div>
+        )}
+        {error && (
+          <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            {error}
+          </p>
         )}
         {children}
       </div>

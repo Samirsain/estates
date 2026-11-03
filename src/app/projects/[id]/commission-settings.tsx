@@ -80,10 +80,10 @@ const loyalty = (v: CommissionVersionView) =>
   v.loyaltyEnabled && v.loyaltyPercent ? `${rateLabel(v.loyaltyPercent)}%` : "Disabled";
 
 /** The Rewards rule in the words the Member profile uses. */
-// Owner 2 Nov — "3 sales (2-1)": the target, then minimum Own and maximum
+// Owner 3 Nov — "3 sales (2+1)": the target, then minimum Own plus maximum
 // Reference credits, so the split reads at a glance. No "= 1 Reward" (owner, 3 Nov).
 const rewards = (v: CommissionVersionView) =>
-  v.trip ? `${v.trip.target} sales (${v.trip.minOwn}-${v.trip.maxRef})` : "Disabled";
+  v.trip ? `${v.trip.target} sales (${v.trip.minOwn}+${v.trip.maxRef})` : "Disabled";
 const royaltyLabel = (v: CommissionVersionView) =>
   v.royaltyTokensPerAward != null ? `${v.royaltyTokensPerAward} points` : "Disabled";
 

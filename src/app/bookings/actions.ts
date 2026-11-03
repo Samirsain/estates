@@ -191,7 +191,6 @@ export async function decideBookingRequestAction(
     bookingId: string;
     approve: boolean;
     rejectReason: BookingRejectReason | "";
-    requestClaimedPayment: boolean;
     note: string;
   },
   key: string
@@ -205,7 +204,6 @@ export async function decideBookingRequestAction(
       bookingId: input.bookingId,
       approve: input.approve,
       rejectReason: input.rejectReason || undefined,
-      requestClaimedPayment: input.requestClaimedPayment,
       note: input.note,
     });
     refresh();
@@ -867,6 +865,15 @@ export async function loadBookingDetail(bookingId: string) {
     ? await plcSnapshotHistory(booking.plcSnapshot.id)
     : [];
 
+  const receivedOnBySeq = new Map<number, Date>();
+  for (const e of booking.paymentEntries) {
+    if (e.status !== "CONFIRMED") continue;
+    for (const a of e.allocations as { seq: number; percent: string }[]) {
+      const last = receivedOnBySeq.get(a.seq);
+      if (Number(a.percent) > 0 && (!last || e.paidOn > last)) receivedOnBySeq.set(a.seq, e.paidOn);
+    }
+  }
+
   return {
     id: booking.id,
     /**
@@ -931,6 +938,9 @@ export async function loadBookingDetail(bookingId: string) {
       decisionNote: v.decisionNote,
       snapshot: v.snapshot,
     })),
+    // Owner 3 Nov — the date each instalment was received: the latest
+    // confirmed entry that put money on its seq (allocations are by seq, and a
+    // schedule revision carries received by seq too).
     scheduleVersions: booking.scheduleVersions.map((s) => ({
       version: s.version,
       status: s.status,
@@ -943,6 +953,7 @@ export async function loadBookingDetail(bookingId: string) {
         received: i.receivedPercent.toFixed(2),
         remaining: i.scheduledPercent.sub(i.receivedPercent).toFixed(2),
         dueDate: i.dueDate.toISOString(),
+        receivedOn: receivedOnBySeq.get(i.seq)?.toISOString() ?? null,
         // Derived here so Upcoming / Received / Overdue comes from the one rule
         // rather than being re-implemented in the browser (PRD §10.1).
         status: instalmentStatus({

@@ -423,16 +423,17 @@ export function reviseGroup(task: { purpose: string; decision?: boolean | null }
 }
 
 /** The Task List's Task filter (owner, 3 Nov 2026): a few types, not one per
- *  title. Built on the Revise groups; Verify splits off the other decisions. */
-export const TASK_FILTERS = ["Verify", "Approval", "Follow-Up", "Details & Papers", "Review", "Reward", "RERA", "Manual", "Other"] as const;
+ *  title. Built on the Revise groups; Verify splits off the other decisions.
+ *  Follow-Up reads Payment Follow-Up (owner, 3 Nov); Enquiry stands apart. */
+export const TASK_FILTERS = ["Verify", "Approval", "Payment Follow-Up", "Enquiry Follow-Up", "Details & Papers", "Review", "Reward", "RERA", "Manual", "Other"] as const;
 export type TaskFilter = (typeof TASK_FILTERS)[number];
 
 const FILTER_OF: Record<ReviseGroup, TaskFilter> = {
   DECISION: "Approval",
-  ENQUIRY: "Follow-Up",
-  PAYMENT: "Follow-Up",
-  PAYMENT_GIVEN: "Follow-Up",
-  RECOVERY: "Follow-Up",
+  ENQUIRY: "Enquiry Follow-Up",
+  PAYMENT: "Payment Follow-Up",
+  PAYMENT_GIVEN: "Payment Follow-Up",
+  RECOVERY: "Payment Follow-Up",
   CUSTOMER_DETAILS: "Details & Papers",
   PAPERS: "Details & Papers",
   INTERNAL: "Review",

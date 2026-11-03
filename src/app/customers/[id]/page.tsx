@@ -563,11 +563,13 @@ export default async function CustomerDetailPage({
             <p className="text-xs text-muted-foreground">No approved Bookings yet.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[46rem] text-xs">
+              {/* Owner 3 Nov — the same fixed columns as Loyalty Points below,
+                  so Booking ID and Plot line up in both tables. */}
+              <table className="w-full min-w-[46rem] table-fixed text-xs">
                 <thead className="border-b border-border/50">
                   <tr>
-                    <th className={CTH}>Booking</th>
-                    <th className={CTH}>Plot · Type / Project</th>
+                    <th className={`${CTH} w-[14%]`}>Booking ID</th>
+                    <th className={`${CTH} w-[22%]`}>Plot · Type / Project</th>
                     <th className={CTH}>Status</th>
                     <th className={CTH}>Ownership</th>
                     <th className={CTH}>Sold By</th>
@@ -691,11 +693,11 @@ export default async function CustomerDetailPage({
             <p className="text-xs text-muted-foreground">No commission records yet.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[46rem] text-xs">
+              <table className="w-full min-w-[46rem] table-fixed text-xs">
                 <thead className="border-b border-border/50">
                   <tr>
-                    <th className={CTH}>Booking ID</th>
-                    <th className={CTH}>Plot · Type / Project</th>
+                    <th className={`${CTH} w-[14%]`}>Booking ID</th>
+                    <th className={`${CTH} w-[22%]`}>Plot · Type / Project</th>
                     <th className={CTH}>Buyer</th>
                     <th className={CTH}>%</th>
                     <th className={CTH}>Eligibility</th>
