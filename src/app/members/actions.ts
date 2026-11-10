@@ -33,40 +33,9 @@ function refresh() {
   revalidatePath("/dashboard");
 }
 
-export async function activateMemberAction(
-  input: {
-    personId: string;
-    invitedByMemberId: string;
-    reraStatus: "REGISTERED" | "PENDING" | "EXPIRED" | "NOT_APPLICABLE";
-    reraNumber: string;
-    reraExpiryDate: string;
-    reraNotApplicableReason: string;
-  },
-  key: string
-): Promise<ActionResult> {
-  const actor = await requireStaff("MEMBER_ACTIVATE");
-  try {
-    const result = await activateMember({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
-      personId: input.personId,
-      invitedByMemberId: input.invitedByMemberId || null,
-      reraStatus: input.reraStatus,
-      reraNumber: input.reraNumber || null,
-      reraExpiryDate: input.reraExpiryDate ? new Date(input.reraExpiryDate) : null,
-      reraNotApplicableReason: input.reraNotApplicableReason || null,
-    });
-    refresh();
-    return {
-      ok: true,
-      message: `Activated as ${result.memberId}.`,
-    };
-  } catch (error) {
-    return toResult(error);
-  }
-}
-
+// Add Member always types the Person in (owner, 10 Nov 2026: "Select Existing
+// Person" removed). Someone already on file — a Customer, say — is still
+// matched on name and mobile by linkOrCreatePerson and activated as themselves.
 export async function createAndActivateMemberAction(
   input: {
     fullName: string;
@@ -77,6 +46,12 @@ export async function createAndActivateMemberAction(
     aadhaar: string;
     /** Optional; written once, like the Aadhaar. */
     pan: string;
+    /** Optional; ten digits when given. */
+    altMobile: string;
+    /** Optional. */
+    addressLine: string;
+    /** "Photo Received" — the office has the Member's photo. */
+    photoReceived: boolean;
     invitedByMemberId: string;
     reraStatus: "REGISTERED" | "PENDING" | "EXPIRED" | "NOT_APPLICABLE";
     reraNumber: string;
@@ -111,12 +86,15 @@ export async function createAndActivateMemberAction(
         ...cleanMemberBusiness(input),
         aadhaar: input.aadhaar.trim() || null,
         pan: input.pan.trim() || null,
+        altMobile: input.altMobile.trim() || null,
+        addressLine: input.addressLine.trim() || null,
       },
       invitedByMemberId: input.invitedByMemberId || null,
       reraStatus: input.reraStatus,
       reraNumber: input.reraNumber || null,
       reraExpiryDate: input.reraExpiryDate ? new Date(input.reraExpiryDate) : null,
       reraNotApplicableReason: input.reraNotApplicableReason || null,
+      photoReceived: input.photoReceived,
     });
 
     refresh();

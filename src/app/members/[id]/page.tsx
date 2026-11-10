@@ -888,6 +888,7 @@ export default async function MemberDetailPage({
                 canEnterBank={can(actor.role, "BANK_DETAILS_ENTER", actor.extraPermissions)}
                 askAadhaar={member.person.aadhaarStatus === "PENDING"}
                 askPan={member.person.panStatus === "NOT_AVAILABLE"}
+                photoReceived={member.photoReceived}
                 business={{
                   firmName: member.person.firmName ?? "",
                   dealsIn: member.person.dealsIn,
@@ -1057,6 +1058,7 @@ export default async function MemberDetailPage({
               }
               hint={words(member.person.panStatus)}
             />
+            <Row label="Photo" value={member.photoReceived ? "Received" : "Not received"} />
           </Section>
 
           {/* The current account first; the others open under "Show N more",

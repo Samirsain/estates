@@ -244,6 +244,10 @@ model MemberProfile {
   /// Compulsory when the status is Not Applicable (PRD §19.5).
   reraNotApplicableReason String?
 
+  /// Owner, 10 Nov 2026 — whether the office has the Member's photo. A tick
+  /// only: the photo itself is never uploaded to the CRM.
+  photoReceived Boolean @default(false)
+
   /// Terms §2.1 — acceptance is part of becoming a Member, so it is recorded
   /// rather than re-asked. A new version asks again and adds its own row.
   termsAcceptances MemberTermsAcceptance[]

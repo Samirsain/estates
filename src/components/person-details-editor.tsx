@@ -28,6 +28,7 @@ export function PersonDetailsEditor({
   business,
   askAadhaar,
   askPan,
+  photoReceived,
 }: {
   personId: string;
   /**
@@ -56,6 +57,8 @@ export function PersonDetailsEditor({
   askAadhaar?: boolean;
   /** While no PAN is on file — it is written once, like the Aadhaar. */
   askPan?: boolean;
+  /** Member profile only: the "Photo Received" tick as on file. */
+  photoReceived?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
@@ -102,6 +105,7 @@ export function PersonDetailsEditor({
                   business: business ? readMemberBusiness(f) : undefined,
                   aadhaar: askAadhaar ? get("aadhaar") : undefined,
                   pan: askPan ? get("pan") : undefined,
+                  photoReceived: photoReceived === undefined ? undefined : f.get("photoReceived") === "on",
                 },
                 get("reason"),
                 globalThis.crypto.randomUUID()
@@ -176,6 +180,13 @@ export function PersonDetailsEditor({
                 </Field>
               )}
             </div>
+
+            {photoReceived !== undefined && (
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="photoReceived" defaultChecked={photoReceived} className="h-4 w-4 accent-primary" />
+                Photo Received
+              </label>
+            )}
 
             {business && <MemberBusinessFields {...business} />}
 

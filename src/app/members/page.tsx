@@ -15,7 +15,7 @@ export default async function MembersPage() {
   // MD and Admin read a contact number whole; everyone else gets the mask.
   const fullMobile = canViewField(actor.role, "MOBILE_FULL");
 
-  const [members, activatable, deals] = await Promise.all([
+  const [members, deals] = await Promise.all([
     db.memberProfile.findMany({
       include: {
         person: true,
@@ -23,13 +23,6 @@ export default async function MembersPage() {
         _count: { select: { invitedMembers: true, introducedCustomers: true } },
       },
       orderBy: { memberId: "asc" },
-    }),
-    // A Person can become a Member only once, so anyone already carrying a
-    // Member profile is out of the list (prd-complete §7.1).
-    db.person.findMany({
-      where: { memberProfile: null, mergeStatus: { not: "MERGED_AWAY" } },
-      select: { id: true, fullName: true, primaryMobile: true },
-      orderBy: { fullName: "asc" },
     }),
     /*
      * How many sales a Member has brought, counted once here rather than per
@@ -96,10 +89,6 @@ export default async function MembersPage() {
       actorName={actor.name}
       staffAccountId={actor.staffAccountId}
       rows={rows}
-      activatable={activatable.map((p) => ({
-        id: p.id,
-        label: `${p.fullName} · ${fullMobile ? p.primaryMobile : maskMobile(p.primaryMobile)}`,
-      }))}
       permissions={{
         activate: can(actor.role, "MEMBER_ACTIVATE", actor.extraPermissions),
         deactivate: can(actor.role, "MEMBER_DEACTIVATE", actor.extraPermissions),

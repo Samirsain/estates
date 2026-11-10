@@ -39,6 +39,8 @@ export type PersonDetails = {
   aadhaar?: string;
   /** Asked only while none is on file; written once (recordPan). */
   pan?: string;
+  /** Member profile only: the "Photo Received" tick. Left out on a Customer's page. */
+  photoReceived?: boolean;
 };
 
 /** The columns the audit compares, so before and after read the same way. */
@@ -141,6 +143,16 @@ export async function updatePersonDetailsAction(
         await recordAadhaar(tx, personId, input.aadhaar);
         await recordPan(tx, personId, input.pan);
 
+        // A Member-level fact, so it lives on the Member profile, not the Person.
+        const photoBefore =
+          input.photoReceived === undefined
+            ? undefined
+            : (await tx.memberProfile.findUnique({ where: { personId }, select: { photoReceived: true } }))?.photoReceived;
+        if (photoBefore !== undefined && photoBefore !== input.photoReceived) {
+          await tx.memberProfile.update({ where: { personId }, data: { photoReceived: input.photoReceived } });
+        }
+        const photo = (value: boolean | undefined) => (photoBefore === undefined ? {} : { photoReceived: value });
+
         const person = await tx.person.update({
           where: { id: personId },
           data: {
@@ -165,8 +177,8 @@ export async function updatePersonDetailsAction(
             reason,
             // Contact facts are business data. Of Aadhaar and PAN only the status
             // enters the audit; the numbers never do.
-            before: snapshot(before),
-            after: snapshot(person),
+            before: { ...snapshot(before), ...photo(photoBefore) },
+            after: { ...snapshot(person), ...photo(input.photoReceived) },
           },
         };
       }

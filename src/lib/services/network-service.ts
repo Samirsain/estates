@@ -20,6 +20,7 @@ import { closeTasksFor, ensureTask } from "./task-service";
 import { linkOrCreatePerson } from "./enquiry-service";
 import { recordAadhaar, recordPan } from "./completion-service";
 import { blindIndex, normaliseAadhaar, normalisePan } from "@/lib/security/identity";
+import { normaliseMobile } from "@/lib/domain/land-inquiry";
 
 /** Add Member's Person, made inside the activation so a refused activation leaves nothing behind. */
 export type NewMemberPerson = {
@@ -32,6 +33,8 @@ export type NewMemberPerson = {
   businessExperience: string | null;
   aadhaar: string | null;
   pan: string | null;
+  altMobile: string | null;
+  addressLine: string | null;
 };
 
 /**
@@ -40,13 +43,17 @@ export type NewMemberPerson = {
  * file is refused by name — it used to be dropped while Add Member said it worked.
  */
 async function addMemberPerson(tx: Tx, input: NewMemberPerson) {
-  const found = await linkOrCreatePerson(tx, { fullName: input.fullName, mobile: input.mobile, city: input.city });
+  // linkOrCreatePerson refuses an alternate mobile that is not ten digits.
+  const found = await linkOrCreatePerson(tx, { fullName: input.fullName, mobile: input.mobile, altMobile: input.altMobile ?? undefined, city: input.city });
   const differs = (onFile: string | null, typed: string | null) =>
     !!onFile?.trim() && !!typed?.trim() && onFile.trim().toLowerCase() !== typed.trim().toLowerCase();
   const typedAadhaar = input.aadhaar?.trim();
   const typedPan = input.pan?.trim();
+  const altMobile = input.altMobile?.trim() ? normaliseMobile(input.altMobile) : null;
   const clashes = [
     differs(found.email, input.email) && "Email",
+    differs(found.altMobile, altMobile) && "Alternate Mobile",
+    differs(found.addressLine, input.addressLine) && "Address",
     typedAadhaar &&
       found.aadhaarStatus !== "PENDING" &&
       found.aadhaarBlindIndex !== blindIndex(normaliseAadhaar(typedAadhaar)) &&
@@ -73,6 +80,8 @@ async function addMemberPerson(tx: Tx, input: NewMemberPerson) {
     data: {
       city: found.city ?? input.city,
       email: found.email ?? input.email,
+      altMobile: found.altMobile ?? altMobile,
+      addressLine: found.addressLine ?? input.addressLine,
       firmName: found.firmName ?? input.firmName,
       dealsIn: found.dealsIn.length ? found.dealsIn : input.dealsIn,
       businessExperience: found.businessExperience ?? input.businessExperience,
@@ -286,6 +295,8 @@ export async function activateMember(args: {
   reraNumber?: string | null;
   reraExpiryDate?: Date | null;
   reraNotApplicableReason?: string | null;
+  /** Add Member's "Photo Received" tick; left out, the profile keeps its own. */
+  photoReceived?: boolean;
 }) {
   if (args.actorRole !== "MD") {
     blocked("Only MD may activate a Member.");
@@ -357,6 +368,7 @@ export async function activateMember(args: {
               reraNumber: args.reraNumber?.trim() || null,
               reraExpiryDate: args.reraExpiryDate ?? null,
               reraNotApplicableReason: args.reraNotApplicableReason?.trim() || null,
+              photoReceived: args.photoReceived,
             },
           })
         : await tx.memberProfile.create({
@@ -372,6 +384,7 @@ export async function activateMember(args: {
               reraNumber: args.reraNumber?.trim() || null,
               reraExpiryDate: args.reraExpiryDate ?? null,
               reraNotApplicableReason: args.reraNotApplicableReason?.trim() || null,
+              photoReceived: args.photoReceived,
             },
           });
 

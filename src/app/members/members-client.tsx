@@ -19,7 +19,6 @@ import { AADHAAR_INPUT, ACCOUNT_NUMBER_INPUT, IFSC_INPUT, MOBILE_INPUT, PAN_INPU
 import { Field, Modal, inputClass, ModalError } from "@/components/ui/modal";
 import { formatIst, istDay, type StaffRole, formatIstDate } from "@/lib/tasks";
 import {
-  activateMemberAction,
   createAndActivateMemberAction,
   decideBankDetailsAction,
   enterBankDetailsAction,
@@ -99,14 +98,12 @@ export default function MembersClient({
   actorName,
   staffAccountId,
   rows,
-  activatable,
   permissions,
 }: {
   role: StaffRole;
   actorName: string;
   staffAccountId: string;
   rows: MemberRowView[];
-  activatable: Array<{ id: string; label: string }>;
   permissions: Permissions;
 }) {
   const router = useRouter();
@@ -331,11 +328,9 @@ export default function MembersClient({
 
       {dialog?.kind === "ACTIVATE" && (
         <ActivateMemberDialogForm
-          activatable={activatable}
           rows={rows}
           busy={busy}
           onClose={() => setDialog(null)}
-          onSubmitExisting={(input) => run(() => activateMemberAction(input, newKey()))}
           onSubmitNew={(input) => run(() => createAndActivateMemberAction(input, newKey()))}
         />
       )}
@@ -846,130 +841,87 @@ export function ReraFields({ row }: { row?: MemberRera }) {
 }
 
 function ActivateMemberDialogForm({
-  activatable,
   rows,
   busy,
   onClose,
-  onSubmitExisting,
   onSubmitNew,
 }: {
-  activatable: Array<{ id: string; label: string }>;
   rows: MemberRowView[];
   busy: boolean;
   onClose: () => void;
-  onSubmitExisting: (input: Parameters<typeof activateMemberAction>[0]) => void;
   onSubmitNew: (input: Parameters<typeof createAndActivateMemberAction>[0]) => void;
 }) {
-  const [personMode, setPersonMode] = React.useState<"existing" | "new">(
-    activatable.length > 0 ? "existing" : "new"
-  );
-
+  // Owner, 10 Nov 2026 — no "Select Existing Person": the Person is typed in.
+  // Someone already on file is matched on name and mobile and activated as
+  // themselves (createAndActivateMemberAction).
   return (
     <Modal
       title="Add Member"
       onClose={onClose}
     >
-      <div className="flex gap-2 pb-2">
-        <button
-          type="button"
-          onClick={() => setPersonMode("existing")}
-          className={`flex-1 rounded-xl border py-2 text-center text-xs font-semibold ${
-            personMode === "existing"
-              ? "border-primary/40 bg-primary/15 text-primary"
-              : "border-border/60 text-muted-foreground"
-          }`}
-        >
-          Select Existing Person ({activatable.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setPersonMode("new")}
-          className={`flex-1 rounded-xl border py-2 text-center text-xs font-semibold ${
-            personMode === "new"
-              ? "border-primary/40 bg-primary/15 text-primary"
-              : "border-border/60 text-muted-foreground"
-          }`}
-        >
-          + Create New Person
-        </button>
-      </div>
-
       <form
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
-          if (personMode === "existing") {
-            onSubmitExisting({
-              personId: String(f.get("personId")),
-              invitedByMemberId: String(f.get("invitedByMemberId") ?? ""),
-              reraStatus: String(f.get("reraStatus")) as "PENDING",
-              reraNumber: String(f.get("reraNumber") ?? ""),
-              reraExpiryDate: String(f.get("reraExpiryDate") ?? ""),
-              reraNotApplicableReason: String(f.get("reraNotApplicableReason") ?? ""),
-            });
-          } else {
-            onSubmitNew({
-              fullName: String(f.get("fullName")),
-              mobile: String(f.get("mobile")),
-              city: String(f.get("city") ?? ""),
-              email: String(f.get("email") ?? ""),
-              aadhaar: String(f.get("aadhaar") ?? ""),
-              pan: String(f.get("pan") ?? ""),
-              ...readMemberBusiness(f),
-              invitedByMemberId: String(f.get("invitedByMemberId") ?? ""),
-              reraStatus: String(f.get("reraStatus")) as "PENDING",
-              reraNumber: String(f.get("reraNumber") ?? ""),
-              reraExpiryDate: String(f.get("reraExpiryDate") ?? ""),
-              reraNotApplicableReason: String(f.get("reraNotApplicableReason") ?? ""),
-            });
-          }
+          onSubmitNew({
+            fullName: String(f.get("fullName")),
+            mobile: String(f.get("mobile")),
+            altMobile: String(f.get("altMobile") ?? ""),
+            city: String(f.get("city") ?? ""),
+            addressLine: String(f.get("addressLine") ?? ""),
+            email: String(f.get("email") ?? ""),
+            aadhaar: String(f.get("aadhaar") ?? ""),
+            pan: String(f.get("pan") ?? ""),
+            photoReceived: f.get("photoReceived") === "on",
+            ...readMemberBusiness(f),
+            invitedByMemberId: String(f.get("invitedByMemberId") ?? ""),
+            reraStatus: String(f.get("reraStatus")) as "PENDING",
+            reraNumber: String(f.get("reraNumber") ?? ""),
+            reraExpiryDate: String(f.get("reraExpiryDate") ?? ""),
+            reraNotApplicableReason: String(f.get("reraNotApplicableReason") ?? ""),
+          });
         }}
       >
-        {/* Both stay mounted: switching unmounted the new Person's fields and
-            lost everything typed. The one not chosen is hidden and disabled,
-            so it neither submits nor blocks the form. */}
-        <fieldset className="m-0 min-w-0 border-0 p-0" disabled={personMode !== "existing"} hidden={personMode !== "existing"}>
-          <Field label="Person">
-            <PersonPicker
-              name="personId"
-              required
-              placeholder="Search a Person by name or mobile"
-              options={activatable}
-            />
+        <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+          <Field label="Full Name">
+            <Input name="fullName" required placeholder="e.g. Samir Sain" />
           </Field>
-        </fieldset>
-        <fieldset className="m-0 min-w-0 border-0 p-0" disabled={personMode !== "new"} hidden={personMode !== "new"}>
-          <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
-            <Field label="Full Name">
-              <Input name="fullName" required placeholder="e.g. Samir Sain" />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="WhatsApp Number">
+              <Input name="mobile" required {...MOBILE_INPUT} />
             </Field>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="WhatsApp Number">
-                <Input name="mobile" required {...MOBILE_INPUT} />
-              </Field>
-              <Field label="City">
-                <Input name="city" required placeholder="Jaipur" />
-              </Field>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Email (optional)">
-                <Input name="email" type="email" />
-              </Field>
-              <Field label="Aadhaar Number (optional)">
-                <Input name="aadhaar" {...AADHAAR_INPUT} />
-              </Field>
-              <Field label="PAN Number (optional)">
-                <Input
-                  name="pan"
-                  {...PAN_INPUT}
-                  className="uppercase"
-                />
-              </Field>
-            </div>
-            <MemberBusinessFields />
+            <Field label="Alternate Mobile (optional)">
+              <Input name="altMobile" {...MOBILE_INPUT} placeholder="Optional" />
+            </Field>
+            <Field label="City">
+              <Input name="city" required placeholder="Jaipur" />
+            </Field>
+            <Field label="Address (optional)">
+              <Input name="addressLine" placeholder="House, street, area" />
+            </Field>
           </div>
-        </fieldset>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Email (optional)">
+              <Input name="email" type="email" />
+            </Field>
+            <Field label="Aadhaar Number (optional)">
+              <Input name="aadhaar" {...AADHAAR_INPUT} />
+            </Field>
+            <Field label="PAN Number (optional)">
+              <Input
+                name="pan"
+                {...PAN_INPUT}
+                className="uppercase"
+              />
+            </Field>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="photoReceived" className="h-4 w-4 accent-primary" />
+            Photo Received
+          </label>
+          <MemberBusinessFields />
+        </div>
 
         <Field label="Invited By — the Member who introduced them (optional)">
           <PersonPicker
