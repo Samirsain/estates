@@ -11,21 +11,30 @@ import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AADHAAR_INPUT, ACCOUNT_NUMBER_INPUT, IFSC_INPUT, MOBILE_INPUT, PAN_INPUT } from "@/components/ui/field-formats";
 import { Field, Modal } from "@/components/ui/modal";
 import { updatePersonDetailsAction, type PersonDetails } from "@/app/people/actions";
 import { enterBankDetailsAction } from "@/app/members/actions";
 import { RemarkSelect } from "@/components/ui/remark-select";
 import { useHashOpen } from "@/lib/hash-open";
+import { istDay } from "@/lib/tasks";
+import { MemberBusinessFields, readMemberBusiness } from "@/components/member-business-fields";
 
 export function PersonDetailsEditor({
   personId,
   person,
   bank,
   canEnterBank,
+  business,
+  askAadhaar,
+  askPan,
 }: {
   personId: string;
-  /** The Person as it stands, so the form opens on what is already on file. */
-  person: PersonDetails;
+  /**
+   * The Person as it stands, so the form opens on what is already on file.
+   * A role that reads mobiles masked gets them blank, with the mask as a hint.
+   */
+  person: PersonDetails & { mobileOnFile?: string; altMobileOnFile?: string };
   /**
    * The newest bank entry, so a correction starts from what is on file rather
    * than from an empty form. The account number is never among it — it is
@@ -41,11 +50,21 @@ export function PersonDetailsEditor({
   } | null;
   /** Bank entry is its own permission, and its own trip through Accounts. */
   canEnterBank?: boolean;
+  /** Member profile only: Firm Name, Deals In, Experience as on file. */
+  business?: { firmName: string; dealsIn: string[]; experience: string | null };
+  /** While no Aadhaar is on file — it is written once. */
+  askAadhaar?: boolean;
+  /** While no PAN is on file — it is written once, like the Aadhaar. */
+  askPan?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  // Each form's error sits beside its own Save button: the dialog scrolls, and
+  // a refusal printed at the top was never seen from the bank Save button.
   const [error, setError] = React.useState<string | null>(null);
+  const [bankError, setBankError] = React.useState<string | null>(null);
+  const [bankSaved, setBankSaved] = React.useState(false);
   // A Payout "Add Bank" button opens this by link.
   useHashOpen("edit-details", () => setOpen(true));
 
@@ -61,12 +80,6 @@ export function PersonDetailsEditor({
           title="Edit details"
           onClose={() => setOpen(false)}
         >
-          {error && (
-            <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              {error}
-            </p>
-          )}
-
           <form
             className="space-y-3"
             onSubmit={async (e) => {
@@ -86,6 +99,9 @@ export function PersonDetailsEditor({
                   city: get("city"),
                   addressLine: get("addressLine"),
                   dateOfBirth: get("dateOfBirth"),
+                  business: business ? readMemberBusiness(f) : undefined,
+                  aadhaar: askAadhaar ? get("aadhaar") : undefined,
+                  pan: askPan ? get("pan") : undefined,
                 },
                 get("reason"),
                 globalThis.crypto.randomUUID()
@@ -110,10 +126,21 @@ export function PersonDetailsEditor({
 
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Primary Mobile">
-                <Input name="mobile" required inputMode="tel" defaultValue={person.mobile} />
+                <Input
+                  name="mobile"
+                  required={!person.mobileOnFile}
+                  {...MOBILE_INPUT}
+                  defaultValue={person.mobile}
+                  placeholder={person.mobileOnFile ? `${person.mobileOnFile} · blank keeps it` : MOBILE_INPUT.placeholder}
+                />
               </Field>
               <Field label="Alternate Mobile">
-                <Input name="altMobile" inputMode="tel" defaultValue={person.altMobile} />
+                <Input
+                  name="altMobile"
+                  {...MOBILE_INPUT}
+                  defaultValue={person.altMobile}
+                  placeholder={person.altMobileOnFile ? `${person.altMobileOnFile} · blank keeps it` : "Optional"}
+                />
               </Field>
               <Field label="Email">
                 <Input name="email" type="email" defaultValue={person.email} />
@@ -124,7 +151,7 @@ export function PersonDetailsEditor({
                 <Input
                   name="dateOfBirth"
                   type="date"
-                  max={new Date().toISOString().slice(0, 10)}
+                  max={istDay(new Date())}
                   defaultValue={person.dateOfBirth}
                 />
               </Field>
@@ -134,12 +161,33 @@ export function PersonDetailsEditor({
               <Field label="Address">
                 <Input name="addressLine" defaultValue={person.addressLine} />
               </Field>
+              {askAadhaar && (
+                <Field label="Aadhaar Number">
+                  <Input name="aadhaar" {...AADHAAR_INPUT} />
+                </Field>
+              )}
+              {askPan && (
+                <Field label="PAN Number">
+                  <Input
+                    name="pan"
+                    {...PAN_INPUT}
+                    className="uppercase"
+                  />
+                </Field>
+              )}
             </div>
+
+            {business && <MemberBusinessFields {...business} />}
 
             <Field label="Reason — compulsory, kept in History">
               <RemarkSelect presets="editPerson" name="reason" required />
             </Field>
 
+            {error && (
+              <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                {error}
+              </p>
+            )}
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
                 Back
@@ -162,7 +210,8 @@ export function PersonDetailsEditor({
                 const f = new FormData(e.currentTarget);
                 const get = (k: string) => String(f.get(k) ?? "");
                 setBusy(true);
-                setError(null);
+                setBankError(null);
+                setBankSaved(false);
                 const outcome = await enterBankDetailsAction(
                   {
                     personId,
@@ -176,10 +225,12 @@ export function PersonDetailsEditor({
                 );
                 setBusy(false);
                 if (!outcome.ok) {
-                  setError(outcome.error);
+                  setBankError(outcome.error);
                   return;
                 }
-                setOpen(false);
+                // The dialog stays open: closing it on a bank save threw away
+                // unsaved edits in the details form above.
+                setBankSaved(true);
                 router.refresh();
               }}
             >
@@ -194,7 +245,7 @@ export function PersonDetailsEditor({
                   <Input
                     name="accountNumber"
                     required
-                    inputMode="numeric"
+                    {...ACCOUNT_NUMBER_INPUT}
                     placeholder={bank ? `\u2022\u2022\u2022\u2022 ${bank.accountLastFour}` : undefined}
                   />
                 </Field>
@@ -202,7 +253,8 @@ export function PersonDetailsEditor({
                   <Input
                     name="ifsc"
                     required
-                    placeholder="HDFC0001234"
+                    {...IFSC_INPUT}
+                    className="uppercase"
                     defaultValue={bank?.ifsc ?? ""}
                   />
                 </Field>
@@ -225,7 +277,13 @@ export function PersonDetailsEditor({
                 />
               </Field>
 
-              <div className="flex justify-end pt-1">
+              {bankError && (
+                <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  {bankError}
+                </p>
+              )}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                {bankSaved && <span className="text-xs text-emerald-700">Bank details saved.</span>}
                 <Button type="submit" size="sm" variant="outline" disabled={busy}>
                   {busy ? "Saving…" : "Save bank details"}
                 </Button>

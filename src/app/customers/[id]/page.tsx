@@ -223,7 +223,9 @@ export default async function CustomerDetailPage({
         b.parties.some((p) => p.personId === personId && p.kind === "COMMERCIAL"))
   );
 
-  const firstBookingDate = bookings.at(-1)?.submittedAt ?? null;
+  // From their first approved Booking as a buyer, as the Customers list counts
+  // it: a rejected request or a final-buyer-only row made it years too long.
+  const firstBookingDate = deals.at(-1)?.submittedAt ?? null;
   const experience = experienceSince(firstBookingDate);
 
   /* ---------------------------------------------------------------- alerts */
@@ -382,10 +384,19 @@ export default async function CustomerDetailPage({
                 personId={customer.personId}
                 bank={banks[0] ?? null}
                 canEnterBank={can(actor.role, "BANK_DETAILS_ENTER", actor.extraPermissions)}
+                askAadhaar={customer.person.aadhaarStatus === "PENDING"}
+                askPan={customer.person.panStatus === "NOT_AVAILABLE"}
                 person={{
                   fullName: customer.person.fullName,
-                  mobile: customer.person.primaryMobile,
-                  altMobile: customer.person.altMobile ?? "",
+                  // Whole only for MOBILE_FULL; otherwise blank, the mask as a hint.
+                  ...(canViewField(actor.role, "MOBILE_FULL")
+                    ? { mobile: customer.person.primaryMobile, altMobile: customer.person.altMobile ?? "" }
+                    : {
+                        mobile: "",
+                        altMobile: "",
+                        mobileOnFile: maskMobile(customer.person.primaryMobile),
+                        altMobileOnFile: customer.person.altMobile ? maskMobile(customer.person.altMobile) : undefined,
+                      }),
                   email: customer.person.email ?? "",
                   city: customer.person.city ?? "",
                   addressLine: customer.person.addressLine ?? "",
@@ -620,7 +631,7 @@ export default async function CustomerDetailPage({
                         <td className={CTD}>
                           <span className="font-medium">{words(b.status)}</span>
                           <span className={`${SUB} tabular-nums`}>
-                            {b.paymentReceivedPercent.toFixed(2)}% received
+                            {b.paymentReceivedPercent.toString()}% received
                           </span>
                         </td>
                         <td className={CTD}>

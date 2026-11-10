@@ -209,7 +209,15 @@ export async function createCommissionVersion(args: Actor & { projectId: string 
       operation: "COMMISSION_VERSION_CREATE",
       actorRef: args.actorRef,
       actorRole: args.actorRole,
-      payload: { projectId: args.projectId, ...termsData(args) },
+      // Everything the version saves, the Trip inventory included: without it a
+      // resubmit with changed exclusions replayed the old result as a success.
+      payload: {
+        projectId: args.projectId,
+        ...termsData(args),
+        trip: args.trip ?? null,
+        royaltyTokensPerAward: args.royaltyTokensPerAward,
+        effectiveFrom: args.effectiveFrom?.toISOString() ?? null,
+      },
     },
     async (tx) => {
       await lockProject(tx, args.projectId);

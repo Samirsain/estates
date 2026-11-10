@@ -15,6 +15,7 @@ import {
   BUYBACK_MIN_SOURCE_PAYMENT,
   buybackMilestoneMet,
   canMarkPaid,
+  EARLY_BLOCKED_BY_HOLD,
   earlyPayable,
   generateCommission,
   needsPaymentTask,
@@ -594,6 +595,9 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
             recordName: `${booking.bookingNumber ?? booking.requestNo} · ${record.type} ${record.percent.toFixed(2)}%`,
           })
         : null;
+    const oldRecoveryPending =
+      !record.beforeRecoveryApprovedAt &&
+      (await oldBeneficiaryRecoveryPending(tx, bookingId, record.beneficiaryPersonId));
     const next = resolveEligibility({
       type: record.type as "DIRECT" | "LOYALTY",
       progressPercent: received.toString(),
@@ -607,9 +611,7 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
       bookingProcess: booking.activeProcess,
       acquisitionPaymentPending: false, // Phase 5 sets this from the acquisition.
       recoveryOutstanding: (await outstandingRecovery(tx, record.beneficiaryPersonId)) !== null,
-      oldRecoveryPending:
-        !record.beforeRecoveryApprovedAt &&
-        (await oldBeneficiaryRecoveryPending(tx, bookingId, record.beneficiaryPersonId)),
+      oldRecoveryPending,
       circumventionPending: controls?.circumvention,
       // v2.1 §22, §77 — the closer's own KYC.
       closer: isClosing ? { kycVerified: record.beneficiaryPerson.aadhaarStatus === "VERIFIED" } : null,
@@ -645,7 +647,9 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
         decision: true,
         latestResult: "New Sold By is due; old payout not yet recovered. Pay now or wait?",
       });
-    } else if (record.holdReason === "OLD_RECOVERY_PENDING") {
+    } else if (record.holdReason === "OLD_RECOVERY_PENDING" && !oldRecoveryPending) {
+      // Only when it is: moving to Payment Pending with the Recovery still open
+      // closed MD's task with this note, and it came back as a new one later.
       await closeTasksFor(tx, "Commission", record.id, actorRef, "The old beneficiary's Recovery is resolved.", BEFORE_RECOVERY_PURPOSE);
     }
 
@@ -662,6 +666,10 @@ export async function reassessCommission(tx: Tx, bookingId: string, actorRef: st
         dueAt: new Date(),
         decision: true,
       });
+    } else if (record.eligibility === "READY" && next.state !== "READY") {
+      // Left Ready (a hold, a payment correction): the task to pay it goes too,
+      // or Accounts acted on it and was told Eligibility is not Ready.
+      await closeTasksFor(tx, "Commission", record.id, actorRef, `No longer Ready — ${next.holdReason ?? next.state}.`, COMMISSION_PAYMENT_PURPOSE);
     }
   }
 
@@ -698,9 +706,12 @@ export async function reassessBenefitsOf(tx: Tx, personId: string, actorRef: str
 export async function refreshBuyingCommission(tx: Tx, acquisitionId: string, actorRef: string) {
   const record = await tx.commissionRecord.findFirst({
     where: { acquisitionId, isCurrent: true, payment: "NOT_PAID" },
-    include: { acquisition: { select: { acquisitionNo: true, paymentGivenPercent: true } } },
+    include: { acquisition: { select: { acquisitionNo: true, paymentGivenPercent: true, status: true } } },
   });
   if (!record?.acquisition || !buyingCommissionMilestoneReached(record.acquisition.paymentGivenPercent.toString())) return;
+  // A cancelled or rejected deal keeps 100% Payment Given on record, and a KYC
+  // change or a merge used to make its commission Ready again here.
+  if (record.acquisition.status !== "PENDING_APPROVAL" && record.acquisition.status !== "APPROVED") return;
   const controls = await controlHolds(tx, {
     recordKind: "Commission",
     recordId: record.id,
@@ -784,6 +795,7 @@ export async function requestCommissionPaidEarly(args: {
       if (!record.isCurrent) blocked("This commission record has been superseded.");
       if (record.payment !== "NOT_PAID") blocked("Only an unpaid commission can be requested for Paid Early.");
       if (record.eligibility === "READY") blocked("This commission is Ready, so it is paid normally, not early.");
+      if (!earlyPayable(record)) blocked(EARLY_BLOCKED_BY_HOLD);
       if (record.earlyApprovedAt) blocked("Paid Early is already approved for this commission.");
       if (record.earlyRequestedAt) blocked("Paid Early is already requested and waiting for MD.");
 
@@ -917,6 +929,7 @@ export async function approveCommissionPaidEarly(args: {
       if (record.payment === "CANCELLED") blocked("A cancelled commission cannot be approved.");
       if (record.earlyApprovedAt) blocked("Paid Early is already approved for this commission.");
       if (!record.earlyRequestedAt) blocked("Accounts has not requested Paid Early for this commission.");
+      if (record.eligibility !== "READY" && !earlyPayable(record)) blocked(EARLY_BLOCKED_BY_HOLD);
 
       const approvedAt = new Date();
       await tx.commissionRecord.update({
@@ -987,6 +1000,9 @@ export async function markCommissionPaid(args: {
       payload: { recordId: args.recordId, early: args.early, reference: args.reference },
     },
     async (tx) => {
+      // Row lock first: two payouts at once both read NOT_PAID and both paid,
+      // and a reassessment or Recovery could change the record mid-payment.
+      await tx.$queryRaw`SELECT id FROM "CommissionRecord" WHERE id = ${args.recordId} FOR UPDATE`;
       const record = await tx.commissionRecord.findUniqueOrThrow({ where: { id: args.recordId } });
       if (!record.isCurrent) blocked("This commission record has been superseded.");
 
@@ -1028,7 +1044,7 @@ export async function markCommissionPaid(args: {
       }
 
       // AC-03 — the stored approval is the only thing that unlocks Paid Early.
-      const allowed = canMarkPaid(record.payment, record.eligibility, args.early, approvedAt !== null);
+      const allowed = canMarkPaid(record.payment, record.eligibility, args.early, approvedAt !== null, record.holdReason);
       if (!allowed.ok) blocked(allowed.reason);
 
       const dated = notFutureDated("Commission Paid Date", args.paidOn);
@@ -1263,6 +1279,11 @@ export async function cancelCommissionForBooking(
     });
 
     await closeTasksFor(tx, "Commission", record.id, actorRef, args.reason, COMMISSION_PAYMENT_PURPOSE);
+    // The record's MD decisions go with it, as supersedeRecord closes them: a
+    // Paid Early approval (T20) or Double Commission (T23) left open could only
+    // be refused afterwards.
+    await closeTasksFor(tx, "Commission", record.id, actorRef, args.reason, PAID_EARLY_PURPOSE);
+    await closeTasksFor(tx, "Commission", record.id, actorRef, args.reason, BEFORE_RECOVERY_PURPOSE);
   }
 
   // CP §64 T24, §83 step 11 — every approved Buyback of a sale gets the

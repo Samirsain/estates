@@ -119,7 +119,10 @@ export function PersonPicker({
             // even when nothing matched — the id behind it would be blank.
             e.preventDefault();
             if (rows[active]) choose(rows[active].id);
-          } else if (e.key === "Escape") {
+          } else if (e.key === "Escape" && open) {
+            // Closes the list only; the <dialog> around it would close too.
+            e.preventDefault();
+            e.stopPropagation();
             setOpen(false);
           }
         }}

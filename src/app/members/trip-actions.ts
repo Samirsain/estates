@@ -70,6 +70,8 @@ export async function deliverRewardAction(rewardId: string, key: string) {
 
 /** SSOT §38 — the inviter is named by Member ID; blank removes it. */
 export async function correctInviterAction(input: { memberProfileId: string; inviterMemberId: string; reason: string }, key: string) {
+  // Signed in first: looked up before, it told anyone whether a Member ID exists.
+  await requireStaff();
   const code = input.inviterMemberId.trim();
   const inviter = code ? await db.memberProfile.findUnique({ where: { memberId: code }, select: { id: true } }) : null;
   if (code && !inviter) return { ok: false, error: `No Member ${code}.` } as ActionResult;

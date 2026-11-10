@@ -3,6 +3,7 @@
 // different input is a conflict, not a second write.
 
 import { createHash } from "node:crypto";
+import { blindIndex } from "./identity.ts";
 
 export const IDEMPOTENCY_TTL_HOURS = 24;
 
@@ -19,7 +20,22 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
 
-export function requestHash(operation: string, payload: unknown): string {
+/**
+ * Keyed, like the Aadhaar blind index. Payloads carry Aadhaar and PAN numbers,
+ * and a plain SHA-256 of one sits beside names and mobiles in the database —
+ * a 12-digit Aadhaar could be brute-forced back out of it offline.
+ */
+export function requestHash(operation: string, payload: unknown, key?: Buffer): string {
+  return blindIndex(`${operation}|${stableStringify(payload)}`, key);
+}
+
+/**
+ * The unkeyed hash records carried before the keyed one. Compared, never
+ * stored: a retry of a command that succeeded just before the deploy replays
+ * rather than being refused as "different details".
+ */
+// ponytail: dead once IDEMPOTENCY_TTL_HOURS has passed since the keyed hash deployed — delete it then.
+export function legacyRequestHash(operation: string, payload: unknown): string {
   return createHash("sha256").update(`${operation}|${stableStringify(payload)}`).digest("hex");
 }
 
@@ -46,10 +62,12 @@ export function resolveIdempotency(
   existing: StoredCommand | null,
   operation: string,
   hash: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  legacyHash?: string
 ): Resolution {
   if (!existing || existing.expiresAt.getTime() <= now.getTime()) return { status: "NEW" };
-  if (existing.operation !== operation || existing.requestHash !== hash) {
+  const sameInput = existing.requestHash === hash || existing.requestHash === legacyHash;
+  if (existing.operation !== operation || !sameInput) {
     return { status: "CONFLICT" };
   }
   return { status: "REPLAY", result: existing.resultJson };

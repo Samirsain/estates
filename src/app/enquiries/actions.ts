@@ -1,5 +1,6 @@
 "use server";
 
+import { actionErrorText } from "@/lib/action-error";
 import type { EnquirySource, FollowUpOutcome } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -11,7 +12,7 @@ export type ActionResult = { ok: true; message?: string } | { ok: false; error: 
 
 function toResult(error: unknown): ActionResult {
   if (error instanceof CommandError) return { ok: false, error: error.message };
-  return { ok: false, error: error instanceof Error ? error.message : "Action failed." };
+  return { ok: false, error: actionErrorText(error, "Action failed.") };
 }
 
 export async function createEnquiryAction(

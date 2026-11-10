@@ -42,7 +42,7 @@ export default async function AcquisitionsPage() {
         memberProfile: { select: { memberId: true } },
       },
       orderBy: { fullName: "asc" },
-      take: 500,
+      // ponytail: every person ships to the picker (a cap hid sellers past it); server-side search when this reaches thousands.
     }),
     // PRD §11.6 — the External Resale Property Group an outside purchase lands in.
     db.project.findMany({

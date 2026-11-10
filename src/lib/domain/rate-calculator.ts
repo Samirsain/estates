@@ -232,22 +232,25 @@ export function rupeesInWords(value: Decimal | string | number): string {
 
   if (!Number.isFinite(n)) return "";
 
-  const parts: string[] = [];
-  const take = (size: number, name: string) => {
-    const count = Math.floor(n / size);
-    if (count > 0) {
-      parts.push(`${twoDigits(count)} ${name}`);
-      n -= count * size;
+  // Below one crore, in Lakh / Thousand / Hundred. The crore count is spelt
+  // the same way, so 150 crore reads "One Hundred Fifty Crore", not "undefined".
+  const words = (m: number): string => {
+    const parts: string[] = [];
+    for (const [size, name] of [[100000, "Lakh"], [1000, "Thousand"], [100, "Hundred"]] as const) {
+      const count = Math.floor(m / size);
+      if (count > 0) {
+        parts.push(`${twoDigits(count)} ${name}`);
+        m -= count * size;
+      }
     }
+    if (m > 0) parts.push(twoDigits(m));
+    return parts.join(" ");
   };
+  const crore = Math.floor(n / 10000000);
+  n -= crore * 10000000;
+  const text = [crore > 0 ? `${words(crore)} Crore` : "", words(n)].filter(Boolean).join(" ");
 
-  take(10000000, "Crore");
-  take(100000, "Lakh");
-  take(1000, "Thousand");
-  take(100, "Hundred");
-  if (n > 0) parts.push(twoDigits(n));
-
-  return `${parts.length ? parts.join(" ") : "Zero"} Rupees Only`;
+  return `${text || "Zero"} Rupees Only`;
 }
 
 /**

@@ -43,7 +43,7 @@ import {
   rolesHolding,
   STAFF_ROLES,
 } from "./permissions.ts";
-import { requestHash, resolveIdempotency, expiryFrom, type StoredCommand } from "./idempotency.ts";
+import { legacyRequestHash, requestHash, resolveIdempotency, expiryFrom, type StoredCommand } from "./idempotency.ts";
 import { signSession, verifySession, sessionExpiry, type SessionPayload } from "./session.ts";
 
 const key = randomBytes(32);
@@ -174,10 +174,16 @@ assert.doesNotThrow(() => assertDifferentActor("STF-1", "STF-2"));
 /* ----------------------------------------------------------- idempotency */
 
 const payload = { plotId: "PLT-1", customerId: "CUS-1" };
-const hash = requestHash("HOLD_CREATE", payload);
-assert.equal(hash, requestHash("HOLD_CREATE", { customerId: "CUS-1", plotId: "PLT-1" }), "key order is irrelevant");
-assert.notEqual(hash, requestHash("HOLD_CREATE", { ...payload, plotId: "PLT-2" }));
-assert.notEqual(hash, requestHash("BOOKING_SUBMIT", payload), "operation is part of the hash");
+const hash = requestHash("HOLD_CREATE", payload, key);
+assert.equal(hash, requestHash("HOLD_CREATE", { customerId: "CUS-1", plotId: "PLT-1" }, key), "key order is irrelevant");
+assert.notEqual(hash, requestHash("HOLD_CREATE", { ...payload, plotId: "PLT-2" }, key));
+assert.notEqual(hash, requestHash("BOOKING_SUBMIT", payload, key), "operation is part of the hash");
+// Payloads carry Aadhaar and PAN: without the key the hash cannot be rebuilt.
+assert.notEqual(
+  requestHash("PERSON_DETAILS_UPDATE", { aadhaar: aadhaar }, key),
+  requestHash("PERSON_DETAILS_UPDATE", { aadhaar: aadhaar }, randomBytes(32)),
+  "the request hash is keyed"
+);
 
 const record: StoredCommand = {
   key: "idem-1",
@@ -192,7 +198,7 @@ assert.deepEqual(resolveIdempotency(record, "HOLD_CREATE", hash, now), {
   result: { holdId: "HLD-1" },
 });
 assert.equal(
-  resolveIdempotency(record, "HOLD_CREATE", requestHash("HOLD_CREATE", { plotId: "PLT-2" }), now).status,
+  resolveIdempotency(record, "HOLD_CREATE", requestHash("HOLD_CREATE", { plotId: "PLT-2" }, key), now).status,
   "CONFLICT",
   "same key, different input must not create a second record"
 );
@@ -205,6 +211,18 @@ assert.equal(
   resolveIdempotency(record, "HOLD_CREATE", hash, new Date(now.getTime() + 25 * 3_600_000)).status,
   "NEW",
   "retention is at least 24 hours"
+);
+// A record written before the keyed hash still replays for the same input.
+const legacyRecord = { ...record, requestHash: legacyRequestHash("HOLD_CREATE", payload) };
+assert.equal(
+  resolveIdempotency(legacyRecord, "HOLD_CREATE", hash, now, legacyRequestHash("HOLD_CREATE", payload)).status,
+  "REPLAY",
+  "a pre-deploy record replays"
+);
+assert.equal(
+  resolveIdempotency(legacyRecord, "HOLD_CREATE", hash, now, legacyRequestHash("HOLD_CREATE", { plotId: "PLT-2" })).status,
+  "CONFLICT",
+  "a pre-deploy record still refuses different input"
 );
 
 /* --------------------------------------------------------------- sessions */
@@ -274,12 +292,17 @@ assert.ok(decoyMs > 0 && realMs > 0, "both paths perform scrypt work");
 // the only thing standing between a Staff Account ID and a new password. Both
 // halves are worth a check: that case really is ignored, and that a wrong key,
 // a prefix and a longer string are all still refused.
-assert.ok(verifyRecoveryKey("3preclub@2026fgpass"), "recovery key matches");
-assert.ok(verifyRecoveryKey("3PRECLUB@2026FGPASS"), "recovery key ignores case");
-assert.ok(verifyRecoveryKey("  3PreClub@2026FgPass  "), "recovery key ignores surrounding space");
-assert.ok(!verifyRecoveryKey("3preclub@2026"), "a prefix of the recovery key is refused");
-assert.ok(!verifyRecoveryKey("3preclub@2026fgpassX"), "a longer string is refused");
-assert.ok(!verifyRecoveryKey(""), "an empty recovery key is refused");
+const phrase = "test-phrase@9999";
+assert.ok(verifyRecoveryKey("test-phrase@9999", phrase), "recovery key matches");
+assert.ok(verifyRecoveryKey("TEST-PHRASE@9999", phrase), "recovery key ignores case");
+assert.ok(verifyRecoveryKey("  Test-Phrase@9999  ", phrase), "recovery key ignores surrounding space");
+assert.ok(!verifyRecoveryKey("test-phrase@99", phrase), "a prefix of the recovery key is refused");
+assert.ok(!verifyRecoveryKey("test-phrase@9999X", phrase), "a longer string is refused");
+assert.ok(!verifyRecoveryKey("", phrase), "an empty recovery key is refused");
+// No phrase configured: recovery is off, not open to a phrase written in source.
+assert.ok(!verifyRecoveryKey("test-phrase@9999", ""), "recovery is off when RECOVERY_KEY is unset");
+assert.ok(!verifyRecoveryKey("", ""), "an empty guess never matches an empty phrase");
+assert.doesNotMatch(readFileSync(new URL("./auth.ts", import.meta.url), "utf8"), /3preclub/i, "no recovery phrase in source");
 
 // approved-deviations.md D-06 — staff are employees; the selling side never gets a
 // login. ARCHITECTURE §3.1 permits one Person to hold all three capabilities,

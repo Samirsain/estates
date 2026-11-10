@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
+import { ENQUIRY_FOLLOW_UP_PURPOSE } from "@/lib/services/enquiry-service";
 import { can } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
 import EnquiriesClient, { type EnquiryRowView } from "./enquiries-client";
@@ -72,6 +73,14 @@ export default async function EnquiriesPage({
       take: 300,
     }),
   ]);
+  const followUpDue = new Map(
+    (
+      await db.task.findMany({
+        where: { recordKind: "Enquiry", purpose: ENQUIRY_FOLLOW_UP_PURPOSE, status: "PENDING", recordId: { in: enquiries.map((e) => e.id) } },
+        select: { recordId: true, dueAt: true },
+      })
+    ).map((t) => [t.recordId, t.dueAt] as const)
+  );
 
   // The focused Enquiry may be older than the latest 200.
   if (focusId && !enquiries.some((e) => e.id === focusId)) {
@@ -106,7 +115,9 @@ export default async function EnquiriesPage({
     // people with the same name apart — the column filters on it.
     assignedStaffCode: e.assignedStaff?.staffAccountId ?? null,
     lastOutcome: e.followUps[0]?.outcome ?? null,
-    nextFollowUpAt: e.followUps[0]?.nextAt?.toISOString() ?? null,
+    // The live follow-up task holds the next date — the first one is set only
+    // there, so every new Enquiry read "No follow-up yet".
+    nextFollowUpAt: (followUpDue.get(e.id) ?? e.followUps[0]?.nextAt)?.toISOString() ?? null,
     createdAt: e.createdAt.toISOString(),
   }));
 
@@ -137,7 +148,7 @@ export default async function EnquiriesPage({
       }))}
       members={members.map((m) => ({ id: m.id, label: `${m.memberId} · ${m.person.fullName}` }))}
       customers={customers.map((c) => ({ id: c.id, label: `${c.customerId} · ${c.person.fullName}` }))}
-      canManage={can(actor.role, "ENQUIRY_MANAGE")}
+      canManage={can(actor.role, "ENQUIRY_MANAGE", actor.extraPermissions)}
       startFor={startFor && people.some((p) => p.id === startFor) ? startFor : null}
       focus={focusId && rows.some((r) => r.id === focusId) ? focusId : null}
     />

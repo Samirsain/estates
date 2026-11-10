@@ -76,7 +76,7 @@ export function toAcquisitionRow(a: AcquisitionWithRelations): AcquisitionRowVie
       ? `${a.sourceBooking.bookingNumber ?? "Booking Request"} · ${a.sourceBooking.project.name} ${a.sourceBooking.plot.plotNumber}`
       : null,
     purchaseDate: a.purchaseDate.toISOString(),
-    paymentGivenPercent: a.paymentGivenPercent.toFixed(2),
+    paymentGivenPercent: a.paymentGivenPercent.toString(),
     // SSOT §61 — the papers back where required, and Stable Buyback Completion.
     documentsReturnRequired: a.documentsReturnRequired,
     documentsReturnedAt: a.documentsReturnedAt?.toISOString() ?? null,
@@ -111,6 +111,7 @@ export function toAcquisitionRow(a: AcquisitionWithRelations): AcquisitionRowVie
           percent: a.commissions[0].percent.toFixed(2),
           eligibility: a.commissions[0].eligibility,
           payment: a.commissions[0].payment,
+          paidOn: a.commissions[0].paidOn?.toISOString() ?? null,
         }
       : null,
   };

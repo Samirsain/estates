@@ -2,6 +2,7 @@
 
 // Investor Leads (the PotentialInvestor table) — a name, a mobile (and maybe a second one) and a city, taken down for later.
 
+import { actionErrorText } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
 import { CommandError, blocked, nextReference, runCommand } from "@/lib/services/command";
@@ -9,7 +10,14 @@ import { isValidMobile, normaliseMobile } from "@/lib/domain/land-inquiry";
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
 
-type InvestorInput = { fullName: string; mobile: string; altMobile: string; city: string };
+type InvestorInput = {
+  fullName: string;
+  mobile: string;
+  altMobile: string;
+  city: string;
+  /** Edit only: blank keeps the alternate mobile, so removing it is asked for. */
+  removeAltMobile?: boolean;
+};
 
 /** The columns the audit keeps, so a deleted row can still be read back. */
 const snapshot = (p: { fullName: string; mobile: string; altMobile: string | null; city: string | null }) => ({
@@ -21,11 +29,12 @@ const snapshot = (p: { fullName: string; mobile: string; altMobile: string | nul
 
 function toResult(error: unknown): ActionResult {
   if (error instanceof CommandError) return { ok: false, error: error.message };
-  return { ok: false, error: error instanceof Error ? error.message : "Action failed." };
+  return { ok: false, error: actionErrorText(error, "Action failed.") };
 }
 
 export async function addPotentialInvestorAction(input: InvestorInput, key: string): Promise<ActionResult> {
-  const actor = await requireStaff();
+  // A sales lead list: read by every role, changed only by those who work leads.
+  const actor = await requireStaff("ENQUIRY_MANAGE");
 
   const fullName = input.fullName.trim();
   const mobile = normaliseMobile(input.mobile);
@@ -80,7 +89,8 @@ export async function updatePotentialInvestorAction(
   input: InvestorInput,
   key: string
 ): Promise<ActionResult> {
-  const actor = await requireStaff();
+  // A sales lead list: read by every role, changed only by those who work leads.
+  const actor = await requireStaff("ENQUIRY_MANAGE");
 
   const fullName = input.fullName.trim();
   const mobile = input.mobile.trim() ? normaliseMobile(input.mobile) : null;
@@ -113,7 +123,7 @@ export async function updatePotentialInvestorAction(
           data: {
             fullName,
             mobile: mobile ?? undefined,
-            altMobile: altMobile ?? undefined,
+            altMobile: input.removeAltMobile ? null : (altMobile ?? undefined),
             city: input.city.trim() || null,
           },
         });
@@ -138,7 +148,8 @@ export async function updatePotentialInvestorAction(
 
 /** Nothing else points at an Investor Lead, so the row goes; the audit keeps what it held. */
 export async function deletePotentialInvestorAction(id: string, key: string): Promise<ActionResult> {
-  const actor = await requireStaff();
+  // A sales lead list: read by every role, changed only by those who work leads.
+  const actor = await requireStaff("ENQUIRY_MANAGE");
 
   try {
     await runCommand<string>(

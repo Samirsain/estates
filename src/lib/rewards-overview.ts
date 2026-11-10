@@ -2,6 +2,7 @@
 // Read-only, current state, no rupee totals (CP §67 "Do not show rupee totals").
 
 import { db } from "@/lib/db";
+import { istDay } from "@/lib/tasks";
 
 /** CP §90 — the open work behind each card, for the Rewards page. */
 export async function rewardLists() {
@@ -59,13 +60,13 @@ export async function reviewRows() {
     orderBy: [{ status: "asc" }, { raisedAt: "desc" }],
     take: 200,
   });
-  const decided = (by: string | null, at: Date | null, why: string | null) => (by && at ? `${by} · ${at.toISOString().slice(0, 10)} · ${why ?? ""}` : null);
+  const decided = (by: string | null, at: Date | null, why: string | null) => (by && at ? `${by} · ${istDay(at)} · ${why ?? ""}` : null);
   return circumventions.map((c) => ({
     id: c.id,
     person: c.subjectPerson.fullName,
     personId: c.subjectPerson.id,
     benefit: `${c.recovery.recoveryNo} · owed by ${c.recovery.person.fullName} (${c.recovery.status.toLowerCase()})`,
-    detail: `Shared ${c.indicators.map((i) => i.replace("_", " ").toLowerCase()).join(", ")}`,
+    detail: `Shared ${c.indicators.map((i) => i.replaceAll("_", " ").toLowerCase()).join(", ")}`,
     status: c.status,
     decided: decided(c.decidedByRef, c.decidedAt, c.reason),
   }));

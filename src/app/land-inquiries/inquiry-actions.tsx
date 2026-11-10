@@ -7,6 +7,7 @@
 // explain later.
 
 import React from "react";
+import { safely } from "@/lib/safely";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -64,7 +65,7 @@ export default function InquiryActions({
   async function run(action: () => Promise<{ ok: boolean; error?: string }>) {
     setBusy(true);
     setError(null);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
     if (!result.ok) {
       setError(result.error ?? "Action failed.");

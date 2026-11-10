@@ -14,6 +14,7 @@ import { Field, inputClass } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { formatIst, type StaffRole } from "@/lib/tasks";
 import type { ReportName } from "@/lib/services/report-service";
+import { REPORT_TAKES_DATES } from "@/lib/report-filters";
 import { exportReportAction, runReportAction, type ReportResult, type ReportRow } from "./actions";
 
 const REPORTS: Array<{ name: ReportName; label: string; note: string }> = [
@@ -59,8 +60,12 @@ export default function ReportsClient({
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<ReportResult | null>(null);
   const [masked, setMasked] = React.useState(false);
+  // The report that produced the rows on screen, not the one picked since.
+  const [shown, setShown] = React.useState<ReportName>("BOOKINGS");
 
-  const filters = { projectId, from, to };
+  // A report that takes no dates is sent none, and its date fields are off.
+  const dated = REPORT_TAKES_DATES[report];
+  const filters = { projectId, from: dated ? from : "", to: dated ? to : "" };
   const active = REPORTS.find((r) => r.name === report)!;
 
   async function run(kind: "VIEW" | "EXPORT") {
@@ -71,6 +76,7 @@ export default function ReportsClient({
         ? await runReportAction(report, filters)
         : await exportReportAction(report, filters);
     setMasked(kind === "EXPORT");
+    setShown(report);
     setResult(outcome);
     setBusy(false);
   }
@@ -116,10 +122,10 @@ export default function ReportsClient({
               </select>
             </Field>
             <Field label="From">
-              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <Input type="date" value={from} disabled={!dated} title={dated ? undefined : "This report has no date filter"} onChange={(e) => setFrom(e.target.value)} />
             </Field>
             <Field label="To">
-              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+              <Input type="date" value={to} disabled={!dated} title={dated ? undefined : "This report has no date filter"} onChange={(e) => setTo(e.target.value)} />
             </Field>
           </div>
 
@@ -147,7 +153,7 @@ export default function ReportsClient({
           <Card className="space-y-3 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold">
-                {active.label} · {result.rows.length} row{result.rows.length === 1 ? "" : "s"}
+                {REPORTS.find((r) => r.name === shown)!.label} · {result.rows.length} row{result.rows.length === 1 ? "" : "s"}
               </h2>
               {masked && (
                 <Badge variant="secondary">

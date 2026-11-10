@@ -319,17 +319,20 @@ const CLUB = "3% Club";
 
 /** SSOT §38 — MD corrects who invited this Member, until it freezes. Opened from the Update menu. */
 export function InviterDialog({
+  current,
   busy,
   error,
   onClose,
   onSubmit,
 }: {
+  /** Who invited this Member now. It opened on 3% Club, so a save with only a reason removed the inviter. */
+  current: string | null;
   busy: boolean;
   error: string | null;
   onClose: () => void;
   onSubmit: (inviter: string, reason: string) => void;
 }) {
-  const [inviter, setInviter] = React.useState(CLUB);
+  const [inviter, setInviter] = React.useState(current ?? CLUB);
   const [reason, setReason] = React.useState("");
   return (
     <Modal title="Correct the inviter" onClose={onClose}>

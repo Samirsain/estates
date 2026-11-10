@@ -511,8 +511,11 @@ export default function CalculatorClient({
     };
   });
 
-  const totalPercent = shares.reduce((sum, s) => (s.percent ? sum.add(s.percent) : sum), zero);
-  const totalShare = shares.reduce((sum, s) => (s.amount ? sum.add(s.amount) : sum), zero);
+  // Totalled over the lines the table shows (one per commission type), so the
+  // Total never adds a split the table does not list.
+  const shown = commissionTypes.flatMap((kind) => shares.find(({ split }) => split.type === kind.type) ?? []);
+  const totalPercent = shown.reduce((sum, s) => (s.percent ? sum.add(s.percent) : sum), zero);
+  const totalShare = shown.reduce((sum, s) => (s.amount ? sum.add(s.amount) : sum), zero);
 
   /**
    * What the engine would say about the beneficiary of one line.

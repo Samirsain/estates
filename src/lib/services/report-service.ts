@@ -10,6 +10,8 @@ import { db, inWaves } from "@/lib/db";
 import { BUYING_CAP_PERCENT } from "@/lib/domain/acquisition";
 import { maskExportRow } from "@/lib/domain/completion";
 import { blocked } from "./command";
+import { maskMobile } from "@/lib/security/identity";
+import { REPORT_TAKES_DATES } from "@/lib/report-filters";
 
 export type ReportName =
   | "BOOKINGS"
@@ -47,7 +49,9 @@ const NOT_MERGED_AWAY = { mergeStatus: { not: "MERGED_AWAY" as const } };
 
 export async function runReport(
   report: ReportName,
-  filters: ReportFilters = {}
+  filters: ReportFilters = {},
+  /** MOBILE_FULL — otherwise the Bookings report masks the mobile, like every list. */
+  options: { fullMobile?: boolean } = {}
 ): Promise<Record<string, unknown>[]> {
   const at = between(filters);
 
@@ -68,7 +72,7 @@ export async function runReport(
         project: b.project.name,
         plotNumber: b.plot.plotNumber,
         customer: b.primaryPerson.fullName,
-        primaryMobile: b.primaryPerson.primaryMobile,
+        primaryMobile: options.fullMobile ? b.primaryPerson.primaryMobile : maskMobile(b.primaryPerson.primaryMobile),
         bookingDate: b.bookingDate,
         paymentReceivedPercent: b.paymentReceivedPercent.toFixed(2),
       }));
@@ -97,7 +101,14 @@ export async function runReport(
 
     case "PAYMENTS_GIVEN": {
       const rows = await db.paymentGivenEntry.findMany({
-        where: { status: "CONFIRMED", ...(at ? { paidOn: at } : {}) },
+        where: {
+          status: "CONFIRMED",
+          ...(at ? { paidOn: at } : {}),
+          // The deal's Plot, or the resale group it will enter: Project was ignored.
+          ...(filters.projectId
+            ? { acquisition: { OR: [{ plot: { projectId: filters.projectId } }, { resaleGroupId: filters.projectId }] } }
+            : {}),
+        },
         include: { acquisition: { include: { plot: true } }, externalReference: true },
         orderBy: { paidOn: "desc" },
       });
@@ -118,7 +129,16 @@ export async function runReport(
       // Direct, Customer Loyalty and Buying Commission only, each with the
       // frozen rate and the Project settings version it came from.
       const rows = await db.commissionRecord.findMany({
-        where: { isCurrent: true, beneficiaryPerson: NOT_MERGED_AWAY },
+        where: {
+          isCurrent: true,
+          beneficiaryPerson: NOT_MERGED_AWAY,
+          // Project and dates were offered and ignored. Dated by when the
+          // commission arose.
+          ...(at ? { createdAt: at } : {}),
+          ...(filters.projectId
+            ? { OR: [{ booking: { projectId: filters.projectId } }, { acquisition: { plot: { projectId: filters.projectId } } }] }
+            : {}),
+        },
         include: {
           beneficiaryPerson: { include: { recoveries: { where: { status: "OUTSTANDING" }, select: { recoveryNo: true } } } },
           booking: { include: { project: true, plot: true, commissionVersion: { select: { version: true } } } },
@@ -149,7 +169,7 @@ export async function runReport(
       // Loyalty are reported apart, each counted on its own; neither is capped
       // (the closing cap was removed on 27 Oct 2026).
       const rows = await db.commissionRecord.findMany({
-        where: { isCurrent: true, type: "LOYALTY", beneficiaryPerson: NOT_MERGED_AWAY },
+        where: { isCurrent: true, type: "LOYALTY", beneficiaryPerson: NOT_MERGED_AWAY, ...(at ? { createdAt: at } : {}) },
         include: {
           beneficiaryPerson: { include: { customerProfile: { select: { customerId: true } } } },
           booking: { include: { project: true, plot: true, commissionVersion: { select: { version: true } } } },
@@ -357,7 +377,9 @@ export async function exportReport(args: {
   report: ReportName;
   filters?: ReportFilters;
 }): Promise<{ rows: Record<string, unknown>[]; exportId: string; rowCount: number }> {
-  const filters = args.filters ?? {};
+  const given = args.filters ?? {};
+  // Logged as applied: dates on a report that takes none were recorded as if used.
+  const filters = REPORT_TAKES_DATES[args.report] ? given : { projectId: given.projectId };
   const rows = (await runReport(args.report, filters)).map(maskExportRow);
   const contentHash = createHash("sha256").update(JSON.stringify(rows)).digest("hex");
 

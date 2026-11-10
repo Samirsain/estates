@@ -4,11 +4,13 @@
 // The PI- ID stays in the database and the audit; the owner hid it from this screen (28 Oct 2026).
 
 import React from "react";
+import { safely } from "@/lib/safely";
 import { useRouter } from "next/navigation";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MOBILE_INPUT } from "@/components/ui/field-formats";
 import { Field, Modal } from "@/components/ui/modal";
 import { type StaffRole } from "@/lib/tasks";
 import {
@@ -42,11 +44,14 @@ export default function PotentialInvestorsClient({
   role,
   actorName,
   staffAccountId,
+  canManage,
   rows,
 }: {
   role: StaffRole;
   actorName: string;
   staffAccountId: string;
+  /** ENQUIRY_MANAGE — the server refuses anyone else, so they get no buttons. */
+  canManage: boolean;
   rows: PotentialInvestorRowView[];
 }) {
   const router = useRouter();
@@ -71,7 +76,7 @@ export default function PotentialInvestorsClient({
     if (busy) return;
     setBusy(true);
     setError(null);
-    const outcome = await action();
+    const outcome = await safely(action);
     setBusy(false);
     if (!outcome.ok) {
       setError(outcome.error);
@@ -92,9 +97,11 @@ export default function PotentialInvestorsClient({
       <div className="mx-auto max-w-6xl space-y-3">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <h1 className="text-2xl font-bold tracking-tight">Investor Leads</h1>
-          <Button size="sm" variant="gradient" onClick={() => open({ kind: "ADD" })}>
-            <Plus className="mr-1 h-4 w-4" /> Add Investor Lead
-          </Button>
+          {canManage && (
+            <Button size="sm" variant="gradient" onClick={() => open({ kind: "ADD" })}>
+              <Plus className="mr-1 h-4 w-4" /> Add Investor Lead
+            </Button>
+          )}
         </header>
 
         <Input
@@ -137,6 +144,7 @@ export default function PotentialInvestorsClient({
                   <td className="truncate" title={row.city}>{row.city || "—"}</td>
                   <td className="whitespace-nowrap text-muted-foreground">{row.addedOn}</td>
                   <td className="whitespace-nowrap text-right">
+                    {canManage && (<>
                     <button
                       type="button"
                       aria-label={`Edit ${row.name}`}
@@ -155,6 +163,7 @@ export default function PotentialInvestorsClient({
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
+                    </>)}
                   </td>
                 </tr>
               ))}
@@ -179,6 +188,7 @@ export default function PotentialInvestorsClient({
                 mobile: String(f.get("mobile") ?? ""),
                 altMobile: String(f.get("altMobile") ?? ""),
                 city: String(f.get("city") ?? ""),
+                removeAltMobile: f.get("removeAltMobile") === "on",
               };
               void run(() =>
                 dialog.kind === "ADD"
@@ -202,16 +212,21 @@ export default function PotentialInvestorsClient({
                 <Input
                   name="mobile"
                   required={dialog.kind === "ADD"}
-                  inputMode="tel"
+                  {...MOBILE_INPUT}
                   placeholder={dialog.kind === "EDIT" ? dialog.row.mobile : "9876543210"}
                 />
               </Field>
               <Field label={dialog.kind === "ADD" ? "Alternate Mobile" : "Alternate Mobile — leave blank to keep"}>
                 <Input
                   name="altMobile"
-                  inputMode="tel"
+                  {...MOBILE_INPUT}
                   placeholder={dialog.kind === "EDIT" ? dialog.row.altMobile || "Optional" : "Optional"}
                 />
+                {dialog.kind === "EDIT" && dialog.row.altMobile && (
+                  <label className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <input type="checkbox" name="removeAltMobile" /> Remove the alternate mobile
+                  </label>
+                )}
               </Field>
               <Field label="City">
                 <Input

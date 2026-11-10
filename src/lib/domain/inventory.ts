@@ -34,19 +34,29 @@ export type Areas = { areaSqFt: Decimal; areaSqYd: Decimal; areaSqM: Decimal };
  * Derived areas are rounded to 4 decimals so every screen shows the same number.
  * PRD §23.1 sets the precision: "Plot area: up to four decimal places".
  */
+/** A finite number, or a readable refusal: "abc" threw a raw DecimalError, and "NaN" or "Infinity" became the area. */
+function measure(value: string | number | null | undefined, message: string): Decimal {
+  let d: Decimal;
+  try {
+    d = new D(value ?? NaN);
+  } catch {
+    throw new Error(message);
+  }
+  if (!d.isFinite() || d.lte(0)) throw new Error(message);
+  return d;
+}
+
 export function calculateAreas(input: AreaInput): Areas {
   let areaSqFt: Decimal;
   if (input.kind === "REGULAR") {
-    const width = new D(input.widthFt);
-    const length = new D(input.lengthFt);
-    if (width.lte(0) || length.lte(0)) throw new Error("Width and Length must be greater than zero.");
+    const width = measure(input.widthFt, "Width and Length must be numbers greater than zero.");
+    const length = measure(input.lengthFt, "Width and Length must be numbers greater than zero.");
     areaSqFt = width.mul(length);
   } else {
     if (!input.reason?.trim()) {
       throw new Error("An exact area override requires a compulsory reason.");
     }
-    areaSqFt = new D(input.exactAreaSqFt);
-    if (areaSqFt.lte(0)) throw new Error("Area must be greater than zero.");
+    areaSqFt = measure(input.exactAreaSqFt, "Area must be a number greater than zero.");
   }
 
   const round = (d: Decimal) => new D(d.toFixed(4));
@@ -392,9 +402,15 @@ export function validatePlcComponents(rules: readonly PlcComponentRule[]): void 
     const percent = bandValue(rule.percent);
     if (percent === null) throw new Error(`${meta.label} has an invalid percentage.`);
     if (percent.lt(0)) throw new Error(`${meta.label} cannot be a negative percentage.`);
+    // The columns are Decimal(7,4) and Decimal(8,2): say so before Postgres rounds or overflows.
+    if (percent.gt(100)) throw new Error(`${meta.label} cannot be more than 100%.`);
+    if (percent.decimalPlaces() > 4) throw new Error(`${meta.label} takes at most 4 decimal places.`);
 
     const band = meta.banded ? bandValue(rule.threshold) : null;
     if (meta.banded && band === null) throw new Error(`${meta.label} has an invalid band value.`);
+    if (band && (band.decimalPlaces() > 2 || band.gte(1_000_000))) {
+      throw new Error(`${meta.label} band must be below 10,00,000 with at most 2 decimal places.`);
+    }
 
     if (rule.category === "OPEN_SIDES") {
       const val = band!.toNumber();
@@ -694,7 +710,11 @@ export function derivedFacing(boundaries: readonly Boundary[]): string {
   if (roads.length > 0) {
     parts.push(`${roads.map((r) => title(r.side)).join(" / ")} road facing`);
   }
-  if (roads.length >= 2) parts.push("Corner");
+  // A corner is two roads meeting: one North/South and one East/West. Roads on
+  // opposite sides are "two side open", as the location charge already says.
+  const sides = new Set(roads.map((r) => r.side));
+  const corner = (sides.has("NORTH") || sides.has("SOUTH")) && (sides.has("EAST") || sides.has("WEST"));
+  if (corner) parts.push("Corner");
   if (boundaries.some((b) => b.kind === "PARK")) parts.push("Park facing");
   if (boundaries.some((b) => b.kind === "PLAYGROUND")) parts.push("Playground facing");
 

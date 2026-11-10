@@ -193,6 +193,9 @@ export async function decidePersonMerge(args: {
       payload: { requestId: args.requestId, approve: args.approve },
     },
     async (tx) => {
+      // Locked before the status is read: two approvals at once both saw
+      // Pending and both merged, appending legacy IDs and reversals twice.
+      await lockKey(tx, `person-merge-request:${args.requestId}`);
       const request = await tx.personMergeRequest.findUniqueOrThrow({
         where: { id: args.requestId },
       });
@@ -234,9 +237,11 @@ async function applyMerge(
   actorRef: string,
   decision: { decidedByRef: string; decidedAt: Date; decisionNote: string }
 ) {
-  // Both identities and their entitlement counters change together.
-  await lockKey(tx, `person-merge:${request.survivingPersonId}`);
-  await lockKey(tx, `person-merge:${request.mergedPersonId}`);
+  // Both identities and their entitlement counters change together. Taken in
+  // one order, so A-into-B and B-into-A at once cannot deadlock.
+  for (const id of [request.survivingPersonId, request.mergedPersonId].sort()) {
+    await lockKey(tx, `person-merge:${id}`);
+  }
 
   const [survivor, merged] = await Promise.all([
     tx.person.findUniqueOrThrow({
@@ -254,6 +259,11 @@ async function applyMerge(
     { personId: merged.id, memberStatus: merged.memberProfile?.status ?? null }
   );
   if (!recheck.ok) blocked(recheck.reason);
+  // Either side merged away since the request was raised (another merge got
+  // there first): merging now pointed at a dead identity, or each at the other.
+  if (survivor.mergeStatus === "MERGED_AWAY" || merged.mergeStatus === "MERGED_AWAY") {
+    blocked("One of these identities has since been merged into another Person. Reject this request and raise a new one.");
+  }
 
   if (survivor.customerProfile) {
     await tx.customerProfile.update({

@@ -8,6 +8,8 @@
 // here.
 
 import React from "react";
+import { safely } from "@/lib/safely";
+import { ModalError } from "@/components/ui/modal";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Ban, Check, CheckCircle2, Coins, PencilLine, Wallet } from "lucide-react";
@@ -16,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PersonLink } from "@/components/person-link";
-import { formatIst, type StaffRole } from "@/lib/tasks";
+import { formatIst, istDay, type StaffRole } from "@/lib/tasks";
 import { AcquisitionDialogs } from "../acquisition-dialogs";
 import { recordDocumentsReturnedAction, type ActionResult } from "../actions";
 import {
@@ -54,7 +56,7 @@ export default function AcquisitionDetailClient({
 
   async function run(action: () => Promise<ActionResult>) {
     setBusy(true);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
     setNotice(result.ok ? { ok: true, text: result.message } : { ok: false, text: result.error });
     if (result.ok) {
@@ -68,6 +70,8 @@ export default function AcquisitionDetailClient({
   const latestConfirmed = row.entries.find((e) => e.status === "CONFIRMED");
 
   return (
+    // The refusal shows inside the open dialog; behind it, nobody saw it.
+    <ModalError.Provider value={notice && !notice.ok ? notice.text : null}>
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
       <div className="mx-auto max-w-6xl space-y-4">
         {/* Every action the deal can take, on the top line beside Back as on
@@ -135,7 +139,7 @@ export default function AcquisitionDetailClient({
                     run(() =>
                       recordDocumentsReturnedAction(
                         row.id,
-                        new Date().toISOString().slice(0, 10),
+                        istDay(new Date()),
                         `docs-${row.id}-${Date.now()}`
                       )
                     )
@@ -288,7 +292,14 @@ export default function AcquisitionDetailClient({
                           />
                         </td>
                         <td className={`${CTD} tabular-nums`}>{row.commission.percent}%</td>
-                        <td className={CTD}>{commissionStatus(row.commission)}</td>
+                        <td className={`${CTD} tabular-nums`}>
+                          {commissionStatus(row.commission)}
+                          {row.commission.paidOn && (
+                            <span className="block text-[11px] text-muted-foreground">
+                              {formatIst(row.commission.paidOn)}
+                            </span>
+                          )}
+                        </td>
                         <td className={CTD}>
                           <CommissionTick
                             commission={row.commission}
@@ -391,6 +402,7 @@ export default function AcquisitionDetailClient({
         onClose={() => setDialog(null)}
       />
     </AppShell>
+    </ModalError.Provider>
   );
 }
 

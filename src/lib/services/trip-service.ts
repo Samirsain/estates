@@ -200,11 +200,22 @@ export async function syncTripForBooking(tx: Tx, bookingId: string, actorRef: st
   const qualified = live && ["QUALIFIED", "ALLOCATED", "USED"].includes(live.state);
   const thirdParty = booking.primaryPersonId !== booking.soldByPersonId;
   const refEligible = !!(live && qualified && thirdParty && introduced?.invitedByMemberId);
-  if (existingRef && !refEligible) {
+  // A Sold By Correction to another Member moves the sale: the credit earned
+  // through the old seller (their inviter's, their opportunity) is reversed so
+  // the new seller's inviter can earn it, instead of staying with the old one.
+  const movedSeller = !!existingRef && refEligible && existingRef.introducedMemberId !== introduced?.id;
+  if (existingRef && (!refEligible || movedSeller)) {
     touched.add(existingRef.memberProfileId);
-    await invalidate(tx, existingRef, actorRef, "The introduced Member's first sale no longer qualifies.");
+    await invalidate(
+      tx,
+      existingRef,
+      actorRef,
+      movedSeller
+        ? "Sold By was corrected to another Member, so this sale is no longer the introduced Member's."
+        : "The introduced Member's first sale no longer qualifies."
+    );
   }
-  if (!existingRef && refEligible) {
+  if ((!existingRef || movedSeller) && refEligible) {
     await lockKey(tx, `reference:${introduced!.id}`);
     const fresh = await tx.memberProfile.findUniqueOrThrow({ where: { id: introduced!.id } });
     if (!fresh.referenceOpportunityConsumedAt) {
@@ -262,6 +273,9 @@ async function openBucketIfNone(
   },
   actorRef: string
 ) {
+  // Under the bucket's own lock: two approvals at once both found no open
+  // bucket, and the one_open_trip_bucket index failed the second approval.
+  await lockKey(tx, `trip-bucket:${credit.memberProfileId}:${credit.projectId}:${credit.programmeCode}`);
   const open = await tx.tripBucket.findFirst({
     where: { memberProfileId: credit.memberProfileId, projectId: credit.projectId, programmeCode: credit.programmeCode, state: "OPEN" },
   });
@@ -477,7 +491,16 @@ export async function bookTripReward(args: Actor & { rewardId: string; bookingRe
       if (now.holdReason) blocked(`Fulfilment is on hold: ${now.holdReason.replaceAll("_", " ").toLowerCase()}.`);
       await tx.tripReward.update({
         where: { id: reward.id },
-        data: { state: "BOOKED", bookingReference: args.bookingReference.trim(), bookedAt: args.bookedOn },
+        data: {
+          state: "BOOKED",
+          bookingReference: args.bookingReference.trim(),
+          bookedAt: args.bookedOn,
+          // trip_reward_stamps still asks a booked NON_FAMILY traveller for an
+          // approval time. The owner dropped MD approval (14 Oct 2026), so the
+          // nominee stands as recorded and booking is when it is taken as approved.
+          recipientApprovedAt:
+            reward.recipient === "NON_FAMILY" ? (now.recipientApprovedAt ?? new Date()) : now.recipientApprovedAt,
+        },
       });
       await event(tx, reward.memberProfileId, { rewardId: reward.id }, args.actorRef, "TRIP_BOOKED", "EARNED", "BOOKED", args.bookingReference.trim());
       return { result: { rewardId: reward.id }, audit: { entity: "TripReward", entityId: reward.id, action: "TRIP_BOOKED", after: { bookingReference: args.bookingReference.trim() } } };
@@ -501,7 +524,18 @@ export async function markTripTravelled(args: Actor & { rewardId: string; travel
       await refreshTripReward(tx, reward.id, args.actorRef);
       const now = await tx.tripReward.findUniqueOrThrow({ where: { id: reward.id } });
       if (now.holdReason) blocked(`Fulfilment is on hold: ${now.holdReason.replaceAll("_", " ").toLowerCase()}.`);
-      await tx.tripReward.update({ where: { id: reward.id }, data: { state: "TRAVELLED", travelledAt: args.travelledOn, holdReason: null } });
+      await tx.tripReward.update({
+        where: { id: reward.id },
+        data: {
+          state: "TRAVELLED",
+          travelledAt: args.travelledOn,
+          holdReason: null,
+          // As bookTripReward stamps it: trip_reward_stamps asks a NON_FAMILY
+          // traveller for it, and delivered straight from Earned it was missing.
+          recipientApprovedAt:
+            now.recipient === "NON_FAMILY" ? (now.recipientApprovedAt ?? new Date()) : now.recipientApprovedAt,
+        },
+      });
       await tx.tripCredit.updateMany({ where: { bucketId: reward.bucketId, state: "ALLOCATED" }, data: { state: "USED", usedAt: args.travelledOn } });
       await event(tx, reward.memberProfileId, { rewardId: reward.id }, args.actorRef, "TRIP_TRAVELLED", reward.state, "TRAVELLED");
       await closeTasksFor(tx, TRIP_REWARD_KIND, reward.id, args.actorRef, "Reward completed.");
@@ -605,7 +639,9 @@ export async function windDownTripBuckets(tx: Tx, now: Date) {
     const same = live?.tripProgrammeCode === bucket.programmeCode ? live : null;
     const cutOff = same?.tripCutOffAt ?? null;
     const windDown = same?.tripWindDownAt ?? bucket.windDownAt;
-    if (!cutOff || cutOff > now) continue;
+    // A programme no longer live (replaced or Rewards Disabled) has passed its
+    // cut-off; its buckets used to stay open forever on `!cutOff`.
+    if (same && (!cutOff || cutOff > now)) continue;
     if (windDown && windDown <= now) {
       await tx.tripBucket.update({ where: { id: bucket.id }, data: { state: "EXPIRED", closedAt: now } });
       await event(tx, bucket.memberProfileId, { bucketId: bucket.id }, "SYSTEM:TRIP_WIND_DOWN", "BUCKET_EXPIRED", "OPEN", "EXPIRED", "Programme final wind-down deadline passed.");

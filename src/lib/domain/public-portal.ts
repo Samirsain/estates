@@ -4,13 +4,17 @@
 /**
  * The link's last part, from the Project's name: "Govind Vatika" → "govind-vatika".
  * Worked out each time rather than stored, so renaming the Project renames the
- * link — the Project page always shows the current one.
+ * link — the Project page always shows the current one. A name with no Latin
+ * letters ("गोविंद वाटिका") made an empty link; the Project Code stands in.
+ * Two names making one link are refused when the Project is saved.
  */
-export function projectSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+export function projectSlug(name: string, projectCode = ""): string {
+  const slug = (text: string) =>
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  return slug(name) || slug(projectCode);
 }
 
 /** The three, and only three, things a visitor is told about a Plot. */

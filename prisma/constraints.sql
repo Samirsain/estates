@@ -20,10 +20,27 @@ ALTER TABLE "Person" ADD CONSTRAINT "aadhaar_status_matches_value"
 
 -- ---------------------------------------------------------------- Phase 2
 
--- ARCHITECTURE §7.1 — one active commercial allocation per Plot.
-CREATE UNIQUE INDEX IF NOT EXISTS "one_active_hold_per_plot"
+-- ARCHITECTURE §7.1 — one active commercial allocation per Plot. A FROZEN Hold
+-- still holds its Plot and goes back to ACTIVE on rejection, so it counts too
+-- (audit DB13, 10 Nov 2026). Dropped first: IF NOT EXISTS keeps an old predicate.
+DROP INDEX IF EXISTS "one_active_hold_per_plot";
+CREATE UNIQUE INDEX "one_active_hold_per_plot"
   ON "Hold" ("plotId")
-  WHERE "status" = 'ACTIVE';
+  WHERE "status" IN ('ACTIVE', 'FROZEN');
+
+-- Sourced By names a Person exactly when it is not the 3% Club — the Hold
+-- twin of sold_by_person_matches_type (audit DB14).
+ALTER TABLE "Hold" DROP CONSTRAINT IF EXISTS "sourced_by_person_matches_type";
+ALTER TABLE "Hold" ADD CONSTRAINT "sourced_by_person_matches_type"
+  CHECK (("sourcedByType" = 'THREE_PERCENT_CLUB' AND "sourcedByPersonId" IS NULL)
+      OR ("sourcedByType" <> 'THREE_PERCENT_CLUB' AND "sourcedByPersonId" IS NOT NULL));
+
+-- DESIGN §8.2 — the Source Person goes with By Member / By Customer and with
+-- nothing else; validateSource (domain/enquiry.ts) says the same (audit DB16).
+ALTER TABLE "Enquiry" DROP CONSTRAINT IF EXISTS "enquiry_source_person_matches";
+ALTER TABLE "Enquiry" ADD CONSTRAINT "enquiry_source_person_matches"
+  CHECK ((("source" = 'BY_MEMBER') = ("sourceMemberId" IS NOT NULL))
+     AND (("source" = 'BY_CUSTOMER') = ("sourceCustomerId" IS NOT NULL)));
 
 -- PRD §7.1 / ARCHITECTURE §5.2 — one Active Enquiry per Person + Project + Plot,
 -- and one Active general Enquiry per Person + Project. COALESCE is required
@@ -213,6 +230,14 @@ CREATE CONSTRAINT TRIGGER "booking_shares_total_100"
   AFTER INSERT OR UPDATE OR DELETE ON "BookingParty"
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION trg_booking_shares();
+
+-- A current party set names each Person once and has one Primary, per kind
+-- (validateShares says the same; audit DB07). Every writer closes the old
+-- rows (effectiveTo) before inserting the new ones.
+CREATE UNIQUE INDEX IF NOT EXISTS "one_current_party_per_person"
+  ON "BookingParty" ("bookingId", "kind", "personId") WHERE "effectiveTo" IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "one_current_primary_party"
+  ON "BookingParty" ("bookingId", "kind") WHERE "effectiveTo" IS NULL AND "role" = 'PRIMARY';
 
 -- PRD §10.2 / §11.4 — a live payment schedule totals exactly 100%. Superseded
 -- and rejected versions are historical and are not re-judged.
@@ -442,9 +467,11 @@ ALTER TABLE "Acquisition" ADD CONSTRAINT "acquisition_shape_matches_type"
       OR ("type" = 'PURCHASE_FOR_RESALE' AND "propertyName" IS NOT NULL AND "propertyNumber" IS NOT NULL));
 
 -- PRD §11.3 — approval requires at least 20% Payment Given confirmed.
+-- Dropped 7 Nov 2026: PRD §11.3 lets an APPROVED deal's Payment Given fall
+-- below 20% on a correction (the Plot goes Not Available, or MD is asked to
+-- act). This CHECK refused that write with a raw error, so neither branch
+-- could run. The 20% rule applies at approval: canApproveAcquisition.
 ALTER TABLE "Acquisition" DROP CONSTRAINT IF EXISTS "acquisition_approval_threshold";
-ALTER TABLE "Acquisition" ADD CONSTRAINT "acquisition_approval_threshold"
-  CHECK ("status" <> 'APPROVED' OR "paymentGivenPercent" >= 20);
 
 ALTER TABLE "Acquisition" DROP CONSTRAINT IF EXISTS "acquisition_arranger_matches_type";
 ALTER TABLE "Acquisition" ADD CONSTRAINT "acquisition_arranger_matches_type"
@@ -887,3 +914,27 @@ ALTER TABLE "CircumventionReview" ADD CONSTRAINT "circumvention_stamps"
 ALTER TABLE "PaymentReceivedEntry" DROP CONSTRAINT IF EXISTS "third_party_payer_named";
 ALTER TABLE "PaymentReceivedEntry" ADD CONSTRAINT "third_party_payer_named"
   CHECK ("payerReference" IS NULL OR length(btrim(coalesce("payerName", ''))) > 0);
+
+-- ---------------------------------------------------------------- From migrations
+-- These two lived only in migrations, so a db push + db:constraints database
+-- had neither (audit DB06). Same names, so a migrated database is unchanged.
+
+-- 20260824090000 — a NULL threshold does not collide in the plain unique, which
+-- would let a Project configure Park Facing twice.
+CREATE UNIQUE INDEX IF NOT EXISTS "PlcComponent_ruleVersionId_category_unbanded_key"
+  ON "PlcComponent" ("ruleVersionId", "category")
+  WHERE "threshold" IS NULL;
+
+-- 20260916120000 — a Project Code is typed once and never changes.
+CREATE OR REPLACE FUNCTION "project_code_immutable"() RETURNS trigger AS $$
+BEGIN
+  IF NEW."projectCode" IS DISTINCT FROM OLD."projectCode" THEN
+    RAISE EXCEPTION 'The Project Code cannot be changed.';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "Project_projectCode_immutable" ON "Project";
+CREATE TRIGGER "Project_projectCode_immutable"
+  BEFORE UPDATE OF "projectCode" ON "Project"
+  FOR EACH ROW EXECUTE FUNCTION "project_code_immutable"();

@@ -32,7 +32,7 @@ import DownloadPdfButton from "@/app/projects/download-pdf-button";
 import PublicPortalClient, { type PublicPlot } from "./portal-client";
 import LiveRefresh from "../live-refresh";
 import ProjectStrip from "../project-strip";
-import { portalProjects } from "../portal-projects";
+import { portalProjects, shared } from "../portal-projects";
 import { noPlotsLine } from "../availability";
 
 export const dynamic = "force-dynamic";
@@ -62,7 +62,7 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
   const entry = projects.find((p) => p.slug === slug);
   if (!entry) notFound();
 
-  const [project, plots, published] = await Promise.all([
+  const [project, plots, published] = await shared(`project:${entry.id}`, () => Promise.all([
     db.project.findUniqueOrThrow({
       where: { id: entry.id },
       select: {
@@ -100,7 +100,7 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
       where: { projectId: entry.id, status: "PUBLISHED" },
       include: { components: { orderBy: [{ category: "asc" }, { threshold: "desc" }] } },
     }),
-  ]);
+  ]));
 
   const shown: PublicPlot[] = plots
     .flatMap((plot) => {

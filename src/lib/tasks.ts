@@ -266,7 +266,10 @@ export function formatPlotSize(
  * percentage rather than either record.
  */
 export function remainingPercent(paidSoFar: string | number): string {
-  return (100 - Number(paidSoFar)).toFixed(2);
+  // To four places, as stored, and at least two: 0.004 left read "0.00" and
+  // hid the payment still owed. 70 still reads "70.00".
+  const left = Math.round((100 - Number(paidSoFar)) * 10_000) / 10_000;
+  return left.toFixed(4).replace(/0{1,2}$/, "");
 }
 
 export function addIstDays(day: string, days: number): string {

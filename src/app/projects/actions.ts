@@ -2,6 +2,7 @@
 
 // Project and PLC setup server actions — prd-corrections.md §16.1, §16.3.
 
+import { actionErrorText } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
 import { CommandError } from "@/lib/services/command";
@@ -25,7 +26,7 @@ export type ActionResult = { ok: true; message: string } | { ok: false; error: s
 
 function toResult(error: unknown): ActionResult {
   if (error instanceof CommandError) return { ok: false, error: error.message };
-  return { ok: false, error: error instanceof Error ? error.message : "Action failed." };
+  return { ok: false, error: actionErrorText(error, "Action failed.") };
 }
 
 function refresh() {

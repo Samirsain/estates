@@ -3,6 +3,7 @@
 // Member and bank server actions — design.md §12.2, §13; prd-corrections.md §13, §14.3.
 // Every action re-checks permission on the server (DESIGN §1).
 
+import { actionErrorText } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
 import { canViewField } from "@/lib/security/permissions";
@@ -12,6 +13,8 @@ import { CommandError } from "@/lib/services/command";
 import { decideBankDetails, enterBankDetails, listBankDetails } from "@/lib/services/bank-service";
 import { applyMemberCommissionHold } from "@/lib/services/commission-service";
 import { db } from "@/lib/db";
+import { cleanMemberBusiness, type MemberBusinessInput } from "@/lib/domain/member-business";
+import { isValidEmail } from "@/lib/domain/land-inquiry";
 import {
   activateMember,
   setMemberStatus,
@@ -22,7 +25,7 @@ export type ActionResult = { ok: true; message?: string } | { ok: false; error: 
 
 function toResult(error: unknown): ActionResult {
   if (error instanceof CommandError) return { ok: false, error: error.message };
-  return { ok: false, error: error instanceof Error ? error.message : "Action failed." };
+  return { ok: false, error: actionErrorText(error, "Action failed.") };
 }
 
 function refresh() {
@@ -68,40 +71,47 @@ export async function createAndActivateMemberAction(
   input: {
     fullName: string;
     mobile: string;
-    city?: string;
+    city: string;
+    email: string;
+    /** Optional; written once, like a final buyer's (completion-service). */
+    aadhaar: string;
+    /** Optional; written once, like the Aadhaar. */
+    pan: string;
     invitedByMemberId: string;
     reraStatus: "REGISTERED" | "PENDING" | "EXPIRED" | "NOT_APPLICABLE";
     reraNumber: string;
     reraExpiryDate: string;
     reraNotApplicableReason: string;
-  },
+  } & MemberBusinessInput,
   key: string
 ): Promise<ActionResult & { memberId?: string }> {
   const actor = await requireStaff("MEMBER_ACTIVATE");
   try {
     const fullName = input.fullName.trim();
     const primaryMobile = input.mobile.replace(/\s/g, "");
-    if (!fullName || !primaryMobile) throw new Error("Enter the member's full name and mobile number.");
-
-    let person = await db.person.findFirst({
-      where: {
-        primaryMobile,
-        fullName: { equals: fullName, mode: "insensitive" },
-        mergeStatus: { not: "MERGED_AWAY" },
-      },
-    });
-
-    if (!person) {
-      person = await db.person.create({
-        data: { fullName, primaryMobile, city: input.city?.trim() || null },
-      });
+    const city = input.city.trim();
+    if (!fullName || !primaryMobile || !city) {
+      throw new Error("Enter the member's full name, WhatsApp number and city.");
     }
-
+    // The mobile is checked where the Person is made (linkOrCreatePerson).
+    if (input.email.trim() && !isValidEmail(input.email)) {
+      throw new Error("Enter a valid email address, e.g. name@example.com.");
+    }
+    // The Person, its Aadhaar and PAN and the activation are one command: a
+    // refused Aadhaar, PAN, RERA number or inviter leaves no half-made Person behind.
     const result = await activateMember({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
-      personId: person.id,
+      newPerson: {
+        fullName,
+        mobile: primaryMobile,
+        city,
+        email: input.email.trim() || null,
+        ...cleanMemberBusiness(input),
+        aadhaar: input.aadhaar.trim() || null,
+        pan: input.pan.trim() || null,
+      },
       invitedByMemberId: input.invitedByMemberId || null,
       reraStatus: input.reraStatus,
       reraNumber: input.reraNumber || null,
@@ -199,7 +209,7 @@ export async function updateMemberReraAction(
       notApplicableReason: input.notApplicableReason || null,
     });
     refresh();
-    return { ok: true, message: "RERA updated and unpaid commission eligibility rechecked." };
+    return { ok: true };
   } catch (error) {
     return toResult(error);
   }

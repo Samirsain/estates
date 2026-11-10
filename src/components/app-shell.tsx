@@ -5,7 +5,8 @@
 // is the real control (design.md §1).
 
 import React from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { findRecordAction } from "@/lib/find-record";
 import {
   BarChart3,
   Calculator,
@@ -138,6 +139,8 @@ export function AppShell({
 }) {
   const canAdminister = role === "MD";
   const pathname = usePathname();
+  const router = useRouter();
+  const [searchMiss, setSearchMiss] = React.useState(false);
 
   // The rail shows icons; opening it is a click, not a hover. A click works the
   // same for a mouse, a finger and a keyboard, and it does not open itself when
@@ -210,7 +213,8 @@ export function AppShell({
                     // of navigating, so one click never lands somewhere the
                     // label was not readable.
                     onClick={(event) => {
-                      if (!menuOpen) {
+                      // Only the desktop rail hides labels; a phone shows them, so its tap navigates.
+                      if (!menuOpen && window.matchMedia("(min-width: 768px)").matches) {
                         event.preventDefault();
                         setMenuOpen(true);
                       }
@@ -258,14 +262,33 @@ export function AppShell({
       <div className="flex min-w-0 flex-col">
         <header className="chrome-surface sticky top-0 z-40 border-b border-border/50">
           <div className="flex flex-wrap items-center gap-3 px-5 pt-3">
-            <div className="relative min-w-[12rem] flex-1">
+            <form
+              role="search"
+              className="relative min-w-[12rem] flex-1"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const q = String(new FormData(e.currentTarget).get("q") ?? "");
+                const href = await findRecordAction(q).catch(() => null);
+                setSearchMiss(!href);
+                if (href) router.push(href);
+              }}
+            >
               <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
+                name="q"
                 className="pl-9"
                 placeholder="Search Plot, Customer ID, Member ID, Booking Number…"
                 aria-label="Search records"
+                aria-invalid={searchMiss || undefined}
+                aria-describedby={searchMiss ? "search-miss" : undefined}
+                onChange={() => setSearchMiss(false)}
               />
-            </div>
+              {searchMiss && (
+                <p id="search-miss" role="status" className="mt-1 text-xs text-red-700">
+                  No record has exactly that ID or number.
+                </p>
+              )}
+            </form>
             <div className="flex items-center gap-3">
               <NotificationBell />
               <a href="/account" className="text-right hover:opacity-80" title="My Account">

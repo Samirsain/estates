@@ -21,10 +21,29 @@ export type PortalProject = {
   tally: Tally;
 };
 
-export const portalProjects = cache(async (): Promise<PortalProject[]> => {
+/**
+ * One read serves every visitor for a moment. Each open tab polls every 2 s
+ * (live-refresh), and each poll ran ~5 queries on the CRM's own small
+ * connection pool: a shared link opened by 50 people starved staff commands.
+ * ponytail: in-process; per node if the app ever runs on more than one.
+ */
+const SHARED_MS = 2_000;
+const memo = new Map<string, { at: number; value: Promise<unknown> }>();
+export function shared<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const hit = memo.get(key);
+  if (hit && Date.now() - hit.at < SHARED_MS) return hit.value as Promise<T>;
+  const value = load();
+  memo.set(key, { at: Date.now(), value });
+  value.catch(() => memo.delete(key));
+  return value;
+}
+
+export const portalProjects = cache(() => shared("projects", loadPortalProjects));
+
+async function loadPortalProjects(): Promise<PortalProject[]> {
   const projects = await db.project.findMany({
     where: { publicPortal: true, isExternalResaleGroup: false, status: { not: "SETUP_NOT_ACTIVE" } },
-    select: { id: true, name: true, type: true, status: true, developer: true, location: true, city: true },
+    select: { id: true, name: true, projectCode: true, type: true, status: true, developer: true, location: true, city: true },
     orderBy: { name: "asc" },
   });
   // Grouped in the database, so a Project with hundreds of Plots costs a few rows.
@@ -46,11 +65,11 @@ export const portalProjects = cache(async (): Promise<PortalProject[]> => {
   return projects.map((p) => ({
     id: p.id,
     name: p.name,
-    slug: projectSlug(p.name),
+    slug: projectSlug(p.name, p.projectCode),
     type: p.type,
     status: p.status,
     developer: p.developer,
     where: projectWhere(p),
     tally: tallies.get(p.id) ?? { AVAILABLE: 0, HOLD: 0, SOLD: 0 },
   }));
-});
+}

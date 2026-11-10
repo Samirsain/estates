@@ -14,6 +14,7 @@ import {
   validatePlcComponents,
   type PlcCategory,
 } from "@/lib/domain/inventory";
+import { projectSlug } from "@/lib/domain/public-portal";
 import { blocked, runCommand, type Tx } from "./command";
 import { plcRules } from "./plc-service";
 import { checkPreparable, insertVersion, type CommissionVersionInput } from "./commission-settings-service";
@@ -44,6 +45,20 @@ export type PlcComponentInput = {
  * already attached to it. Status keeps its own command: moving a Project to
  * Active is a release decision, not an edit.
  */
+/**
+ * The portal finds a Project by the link its name makes, so two names making
+ * one link ("Govind Vatika", "Govind-Vatika") left the second unreachable.
+ */
+async function refuseSlugClash(tx: Tx, name: string, projectCode: string, exceptId?: string) {
+  const slug = projectSlug(name, projectCode);
+  const others = await tx.project.findMany({
+    where: { isExternalResaleGroup: false, ...(exceptId ? { id: { not: exceptId } } : {}) },
+    select: { name: true, projectCode: true },
+  });
+  const clash = others.find((p) => projectSlug(p.name, p.projectCode) === slug);
+  if (clash) blocked(`${clash.name} already makes the portal link /p/${slug}. Choose a different name.`);
+}
+
 export async function updateProject(args: {
   idempotencyKey: string;
   actorRef: string;
@@ -100,6 +115,15 @@ export async function updateProject(args: {
       });
 
       const before = await tx.project.findUniqueOrThrow({ where: { id: args.projectId } });
+      await refuseSlugClash(tx, args.name, before.projectCode, before.id);
+      // PRD §8.1, as Prepare Inventory applies it: a Commercial Project holds
+      // no Residential Plot, so the type cannot change under ones it has.
+      if (args.type === "COMMERCIAL" && before.type !== "COMMERCIAL") {
+        const residential = await tx.plot.count({ where: { projectId: before.id, plotType: "RESIDENTIAL" } });
+        if (residential > 0) {
+          blocked(`This Project has ${residential} Residential Plot(s), so it cannot become Commercial.`);
+        }
+      }
       const after = await tx.project.update({
         where: { id: args.projectId },
         data: {
@@ -195,6 +219,7 @@ export async function createProject(args: {
     },
     async (tx) => {
       const code = await checkProjectCode(tx, args.projectCode);
+      await refuseSlugClash(tx, args.name, code);
 
       const project = await tx.project.create({
         data: {
@@ -320,9 +345,20 @@ export async function setProjectStatus(args: {
           where: { projectId: args.projectId },
           select: { id: true, status: true, restriction: true },
         });
+        // A Buyback or Resale Plot is Not Available on purpose (Payment Given
+        // below 20%, or the deal cancelled): releasing it here made it sellable
+        // mid-deal. It is released by hand once the deal allows.
+        const dealPlots = new Set(
+          (
+            await tx.acquisition.findMany({
+              where: { plotId: { in: plots.map((p) => p.id) } },
+              select: { plotId: true },
+            })
+          ).map((a) => a.plotId)
+        );
 
         for (const plot of plots) {
-          const outcome = releaseOnActivation(plot.status, plot.restriction);
+          const outcome = dealPlots.has(plot.id) ? "ALLOCATED" : releaseOnActivation(plot.status, plot.restriction);
           if (outcome === "ALLOCATED") {
             heldBack++;
             continue;

@@ -430,7 +430,9 @@ export async function setOffRecovery(
             recordId: recovery.commissionRecordId,
             actorRef: args.actorRef,
             action: "RECOVERY_PART_SET_OFF",
-            reason: `Part set off against a later benefit; ${recovery.recoveryNo} stays pending — ${note}`,
+            // The Recovery row keeps only the latest set-off record; each part
+            // is named here, so an earlier one is not lost from its history.
+            reason: `Part set off against benefit ${record.id}; ${recovery.recoveryNo} stays pending — ${note}`,
           },
         });
       }

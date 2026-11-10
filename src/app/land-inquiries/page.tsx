@@ -5,6 +5,7 @@
 // browser holding the whole table.
 
 import { requireStaff } from "@/lib/security/current-actor";
+import { maskMobile } from "@/lib/security/identity";
 import { can } from "@/lib/security/permissions";
 import { formatIstDate } from "@/lib/tasks";
 import {
@@ -55,7 +56,8 @@ export default async function LandInquiriesPage({
       source:
         row.sourcePerson?.fullName ||
         (row.receivedFrom === "ANOTHER_DEALER"
-          ? [row.anotherDealerName, row.anotherDealerMobile].filter(Boolean).join(" · ")
+          // Masked here as on the inquiry's own page.
+          ? [row.anotherDealerName, row.anotherDealerMobile ? maskMobile(row.anotherDealerMobile) : null].filter(Boolean).join(" · ")
           : "3% Club") ||
         "—",
       sourcePersonId: row.sourcePerson?.id ?? null,

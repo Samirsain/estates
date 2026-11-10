@@ -7,6 +7,7 @@
 // that grows without limit.
 
 import React from "react";
+import { safely } from "@/lib/safely";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Plus } from "lucide-react";
@@ -346,7 +347,7 @@ function StatusCell({
   async function run(action: () => Promise<{ ok: boolean; error?: string }>) {
     setBusy(true);
     setError(null);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
     if (!result.ok) return setError(result.error ?? "Action failed.");
     setAsking(null);

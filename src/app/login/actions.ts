@@ -6,7 +6,11 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { recordAudit } from "@/lib/security/audit";
+import { currentStaff } from "@/lib/security/current-actor";
 import {
+  RECOVERY_MAX_ATTEMPTS,
+  RECOVERY_WINDOW_MS,
   burnPasswordTime,
   hashPassword,
   isLocked,
@@ -77,11 +81,17 @@ async function attemptStaffLogin(form: FormData): Promise<Outcome> {
   }
 
   if (!verifyPassword(password, account.passwordHash)) {
-    const next = registerFailure(
-      { failedAttempts: account.failedAttempts, lockedUntil: account.lockedUntil },
-      now
-    );
-    await db.staffAccount.update({ where: { id: account.id }, data: next });
+    // Counted in the database, not read-then-written: parallel guesses all read
+    // 0 and all wrote 1, so the five-attempt lockout never came. A lockedUntil
+    // still set here has run out (a live one returned above): the count restarts.
+    const lapsed = account.lockedUntil !== null;
+    const { failedAttempts } = await db.staffAccount.update({
+      where: { id: account.id },
+      data: lapsed ? { failedAttempts: 1, lockedUntil: null } : { failedAttempts: { increment: 1 } },
+      select: { failedAttempts: true },
+    });
+    const { lockedUntil } = registerFailure({ failedAttempts: failedAttempts - 1, lockedUntil: null }, now);
+    if (lockedUntil) await db.staffAccount.update({ where: { id: account.id }, data: { lockedUntil } });
     return { ok: false, reason: "GENERIC" };
   }
 
@@ -132,7 +142,11 @@ export async function forgotStaffPassword(form: FormData): Promise<void> {
   const back: (reason: string) => never = (reason) =>
     redirect(`/login/forgot?error=${reason}&loginId=${encodeURIComponent(loginId)}`);
 
-  if ((ip && !rateLimit(`ip:${ip}`, now)) || !rateLimit(`forgot:${loginId}`, now)) {
+  if (
+    (ip && !rateLimit(`ip:${ip}`, now)) ||
+    !rateLimit(`forgot:${loginId}`, now) ||
+    !rateLimit("forgot:any", now, RECOVERY_MAX_ATTEMPTS, RECOVERY_WINDOW_MS)
+  ) {
     back("RATE");
   }
   if (newPassword !== confirmPassword) back("MATCH");
@@ -157,13 +171,33 @@ export async function forgotStaffPassword(form: FormData): Promise<void> {
       ...registerSuccess(),
     },
   });
+  // The phrase resets any account, so every use leaves a record.
+  await recordAudit({
+    actorRef: account.staffAccountId,
+    actorRole: account.role,
+    entity: "StaffAccount",
+    entityId: account.id,
+    action: "PASSWORD_RESET_BY_RECOVERY_KEY",
+    ip: ip ?? undefined,
+  });
 
   redirect(`/login?notice=RESET&loginId=${encodeURIComponent(loginId)}`);
 }
 
 /* ---------------------------------------------------------------- sign out */
 
+/**
+ * Deleting the cookie alone left a copied token valid for its 8 hours. Moving
+ * the session version ends it — and every other session of this account.
+ */
 export async function signOut(): Promise<void> {
+  const actor = await currentStaff();
+  if (actor) {
+    await db.staffAccount.update({
+      where: { id: actor.accountId },
+      data: { sessionVersion: { increment: 1 } },
+    });
+  }
   const jar = await cookies();
   jar.delete(SESSION_COOKIE_STAFF);
   redirect("/login");

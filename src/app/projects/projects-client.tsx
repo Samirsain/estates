@@ -3,6 +3,7 @@
 // Projects and PLC rules — design.md §7; prd-corrections.md §16.
 
 import React from "react";
+import { safely } from "@/lib/safely";
 import { useRouter } from "next/navigation";
 import { Box, ChevronDown, Info, Layers, Map, Plus, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
@@ -10,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { Field, Modal, inputClass, ModalError } from "@/components/ui/modal";
 import { useCommercialRewardsDraft } from "./[id]/commission-settings";
 import { ProjectIdentity, SheetHeading, amenityList, projectWhere } from "./project-identity";
 import { headline } from "@/lib/pdf/project-sheet";
@@ -130,7 +131,7 @@ export default function ProjectsClient({
 
   async function run(action: () => Promise<ActionResult>) {
     setBusy(true);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
     setNotice(result);
     if (result.ok) {
@@ -140,6 +141,8 @@ export default function ProjectsClient({
   }
 
   return (
+    // The refusal shows inside the open dialog; behind it, nobody saw it.
+    <ModalError.Provider value={notice && !notice.ok ? notice.error : null}>
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -299,6 +302,7 @@ export default function ProjectsClient({
       )}
 
     </AppShell>
+    </ModalError.Provider>
   );
 }
 

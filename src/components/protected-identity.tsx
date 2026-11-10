@@ -113,7 +113,7 @@ export function IdentityValue({
             setBusy(true);
             setError(null);
             try {
-              const outcome = await revealIdentityAction(personId);
+              const outcome = await revealIdentityAction(personId, field);
               if (outcome.ok) setFull(outcome.reveal[field] ?? "Not recorded");
               else setError(outcome.error);
             } finally {

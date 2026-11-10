@@ -4,6 +4,7 @@
 // Every action re-checks permission on the server. Hiding a button is never the
 // control (DESIGN §1), and the domain services re-check state on top of this.
 
+import { actionErrorText } from "@/lib/action-error";
 import {
   adjustmentsWaiting,
   approveBeforeOldRecovery,
@@ -57,7 +58,7 @@ export type ActionResult = { ok: true; message?: string } | { ok: false; error: 
 
 function toResult(error: unknown): ActionResult {
   if (error instanceof CommandError) return { ok: false, error: error.message };
-  return { ok: false, error: error instanceof Error ? error.message : "Action failed." };
+  return { ok: false, error: actionErrorText(error, "Action failed.") };
 }
 
 function refresh() {
@@ -674,14 +675,24 @@ export async function requestSoldByCorrectionAction(
       supportingNote: input.supportingNote,
     });
     if (actor.role === "MD") {
-      await decideSoldByCorrection({
-        idempotencyKey: `${key}:approve`,
-        actorRef: actor.staffAccountId,
-        actorRole: actor.role,
-        bookingId: input.bookingId,
-        approve: true,
-        note: input.reason,
-      });
+      // Raising has committed by now. A refused approval leaves it Pending,
+      // and a retry would be refused as "already pending": say where it is.
+      try {
+        await decideSoldByCorrection({
+          idempotencyKey: `${key}:approve`,
+          actorRef: actor.staffAccountId,
+          actorRole: actor.role,
+          bookingId: input.bookingId,
+          approve: true,
+          note: input.reason,
+        });
+      } catch (error) {
+        refresh();
+        return {
+          ok: false,
+          error: `The Sold By Correction is raised but not applied: ${actionErrorText(error)} It is waiting on this Booking for your decision.`,
+        };
+      }
     }
     refresh();
     return {
@@ -922,7 +933,9 @@ export async function loadBookingDetail(bookingId: string) {
       // has to, and an Aadhaar is not sent to a browser to be re-displayed.
       aadhaarRecorded: p.person.aadhaarStatus !== "PENDING",
       panRecorded: p.person.panStatus !== "NOT_AVAILABLE",
-      sharePercent: p.sharePercent?.toFixed(2) ?? null,
+      // As stored (four places): rounded to two, 33.3333 × 3 arrived as 99.99%
+      // and 50.004/49.996 as 50/50 — which a resave then wrote back.
+      sharePercent: p.sharePercent?.toString() ?? null,
       effectiveFrom: p.effectiveFrom.toISOString(),
       effectiveTo: p.effectiveTo?.toISOString() ?? null,
       changeReason: p.changeReason,
@@ -949,9 +962,11 @@ export async function loadBookingDetail(bookingId: string) {
       decisionNote: s.decisionNote,
       instalments: s.instalments.map((i) => ({
         seq: i.seq,
-        scheduled: i.scheduledPercent.toFixed(2),
-        received: i.receivedPercent.toFixed(2),
-        remaining: i.scheduledPercent.sub(i.receivedPercent).toFixed(2),
+        // As stored (four places), like sharePercent: two showed a received
+        // 9.996 as a fully paid 10 and a Revise rewrote 33.3333 as 33.33.
+        scheduled: i.scheduledPercent.toString(),
+        received: i.receivedPercent.toString(),
+        remaining: i.scheduledPercent.sub(i.receivedPercent).toString(),
         dueDate: i.dueDate.toISOString(),
         receivedOn: receivedOnBySeq.get(i.seq)?.toISOString() ?? null,
         // Derived here so Upcoming / Received / Overdue comes from the one rule
@@ -966,7 +981,7 @@ export async function loadBookingDetail(bookingId: string) {
     })),
     paymentEntries: booking.paymentEntries.map((e) => ({
       id: e.id,
-      percent: e.percent.toFixed(2),
+      percent: e.percent.toString(),
       paidOn: e.paidOn.toISOString(),
       recordedAt: e.recordedAt.toISOString(),
       status: e.status,

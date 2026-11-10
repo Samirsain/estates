@@ -6,9 +6,18 @@
 
 import { blocked, runCommand, type Tx } from "./command";
 
+/**
+ * Only an MD acts on an MD account. STAFF_MANAGE can be granted to anyone as
+ * an extra permission, and with it a CRM user reset the MD's password, was
+ * handed the new one, and signed in as MD.
+ */
+export function refuseMdTarget(actorRole: string, targetRole: string) {
+  if (targetRole === "MD" && actorRole !== "MD") blocked("Only an MD can change an MD account.");
+}
+
 /** Everything a disabled account still owns, for the pre-disable review. */
 export async function openWorkFor(tx: Tx, staffAccountId: string) {
-  const [tasks, enquiries] = await Promise.all([
+  const [tasks, enquiries, landInquiries] = await Promise.all([
     tx.task.findMany({
       where: { assigneeStaffId: staffAccountId, status: "PENDING" },
       select: { id: true, taskNo: true, title: true, recordName: true, dueAt: true },
@@ -18,8 +27,14 @@ export async function openWorkFor(tx: Tx, staffAccountId: string) {
       where: { assignedStaffId: staffAccountId, status: "ACTIVE" },
       select: { id: true, enquiryNo: true, projectId: true },
     }),
+    // Land Inquiries are assigned work too: left out, they stayed with a
+    // disabled login and reached no review queue.
+    tx.landInquiry.findMany({
+      where: { assignedToId: staffAccountId, status: "WORKING", archivedAt: null },
+      select: { id: true, inquiryNo: true },
+    }),
   ]);
-  return { tasks, enquiries };
+  return { tasks, enquiries, landInquiries };
 }
 
 /**
@@ -53,14 +68,15 @@ export async function disableStaffAccount(args: {
         where: { id: args.staffAccountId },
       });
       if (account.status === "DISABLED") blocked("This staff account is already disabled.");
+      refuseMdTarget(args.actorRole, account.role);
 
       const work = await openWorkFor(tx, args.staffAccountId);
-      const openCount = work.tasks.length + work.enquiries.length;
+      const openCount = work.tasks.length + work.enquiries.length + work.landInquiries.length;
 
       if (!args.emergency && openCount > 0) {
         blocked(
-          `This account still holds ${work.tasks.length} open task(s) and ${work.enquiries.length} ` +
-            `Enquiry(ies). Reassign them first, or use Emergency Disable to queue them for review.`
+          `This account still holds ${work.tasks.length} open task(s), ${work.enquiries.length} ` +
+            `Enquiry(ies) and ${work.landInquiries.length} Land Inquiry(ies). Reassign them first, or use Emergency Disable to queue them for review.`
         );
       }
 
@@ -85,6 +101,11 @@ export async function disableStaffAccount(args: {
         await tx.enquiry.updateMany({
           where: { assignedStaffId: args.staffAccountId, status: "ACTIVE" },
           data: { assignedStaffId: null, needsReassignment: true },
+        });
+        // Unassigned shows on the Land Inquiries list for someone to pick up.
+        await tx.landInquiry.updateMany({
+          where: { assignedToId: args.staffAccountId, status: "WORKING", archivedAt: null },
+          data: { assignedToId: null },
         });
       }
 
@@ -151,8 +172,14 @@ export async function reassignWork(args: {
       });
       if (target.status !== "ACTIVE") blocked("Work can only be reassigned to an active staff account.");
 
-      const tasks = await tx.task.updateMany({
+      // Only the tasks that actually move get a REASSIGNED event; a finished
+      // task in the selection used to get one too.
+      const moving = await tx.task.findMany({
         where: { id: { in: taskIds }, status: "PENDING" },
+        select: { id: true },
+      });
+      const tasks = await tx.task.updateMany({
+        where: { id: { in: moving.map((t) => t.id) } },
         data: { assigneeStaffId: args.toStaffAccountId, assigneeRole: target.role, needsReassignment: false },
       });
       const enquiries = await tx.enquiry.updateMany({
@@ -160,7 +187,7 @@ export async function reassignWork(args: {
         data: { assignedStaffId: args.toStaffAccountId, needsReassignment: false },
       });
 
-      for (const taskId of taskIds) {
+      for (const { id: taskId } of moving) {
         await tx.taskEvent.create({
           data: {
             taskId,

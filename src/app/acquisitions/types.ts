@@ -58,6 +58,7 @@ export type AcquisitionRowView = {
     percent: string;
     eligibility: string;
     payment: string;
+    paidOn: string | null;
   } | null;
 };
 

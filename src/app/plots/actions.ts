@@ -1,5 +1,6 @@
 "use server";
 
+import { actionErrorText } from "@/lib/action-error";
 import type { SoldByType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -24,7 +25,7 @@ export type ActionResult = { ok: true; message?: string } | { ok: false; error: 
 
 function toResult(error: unknown): ActionResult {
   if (error instanceof CommandError) return { ok: false, error: error.message };
-  return { ok: false, error: error instanceof Error ? error.message : "Action failed." };
+  return { ok: false, error: actionErrorText(error, "Action failed.") };
 }
 
 export async function makeAvailableAction(
@@ -254,7 +255,10 @@ export async function decideHoldExtensionAction(
   note: string,
   key: string
 ): Promise<ActionResult> {
-  const actor = await requireStaff("HOLD_EXTEND_FURTHER");
+  // PRD §8.5 — CRM decides the first extension, MD any further one. The
+  // service applies the second half; demanding MD's permission here left every
+  // first extension waiting for MD while the Hold ran out.
+  const actor = await requireStaff("HOLD_EXTEND_FIRST");
   try {
     await decideHoldExtension({
       idempotencyKey: key,

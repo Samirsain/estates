@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { MOBILE_INPUT } from "@/components/ui/field-formats";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Field, Modal, inputClass } from "@/components/ui/modal";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -183,6 +184,7 @@ export default function AdministrationClient(props: {
             canManagePermissions={props.canManagePermissions}
             canReveal={props.canRevealIdentity}
             actorAccountId={props.staff.find((s) => s.staffAccountId === props.staffAccountId)?.id ?? ""}
+            isMd={props.role === "MD"}
             onResult={done}
           />
         )}
@@ -219,6 +221,7 @@ function StaffTab({
   canManagePermissions,
   canReveal,
   actorAccountId,
+  isMd,
   onResult,
 }: {
   rows: StaffRowView[];
@@ -227,6 +230,8 @@ function StaffTab({
   canReveal: boolean;
   /** The signed-in account's own row id, so its own controls can be withheld. */
   actorAccountId: string;
+  /** Only MD may act on an MD account (refuseMdTarget). */
+  isMd: boolean;
   onResult: (result: ActionResult) => void;
 }) {
   const router = useRouter();
@@ -307,28 +312,33 @@ function StaffTab({
                         <DropdownMenuItem onSelect={() => setViewing(row)}>
                           <Eye className="h-3.5 w-3.5" /> View details
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setResetting(row)}>
-                          <KeyRound className="h-3.5 w-3.5" /> Reset password
-                        </DropdownMenuItem>
-                        {/* Every one of these ends in a refusal on your own row
-                            (the server checks too) — so they are not offered. */}
-                        {canManagePermissions && row.id !== actorAccountId && (
+                        {/* Every one of these ends in a refusal on your own row,
+                            and on an MD row unless you are MD (the server
+                            checks too) — so they are not offered there. */}
+                        {row.id !== actorAccountId && (isMd || row.role !== "MD") && (
                           <>
-                            <DropdownMenuItem onSelect={() => setReroling(row)}>
-                              <UserCheck className="h-3.5 w-3.5" /> Change role
+                            <DropdownMenuItem onSelect={() => setResetting(row)}>
+                              <KeyRound className="h-3.5 w-3.5" /> Reset password
                             </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => setPermitting(row)}>
-                              <ShieldCheck className="h-3.5 w-3.5" /> Permissions
+                            {canManagePermissions && (
+                              <>
+                                <DropdownMenuItem onSelect={() => setReroling(row)}>
+                                  <UserCheck className="h-3.5 w-3.5" /> Change role
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => setPermitting(row)}>
+                                  <ShieldCheck className="h-3.5 w-3.5" /> Permissions
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => setTarget(row)}
+                              className="text-red-700 focus:text-red-700"
+                            >
+                              <ShieldOff className="h-3.5 w-3.5" /> Disable account
                             </DropdownMenuItem>
                           </>
                         )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onSelect={() => setTarget(row)}
-                          className="text-red-700 focus:text-red-700"
-                        >
-                          <ShieldOff className="h-3.5 w-3.5" /> Disable account
-                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}
@@ -685,13 +695,19 @@ export function RaiseMergeModal({
     };
   }, [survivor, merged]);
 
+  // The profile it was raised from, and both picks, stay choosable whatever a later search finds.
+  const kept = React.useRef<string[]>([]);
+  kept.current = [initial?.id ?? "", survivor, merged];
+
   React.useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(async () => {
       const found = await searchPersonsAction(query);
-      // The profile it was raised from stays choosable whatever the search finds.
       if (!cancelled) {
-        setOptions(initial && !found.some((f) => f.id === initial.id) ? [initial, ...found] : found);
+        setOptions((prev) => [
+          ...prev.filter((p) => kept.current.includes(p.id) && !found.some((f) => f.id === p.id)),
+          ...found,
+        ]);
       }
     }, 250);
     return () => {
@@ -1002,10 +1018,8 @@ function CreateStaffModal({
             <Input
               name="mobile"
               required
-              type="tel"
-              inputMode="numeric"
+              {...MOBILE_INPUT}
               autoComplete="off"
-              placeholder="9812345678"
             />
           </Field>
           <Field label="City">
@@ -1200,10 +1214,10 @@ function StaffDetailModal({
               <Input name="fullName" required defaultValue={detail.fullName} />
             </Field>
             <Field label="Mobile">
-              <Input name="mobile" required type="tel" inputMode="numeric" defaultValue={detail.primaryMobile} />
+              <Input name="mobile" required {...MOBILE_INPUT} defaultValue={detail.primaryMobile} />
             </Field>
             <Field label="Alternate mobile">
-              <Input name="altMobile" type="tel" inputMode="numeric" defaultValue={detail.altMobile ?? ""} />
+              <Input name="altMobile" {...MOBILE_INPUT} placeholder="Optional" defaultValue={detail.altMobile ?? ""} />
             </Field>
             <Field label="Email">
               <Input name="email" type="email" defaultValue={detail.email ?? ""} />

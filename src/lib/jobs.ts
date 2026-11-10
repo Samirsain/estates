@@ -326,7 +326,8 @@ export const JOBS = {
 export type JobName = keyof typeof JOBS;
 
 export function isJobName(value: string): value is JobName {
-  return value in JOBS;
+  // Own keys only: `in` also accepted toString and __proto__ as job names.
+  return Object.hasOwn(JOBS, value);
 }
 
 /** One named job. Idempotent, exactly as the catalogue run is. */

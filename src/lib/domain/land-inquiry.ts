@@ -198,11 +198,21 @@ export function validateReceivedFrom(input: {
 /** Accepts what people actually type — spaces, hyphens, +91 — and stores ten digits. */
 export function normaliseMobile(value: string): string {
   const digits = value.replace(/\D/g, "");
-  return digits.length > 10 && digits.startsWith("91") ? digits.slice(-10) : digits;
+  if (digits.length > 10 && digits.startsWith("91")) return digits.slice(-10);
+  // The trunk 0 of a dialled number ("09876543210") is not part of it.
+  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(1);
+  return digits;
 }
 
 export function isValidMobile(value: string): boolean {
   return /^[6-9][0-9]{9}$/.test(normaliseMobile(value));
+}
+
+/** Kept beside the mobile rule: the two contact fields every Person form takes. */
+export function isValidEmail(value: string): boolean {
+  // ponytail: shape only (one @, a dot after it, no spaces) — the same bar the
+  // browser's type="email" sets. Whether the inbox exists is not knowable here.
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 /* ------------------------------------------------- owners (spec §8, §30.13) */
@@ -338,8 +348,9 @@ export function rateError(fields: readonly RateField[]): string | null {
     const hasValue = field.value !== null && field.value.trim() !== "";
     if (hasValue && !field.basis) return `${field.label} needs a rate basis.`;
     if (!hasValue && field.basis) return `${field.label} has a basis but no rate.`;
-    if (hasValue && !isPositiveDecimal(field.value!)) {
-      return `${field.label} must be a positive amount.`;
+    // Rates are stored to two places.
+    if (hasValue && !isPositiveDecimal(field.value!, 2)) {
+      return `${field.label} must be a positive amount of at least 0.01.`;
     }
   }
   return null;
@@ -352,9 +363,14 @@ export function parseAmount(value: string): string | null {
   return /^\d+(\.\d{1,2})?$/.test(cleaned) ? cleaned : value.trim();
 }
 
-export function isPositiveDecimal(value: string): boolean {
+/**
+ * Positive, and still positive once stored at the column's `places` — a rate of
+ * 0.001 is stored as 0.00 in a Decimal(20,2) and then fails
+ * land_inquiry_positive_numbers as a raw error.
+ */
+export function isPositiveDecimal(value: string, places = 6): boolean {
   const cleaned = value.replace(/[,\s₹]/g, "");
-  return /^\d+(\.\d+)?$/.test(cleaned) && Number(cleaned) > 0;
+  return /^\d+(\.\d+)?$/.test(cleaned) && Number(Number(cleaned).toFixed(places)) > 0;
 }
 
 /* ------------------------------------------------------------- coordinates */

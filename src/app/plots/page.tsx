@@ -47,7 +47,10 @@ export default async function PlotsPage({
     // to decide, the Booking taking payment, and the one that is paid off and
     // waiting to be delivered. One query, because they are the same shape and
     // the same trip.
-    listBookings({ status: { in: ["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED"] } }),
+    // Only what a row acts on: Delivered from Payment Completed. Every Pending
+    // and Booked Booking was loaded and serialised on each visit for dialogs
+    // nothing opens any more.
+    listBookings({ status: "PAYMENT_COMPLETED" }),
     forPersonId
       ? db.person.findUnique({
           where: { id: forPersonId },
@@ -58,16 +61,12 @@ export default async function PlotsPage({
 
   // A Plot waiting for approval has exactly one pending request, so the row can
   // carry it and Accounts can decide without leaving the inventory.
-  const pendingBookings = Object.fromEntries(
-    liveBookings.filter((b) => b.status === "REQUEST_PENDING").map((b) => [b.plotId, bookingRow(b)])
-  );
+  const pendingBookings = {};
 
   // The same for a Booked Plot: exactly one live Booking, so Payment Received
   // can be confirmed against the row rather than from the Bookings screen.
   // Payment Completed is not here — there is nothing left to receive.
-  const bookedBookings = Object.fromEntries(
-    liveBookings.filter((b) => b.status === "BOOKED").map((b) => [b.plotId, bookingRow(b)])
-  );
+  const bookedBookings = {};
 
   // Paid in full and not yet Delivered. Allotment or Registry is recorded
   // against this one, which is what turns the Plot Delivered (prd-complete §18.6).
@@ -251,17 +250,17 @@ export default async function PlotsPage({
       completedBookings={completedBookings}
       staffRef={actor.staffAccountId}
       permissions={{
-        makeAvailable: can(actor.role, "PLOT_MAKE_AVAILABLE"),
-        hold: can(actor.role, "HOLD_CREATE"),
-        extend: can(actor.role, "HOLD_EXTEND_FIRST"),
-        decideExtension: can(actor.role, "HOLD_EXTEND_FURTHER"),
-        setup: can(actor.role, "PLOT_SETUP"),
-        reviewRequests: can(actor.role, "HOLD_REQUEST_REVIEW"),
-        book: can(actor.role, "BOOKING_REQUEST_SUBMIT"),
-        decideBooking: can(actor.role, "BOOKING_DECIDE"),
-        confirmPayment: can(actor.role, "PAYMENT_RECEIVED_CONFIRM"),
-        recordFinalBuyers: can(actor.role, "FINAL_BUYER_RECORD"),
-        recordCompletion: can(actor.role, "COMPLETION_RECORD"),
+        makeAvailable: can(actor.role, "PLOT_MAKE_AVAILABLE", actor.extraPermissions),
+        hold: can(actor.role, "HOLD_CREATE", actor.extraPermissions),
+        extend: can(actor.role, "HOLD_EXTEND_FIRST", actor.extraPermissions),
+        decideExtension: can(actor.role, "HOLD_EXTEND_FIRST", actor.extraPermissions),
+        setup: can(actor.role, "PLOT_SETUP", actor.extraPermissions),
+        reviewRequests: can(actor.role, "HOLD_REQUEST_REVIEW", actor.extraPermissions),
+        book: can(actor.role, "BOOKING_REQUEST_SUBMIT", actor.extraPermissions),
+        decideBooking: can(actor.role, "BOOKING_DECIDE", actor.extraPermissions),
+        confirmPayment: can(actor.role, "PAYMENT_RECEIVED_CONFIRM", actor.extraPermissions),
+        recordFinalBuyers: can(actor.role, "FINAL_BUYER_RECORD", actor.extraPermissions),
+        recordCompletion: can(actor.role, "COMPLETION_RECORD", actor.extraPermissions),
       }}
     />
   );

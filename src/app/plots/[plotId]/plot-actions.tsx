@@ -18,7 +18,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Field, Modal } from "@/components/ui/modal";
+import { Field, Modal, ModalError } from "@/components/ui/modal";
 import { RemarkSelect } from "@/components/ui/remark-select";
 import { setRestrictionAction, updatePlotDetailsAction } from "../actions";
 import { EditPlotDetailsDialog, type EditablePlot } from "../plots-client";
@@ -74,6 +74,8 @@ export default function PlotActions({
   const current = restriction === "NOT_FOR_SALE" || restriction === "PLEDGE" ? restriction : null;
 
   return (
+    // The refusal shows inside the open dialog; behind it, nobody saw it.
+    <ModalError.Provider value={notice && !notice.ok ? notice.text : null}>
     <>
       <div className="flex flex-col items-end gap-1">
         <div className="flex flex-wrap justify-end gap-2">
@@ -168,5 +170,6 @@ export default function PlotActions({
         </Modal>
       )}
     </>
+    </ModalError.Provider>
   );
 }

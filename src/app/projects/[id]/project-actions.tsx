@@ -5,6 +5,8 @@
 // Projects list's own, so a change made here is the change made there.
 
 import React from "react";
+import { safely } from "@/lib/safely";
+import { ModalError } from "@/components/ui/modal";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Globe, Layers, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,7 +44,7 @@ export default function ProjectActions({
 
   async function run(action: () => Promise<ActionResult>) {
     setBusy(true);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
     setNotice(result);
     if (result.ok) {
@@ -52,6 +54,8 @@ export default function ProjectActions({
   }
 
   return (
+    // The refusal shows inside the open dialog; behind it, nobody saw it.
+    <ModalError.Provider value={notice && !notice.ok ? notice.error : null}>
     <>
       <div className="flex flex-col items-end gap-1">
         <div className="flex flex-wrap justify-end gap-2">
@@ -136,5 +140,6 @@ export default function ProjectActions({
         />
       )}
     </>
+    </ModalError.Provider>
   );
 }

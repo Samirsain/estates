@@ -16,6 +16,7 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { can, canViewField } from "@/lib/security/permissions";
 import { maskAadhaar, maskMobile, maskPan } from "@/lib/security/identity";
 import { eligibilityLabel, experienceSince, payoutStep, recoveryStep, type PayoutFix } from "@/lib/domain/commission";
+import { dealsInLabel, experienceLabel } from "@/lib/domain/member-business";
 import { adjustmentsWaiting } from "@/lib/services/recovery-service";
 import { formatIst, formatIstDateTime, istDay } from "@/lib/tasks";
 import { auditHistory, mergeHistory, newestFirst } from "@/lib/profile-history";
@@ -437,8 +438,10 @@ export default async function MemberDetailPage({
         return booking && actor.role === "MD" ? { label: "Approve Before Recovery", href: booking } : null;
       case "RECOVERY_CIRCUMVENTION_REVIEW":
         return actor.role === "ACCOUNTS" || actor.role === "MD" ? { label: "Review", href: "/rewards?tab=reviews" } : null;
+      case "AADHAAR_PENDING":
+        // Edit details asks for the Aadhaar now (askAadhaar), so the hold has a way out.
+        return may("PERSON_DETAILS_EDIT") ? { label: "Add Aadhaar", href: "#edit-details" } : null;
       default:
-        // Aadhaar pending: no screen enters an Aadhaar after the Member is made.
         return null;
     }
   };
@@ -616,7 +619,7 @@ export default async function MemberDetailPage({
       person: b.primaryPerson,
       personRole: null,
       status: statusWords(b.status),
-      payment: `${b.paymentReceivedPercent.toFixed(2)}% received`,
+      payment: `${b.paymentReceivedPercent.toString()}% received`,
       lines: linesOn(b.id),
     })),
     ...acquisitionLines.map((c) => {
@@ -634,7 +637,7 @@ export default async function MemberDetailPage({
         personRole: "Seller",
         status: TYPE_LABEL[a.type] ?? "Buyback / Resale",
         statusSub: statusWords(a.status),
-        payment: `${a.paymentGivenPercent.toFixed(2)}% given`,
+        payment: `${a.paymentGivenPercent.toString()}% given`,
         lines: [c],
       };
     }),
@@ -872,6 +875,7 @@ export default async function MemberDetailPage({
                 reraNumber: member.reraNumber,
                 reraExpiryDate: member.reraExpiryDate?.toISOString() ?? null,
                 reraNotApplicableReason: member.reraNotApplicableReason,
+                invitedByMemberId: member.invitedByMember?.memberId ?? null,
               }}
               canActivate={canManage}
               canDeactivate={canDeactivate}
@@ -882,11 +886,25 @@ export default async function MemberDetailPage({
                 personId={personId}
                 bank={banks[0] ?? null}
                 canEnterBank={can(actor.role, "BANK_DETAILS_ENTER", actor.extraPermissions)}
+                askAadhaar={member.person.aadhaarStatus === "PENDING"}
+                askPan={member.person.panStatus === "NOT_AVAILABLE"}
+                business={{
+                  firmName: member.person.firmName ?? "",
+                  dealsIn: member.person.dealsIn,
+                  experience: member.person.businessExperience,
+                }}
                 person={{
                   fullName: member.person.fullName,
                   nickname: member.person.nickname ?? "",
-                  mobile: member.person.primaryMobile,
-                  altMobile: member.person.altMobile ?? "",
+                  // Whole only for MOBILE_FULL; otherwise blank, the mask as a hint.
+                  ...(canViewField(actor.role, "MOBILE_FULL")
+                    ? { mobile: member.person.primaryMobile, altMobile: member.person.altMobile ?? "" }
+                    : {
+                        mobile: "",
+                        altMobile: "",
+                        mobileOnFile: maskMobile(member.person.primaryMobile),
+                        altMobileOnFile: member.person.altMobile ? maskMobile(member.person.altMobile) : undefined,
+                      }),
                   email: member.person.email ?? "",
                   city: member.person.city ?? "",
                   addressLine: member.person.addressLine ?? "",
@@ -974,6 +992,9 @@ export default async function MemberDetailPage({
             <Row label="Date of Birth" value={bornOn(member.person.dateOfBirth)} />
             <Row label="City" value={member.person.city ?? "—"} />
             <Row label="Address" value={member.person.addressLine ?? "—"} />
+            <Row label="Firm Name" value={member.person.firmName ?? "—"} />
+            <Row label="Deals In" value={dealsInLabel(member.person.dealsIn) || "—"} />
+            <Row label="Experience" value={experienceLabel(member.person.businessExperience) || "—"} />
           </Section>
 
           {/* Aadhaar sits with RERA and PAN with the bank, so the three cards
@@ -1030,7 +1051,7 @@ export default async function MemberDetailPage({
                 <IdentityValue
                   personId={personId}
                   field="pan"
-                  canReveal={canViewField(actor.role, "AADHAAR_FULL")}
+                  canReveal={canViewField(actor.role, "PAN_FULL")}
                   masked={member.person.panMasked ? maskPan(member.person.panMasked) : "Not recorded"}
                 />
               }

@@ -52,8 +52,11 @@ function validateBoundaries(plotNumber: string, boundaries: readonly BoundaryInp
     if (boundary.kind === "ROAD" && !boundary.roadWidthFt?.trim()) {
       blocked(`Plot ${plotNumber}: a Road side needs its road width.`);
     }
-    if (boundary.kind === "ROAD" && Number(boundary.roadWidthFt) <= 0) {
-      blocked(`Plot ${plotNumber}: road width must be greater than zero.`);
+    // A number, not just not-zero: "30 ft" or "1,200" is NaN, which passed
+    // `<= 0` and then failed the Decimal column write with a raw error.
+    const width = Number(boundary.roadWidthFt);
+    if (boundary.kind === "ROAD" && !(Number.isFinite(width) && width > 0)) {
+      blocked(`Plot ${plotNumber}: road width must be a number of feet greater than zero, such as 30.`);
     }
   }
 }
@@ -119,6 +122,20 @@ export async function prepareInventory(args: {
           blocked(`Plot ${row.plotNumber}: a Commercial Project cannot contain a Residential Plot.`);
         }
         validateBoundaries(row.plotNumber, row.boundaries);
+      }
+
+      // A number already used in this Project would hit the Plot unique key and
+      // roll the whole grid back with a raw error. Name every clash instead.
+      const taken = await tx.plot.findMany({
+        where: {
+          projectId: args.projectId,
+          OR: args.rows.map((row) => ({ plotType: row.plotType, plotNumber: row.plotNumber.trim() })),
+        },
+        select: { plotType: true, plotNumber: true },
+      });
+      if (taken.length > 0) {
+        const list = taken.map((p) => `${p.plotNumber} (${p.plotType})`).join(", ");
+        blocked(`These Plot numbers already exist in this Project: ${list}. Use new numbers.`);
       }
 
       // Activating a Project is what releases its inventory, and a Project that
@@ -276,7 +293,9 @@ export async function updatePlotDetails(args: {
           widthFt: args.widthFt ?? null,
           lengthFt: args.lengthFt ?? null,
           exactAreaSqFt: args.exactAreaSqFt ?? null,
-          exactAreaReason: args.exactAreaReason ?? null,
+          // A reason belongs to an exact area: cleared back to a regular Plot,
+          // the old reason stayed and the page kept an "Override reason" row.
+          exactAreaReason: args.exactAreaSqFt ? (args.exactAreaReason ?? null) : null,
           areaSqFt: areas.areaSqFt.toFixed(4),
           areaSqYd: areas.areaSqYd.toFixed(4),
           areaSqM: areas.areaSqM.toFixed(4),

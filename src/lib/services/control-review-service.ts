@@ -7,7 +7,8 @@
 import { blocked, lockKey, runCommand } from "./command";
 import { refreshBenefitsOfPerson } from "./recovery-service";
 import { closeTasksFor } from "./task-service";
-import { CIRCUMVENTION_KIND, CIRCUMVENTION_PURPOSE } from "./benefit-control-service";
+import { db } from "@/lib/db";
+import { CIRCUMVENTION_KIND, CIRCUMVENTION_PURPOSE, assertIndependent } from "./benefit-control-service";
 
 type Actor = { idempotencyKey: string; actorRef: string; actorRole: string };
 type CloseRelation = "SPOUSE" | "PARENT" | "CHILD" | "SIBLING";
@@ -71,6 +72,10 @@ export async function endStaffRelative(args: Actor & { declarationId: string; re
 export async function decideCircumvention(args: Actor & { reviewId: string; clear: boolean; reason: string }) {
   if (args.actorRole !== "ACCOUNTS" && args.actorRole !== "MD") blocked("Only Accounts or MD decides a Recovery Circumvention Review.");
   if (!args.reason.trim()) blocked("A reason is required on the decision.");
+  // CP §58 like every other payout step: clearing the review lifts the hold
+  // on the subject's own benefit, so the subject and their relatives may not.
+  const subject = await db.circumventionReview.findUniqueOrThrow({ where: { id: args.reviewId }, select: { subjectPersonId: true } });
+  await assertIndependent({ ...args, beneficiaryPersonId: subject.subjectPersonId, action: "CIRCUMVENTION_DECIDE" });
   return runCommand<{ reviewId: string }>(
     { idempotencyKey: args.idempotencyKey, operation: "CIRCUMVENTION_DECIDE", actorRef: args.actorRef, actorRole: args.actorRole, payload: { reviewId: args.reviewId, clear: args.clear } },
     async (tx) => {

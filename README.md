@@ -42,11 +42,19 @@ Browser ──▶ Next.js (server components, server actions, /api routes)
 ```bash
 npm install
 cp .env.example .env          # then fill in the six secrets
-npx prisma migrate deploy
+npx prisma db push            # a NEW, EMPTY database only — see below
 npm run db:constraints        # controls Prisma cannot express
+for m in prisma/migrations/*/; do npx prisma migrate resolve --applied "$(basename "$m")"; done
 npm run db:seed               # first staff accounts, one project, a few plots
 npm run dev
 ```
+
+The migration history cannot build a database from nothing (audit DB01/DB02,
+Nov 2026): the early migrations assume objects that `db push` created, and
+Land Inquiry has no creating migration. So a new database is built from the
+schema, then every migration is marked as already applied, and from then on
+`prisma migrate deploy` (the Render build) applies only new ones. Never point
+these steps, or `prisma migrate dev`, at a database that holds data.
 
 Seeded accounts sign in with `STF-0001` … `STF-0008` and the password the seed
 prints. Change them before anyone real uses the system: the password is the whole

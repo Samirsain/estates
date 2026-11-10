@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { blindIndex, encryptSensitive } from "@/lib/security/identity";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { closeTasksFor, ensureTask } from "./task-service";
+import { reassessBenefitsOf } from "./commission-service";
 
 /** IFSC is four letters, a zero, then six alphanumerics. */
 const IFSC = /^[A-Z]{4}0[A-Z0-9]{6}$/;
@@ -168,6 +169,12 @@ export async function enterBankDetails(args: {
           verifiedAt: now,
         },
       });
+      // A pending joint-account exception this replaced needs no Accounts
+      // decision any more; deciding it later only said "already superseded".
+      await closeTasksFor(tx, "Person", args.personId, args.actorRef, "Replaced by new bank details.", "BANK_VERIFICATION");
+      // Benefits held for Bank Verification Pending are released now, not at
+      // whatever unrelated event next reassessed them.
+      await reassessBenefitsOf(tx, args.personId, args.actorRef);
 
       return {
         result: { bankDetailId: detail.id, accountLastFour: detail.accountLastFour, jointExceptionPending: false },
@@ -252,6 +259,7 @@ export async function decideBankDetails(args: {
         args.approve ? `Verified — ${args.note}` : `Rejected — ${args.note}`,
         "BANK_VERIFICATION"
       );
+      if (args.approve) await reassessBenefitsOf(tx, detail.personId, args.actorRef);
 
       return {
         result: { bankDetailId: detail.id, status: args.approve ? "VERIFIED" : "SUPERSEDED" },

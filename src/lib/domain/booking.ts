@@ -11,6 +11,20 @@ export type Decimal = Prisma.Decimal;
 
 export const HUNDRED = new D(100);
 
+/** Every percentage column is Decimal(7,4); a value with more places would be rounded on write. */
+export const PERCENT_PLACES = 4;
+
+/**
+ * A percentage as typed: a plain number, at most four places. "abc" reached
+ * Decimal and the person saw "[DecimalError] Invalid argument"; 33.33335 was
+ * silently rounded on save. Null when it reads.
+ */
+export function percentInputError(value: string, label = "The percentage"): string | null {
+  return /^\d+(\.\d{1,4})?$/.test(value.trim())
+    ? null
+    : `${label} must be a number with at most ${PERCENT_PLACES} decimal places, such as 25 or 33.3333.`;
+}
+
 /** Anything the exact-decimal helpers accept — a Prisma Decimal included. */
 export type Numeric = string | number | Decimal;
 
@@ -53,6 +67,9 @@ export function validateSchedule(lines: readonly ScheduleLine[], bookingDate: Da
     seen.add(line.seq);
 
     if (scheduled(line).lte(0)) return fail(`Instalment ${line.seq} must be greater than 0%.`);
+    if (scheduled(line).decimalPlaces() > PERCENT_PLACES) {
+      return fail(`Instalment ${line.seq} has at most ${PERCENT_PLACES} decimal places.`);
+    }
     if (received(line).gt(scheduled(line))) {
       return fail(`Instalment ${line.seq} is credited beyond the percentage it schedules.`);
     }
@@ -106,7 +123,7 @@ export function validateScheduleRevision(
 
   const carried = proposed.reduce((sum, line) => sum.add(received(line)), new D(0));
   if (!carried.eq(alreadyReceived)) {
-    return fail(`The revision must preserve the ${alreadyReceived.toFixed(2)}% already received.`);
+    return fail(`The revision must preserve the ${alreadyReceived.toString()}% already received.`);
   }
   return OK;
 }
@@ -138,6 +155,9 @@ export function allocatePayment(
 ): { allocations: Allocation[] } {
   let left = new D(percent);
   if (left.lte(0)) throw new Error("Payment Received This Time must be greater than 0%.");
+  if (left.decimalPlaces() > PERCENT_PLACES) {
+    throw new Error(`Payment Received This Time has at most ${PERCENT_PLACES} decimal places.`);
+  }
 
   const allocations: Allocation[] = [];
   for (const line of bySeq(lines)) {
@@ -177,8 +197,9 @@ export function progressAfter(current: Numeric, delta: Numeric): Decimal {
   if (next.gt(HUNDRED)) {
     const remaining = HUNDRED.sub(new D(current));
     throw new Error(
-      `Payment cannot exceed the remaining ${remaining.toFixed(2)}%. ` +
-        `This ${new D(delta).toFixed(2)}% would take Payment Received to ${next.toFixed(4)}%.`
+      // As stored, four places: rounded to two, it named a figure it then refused.
+      `Payment cannot exceed the remaining ${remaining.toString()}%. ` +
+        `This ${new D(delta).toString()}% would take Payment Received to ${next.toFixed(4)}%.`
     );
   }
   if (next.lt(0)) throw new Error("Payment Received progress cannot go below 0%.");
@@ -200,6 +221,33 @@ export type SharedParty = { personId: string; sharePercent?: Numeric | null };
  */
 export function validateShares(parties: readonly SharedParty[]): Check {
   if (parties.length === 0) return fail("One Primary Customer is required.");
+
+  // A first-time buyer has no personId yet; resolveParties checks again after.
+  const ids = parties.map((p) => p.personId).filter(Boolean);
+  if (new Set(ids).size !== ids.length) {
+    return fail("The same Customer is listed twice. Each buyer appears once.");
+  }
+
+  // The share_percent_bounds CHECK and the Decimal(7,4) column, said here
+  // rather than as a raw database error.
+  for (const p of parties) {
+    if (p.sharePercent === null || p.sharePercent === undefined) continue;
+    // "abc" made Decimal throw, and its raw "[DecimalError] Invalid argument"
+    // reached the person typing; "NaN" got through as a share.
+    let share: Decimal;
+    try {
+      share = new D(p.sharePercent);
+    } catch {
+      return fail("Enter every ownership share as a number, such as 50 or 33.3333.");
+    }
+    if (!share.isFinite()) return fail("Enter every ownership share as a number, such as 50 or 33.3333.");
+    if (share.lte(0) || share.gt(HUNDRED)) {
+      return fail("Every ownership share must be more than 0% and at most 100%.");
+    }
+    if (share.decimalPlaces() > PERCENT_PLACES) {
+      return fail(`An ownership share has at most ${PERCENT_PLACES} decimal places.`);
+    }
+  }
 
   if (parties.length === 1) {
     const only = parties[0].sharePercent;
@@ -403,6 +451,8 @@ export const FROZEN_REVIEW_FIELDS = [
  */
 export function canonicalSnapshot(value: unknown): unknown {
   if (value instanceof Date) return value.toISOString();
+  // A Decimal is a value, not an object: its internals made 50 and "50" differ.
+  if (D.isDecimal(value)) return (value as Decimal).toString();
   if (Array.isArray(value)) return value.map(canonicalSnapshot);
   if (value && typeof value === "object") {
     return Object.fromEntries(

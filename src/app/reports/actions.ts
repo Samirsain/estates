@@ -3,7 +3,9 @@
 // Reports and exports — prd-corrections.md §21; design.md §16.
 // Reports are live. Exports are masked and logged, every time.
 
+import { actionErrorText } from "@/lib/action-error";
 import { requireStaff } from "@/lib/security/current-actor";
+import { canViewField } from "@/lib/security/permissions";
 import { CommandError } from "@/lib/services/command";
 import {
   exportReport,
@@ -20,7 +22,7 @@ export type ReportResult =
 
 function toResult(error: unknown): { ok: false; error: string } {
   if (error instanceof CommandError) return { ok: false, error: error.message };
-  return { ok: false, error: error instanceof Error ? error.message : "Report failed." };
+  return { ok: false, error: actionErrorText(error, "Report failed.") };
 }
 
 function columnsOf(rows: ReportRow[]): string[] {
@@ -40,9 +42,9 @@ export async function runReportAction(
   report: ReportName,
   input: { projectId?: string; from?: string; to?: string }
 ): Promise<ReportResult> {
-  await requireStaff("REPORT_VIEW");
+  const actor = await requireStaff("REPORT_VIEW");
   try {
-    const rows = await runReport(report, toFilters(input));
+    const rows = await runReport(report, toFilters(input), { fullMobile: canViewField(actor.role, "MOBILE_FULL") });
     return { ok: true, rows, columns: columnsOf(rows) };
   } catch (error) {
     return toResult(error);

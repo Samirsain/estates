@@ -20,7 +20,7 @@ export default async function AdministrationPage() {
 
   const [staff, queuedTasks, queuedEnquiries, merges, recentAudit] = await Promise.all([
     db.staffAccount.findMany({
-      include: { person: true, _count: { select: { assignedTasks: true, assignedEnquiries: true } } },
+      include: { person: true, _count: { select: { assignedTasks: { where: { status: "PENDING" } }, assignedEnquiries: { where: { status: "ACTIVE" } } } } },
       orderBy: [{ status: "asc" }, { staffAccountId: "asc" }],
     }),
     db.task.findMany({

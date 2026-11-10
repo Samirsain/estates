@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { maskMobile } from "@/lib/security/identity";
-import { canViewField } from "@/lib/security/permissions";
+import { can, canViewField } from "@/lib/security/permissions";
 import { formatIstDate } from "@/lib/tasks";
 import PotentialInvestorsClient from "./potential-investors-client";
 
@@ -24,6 +24,7 @@ export default async function PotentialInvestorsPage() {
       role={actor.role}
       actorName={actor.name}
       staffAccountId={actor.staffAccountId}
+      canManage={can(actor.role, "ENQUIRY_MANAGE", actor.extraPermissions)}
       rows={investors.map((i) => ({
         id: i.id,
         name: i.fullName,

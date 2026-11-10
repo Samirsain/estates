@@ -1,5 +1,6 @@
 "use server";
 
+import { actionErrorText } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -12,7 +13,17 @@ export type ActionResult = { ok: true } | { ok: false; error: string };
 
 function toResult(error: unknown): ActionResult {
   if (error instanceof CommandError) return { ok: false, error: error.message };
-  return { ok: false, error: error instanceof Error ? error.message : "Action failed." };
+  return { ok: false, error: actionErrorText(error, "Action failed.") };
+}
+
+/** The Task List's own scope (page.tsx): MD any task; others theirs by name or their role's unnamed ones. */
+function refuseOthersTask(
+  task: { assigneeStaffId: string | null; assigneeRole: string },
+  actor: { role: StaffRole; accountId: string }
+) {
+  if (actor.role === "MD") return;
+  if (task.assigneeStaffId ? task.assigneeStaffId === actor.accountId : task.assigneeRole === actor.role) return;
+  blocked("This task is not on your Task List.");
 }
 
 export async function completeTaskAction(taskId: string, key: string): Promise<ActionResult> {
@@ -28,9 +39,11 @@ export async function completeTaskAction(taskId: string, key: string): Promise<A
       },
       async (tx) => {
         const task = await tx.task.findUniqueOrThrow({ where: { id: taskId } });
+        refuseOthersTask(task, actor);
         if (task.status === "COMPLETED") {
           return { result: { taskId }, audit: { entity: "Task", entityId: taskId, action: "TASK_ALREADY_COMPLETE" } };
         }
+        if (task.decision) blocked("Approve or Reject this on the record's review, not with Done.");
         if (FOLLOW_UP_PURPOSES.includes(task.purpose)) {
           blocked("A follow-up closes when the follow-up or payment is recorded on its record, not with Done.");
         }
@@ -65,7 +78,11 @@ export async function reviseTaskAction(
       async (tx) => {
         // Owner, 2 Nov 2026 — the Result must be one of this task's group, and a
         // remark is compulsory where the group or "Other" asks for one.
-        const task = await tx.task.findUniqueOrThrow({ where: { id: taskId }, select: { purpose: true, decision: true } });
+        const task = await tx.task.findUniqueOrThrow({
+          where: { id: taskId },
+          select: { purpose: true, decision: true, assigneeStaffId: true, assigneeRole: true },
+        });
+        refuseOthersTask(task, actor);
         const problem = reviseProblem(reviseGroup(task), result, remark);
         if (problem) blocked(problem);
         await reviseTask(tx, taskId, actor.staffAccountId, new Date(dueAtIso), result, remark);

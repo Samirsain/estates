@@ -23,7 +23,6 @@ export default async function MembersPage() {
         _count: { select: { invitedMembers: true, introducedCustomers: true } },
       },
       orderBy: { memberId: "asc" },
-      take: 300,
     }),
     // A Person can become a Member only once, so anyone already carrying a
     // Member profile is out of the list (prd-complete §7.1).
@@ -31,7 +30,6 @@ export default async function MembersPage() {
       where: { memberProfile: null, mergeStatus: { not: "MERGED_AWAY" } },
       select: { id: true, fullName: true, primaryMobile: true },
       orderBy: { fullName: "asc" },
-      take: 300,
     }),
     /*
      * How many sales a Member has brought, counted once here rather than per
@@ -60,7 +58,8 @@ export default async function MembersPage() {
     memberId: m.memberId,
     personId: m.personId,
     name: m.person.fullName,
-    mobile: m.person.primaryMobile,
+    // Masked like every other list: it went to every role in full.
+    mobile: fullMobile ? m.person.primaryMobile : maskMobile(m.person.primaryMobile),
     city: m.person.city ?? "—",
     status: m.status,
     activationDate: m.activationDate?.toISOString() ?? null,
@@ -102,11 +101,11 @@ export default async function MembersPage() {
         label: `${p.fullName} · ${fullMobile ? p.primaryMobile : maskMobile(p.primaryMobile)}`,
       }))}
       permissions={{
-        activate: can(actor.role, "MEMBER_ACTIVATE"),
-        deactivate: can(actor.role, "MEMBER_DEACTIVATE"),
-        enterBank: can(actor.role, "BANK_DETAILS_ENTER"),
-        verifyBank: can(actor.role, "BANK_VERIFY"),
-        viewFullBank: can(actor.role, "REPORT_VIEW") && (actor.role === "MD" || actor.role === "ACCOUNTS"),
+        activate: can(actor.role, "MEMBER_ACTIVATE", actor.extraPermissions),
+        deactivate: can(actor.role, "MEMBER_DEACTIVATE", actor.extraPermissions),
+        enterBank: can(actor.role, "BANK_DETAILS_ENTER", actor.extraPermissions),
+        verifyBank: can(actor.role, "BANK_VERIFY", actor.extraPermissions),
+        viewFullBank: can(actor.role, "REPORT_VIEW", actor.extraPermissions) && (actor.role === "MD" || actor.role === "ACCOUNTS"),
         viewFullIdentity: canViewField(actor.role, "AADHAAR_FULL"),
       }}
     />

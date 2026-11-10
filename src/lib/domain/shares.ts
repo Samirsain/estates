@@ -12,8 +12,15 @@
 
 export type ShareRow = { sharePercent: string };
 
-/** Percentages are read to two places, so they are added up to two places. */
+/** For display and two-place schedule inputs. */
 export const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Percentages are stored to four places (Decimal(7,4)) and the share inputs
+ * take four, so totals and the room left are kept to four — two places showed
+ * 33.333 × 3 as 100% and capped a 33.334 down to 33.33.
+ */
+export const round4 = (n: number) => Math.round(n * 10_000) / 10_000;
 
 /*
  * A column of percentage inputs that has to add up to 100 — ownership shares,
@@ -24,11 +31,11 @@ export const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** The running total, rounded the way a percentage field is read. */
 export const percentSum = (values: readonly string[]): number =>
-  round2(values.reduce((sum, v) => sum + (Number(v) || 0), 0));
+  round4(values.reduce((sum, v) => sum + (Number(v) || 0), 0));
 
 /** What one field may still take — the others subtracted from 100. */
 export const percentRoom = (values: readonly string[], index: number): number =>
-  Math.max(round2(100 - percentSum(values.filter((_, i) => i !== index))), 0);
+  Math.max(round4(100 - percentSum(values.filter((_, i) => i !== index))), 0);
 
 /**
  * A typed percentage, capped at what the other fields have left: typing 80

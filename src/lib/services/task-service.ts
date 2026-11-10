@@ -5,7 +5,7 @@
 import type { StaffRole, TaskStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import { nextDue, type TaskSubject } from "@/lib/tasks";
-import { nextReference, type Tx } from "./command";
+import { lockKey, nextReference, type Tx } from "./command";
 
 export type TaskInput = {
   recordKind: string;
@@ -29,6 +29,9 @@ export type TaskInput = {
  * repeatedly from a retried job.
  */
 export async function ensureTask(tx: Tx, input: TaskInput) {
+  // Two transactions raising the same task both found none and both created
+  // one; the partial unique index then failed the loser's whole command.
+  await lockKey(tx, `task:${input.recordKind}:${input.recordId}:${input.purpose}`);
   const existing = await tx.task.findFirst({
     where: {
       recordKind: input.recordKind,

@@ -9,7 +9,8 @@
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Layers, MapPin, Percent } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, Layers, MapPin, Percent } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { db } from "@/lib/db";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,7 @@ import { Row } from "@/components/fact-row";
 import { Section, Stat } from "@/components/record-section";
 import { PersonLink } from "@/components/person-link";
 import {
+  canAllocate,
   canEditPlotDetails,
   canSetRestriction,
   displayStatus,
@@ -519,7 +521,9 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   }
   // The first action a status allows is the page's one button; the rest go
   // under More. So each status lists the step that moves the Plot on first.
-  if (plot.status === "AVAILABLE") {
+  // Available is not always sellable: in a Sold Out or Completed Project, or
+  // under a restriction, the list opens no form and the button led nowhere.
+  if (plot.status === "AVAILABLE" && canAllocate(plot.status, plot.restriction, plot.project.status).ok) {
     if (allowed("BOOKING_REQUEST_SUBMIT")) actions.push({ label: "Start Booking", href: inInventory("BOOK") });
     if (allowed("HOLD_CREATE")) actions.push({ label: "Hold", href: inInventory("HOLD") });
   }
@@ -660,8 +664,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   // Restriction menu (Not for Sale, Pledge) and Edit Plot Details (owner,
   // 28 Oct 2026); Hold is done from Plot Inventory.
   const primary = actions.find((a) => !a.danger) ?? null;
-  const canSetup = can(actor.role, "PLOT_SETUP");
-  const canRestrict = can(actor.role, "PLOT_RESTRICTION_MANAGE") && canSetRestriction(plot.status);
+  const canSetup = can(actor.role, "PLOT_SETUP", actor.extraPermissions);
+  const canRestrict = can(actor.role, "PLOT_RESTRICTION_MANAGE", actor.extraPermissions) && canSetRestriction(plot.status);
 
   /* Whose name the Plot is in: the Booking's Primary Customer, else the seller
      on a live Buyback / Resale, else whoever it is held for. */
@@ -836,6 +840,26 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               <Button size="sm" asChild className={primary.label === "Make Available" ? MAKE_AVAILABLE : undefined}>
                 <Link href={primary.href}>{primary.label}</Link>
               </Button>
+            )}
+            {/* The rest of what this Plot allows. They were worked out and never
+                shown, so Hold, Extend Hold or Cancel Hold had no way in here. */}
+            {actions.filter((a) => a !== primary).length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    More <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {actions
+                    .filter((a) => a !== primary)
+                    .map((a) => (
+                      <DropdownMenuItem key={a.label} asChild className={a.danger ? "text-red-700 focus:text-red-700" : undefined}>
+                        <Link href={a.href}>{a.label}</Link>
+                      </DropdownMenuItem>
+                    ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             {(canSetup || canRestrict) && (
             <PlotActions

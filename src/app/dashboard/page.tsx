@@ -3,6 +3,7 @@
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
+import { can } from "@/lib/security/permissions";
 import { taskSubjects } from "@/lib/services/task-service";
 import { shownRecordName, type RecordKind, type Recurrence, type Task } from "@/lib/tasks";
 import DashboardClient from "./dashboard-client";
@@ -60,6 +61,7 @@ export default async function DashboardPage() {
       staffAccountId={actor.staffAccountId}
       initialTasks={tasks}
       seesAllWork={seesAllWork}
+      canAddTask={can(actor.role, "TASK_CREATE", actor.extraPermissions)}
     />
   );
 }

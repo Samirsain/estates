@@ -10,12 +10,14 @@ import {
   isPaymentComplete,
   normaliseReference,
   notFutureDated,
+  percentInputError,
   progressAfter,
   validateSchedule,
   validateScheduleRevision,
   type ScheduleLine,
 } from "@/lib/domain/booking";
-import { blocked, lockBooking, runCommand, type Tx } from "./command";
+import { istDay } from "@/lib/tasks";
+import { blocked, lockBooking, lockKey, runCommand, type Tx } from "./command";
 import { reassessCommission } from "./commission-service";
 import { syncTripForBooking } from "./trip-service";
 import { syncRoyaltyLink } from "./network-service";
@@ -133,19 +135,23 @@ export async function syncPaymentFollowUp(tx: Tx, bookingId: string, actorRef: s
     return null;
   }
 
-  const next = unpaid[0];
   // PRD §12.4 — the follow-up shows previous unpaid + current instalment as one
-  // total due by the next due date.
-  const totalDue = unpaid
-    .filter((i) => i.dueDate.getTime() <= next.dueDate.getTime())
-    .reduce((sum, i) => sum.add(i.scheduledPercent.sub(i.receivedPercent)), new D(0));
+  // total due by the next due date. "Next" is the first unpaid instalment not
+  // yet past due; measured from the oldest unpaid one, the total only ever
+  // held that one instalment.
+  const today = istDay(new Date());
+  const upcoming = unpaid.find((i) => istDay(i.dueDate) >= today) ?? unpaid[unpaid.length - 1];
+  const owing = unpaid.filter((i) => i.dueDate.getTime() <= upcoming.dueDate.getTime());
+  const totalDue = owing.reduce((sum, i) => sum.add(i.scheduledPercent.sub(i.receivedPercent)), new D(0));
+  const next = upcoming;
+  const which = owing.length > 1 ? `Instalments ${owing[0].seq}–${upcoming.seq}` : `Instalment ${upcoming.seq}`;
 
   const recordName = `${booking.bookingNumber ?? booking.requestNo} · ${booking.project.name} ${booking.plot.plotNumber}`;
   // The row has one truncated line for this, so it leads with the two things
   // being read: how much is due, and which instalment it is. Trailing zeros go
   // — 30% reads as 30%, and a 30.5% split still keeps the half it needs.
   const due = totalDue.toFixed(2).replace(/\.?0+$/, "");
-  const result = `Due ${due}% · Instalment ${next.seq}`;
+  const result = `Due ${due}% · ${which}`;
 
   const existing = await tx.task.findFirst({
     where: { recordKind: "Booking", recordId: bookingId, purpose: "PAYMENT_FOLLOW_UP", status: "PENDING" },
@@ -188,6 +194,9 @@ export async function createReference(
   }
 ) {
   const normalisedKey = normaliseReference(args.rawValue);
+  // Under a lock on the value: two Bookings, each holding only its own lock,
+  // both found no clash and both stored the same UTR as active.
+  await lockKey(tx, `external-reference:${normalisedKey}`);
   const clash = await tx.externalReference.findFirst({
     where: { normalisedKey, status: "ACTIVE" },
   });
@@ -256,6 +265,8 @@ export async function confirmPaymentReceived(args: {
   const payerName = args.payerName?.trim() || null;
   const payerReference = args.payerReference?.trim() || null;
   if (payerReference && !payerName) blocked("Name the third-party payer whose reference this is.");
+  const badPercent = percentInputError(args.percent);
+  if (badPercent) blocked(badPercent);
 
   return runCommand(
     {
@@ -395,6 +406,8 @@ export async function correctPaymentReceived(args: {
   reason: string;
 }) {
   if (!args.reason.trim()) blocked("A compulsory reason is required to correct a payment entry.");
+  const badPercent = percentInputError(args.percent);
+  if (badPercent) blocked(badPercent);
 
   return runCommand(
     {
@@ -405,6 +418,13 @@ export async function correctPaymentReceived(args: {
       payload: { entryId: args.entryId, percent: args.percent, reference: args.reference },
     },
     async (tx) => {
+      // Locked before the entry is checked: checked first, two corrections of
+      // one entry both passed, and the second reversed it a second time.
+      const { bookingId } = await tx.paymentReceivedEntry.findUniqueOrThrow({
+        where: { id: args.entryId },
+        select: { bookingId: true },
+      });
+      await lockBooking(tx, bookingId);
       const original = await tx.paymentReceivedEntry.findUniqueOrThrow({
         where: { id: args.entryId },
         include: { externalReference: true },
@@ -414,18 +434,55 @@ export async function correctPaymentReceived(args: {
         blocked("A payment correction must be verified by a different staff account.");
       }
 
-      await lockBooking(tx, original.bookingId);
       const booking = await tx.booking.findUniqueOrThrow({ where: { id: original.bookingId } });
+      // A correction re-derives Booked / Payment Completed, so it belongs only
+      // there. On a Cancelled, Refund Pending or Delivered Booking it brought
+      // the Booking and its Plot back as Booked.
+      if (booking.status !== "BOOKED" && booking.status !== "PAYMENT_COMPLETED") {
+        blocked(
+          `A payment on a ${booking.status.replaceAll("_", " ").toLowerCase()} Booking cannot be corrected.`
+        );
+      }
+      if (booking.activeProcess !== "NONE") {
+        blocked(
+          `This Booking is under ${booking.activeProcess.replaceAll("_", " ").toLowerCase()}. ` +
+            `Correct the payment once that is decided.`
+        );
+      }
+      // Change Plot reset Payment Received to the applied percentage, so an
+      // entry from before it no longer adds into the total it would correct.
+      const replanned = await tx.paymentScheduleVersion.findFirst({
+        where: { bookingId, reason: { startsWith: "Change Plot" }, createdAt: { gt: original.recordedAt } },
+        select: { id: true },
+      });
+      if (replanned) {
+        blocked(
+          "This payment was recorded before a Change Plot, which reset Payment Received. " +
+            "Record the difference as a new payment or an Accounts adjustment instead."
+        );
+      }
       const dated = notFutureDated("Payment Received Date", args.paidOn);
       if (!dated.ok) blocked(dated.reason);
 
       const schedule = await activeSchedule(tx, original.bookingId);
       if (!schedule) blocked("This Booking has no live payment schedule.");
 
-      // Reverse the original allocation first, then allocate the corrected
-      // percentage against the restored schedule.
-      const originalAllocations = original.allocations as unknown as { seq: number; percent: string }[];
-      await applyAllocation(tx, schedule.id, originalAllocations, -1);
+      // Reverse the original first, then allocate the corrected percentage
+      // against the restored schedule. Taken back from the live schedule's
+      // latest received money, not by the original's instalment numbers: after
+      // a revision those name other instalments, which went negative or missed.
+      let left = new D(original.percent);
+      const takeBack: { seq: number; percent: string }[] = [];
+      for (const i of [...schedule.instalments].reverse()) {
+        if (left.lte(0)) break;
+        const take = i.receivedPercent.lt(left) ? i.receivedPercent : left;
+        if (take.gt(0)) takeBack.push({ seq: i.seq, percent: take.toString() });
+        left = left.sub(take);
+      }
+      if (left.gt(0)) {
+        blocked("The live schedule holds less received money than this entry. Raise an Accounts adjustment.");
+      }
+      await applyAllocation(tx, schedule.id, takeBack, -1);
       const reversed = await activeSchedule(tx, original.bookingId);
 
       let allocations;
@@ -581,6 +638,9 @@ export async function reviseSchedule(args: {
       // being cancelled or moved is meaningless work on a frozen record.
       const free = assertProcessFree(booking.activeProcess, "Revise payment schedule");
       if (!free.ok) blocked(free.reason);
+      if (booking.status !== "BOOKED" && booking.status !== "PAYMENT_COMPLETED") {
+        blocked(`A ${booking.status.replaceAll("_", " ").toLowerCase()} Booking's schedule cannot be revised.`);
+      }
 
       const current = await activeSchedule(tx, args.bookingId);
       if (!current) blocked("This Booking has no live payment schedule to revise.");
@@ -678,8 +738,34 @@ export async function decideScheduleRevision(args: {
           data: { status: "REJECTED", ...decision },
         });
       } else {
+        const booking = await tx.booking.findUniqueOrThrow({ where: { id: args.bookingId }, select: { status: true } });
+        if (booking.status !== "BOOKED" && booking.status !== "PAYMENT_COMPLETED") {
+          blocked(`A ${booking.status.replaceAll("_", " ").toLowerCase()} Booking's schedule cannot be revised. Reject this revision.`);
+        }
         const current = await activeSchedule(tx, args.bookingId);
         if (current) {
+          // Received money is carried again now. A payment confirmed while this
+          // waited landed on the live schedule only, and approval made the copy
+          // taken at submission live: the money vanished from the instalments.
+          const receivedNow = new Map(current.instalments.map((i) => [i.seq, i.receivedPercent] as const));
+          let carried = new D(0);
+          for (const line of pending.instalments) {
+            const got = receivedNow.get(line.seq) ?? new D(0);
+            if (got.gt(line.scheduledPercent)) {
+              blocked(
+                `Instalment ${line.seq} has received ${got.toString()}% since this revision was submitted, ` +
+                  `more than the ${line.scheduledPercent.toString()}% it schedules. Reject it and revise again.`
+              );
+            }
+            if (!got.eq(line.receivedPercent)) {
+              await tx.paymentInstalment.update({ where: { id: line.id }, data: { receivedPercent: got.toFixed(4) } });
+            }
+            carried = carried.add(got);
+          }
+          const total = current.instalments.reduce((sum, i) => sum.add(i.receivedPercent), new D(0));
+          if (!carried.eq(total)) {
+            blocked("Money was received on an instalment this revision removes. Reject it and revise again.");
+          }
           await tx.paymentScheduleVersion.update({
             where: { id: current.id },
             data: { status: "SUPERSEDED" },

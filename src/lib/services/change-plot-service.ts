@@ -11,7 +11,15 @@ import {
   plotStateAfterChangePlot,
   validateChangePlot,
 } from "@/lib/domain/acquisition";
-import { assertProcessFree, isPaymentComplete, validateSchedule } from "@/lib/domain/booking";
+import {
+  assertProcessFree,
+  freezeHold,
+  isPaymentComplete,
+  percentInputError,
+  restoreHold,
+  validateSchedule,
+} from "@/lib/domain/booking";
+import { closeCompletionTasks, ensureCompletionTasks } from "./completion-service";
 import { blocked, lockBooking, lockPlot, runCommand, type Tx } from "./command";
 import { freezePlcSnapshot } from "./plc-service";
 import { generateForBooking, raiseAdjustmentTask, reassessCommission } from "./commission-service";
@@ -122,6 +130,18 @@ export async function submitChangePlot(args: {
         where: { id: args.toPlotId },
         data: { status: "WAITING_FOR_BOOKING_APPROVAL" },
       });
+      // The buyer's own Hold on the replacement is frozen, as a Booking Request
+      // freezes one. Left Active, it expired mid-review and released the Plot
+      // as Available: sold to someone else, then booked to this buyer as well.
+      const ownHold = await tx.hold.findFirst({
+        where: { plotId: args.toPlotId, personId: booking.primaryPersonId, status: "ACTIVE" },
+      });
+      if (ownHold) {
+        await tx.hold.update({
+          where: { id: ownHold.id },
+          data: { status: "FROZEN", frozenRemainingMs: freezeHold(ownHold.expiresAt) },
+        });
+      }
       await tx.plotEvent.create({
         data: {
           plotId: args.toPlotId,
@@ -276,6 +296,16 @@ export async function decideChangePlot(args: {
           where: { id: request.fromPlotId },
           data: { status: snapshot.fromPlotStatus },
         });
+        // The buyer's Hold frozen at submission runs again with the time it had.
+        const frozen = await tx.hold.findFirst({
+          where: { plotId: request.toPlotId, personId: booking.primaryPersonId, status: "FROZEN" },
+        });
+        if (frozen) {
+          await tx.hold.update({
+            where: { id: frozen.id },
+            data: { status: "ACTIVE", expiresAt: restoreHold(frozen.frozenRemainingMs ?? 0), frozenRemainingMs: null },
+          });
+        }
         await tx.booking.update({
           where: { id: args.bookingId },
           data: { activeProcess: "NONE" },
@@ -321,6 +351,8 @@ export async function decideChangePlot(args: {
         blocked("Accounts must enter a revised payment schedule totalling exactly 100%.");
       }
 
+      const badPercent = percentInputError(args.appliedPercent, "The applicable percentage");
+      if (badPercent) blocked(badPercent);
       const applied = new D(args.appliedPercent);
       if (applied.lt(0) || applied.gt(100)) {
         blocked("The applicable percentage must be between 0% and 100%.");
@@ -426,6 +458,20 @@ export async function decideChangePlot(args: {
           closeReason: `Change Plot into ${booking.bookingNumber}`,
         },
       });
+
+      // Booked ↔ Payment Completed moves the completion work with it, as a
+      // payment does: 100% applied had no final-buyer or Registry tasks.
+      if (booking.status !== nextStatus) {
+        if (completed) await ensureCompletionTasks(tx, args.bookingId);
+        else {
+          await closeCompletionTasks(
+            tx,
+            args.bookingId,
+            args.actorRef,
+            `Change Plot applied ${applied.toFixed(2)}% — completion work paused.`
+          );
+        }
+      }
 
       // Commission is rechecked against the new Plot and the verified progress.
       await generateForBooking(tx, args.bookingId, args.actorRef);

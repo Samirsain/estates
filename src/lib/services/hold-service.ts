@@ -244,8 +244,11 @@ export async function cancelHold(args: {
       payload: { holdId: args.holdId },
     },
     async (tx) => {
+      const { plotId } = await tx.hold.findUniqueOrThrow({ where: { id: args.holdId }, select: { plotId: true } });
+      await lockPlot(tx, plotId);
+      // Read again under the lock: checked on the row read before it, a Hold
+      // converted or expired meanwhile was reported as cancelled.
       const hold = await tx.hold.findUniqueOrThrow({ where: { id: args.holdId } });
-      await lockPlot(tx, hold.plotId);
 
       // `releaseHold` is a no-op on a Hold that is not running, so without this
       // the caller would be told the Hold was cancelled when nothing happened.
@@ -296,6 +299,8 @@ export async function requestHoldExtension(args: {
       payload: { holdId: args.holdId, requestedHours: args.requestedHours },
     },
     async (tx) => {
+      const { plotId } = await tx.hold.findUniqueOrThrow({ where: { id: args.holdId }, select: { plotId: true } });
+      await lockPlot(tx, plotId);
       const hold = await tx.hold.findUniqueOrThrow({ where: { id: args.holdId } });
       if (hold.status === "FROZEN") {
         blocked(
@@ -303,6 +308,10 @@ export async function requestHoldExtension(args: {
             "nothing to extend."
         );
       }
+      // One request at a time: two raised while no extension had been granted
+      // were both CRM's to approve, so the second skipped MD.
+      const waiting = await tx.holdExtensionRequest.count({ where: { holdId: hold.id, status: "PENDING" } });
+      if (waiting > 0) blocked("An extension request for this Hold is already waiting for a decision.");
       if (hold.status !== "ACTIVE") blocked("This Hold is no longer active.");
       if (isHoldExpired(hold.expiresAt)) blocked("This Hold has expired. Create a new Hold instead.");
 
@@ -350,12 +359,20 @@ export async function decideHoldExtension(args: {
       payload: { requestId: args.requestId, approve: args.approve },
     },
     async (tx) => {
+      // Under the Plot lock, read fresh: two decisions at once lost an
+      // update, and one racing a Booking freeze lost the extension.
+      const { hold: held } = await tx.holdExtensionRequest.findUniqueOrThrow({
+        where: { id: args.requestId },
+        select: { hold: { select: { plotId: true } } },
+      });
+      await lockPlot(tx, held.plotId);
       const request = await tx.holdExtensionRequest.findUniqueOrThrow({
         where: { id: args.requestId },
         include: { hold: true },
       });
       if (request.status !== "PENDING") blocked("This extension request has already been decided.");
-      if (request.requiresAdmin && args.actorRole !== "MD") {
+      // Decided by the extensions granted by now, not only those at request time.
+      if ((request.requiresAdmin || extensionRequiresMd(request.hold.extensionCount)) && args.actorRole !== "MD") {
         blocked("A further Hold extension requires MD approval.");
       }
       // Approving against a frozen Hold would push out an expiry that the
@@ -517,6 +534,25 @@ export async function decideHoldRequest(args: {
 }) {
   if (!args.note.trim()) blocked("A compulsory remark is required to decide a Member Hold Request.");
 
+  // An expired request is marked in a write of its own: marked inside the
+  // command, the refusal below rolled the mark back, and the request stayed
+  // Pending, still counting against the Member's three positions.
+  const expired = await db.holdRequest.updateMany({
+    where: { id: args.requestId, status: "PENDING", expiresAt: { lte: new Date() } },
+    data: {
+      status: "EXPIRED",
+      decidedAt: new Date(),
+      decidedByRef: args.actorRef,
+      decisionNote: "Expired on the working-day cut-off before a decision.",
+    },
+  });
+  if (expired.count > 0) {
+    blocked(
+      "This request expired on the working-day cut-off and can no longer be approved. " +
+        "The Member must submit a new request."
+    );
+  }
+
   return runCommand(
     {
       idempotencyKey: args.idempotencyKey,
@@ -531,15 +567,7 @@ export async function decideHoldRequest(args: {
         blocked(`This request is already ${request.status.toLowerCase()}.`);
       }
       if (request.expiresAt.getTime() <= Date.now()) {
-        await tx.holdRequest.update({
-          where: { id: request.id },
-          data: {
-            status: "EXPIRED",
-            decidedAt: new Date(),
-            decidedByRef: args.actorRef,
-            decisionNote: "Expired on the working-day cut-off before a decision.",
-          },
-        });
+        // Expired between the mark above and here: the next attempt marks it.
         blocked(
           "This request expired on the working-day cut-off and can no longer be approved. " +
             "The Member must submit a new request."

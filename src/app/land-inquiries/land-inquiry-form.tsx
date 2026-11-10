@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Trash2, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MOBILE_INPUT } from "@/components/ui/field-formats";
 import { Field, inputClass } from "@/components/ui/modal";
 import { PersonPicker, type PickerOption } from "@/components/person-picker";
 import {
@@ -288,9 +289,9 @@ export default function LandInquiryForm({
               <Field label="Dealer Mobile Number">
                 <Input
                   className="h-9"
+                  {...MOBILE_INPUT}
                   value={form.anotherDealerMobile ?? ""}
                   onChange={(e) => set("anotherDealerMobile", e.target.value)}
-                  placeholder="10-digit mobile"
                 />
               </Field>
             </>
@@ -332,6 +333,7 @@ export default function LandInquiryForm({
               />
               <Input
                 className="h-9"
+                {...MOBILE_INPUT}
                 placeholder="Mobile (optional)"
                 value={owner.mobile ?? ""}
                 onChange={(e) =>

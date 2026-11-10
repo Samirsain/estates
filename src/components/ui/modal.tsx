@@ -37,7 +37,15 @@ export function Modal({
 }) {
   const ref = React.useRef<HTMLDialogElement>(null);
   React.useEffect(() => ref.current?.showModal(), []);
-  const error = React.useContext(ModalError);
+  const latest = React.useContext(ModalError);
+  // An error already showing when this dialog opened belongs to an earlier
+  // one: it showed in the new dialog as if this action had failed. It counts
+  // again once the screen clears it, as every new attempt does.
+  const [stale, setStale] = React.useState(latest);
+  React.useEffect(() => {
+    if (latest === null) setStale(null);
+  }, [latest]);
+  const error = latest !== stale ? latest : null;
 
   return (
     <dialog

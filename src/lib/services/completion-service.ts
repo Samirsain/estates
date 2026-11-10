@@ -4,7 +4,7 @@
 // Delivered is not a button: it is what a completed route means. There is no
 // Confirm Delivery action anywhere in this file.
 
-import { canTransition } from "@/lib/domain/booking";
+import { canTransition, validateShares } from "@/lib/domain/booking";
 import {
   canReopenDelivered,
   readyForCompletion,
@@ -49,15 +49,20 @@ export async function ensureCompletionTasks(tx: Tx, bookingId: string) {
   const recordName = await bookingLabel(tx, bookingId);
   const dueAt = new Date();
 
-  await ensureTask(tx, {
-    recordKind: "Booking",
-    recordId: bookingId,
-    recordName,
-    purpose: FINAL_BUYER_PURPOSE,
-    title: "Complete Customer Details",
-    assigneeRole: "CRM",
-    dueAt,
-  });
+  // Final buyers already recorded and complete need no task: reaching 100%
+  // again (a correction, a reopened Delivery) brought back finished work.
+  const buyers = await loadFinalBuyers(tx, bookingId);
+  if (buyers.length === 0 || !validateFinalBuyers(buyers).ok) {
+    await ensureTask(tx, {
+      recordKind: "Booking",
+      recordId: bookingId,
+      recordName,
+      purpose: FINAL_BUYER_PURPOSE,
+      title: "Complete Customer Details",
+      assigneeRole: "CRM",
+      dueAt,
+    });
+  }
   await ensureTask(tx, {
     recordKind: "Booking",
     recordId: bookingId,
@@ -104,20 +109,20 @@ export type FinalBuyerInput = {
  * writes FINAL_REGISTRATION parties and never touches the COMMERCIAL rows.
  */
 /**
- * The Aadhaar behind a final buyer, stored the way every other sensitive value
- * here is: AES payload, last four for display, blind index for lookup, status
- * moved off Pending. Nothing is decrypted or returned.
+ * A Person's Aadhaar (a final buyer, a new Member), stored the way every other
+ * sensitive value here is: AES payload, last four for display, blind index for
+ * lookup, status moved off Pending. Nothing is decrypted or returned.
  *
  * Write-once by design. An Aadhaar already on file is left exactly as it is —
  * correcting one is an identity change with its own audit, not a side effect of
  * recording who a Plot registers to.
  */
-async function recordBuyerAadhaar(tx: Tx, buyer: FinalBuyerInput) {
-  const raw = buyer.aadhaar?.trim();
+export async function recordAadhaar(tx: Tx, personId: string, aadhaar: string | null | undefined) {
+  const raw = aadhaar?.trim();
   if (!raw) return;
 
   const person = await tx.person.findUniqueOrThrow({
-    where: { id: buyer.personId },
+    where: { id: personId },
     select: { aadhaarStatus: true },
   });
   if (person.aadhaarStatus !== "PENDING") return;
@@ -129,13 +134,13 @@ async function recordBuyerAadhaar(tx: Tx, buyer: FinalBuyerInput) {
   // The column is unique, so a duplicate would surface as a constraint error
   // with nothing in it for the person typing. Say whose problem it is instead.
   const clash = await tx.person.findFirst({
-    where: { aadhaarBlindIndex: index, id: { not: buyer.personId } },
+    where: { aadhaarBlindIndex: index, id: { not: personId } },
     select: { id: true },
   });
   if (clash) blocked("This Aadhaar Number is already recorded against another person.");
 
   await tx.person.update({
-    where: { id: buyer.personId },
+    where: { id: personId },
     data: {
       aadhaarCipher: encryptSensitive(normalised),
       aadhaarLastFour: aadhaarLastFour(normalised),
@@ -146,17 +151,18 @@ async function recordBuyerAadhaar(tx: Tx, buyer: FinalBuyerInput) {
 }
 
 /**
- * The PAN behind a final buyer, stored the same way and with the same
- * write-once rule as the Aadhaar. The status column moves off Not Available
- * only together with the cipher: `pan_status_matches_value` in constraints.sql
- * refuses the two apart, so both are written in one update or neither is.
+ * A Person's PAN — from a final buyer or from Edit details — stored the same
+ * way and with the same write-once rule as the Aadhaar. The status column moves
+ * off Not Available only together with the cipher: `pan_status_matches_value`
+ * in constraints.sql refuses the two apart, so both are written in one update
+ * or neither is.
  */
-async function recordBuyerPan(tx: Tx, buyer: FinalBuyerInput) {
-  const raw = buyer.pan?.trim();
+export async function recordPan(tx: Tx, personId: string, pan: string | null | undefined) {
+  const raw = pan?.trim();
   if (!raw) return;
 
   const person = await tx.person.findUniqueOrThrow({
-    where: { id: buyer.personId },
+    where: { id: personId },
     select: { panStatus: true },
   });
   if (person.panStatus !== "NOT_AVAILABLE") return;
@@ -166,13 +172,13 @@ async function recordBuyerPan(tx: Tx, buyer: FinalBuyerInput) {
   const index = blindIndex(normalised);
 
   const clash = await tx.person.findFirst({
-    where: { panBlindIndex: index, id: { not: buyer.personId } },
+    where: { panBlindIndex: index, id: { not: personId } },
     select: { id: true },
   });
   if (clash) blocked("This PAN is already recorded against another person.");
 
   await tx.person.update({
-    where: { id: buyer.personId },
+    where: { id: personId },
     data: {
       panCipher: encryptSensitive(normalised),
       panMasked: maskPan(normalised),
@@ -190,6 +196,17 @@ export async function recordFinalBuyers(args: {
   buyers: FinalBuyerInput[];
 }) {
   if (args.buyers.length === 0) blocked("At least one final buyer is required.");
+  // The same rules Edit details applies, so a blank or impossible date never
+  // reaches Prisma and a typo like 2030 is not stored as fact.
+  for (const buyer of args.buyers) {
+    if (!buyer.personId) blocked("Select the Customer for every final buyer.");
+    if (Number.isNaN(buyer.dateOfBirth.getTime())) blocked("Every final buyer needs a real Date of Birth.");
+    if (buyer.dateOfBirth > new Date()) blocked("A date of birth cannot be in the future.");
+  }
+  // Judged before the write, like every other share change: the database
+  // trigger only says so at commit, as a raw error.
+  const shares = validateShares(args.buyers);
+  if (!shares.ok) blocked(shares.reason);
 
   return runCommand(
     {
@@ -214,8 +231,8 @@ export async function recordFinalBuyers(args: {
           where: { id: buyer.personId },
           data: { dateOfBirth: buyer.dateOfBirth, addressLine: buyer.address },
         });
-        await recordBuyerAadhaar(tx, buyer);
-        await recordBuyerPan(tx, buyer);
+        await recordAadhaar(tx, buyer.personId, buyer.aadhaar);
+        await recordPan(tx, buyer.personId, buyer.pan);
       }
 
       // Effective-dated, never overwritten — the previous set stays in History.
@@ -436,6 +453,14 @@ export async function reopenDelivered(args: {
       await lockBooking(tx, args.bookingId);
       const booking = await tx.booking.findUniqueOrThrow({ where: { id: args.bookingId } });
       if (booking.status !== "DELIVERED") blocked("This Booking is not Delivered.");
+      // A Delivered Booking can be under Buyback, whose snapshot says
+      // Delivered: reopening under it left the Buyback restoring a state gone.
+      if (booking.activeProcess !== "NONE") {
+        blocked(
+          `This Booking is under ${booking.activeProcess.replaceAll("_", " ").toLowerCase()}. ` +
+            `Reopen it once that is decided.`
+        );
+      }
 
       const live = await tx.bookingCompletion.findFirst({
         where: { bookingId: args.bookingId, reopenedAt: null },

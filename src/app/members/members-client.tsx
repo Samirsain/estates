@@ -5,6 +5,7 @@
 
 import { eligibilityLabel } from "@/lib/domain/commission";
 import React from "react";
+import { safely } from "@/lib/safely";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Eye, Plus } from "lucide-react";
@@ -14,7 +15,8 @@ import { Button } from "@/components/ui/button";
 import { IdentityFacts } from "@/components/protected-identity";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { AADHAAR_INPUT, ACCOUNT_NUMBER_INPUT, IFSC_INPUT, MOBILE_INPUT, PAN_INPUT } from "@/components/ui/field-formats";
+import { Field, Modal, inputClass, ModalError } from "@/components/ui/modal";
 import { formatIst, istDay, type StaffRole, formatIstDate } from "@/lib/tasks";
 import {
   activateMemberAction,
@@ -29,6 +31,7 @@ import {
   type MemberDetail,
 } from "./actions";
 import { PersonPicker } from "@/components/person-picker";
+import { MemberBusinessFields, readMemberBusiness } from "@/components/member-business-fields";
 import { RemarkSelect } from "@/components/ui/remark-select";
 import { LIST_TD, LIST_TH } from "@/components/ui/list-table";
 import { cn } from "@/lib/utils";
@@ -144,7 +147,7 @@ export default function MembersClient({
     if (busy) return;
     setBusy(true);
     setNotice(null);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
     setNotice(
       result.ok ? { kind: "ok", text: result.message ?? "Done." } : { kind: "error", text: result.error }
@@ -164,6 +167,8 @@ export default function MembersClient({
   const newKey = () => globalThis.crypto.randomUUID();
 
   return (
+    // The refusal shows inside the open dialog; behind it, nobody saw it.
+    <ModalError.Provider value={notice?.kind === "error" ? notice.text : null}>
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
       <div className="mx-auto max-w-6xl space-y-4">
         {/* Owner 2 Nov — the same page as Customers: one rhythm, one header
@@ -172,7 +177,7 @@ export default function MembersClient({
           <h1 className="text-2xl font-bold tracking-tight">Members</h1>
           {permissions.activate && (
             <Button size="sm" variant="gradient" onClick={() => setDialog({ kind: "ACTIVATE" })}>
-              <Plus className="mr-1 h-4 w-4" /> Activate Member
+              <Plus className="mr-1 h-4 w-4" /> Add Member
             </Button>
           )}
         </header>
@@ -372,10 +377,10 @@ export default function MembersClient({
                 <Input name="branchName" required />
               </Field>
               <Field label="Account Number">
-                <Input name="accountNumber" required inputMode="numeric" />
+                <Input name="accountNumber" required {...ACCOUNT_NUMBER_INPUT} />
               </Field>
               <Field label="IFSC">
-                <Input name="ifsc" required placeholder="HDFC0001234" />
+                <Input name="ifsc" required {...IFSC_INPUT} className="uppercase" />
               </Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">
@@ -416,6 +421,7 @@ export default function MembersClient({
         />
       )}
     </AppShell>
+    </ModalError.Provider>
   );
 }
 
@@ -860,8 +866,7 @@ function ActivateMemberDialogForm({
 
   return (
     <Modal
-      title="Activate Member"
-      description="Activation is recorded now and cannot be backdated. The Member ID becomes active immediately."
+      title="Add Member"
       onClose={onClose}
     >
       <div className="flex gap-2 pb-2">
@@ -908,6 +913,10 @@ function ActivateMemberDialogForm({
               fullName: String(f.get("fullName")),
               mobile: String(f.get("mobile")),
               city: String(f.get("city") ?? ""),
+              email: String(f.get("email") ?? ""),
+              aadhaar: String(f.get("aadhaar") ?? ""),
+              pan: String(f.get("pan") ?? ""),
+              ...readMemberBusiness(f),
               invitedByMemberId: String(f.get("invitedByMemberId") ?? ""),
               reraStatus: String(f.get("reraStatus")) as "PENDING",
               reraNumber: String(f.get("reraNumber") ?? ""),
@@ -917,7 +926,10 @@ function ActivateMemberDialogForm({
           }
         }}
       >
-        {personMode === "existing" ? (
+        {/* Both stay mounted: switching unmounted the new Person's fields and
+            lost everything typed. The one not chosen is hidden and disabled,
+            so it neither submits nor blocks the form. */}
+        <fieldset className="m-0 min-w-0 border-0 p-0" disabled={personMode !== "existing"} hidden={personMode !== "existing"}>
           <Field label="Person">
             <PersonPicker
               name="personId"
@@ -926,21 +938,38 @@ function ActivateMemberDialogForm({
               options={activatable}
             />
           </Field>
-        ) : (
+        </fieldset>
+        <fieldset className="m-0 min-w-0 border-0 p-0" disabled={personMode !== "new"} hidden={personMode !== "new"}>
           <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
             <Field label="Full Name">
               <Input name="fullName" required placeholder="e.g. Samir Sain" />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Primary Mobile">
-                <Input name="mobile" required placeholder="9876543210" inputMode="tel" />
+              <Field label="WhatsApp Number">
+                <Input name="mobile" required {...MOBILE_INPUT} />
               </Field>
               <Field label="City">
-                <Input name="city" placeholder="Jaipur" />
+                <Input name="city" required placeholder="Jaipur" />
               </Field>
             </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Email (optional)">
+                <Input name="email" type="email" />
+              </Field>
+              <Field label="Aadhaar Number (optional)">
+                <Input name="aadhaar" {...AADHAAR_INPUT} />
+              </Field>
+              <Field label="PAN Number (optional)">
+                <Input
+                  name="pan"
+                  {...PAN_INPUT}
+                  className="uppercase"
+                />
+              </Field>
+            </div>
+            <MemberBusinessFields />
           </div>
-        )}
+        </fieldset>
 
         <Field label="Invited By — the Member who introduced them (optional)">
           <PersonPicker

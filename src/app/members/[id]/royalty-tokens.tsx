@@ -6,12 +6,13 @@
 // Points. No cash, no rupee value, no expiry.
 
 import React from "react";
+import { safely } from "@/lib/safely";
 import { useRouter } from "next/navigation";
 import { formatIst, istDay } from "@/lib/tasks";
 import { validateBusinessDay, validateTokenQuantity } from "@/lib/domain/tokens";
 import type { MemberTokenView } from "@/lib/services/royalty-service";
 import { Button } from "@/components/ui/button";
-import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { Field, Modal, inputClass, ModalError } from "@/components/ui/modal";
 import { Stat } from "@/components/record-section";
 import { recordTokenRedemptionAction, tokenAvailabilityAction, type ActionResult } from "../royalty-actions";
 
@@ -63,7 +64,7 @@ export default function RoyaltyTokens({
 
   async function run(action: () => Promise<ActionResult>) {
     setBusy(true);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
     setNotice(result);
     if (result.ok) {
@@ -73,6 +74,8 @@ export default function RoyaltyTokens({
   }
 
   return (
+    // The refusal shows inside the open dialog; behind it, nobody saw it.
+    <ModalError.Provider value={notice && !notice.ok ? notice.error : null}>
     <div className="space-y-4 text-xs">
       {/* docss/11 §1 — the three Member-facing figures. */}
       <dl className="grid grid-cols-3 gap-y-3 divide-x divide-border/60">
@@ -128,6 +131,7 @@ export default function RoyaltyTokens({
         <RecordDialog busy={busy} memberProfileId={memberProfileId} onClose={() => setRecording(false)} run={run} />
       )}
     </div>
+    </ModalError.Provider>
   );
 }
 

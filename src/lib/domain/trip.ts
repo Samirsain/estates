@@ -34,7 +34,11 @@ export function validateTripSettings(t: TripSettingsInput): Check {
       t.tripMinOwnCredits !== null ||
       t.tripMaxReferenceCredits !== null ||
       !!t.tripProgrammeCode ||
-      t.tripCutOffAt !== null;
+      t.tripCutOffAt !== null ||
+      // The rest of the programme too: "carries nothing" left these unchecked.
+      t.tripWindDownAt !== null ||
+      !!t.tripProgrammeVersionRef ||
+      !!t.tripTermsVersionRef;
     return any ? fail("Rewards are Disabled, so it cannot carry a target or composition.") : ok;
   }
   if (!count(t.tripTotalTarget) || t.tripTotalTarget! <= 0) return fail("The Target must be a whole number above 0.");

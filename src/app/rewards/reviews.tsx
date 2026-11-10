@@ -7,7 +7,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, Modal } from "@/components/ui/modal";
+import { Field, Modal, ModalError } from "@/components/ui/modal";
 import { decideCircumventionAction, type ActionResult } from "./review-actions";
 import { RemarkSelect } from "@/components/ui/remark-select";
 
@@ -37,6 +37,8 @@ export function Reviews({ rows, role }: { rows: ReviewRow[]; role: string }) {
   const canDecide = (row: ReviewRow) => (role === "ACCOUNTS" || role === "MD") && row.status === "PENDING_REVIEW";
 
   return (
+    // The refusal shows inside the open dialog; behind it, nobody saw it.
+    <ModalError.Provider value={notice && !notice.ok ? notice.error : null}>
     <div className="space-y-2 p-2">
       {notice && <p className={`text-xs ${notice.ok ? "text-emerald-700" : "text-red-700"}`}>{notice.ok ? notice.message : notice.error}</p>}
       <table className="w-full min-w-[44rem] text-xs">
@@ -137,5 +139,6 @@ export function Reviews({ rows, role }: { rows: ReviewRow[]; role: string }) {
         </Modal>
       )}
     </div>
+    </ModalError.Provider>
   );
 }

@@ -5,6 +5,7 @@
 // and the domain services re-check state on top of that (DESIGN §1).
 
 import React from "react";
+import { ACTION_FAILED, safely } from "@/lib/safely";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -18,6 +19,7 @@ import {
   Receipt,
   Users,
   Wallet,
+  X,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -34,9 +36,10 @@ import { Section, Stat } from "@/components/record-section";
 import HistoryButton from "@/app/members/[id]/history-button";
 import ShowMore from "@/app/members/[id]/show-more";
 import { Input } from "@/components/ui/input";
+import { AADHAAR_INPUT, MOBILE_INPUT, PAN_INPUT } from "@/components/ui/field-formats";
 import { Field, Modal, ModalError, inputClass } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
-import { capShare, round2, shareRoom, shareSum } from "@/lib/domain/shares";
+import { capShare, round2, round4, shareRoom, shareSum } from "@/lib/domain/shares";
 import {
   addDays,
   fillDatesForward,
@@ -44,7 +47,7 @@ import {
   removeRow,
   scheduleTotal,
 } from "@/lib/domain/schedule-edit";
-import { eligibilityLabel, rateLabel } from "@/lib/domain/commission";
+import { earlyPayable, eligibilityLabel, rateLabel } from "@/lib/domain/commission";
 import {
   formatIst,
   formatIstDate,
@@ -432,6 +435,7 @@ export default function BookingsClient({
     if (
       initialOpen === "CANCEL" &&
       ["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
+      row.activeProcess === "NONE" &&
       permissions.cancel
     ) {
       return { kind: "CANCEL", row };
@@ -481,6 +485,7 @@ export default function BookingsClient({
    * a row's button, they sat on data nobody had asked for: "Loading…" that
    * never finished. Opening a dialog asks for it too.
    */
+  const wanted = React.useRef<string | null>(null);
   async function openDialog(next: Dialog) {
     setDialog(next);
     setNotice(null);
@@ -491,14 +496,23 @@ export default function BookingsClient({
     // the dialog above it are never two different Bookings.
     setOpenId(next.row.id);
     setDetail(null);
-    setDetail(await loadBookingDetail(next.row.id));
+    // Only the latest request lands: opening B while A's detail was on its way
+    // left B's dialog holding A's Booking. A failed load says so.
+    wanted.current = next.row.id;
+    try {
+      const loaded = await loadBookingDetail(next.row.id);
+      if (wanted.current === next.row.id) setDetail(loaded);
+    } catch (error) {
+      console.error(error);
+      setNotice({ kind: "error", text: ACTION_FAILED });
+    }
   }
 
   async function run(action: () => Promise<ActionResult>) {
     if (busy) return;
     setBusy(true);
     setNotice(null);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
     setNotice(
       result.ok ? { kind: "ok", text: result.message ?? "Done." } : { kind: "error", text: result.error }
@@ -555,7 +569,9 @@ export default function BookingsClient({
   /** Every other change this Booking allows now, under the same rules as before. */
   function moreMenu(row: BookingRowView) {
     const loaded = detail?.id === row.id ? detail : null;
-    const live = ["BOOKED", "PAYMENT_COMPLETED"].includes(row.status);
+    // One process at a time (assertProcessFree): while Change Plot, a refund or
+    // a Buyback is open, these changes were offered, filled in, then refused.
+    const live = ["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) && row.activeProcess === "NONE";
     // Owner 3 Nov — at 100% paid (Payment Completed, Delivered) there is no
     // schedule left to revise and no Sold By to correct.
     const paymentDue = Number(remainingPercent(row.paymentReceivedPercent)) > 0;
@@ -596,7 +612,7 @@ export default function BookingsClient({
       }
     }
     // PRD §5.1 — Change Plot applies before Delivered, one process at a time.
-    if (live && row.activeProcess === "NONE" && permissions.raiseChangePlot) {
+    if (live && permissions.raiseChangePlot) {
       items.push({ label: "Change Plot", open: { kind: "CHANGE_PLOT", row } });
     }
     if ((row.status === "REQUEST_PENDING" || live) && permissions.cancel) {
@@ -1002,9 +1018,20 @@ export default function BookingsClient({
         />
       )}
 
-      {dialog?.kind === "REVISE" && (
+      {dialog?.kind === "REVISE" && detail?.id === dialog.row.id && (
         <BookingFormDialog
           title={`Send a corrected request — ${dialog.row.project} ${dialog.row.plotNumber}`}
+          initial={{
+            bookingDate: dialog.row.bookingDate.slice(0, 10),
+            soldByType: dialog.row.soldByType as FormOut["soldByType"],
+            soldByPersonId: dialog.row.soldByPersonId,
+            parties: detail.parties
+              .filter((p) => p.effectiveTo === null && p.kind === "COMMERCIAL")
+              .map((p) => ({ personId: p.personId, role: p.role as PartyInput["role"], sharePercent: p.sharePercent ?? "" })),
+            schedule: (
+              detail.scheduleVersions.find((s) => s.status === "PENDING") ?? detail.scheduleVersions.find((s) => s.status === "ACTIVE")
+            )?.instalments.map((i) => ({ seq: i.seq, percent: i.scheduled, dueDate: i.dueDate.slice(0, 10) })) ?? [],
+          }}
           bookable={bookable}
           people={people}
           members={members}
@@ -1051,7 +1078,7 @@ export default function BookingsClient({
           consequence={
             dialog.row.status === "REQUEST_PENDING"
               ? "Before Accounts approval this closes the Booking Request only. It does not enter Refund Pending, no permanent cancellation is created, and the linked Enquiry stays Active."
-              : "After approval this starts the formal cancellation. The Booking enters Refund Pending, the Plot is blocked and Accounts receives a refund verification task."
+              : undefined
           }
           busy={busy}
           onClose={() => setDialog(null)}
@@ -1191,7 +1218,16 @@ export default function BookingsClient({
             <Input key={dialog.entryId} name="percent" type="number" step="0.0001" min="0.0001" max="100" defaultValue={dialog.percent} required />
           </Field>
           <Field label="Payment Date">
-            <Input name="paidOn" type="date" defaultValue={istDay(new Date())} max={istDay(new Date())} required />
+            <Input
+              key={`paid-${dialog.entryId}`}
+              name="paidOn"
+              type="date"
+              // The entry's own date: today quietly re-dated a payment whose
+              // reference was the only thing being corrected.
+              defaultValue={istDay((detail?.paymentEntries ?? []).find((e) => e.id === dialog.entryId)?.paidOn ?? new Date())}
+              max={istDay(new Date())}
+              required
+            />
           </Field>
           <Field label="Replacement Payment Reference No.">
             <Input name="reference" required />
@@ -1507,7 +1543,6 @@ export default function BookingsClient({
         <ActionDialog
           title="Request Paid Early"
           row={dialog.row}
-          consequence={`${dialog.label}. MD receives a Paid Early Approval task. Nothing can be paid early until MD approves.`}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1548,11 +1583,7 @@ export default function BookingsClient({
         <ActionDialog
           title={dialog.approve ? "Approve Primary Customer change" : "Reject Primary Customer change"}
           row={dialog.row}
-          consequence={
-            dialog.approve
-              ? "The new Customer becomes official. Both Customers remain permanently visible in History."
-              : "The old Customer remains official. No payment or commission change is applied."
-          }
+          width="w-[min(24rem,94vw)]"
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1588,11 +1619,15 @@ export default function BookingsClient({
           onSubmit={({ buyers, completion }) =>
             run(async () => {
               // Two commands, in order: the route refuses to run without the
-              // buyers, and stopping on the first failure never leaves half a
-              // delivery behind.
+              // buyers. The buyers are a step of their own (Record final buyer
+              // details), so a refused completion keeps them, and says so,
+              // rather than reading as if nothing were saved.
               const saved = await recordFinalBuyersAction(dialog.row.id, buyers, newKey());
               if (!saved.ok) return saved;
-              return recordCompletionAction(dialog.row.id, completion, newKey());
+              const done = await recordCompletionAction(dialog.row.id, completion, newKey());
+              return done.ok
+                ? done
+                : { ok: false as const, error: `Final buyer details are saved, but the Booking is not Delivered yet: ${done.error}` };
             })
           }
         />
@@ -2217,6 +2252,8 @@ function BookingDetailPanel({
                         {c.isCurrent &&
                           c.payment === "NOT_PAID" &&
                           c.eligibility !== "READY" &&
+                          // Only a milestone (or Recovery Review) wait can be paid early.
+                          earlyPayable(c) &&
                           !c.earlyRequestedAt &&
                           permissions.requestPaidEarly && (
                             <Button
@@ -2273,7 +2310,11 @@ function BookingDetailPanel({
                         {c.isCurrent &&
                           permissions.processCommission &&
                           c.payment === "NOT_PAID" &&
-                          (c.eligibility === "READY" || c.earlyApprovedAt) && (
+                          // The server's rule: Ready pays; an early-payable wait pays
+                          // early once MD approved it, or straight away by MD (owner,
+                          // 27 Oct 2026). Any other hold pays nothing early.
+                          (c.eligibility === "READY" ||
+                            (earlyPayable(c) && (c.earlyApprovedAt || permissions.approvePaidEarly))) && (
                             <Button
                               size="xs"
                               className="w-24"
@@ -2329,6 +2370,7 @@ function ActionDialog({
   children,
   onClose,
   onSubmit,
+  width,
 }: {
   title: string;
   row: BookingRowView;
@@ -2338,9 +2380,11 @@ function ActionDialog({
   children: React.ReactNode;
   onClose: () => void;
   onSubmit: (form: FormData) => void;
+  /** Modal width class; a short remark-only decision reads as a narrow portrait box. */
+  width?: string;
 }) {
   return (
-    <Modal title={title} onClose={onClose}>
+    <Modal title={title} width={width} onClose={onClose}>
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber} · {row.primaryCustomer}
@@ -2639,6 +2683,7 @@ export function BookingFormDialog({
   title,
   initialPlotId,
   initialPersonId,
+  initial: start,
   bookable,
   people,
   members,
@@ -2661,24 +2706,36 @@ export function BookingFormDialog({
   initialPlotId?: string;
   /** The Primary Customer, when the form is opened for someone already chosen. */
   initialPersonId?: string;
+  /**
+   * Revise: the request as submitted. It opened blank, so fixing one
+   * instalment meant retyping everything, and a hurried resubmit changed
+   * Sold By and the Booking Date without anyone choosing that.
+   */
+  initial?: {
+    bookingDate: string;
+    soldByType: FormOut["soldByType"];
+    soldByPersonId: string | null;
+    parties: PartyInput[];
+    schedule: ScheduleRowInput[];
+  };
 }) {
   const today = istDay(new Date());
   const initial = bookable.find((p) => p.id === initialPlotId);
   const [projectId, setProjectId] = React.useState(initial?.projectId ?? "");
   const [plotId, setPlotId] = React.useState(initialPlotId ?? "");
-  const [bookingDate, setBookingDate] = React.useState(today);
-  const [soldByType, setSoldByType] = React.useState<FormOut["soldByType"]>("THREE_PERCENT_CLUB");
+  const [bookingDate, setBookingDate] = React.useState(start?.bookingDate ?? today);
+  const [soldByType, setSoldByType] = React.useState<FormOut["soldByType"]>(start?.soldByType ?? "THREE_PERCENT_CLUB");
   // The first row is the Primary Customer, always. There is no role to choose:
   // an Additional Customer is what the button underneath adds.
-  const [parties, setParties] = React.useState<PartyInput[]>([
-    { personId: initialPersonId ?? "", role: "PRIMARY", sharePercent: "" },
-  ]);
+  const [parties, setParties] = React.useState<PartyInput[]>(
+    start?.parties.length ? start.parties : [{ personId: initialPersonId ?? "", role: "PRIMARY", sharePercent: "" }]
+  );
   // Opens blank rather than at 100: a schedule is nearly always staged, and a
   // pre-filled 100 has to be cleared before the second instalment can take
   // anything — the cap in fillForward leaves it nothing otherwise.
-  const [schedule, setSchedule] = React.useState<ScheduleRowInput[]>([
-    { seq: 1, percent: "", dueDate: today },
-  ]);
+  const [schedule, setSchedule] = React.useState<ScheduleRowInput[]>(
+    start?.schedule.length ? start.schedule : [{ seq: 1, percent: "", dueDate: today }]
+  );
 
   const projects = Array.from(
     new Map(bookable.map((p) => [p.projectId, p.projectName])).entries()
@@ -2705,11 +2762,14 @@ export function BookingFormDialog({
             enquiryId: "",
             // "NEW" is a marker for this form only. The action reads a blank
             // personId with a name and mobile beside it as a first-time buyer.
-            parties: parties.map((p) =>
-              p.personId === "NEW"
-                ? { ...p, personId: "" }
-                : { personId: p.personId, role: p.role, sharePercent: p.sharePercent }
-            ),
+            // One buyer owns the whole Plot and the share field is hidden, so a
+            // share left over from a removed second buyer is not sent.
+            parties: parties.map((p) => {
+              const sharePercent = parties.length > 1 ? p.sharePercent : "";
+              return p.personId === "NEW"
+                ? { ...p, personId: "", sharePercent }
+                : { personId: p.personId, role: p.role, sharePercent };
+            }),
             soldByType,
             soldByPersonId: String(f.get("soldByPersonId") ?? ""),
             bookingDate,
@@ -2891,9 +2951,9 @@ export function BookingFormDialog({
                   />
                   <Input
                     className="h-9 text-xs"
-                    placeholder="Mobile"
                     required
-                    inputMode="numeric"
+                    {...MOBILE_INPUT}
+                    placeholder="Mobile"
                     value={party.mobile ?? ""}
                     onChange={(e) => patch(index, { mobile: e.target.value })}
                   />
@@ -2941,6 +3001,7 @@ export function BookingFormDialog({
               type={soldByType}
               people={people}
               members={members}
+              initialPersonId={soldByType === start?.soldByType ? (start?.soldByPersonId ?? "") : ""}
             />
           )}
           <Field label="Booking Date">
@@ -2963,7 +3024,9 @@ export function BookingFormDialog({
         </div>
 
         <div className="border-t border-border/60 pt-4">
-          <ScheduleEditor schedule={schedule} setSchedule={setSchedule} minDate={today} />
+          {/* Due dates start at the Booking Date: a backdated Booking could not
+              take its first instalment on the day it was booked. */}
+          <ScheduleEditor schedule={schedule} setSchedule={setSchedule} minDate={bookingDate || today} />
         </div>
 
         {requireReason && (
@@ -2997,80 +3060,140 @@ function ScheduleEditor({
   schedule,
   setSchedule,
   minDate,
+  received,
 }: {
   schedule: ScheduleRowInput[];
   setSchedule: (rows: ScheduleRowInput[]) => void;
   minDate: string;
+  /**
+   * Revise only: what each instalment has received. A received portion cannot
+   * be removed (the server refuses it), and a fully received instalment is
+   * history, shown as text rather than as fields.
+   */
+  received?: ReadonlyMap<number, { percent: string; on: string | null; full: boolean }>;
 }) {
-  const remaining = round2(100 - scheduleTotal(schedule));
+  // Four places, as schedules are stored: two read 99.9999 as complete.
+  const remaining = round4(100 - scheduleTotal(schedule));
+  const toReceive = round4(100 - [...(received?.values() ?? [])].reduce((sum, r) => sum + Number(r.percent), 0));
+  // A schedule off 100% is refused by the server only after Confirm (owner hit
+  // it on Approve Change Plot, 4 Nov 2026). The browser stops the form at the
+  // last % field instead, saying what to do — for every form built on this.
+  const lastEditable = schedule.findLastIndex((line) => !received?.get(line.seq)?.full);
+  const totalProblem =
+    remaining === 0
+      ? ""
+      : remaining > 0
+        ? `Add ${remaining}% more — the schedule must total 100%.`
+        : `Remove ${round4(-remaining)}% — the schedule must total 100%.`;
+  // Revise adds a Received column and drops Remove to an icon, so the date
+  // field keeps its width on a phone.
+  const grid = received
+    ? "grid grid-cols-[1.25rem_4.25rem_minmax(0,1fr)_4.5rem_1.75rem] items-center gap-2 sm:grid-cols-[1.5rem_5rem_minmax(0,1fr)_5rem_1.75rem]"
+    : "grid grid-cols-[1.25rem_4.5rem_minmax(0,1fr)_4rem] items-center gap-2 sm:grid-cols-[1.5rem_minmax(0,1fr)_minmax(0,1fr)_4rem]";
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Payment Schedule
-      </h3>
+      {received ? (
+        // Revise (owner, 4 Nov 2026): one list, no separate current-schedule
+        // box; Received sits beside Due date, the date with its % under it.
+        <div className={`${grid} text-[11px] font-medium uppercase tracking-wide text-muted-foreground`}>
+          <span className="text-center">#</span>
+          <span className="px-3">%</span>
+          <span className="px-3">Due date</span>
+          <span>Received</span>
+          <span aria-hidden />
+        </div>
+      ) : (
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Payment Schedule
+        </h3>
+      )}
       {/* One grid for every instalment — number, %, due date, Remove — so a
           row never breaks over two lines on a phone, and the Remove column
           lines up with the Customer rows above it. */}
-      {schedule.map((line, index) => (
-        <div
-          key={index}
-          className="grid grid-cols-[1.25rem_4.5rem_minmax(0,1fr)_4rem] items-center gap-2 sm:grid-cols-[1.5rem_minmax(0,1fr)_minmax(0,1fr)_4rem]"
-        >
-          <span className="text-center text-xs font-medium tabular-nums text-muted-foreground">
-            {line.seq}
-          </span>
-          <Input
-            className="h-9 w-full min-w-0 text-xs"
-            aria-label={`Instalment ${line.seq} percent`}
-            type="number"
-            step="0.01"
-            min="0"
-            max="100"
-            required
-            placeholder="%"
-            value={line.percent}
-            // A row that already holds a number is retyped, not edited: select
-            // it on focus so the first keystroke replaces it.
-            onFocus={(e) => e.target.select()}
-            onChange={(e) =>
-              setSchedule(
-                fillForward(
-                  schedule.map((r, i) => (i === index ? { ...r, percent: e.target.value } : r)),
-                  index
-                )
-              )
-            }
-          />
-          <Input
-            className="h-9 w-full min-w-0 text-xs"
-            aria-label={`Instalment ${line.seq} due date`}
-            type="date"
-            min={index === 0 ? minDate : addDays(schedule[index - 1].dueDate, 1)}
-            required
-            value={line.dueDate}
-            onChange={(e) =>
-              setSchedule(
-                fillDatesForward(
-                  schedule.map((r, i) => (i === index ? { ...r, dueDate: e.target.value } : r)),
-                  index
-                )
-              )
-            }
-          />
-          {schedule.length > 1 ? (
-            <Button
-              type="button"
-              size="xs"
-              variant="ghost"
-              onClick={() => setSchedule(removeRow(schedule, index))}
-            >
-              Remove
-            </Button>
-          ) : (
-            <span aria-hidden />
-          )}
-        </div>
-      ))}
+      {schedule.map((line, index) => {
+        const got = received?.get(line.seq);
+        return (
+          <div key={index} className={grid}>
+            <span className="text-center text-xs font-medium tabular-nums text-muted-foreground">
+              {line.seq}
+            </span>
+            {got?.full ? (
+              <>
+                <span className="flex h-9 items-center px-3 text-xs tabular-nums">{line.percent}%</span>
+                <span className="flex h-9 items-center px-3 text-xs tabular-nums">{formatIst(line.dueDate)}</span>
+              </>
+            ) : (
+              <>
+                <Input
+                  className="h-9 w-full min-w-0 text-xs"
+                  aria-label={`Instalment ${line.seq} percent`}
+                  type="number"
+                  // Four places, as stored: Revise now arrives with 33.3333 and
+                  // the last row balances to 33.3334, which step 0.01 refused.
+                  // A part-received instalment cannot schedule less than it has received.
+                  step="0.0001"
+                  min={got ? got.percent : "0"}
+                  max="100"
+                  required
+                  placeholder="%"
+                  value={line.percent}
+                  ref={(el) => el?.setCustomValidity(index === lastEditable ? totalProblem : "")}
+                  // A row that already holds a number is retyped, not edited: select
+                  // it on focus so the first keystroke replaces it.
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) =>
+                    setSchedule(
+                      fillForward(
+                        schedule.map((r, i) => (i === index ? { ...r, percent: e.target.value } : r)),
+                        index
+                      )
+                    )
+                  }
+                />
+                <Input
+                  className="h-9 w-full min-w-0 text-xs"
+                  aria-label={`Instalment ${line.seq} due date`}
+                  type="date"
+                  // A part-received first instalment may already be past due;
+                  // the server keeps it on or after the Booking Date.
+                  min={index === 0 ? (got ? undefined : minDate) : addDays(schedule[index - 1].dueDate, 1)}
+                  required
+                  value={line.dueDate}
+                  onChange={(e) =>
+                    setSchedule(
+                      fillDatesForward(
+                        schedule.map((r, i) => (i === index ? { ...r, dueDate: e.target.value } : r)),
+                        index
+                      )
+                    )
+                  }
+                />
+              </>
+            )}
+            {received && (
+              <span className="text-xs leading-tight tabular-nums">
+                {got?.on ? formatIst(got.on) : "—"}
+                {got && <span className="block text-[11px] text-muted-foreground">{got.percent}%</span>}
+              </span>
+            )}
+            {schedule.length > 1 && !got ? (
+              <Button
+                type="button"
+                size={received ? "icon-sm" : "xs"}
+                variant="ghost"
+                aria-label={`Remove instalment ${line.seq}`}
+                title={received ? "Remove" : undefined}
+                // A fully received instalment is history: its % cannot grow.
+                onClick={() => setSchedule(removeRow(schedule, index, (r) => !received?.get(r.seq)?.full))}
+              >
+                {received ? <X className="h-3.5 w-3.5" /> : "Remove"}
+              </Button>
+            ) : (
+              <span aria-hidden />
+            )}
+          </div>
+        );
+      })}
       <div className="flex items-center justify-between pt-1">
         <Button
           type="button"
@@ -3089,12 +3212,17 @@ function ScheduleEditor({
         >
           + Add instalment
         </Button>
+        {/* On Revise, "Remaining" is what the Customer still owes (owner, 4 Nov
+            2026: one total, not one per instalment), so an unbalanced
+            schedule reads "Short by" instead. */}
         <p className={remaining === 0 ? "text-xs text-muted-foreground" : "text-xs text-red-700 font-medium"}>
           {remaining === 0
-            ? "Total 100% — complete."
+            ? received
+              ? `Remaining ${toReceive}%`
+              : "Total 100% — complete."
             : remaining > 0
-              ? `Remaining ${remaining}%`
-              : `Over by ${round2(-remaining)}%`}
+              ? `${received ? "Short by" : "Remaining"} ${remaining}%`
+              : `Over by ${round4(-remaining)}%`}
         </p>
       </div>
     </section>
@@ -3123,22 +3251,21 @@ function ScheduleDialog({
     }))
   );
   const today = istDay(new Date());
+  const received = new Map(
+    (live?.instalments ?? [])
+      .filter((i) => Number(i.received) > 0)
+      .map((i) => [i.seq, { percent: i.received, on: i.receivedOn, full: Number(i.received) >= Number(i.scheduled) }] as const)
+  );
 
   return (
     <Modal
       title={`Revise Remaining Payment Schedule — ${row.bookingNumber ?? "Booking Request"}`}
       onClose={onClose}
-      wide
+      // Portrait (owner, 4 Nov 2026), like PLC: one narrow column, top to bottom,
+      // its heading centred as on New Buyback and Follow-up.
+      width="w-[min(32rem,94vw)]"
+      centerTitle
     >
-      {live && (
-        <ul className="rounded-xl border border-border/60 bg-secondary p-3 text-[11px] text-muted-foreground">
-          {live.instalments.map((i) => (
-            <li key={i.seq} className="tabular-nums">
-              {i.seq}. scheduled {i.scheduled}% · received {i.received}% · remaining {i.remaining}%
-            </li>
-          ))}
-        </ul>
-      )}
       <form
         className="space-y-4"
         onSubmit={(e) => {
@@ -3146,7 +3273,12 @@ function ScheduleDialog({
           onSubmit(schedule, String(new FormData(e.currentTarget).get("reason")));
         }}
       >
-        <ScheduleEditor schedule={schedule} setSchedule={setSchedule} minDate={today} />
+        <ScheduleEditor
+          schedule={schedule}
+          setSchedule={setSchedule}
+          minDate={today}
+          received={received}
+        />
         <Field label="Reason — compulsory">
           <RemarkSelect presets="reviseSchedule" name="reason" required />
         </Field>
@@ -3178,7 +3310,9 @@ function SharesDialog({
   onClose: () => void;
   onSubmit: (parties: PartyInput[], reason: string) => void;
 }) {
-  const current = (detail?.parties ?? []).filter((p) => p.effectiveTo === null);
+  // The commercial buyers only: final registration rows came in too, so every
+  // buyer showed twice at 200% and Confirm stayed off.
+  const current = (detail?.parties ?? []).filter((p) => p.effectiveTo === null && p.kind === "COMMERCIAL");
   const [parties, setParties] = React.useState<PartyInput[]>(
     current.map((p) => ({
       personId: p.personId,
@@ -3192,25 +3326,35 @@ function SharesDialog({
     <Modal
       title={`Change ownership shares — ${row.bookingNumber ?? "Booking Request"}`}
       onClose={onClose}
-      wide
+      // Portrait (owner, 4 Nov 2026), like Revise Payment Schedule: one narrow
+      // column, each buyer on two lines — who, then role, share and remove.
+      width="w-[min(32rem,94vw)]"
+      centerTitle
     >
       <form
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
-          onSubmit(parties, String(new FormData(e.currentTarget).get("reason")));
+          onSubmit(
+            // A sole buyer holds 100%; a share left from a removed buyer is not sent.
+            parties.length > 1 ? parties : parties.map((p) => ({ ...p, sharePercent: "" })),
+            String(new FormData(e.currentTarget).get("reason"))
+          );
         }}
       >
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Buyers</h3>
-          <span className={`text-[11px] ${parties.length > 1 && total !== 100 ? "text-red-700" : "text-muted-foreground"}`}>
-            {parties.length === 1 ? "Sole buyer — blank means 100%" : `Total ${total}%`}
-          </span>
+          {/* Owner 4 Nov — no "Sole buyer — blank means 100%" line. */}
+          {parties.length > 1 && (
+            <span className={`text-[11px] tabular-nums ${total !== 100 ? "text-red-700" : "text-muted-foreground"}`}>
+              Total {total}%
+            </span>
+          )}
         </div>
         {parties.map((party, index) => (
-          <div key={index} className="flex flex-wrap gap-2">
+          <div key={index} className="grid grid-cols-[minmax(0,1fr)_6rem_1.75rem] items-center gap-2">
             <PersonPicker
-              className="flex-1"
+              className="col-span-3"
               required
               value={party.personId}
               onChange={(id) =>
@@ -3219,7 +3363,8 @@ function SharesDialog({
               options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
             />
             <select
-              className={`${inputClass} w-40`}
+              className={inputClass}
+              aria-label={`Buyer ${index + 1} role`}
               value={party.role}
               onChange={(e) =>
                 setParties(
@@ -3233,7 +3378,8 @@ function SharesDialog({
               <option value="ADDITIONAL">Additional Customer</option>
             </select>
             <Input
-              className="w-28"
+              className="h-9 w-full min-w-0 text-xs"
+              aria-label={`Buyer ${index + 1} share percent`}
               type="number"
               step="0.0001"
               min="0"
@@ -3250,15 +3396,19 @@ function SharesDialog({
                 )
               }
             />
-            {parties.length > 1 && (
+            {parties.length > 1 ? (
               <Button
                 type="button"
-                size="sm"
+                size="icon-sm"
                 variant="ghost"
+                aria-label={`Remove buyer ${index + 1}`}
+                title="Remove"
                 onClick={() => setParties(parties.filter((_, i) => i !== index))}
               >
-                Remove
+                <X className="h-3.5 w-3.5" />
               </Button>
+            ) : (
+              <span aria-hidden />
             )}
           </div>
         ))}
@@ -3299,13 +3449,15 @@ function SoldByPicker({
   type,
   people,
   members,
+  initialPersonId = "",
 }: {
   name: string;
   type: "MEMBER" | "CUSTOMER";
   people: PersonView[];
   members: MemberView[];
+  initialPersonId?: string;
 }) {
-  const [picked, setPicked] = React.useState("");
+  const [picked, setPicked] = React.useState(initialPersonId);
   const options =
     type === "MEMBER"
       ? members.map((m) => ({ id: m.personId, code: m.memberId, name: m.fullName }))
@@ -3542,6 +3694,27 @@ export type FinalBuyerRow = {
   pan: string;
 };
 
+/** One buyer owns the whole Plot — the form shows 100%, so a share left over from an earlier split is not sent. */
+const finalBuyersToSave = (rows: FinalBuyerRow[]) =>
+  rows.length > 1 ? rows : rows.map((r) => ({ ...r, sharePercent: "" }));
+
+const sharesUnbalanced = (rows: FinalBuyerRow[]) => rows.length > 1 && shareSum(rows) !== 100;
+
+/** With two or more buyers, what is still unallocated; Save waits for it to reach zero. */
+function SharesLeft({ rows }: { rows: FinalBuyerRow[] }) {
+  if (rows.length < 2) return null;
+  const total = shareSum(rows);
+  return (
+    <span
+      className={`ml-auto self-center text-xs tabular-nums ${
+        total === 100 ? "text-muted-foreground" : "font-medium text-red-700"
+      }`}
+    >
+      Total {total}%{total !== 100 && ` · ${round4(100 - total)}% left`}
+    </span>
+  );
+}
+
 export function FinalBuyersDialog({
   row,
   detail,
@@ -3557,11 +3730,17 @@ export function FinalBuyersDialog({
   onClose: () => void;
   onSubmit: (rows: FinalBuyerRow[]) => void;
 }) {
-  // The commercial buyers are the sensible starting point; the final
-  // registration buyer may still differ, and both stay distinguishable.
-  const commercial = (detail?.parties ?? []).filter(
-    (p) => p.kind === "COMMERCIAL" && !p.effectiveTo
-  );
+  // Final buyers already recorded come back as recorded; otherwise the
+  // commercial buyers are the sensible starting point. Seeded from the
+  // commercial ones always, a reopen showed them and a save overwrote the
+  // final buyers on file.
+  const recorded = (detail?.parties ?? []).filter((p) => p.kind === "FINAL_REGISTRATION" && !p.effectiveTo);
+  const commercial =
+    recorded.length > 0 ? recorded : (detail?.parties ?? []).filter((p) => p.kind === "COMMERCIAL" && !p.effectiveTo);
+  const onFile = (personId: string) => (detail?.parties ?? []).some((p) => p.personId === personId && p.aadhaarRecorded);
+  const knownMissing = (personId: string) =>
+    (detail?.parties ?? []).some((p) => p.personId === personId && !p.aadhaarRecorded);
+  const panOnFile = (personId: string) => (detail?.parties ?? []).some((p) => p.personId === personId && p.panRecorded);
 
   // Most sales register to the Customer who bought, with the details the CRM
   // already holds — so the form opens answered and is confirmed, not retyped.
@@ -3596,7 +3775,9 @@ export function FinalBuyersDialog({
     setRows((list) => list.map((r, i) => (i === index ? { ...r, ...patch } : r)));
 
   return (
-    <Modal title="Final buyer details" wide onClose={onClose}>
+    // Portrait (owner, 4 Nov 2026), like Change ownership shares: one narrow
+    // column; each buyer is Customer, then share and Date of Birth, then Address.
+    <Modal title="Final buyer details" width="w-[min(32rem,94vw)]" centerTitle onClose={onClose}>
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber}
@@ -3607,42 +3788,45 @@ export function FinalBuyersDialog({
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
-          onSubmit(rows);
+          onSubmit(finalBuyersToSave(rows));
         }}
       >
         <div className="space-y-3">
           {rows.map((buyer, index) => (
             <div
               key={index}
-              className="grid gap-2 rounded-xl border border-border/50 p-3 md:grid-cols-4"
+              className="grid grid-cols-2 items-end gap-2 rounded-xl border border-border/50 p-3"
             >
-              <Field
-                label={
-                  rows.length === 1
-                    ? "Customer"
-                    : index === 0
-                      ? "Primary Customer"
-                      : "Additional Customer"
-                }
-              >
-                <PersonPicker
-                  required
-                  value={buyer.personId}
-                  onChange={(id) => update(index, { personId: id })}
-                  options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
-                />
-              </Field>
+              <div className="col-span-2">
+                <Field
+                  label={
+                    rows.length === 1
+                      ? "Customer"
+                      : index === 0
+                        ? "Primary Customer"
+                        : "Additional Customer"
+                  }
+                >
+                  <PersonPicker
+                    required
+                    value={buyer.personId}
+                    onChange={(id) => update(index, { personId: id })}
+                    options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+                  />
+                </Field>
+              </div>
               {/* One buyer owns the whole Plot, so there is no share to type —
                   the field said "blank = sole buyer" and asked the reader to
                   work out that an empty box meant everything. It states 100%
                   instead, and only becomes a field when a second buyer makes
-                  the split a real question (PRD §12.1). */}
+                  the split a real question (PRD §12.1). Field height, so its
+                  label lines up with Date of Birth beside it. */}
               {rows.length === 1 ? (
                 <Field label="Ownership share">
-                  <p className="px-1 py-2 text-sm font-medium">100%</p>
+                  <p className="flex h-10 items-center px-1 text-sm font-medium">100%</p>
                 </Field>
               ) : (
-                <Field label="Ownership share % — all buyers must total 100%">
+                <Field label="Ownership share">
                   <Input
                     max={shareRoom(rows, index)}
                     value={buyer.sharePercent}
@@ -3662,51 +3846,80 @@ export function FinalBuyersDialog({
                   required
                 />
               </Field>
-              <Field label="Address">
-                <Input
-                  value={buyer.address}
-                  onChange={(e) => update(index, { address: e.target.value })}
-                  required
-                />
-              </Field>
+              <div className="col-span-2">
+                <Field label="Address">
+                  <Input
+                    value={buyer.address}
+                    onChange={(e) => update(index, { address: e.target.value })}
+                    required
+                  />
+                </Field>
+              </div>
+              {/* As on Delivered: asked only where none is on file. Without it a
+                  buyer with no Aadhaar could never be completed from here. */}
+              {buyer.personId && !onFile(buyer.personId) && (
+                <div className="col-span-2">
+                  <Field label="Aadhaar Number">
+                    <Input
+                      value={buyer.aadhaar}
+                      onChange={(e) => update(index, { aadhaar: e.target.value })}
+                      {...AADHAAR_INPUT}
+                      placeholder={knownMissing(buyer.personId) ? "12 digits" : "12 digits, if not on file"}
+                      required={knownMissing(buyer.personId)}
+                    />
+                  </Field>
+                </div>
+              )}
+              {buyer.personId && !panOnFile(buyer.personId) && (
+                <div className="col-span-2">
+                  <Field label="PAN — blank means not available">
+                    <Input
+                      value={buyer.pan}
+                      onChange={(e) => update(index, { pan: e.target.value.toUpperCase() })}
+                      {...PAN_INPUT}
+                    />
+                  </Field>
+                </div>
+              )}
             </div>
           ))}
         </div>
 
-        <div className="flex flex-wrap justify-between gap-2">
-          <div className="flex gap-2">
+        {/* Portrait: adding a buyer sits under the buyers, and Back / Save get
+            their own row so neither pair wraps into the other. */}
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setRows((list) => [
+                ...list,
+                { personId: "", sharePercent: "", dateOfBirth: "", address: "", aadhaar: "", pan: "" },
+              ])
+            }
+          >
+            Add Additional Customer
+          </Button>
+          {rows.length > 1 && (
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              onClick={() =>
-                setRows((list) => [
-                  ...list,
-                  { personId: "", sharePercent: "", dateOfBirth: "", address: "", aadhaar: "", pan: "" },
-                ])
-              }
+              variant="ghost"
+              onClick={() => setRows((list) => list.slice(0, -1))}
             >
-              Add Additional Customer
+              Remove last
             </Button>
-            {rows.length > 1 && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => setRows((list) => list.slice(0, -1))}
-              >
-                Remove last
-              </Button>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={onClose}>
-              Back
-            </Button>
-            <Button type="submit" size="sm" disabled={busy}>
-              {busy ? "Saving…" : "Save final buyer details"}
-            </Button>
-          </div>
+          )}
+          <SharesLeft rows={rows} />
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+            Back
+          </Button>
+          <Button type="submit" size="sm" disabled={busy || sharesUnbalanced(rows)}>
+            {busy ? "Saving…" : "Save final buyer details"}
+          </Button>
         </div>
       </form>
     </Modal>
@@ -3807,26 +4020,19 @@ export function DeliverDialog({
   // it. Wait for it, then draw once.
   if (!ready) {
     return (
-      <Modal title="Deliver" onClose={onClose}>
+      <Modal title="Deliver" width="w-[min(32rem,94vw)]" centerTitle onClose={onClose}>
         <p className="py-8 text-center text-sm text-muted-foreground">Loading the Booking…</p>
       </Modal>
     );
   }
 
   return (
-    <Modal
-      title="Deliver"
-      description="Final buyer details and one completion route. Recording it sets the Booking and Plot to Delivered."
-      wide
-      onClose={onClose}
-    >
+    // Portrait (owner, 4 Nov 2026), like Final buyer details, and no
+    // explanation lines: no description, no rules paragraph, no route note.
+    <Modal title="Deliver" width="w-[min(32rem,94vw)]" centerTitle onClose={onClose}>
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber}
-        </p>
-        <p className="mt-1 text-muted-foreground">
-          One buyer owns 100%. Add a Customer to split it, and the shares must then total exactly
-          100%. Delivered is recorded once, and only MD can reopen it.
         </p>
       </div>
 
@@ -3836,7 +4042,7 @@ export function DeliverDialog({
           e.preventDefault();
           const f = new FormData(e.currentTarget);
           onSubmit({
-            buyers: rows,
+            buyers: finalBuyersToSave(rows),
             completion:
               route === "ALLOTMENT"
                 ? {
@@ -3862,38 +4068,41 @@ export function DeliverDialog({
           {rows.map((buyer, index) => (
             <div
               key={index}
-              className="grid gap-2 rounded-xl border border-border/50 p-3 md:grid-cols-4"
+              className="grid grid-cols-2 items-end gap-2 rounded-xl border border-border/50 p-3"
             >
               {/* The Booking already names who bought the Plot, so the first
                   row states it rather than offering it back as a choice — a
                   picker here reads as "pick the buyer" on a sale that has one.
                   Changing the Customer is its own reviewed action. Additional
                   Customers are the ones actually being added, so they pick. */}
-              {index === 0 && buyerName(buyer.personId) ? (
-                <Field label={customerLabel(index)}>
-                  <p className="px-1 py-2 text-sm font-medium">{buyerName(buyer.personId)}</p>
-                </Field>
-              ) : (
-                <Field label={customerLabel(index)}>
-                  <PersonPicker
-                    required
-                    value={buyer.personId}
-                    onChange={(id) => update(index, { personId: id })}
-                    options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
-                  />
-                </Field>
-              )}
+              <div className="col-span-2">
+                {index === 0 && buyerName(buyer.personId) ? (
+                  <Field label={customerLabel(index)}>
+                    <p className="px-1 py-2 text-sm font-medium">{buyerName(buyer.personId)}</p>
+                  </Field>
+                ) : (
+                  <Field label={customerLabel(index)}>
+                    <PersonPicker
+                      required
+                      value={buyer.personId}
+                      onChange={(id) => update(index, { personId: id })}
+                      options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+                    />
+                  </Field>
+                )}
+              </div>
               {/* One buyer owns the whole Plot, so there is no share to type —
                   the field said "blank = sole buyer" and asked the reader to
                   work out that an empty box meant everything. It states 100%
                   instead, and only becomes a field when a second buyer makes
-                  the split a real question (PRD §12.1). */}
+                  the split a real question (PRD §12.1). Field height, so its
+                  label lines up with Date of Birth beside it. */}
               {rows.length === 1 ? (
                 <Field label="Ownership share">
-                  <p className="px-1 py-2 text-sm font-medium">100%</p>
+                  <p className="flex h-10 items-center px-1 text-sm font-medium">100%</p>
                 </Field>
               ) : (
-                <Field label="Ownership share % — all buyers must total 100%">
+                <Field label="Ownership share">
                   <Input
                     max={shareRoom(rows, index)}
                     value={buyer.sharePercent}
@@ -3913,13 +4122,15 @@ export function DeliverDialog({
                   required
                 />
               </Field>
-              <Field label="Address">
-                <Input
-                  value={buyer.address}
-                  onChange={(e) => update(index, { address: e.target.value })}
-                  required
-                />
-              </Field>
+              <div className="col-span-2">
+                <Field label="Address">
+                  <Input
+                    value={buyer.address}
+                    onChange={(e) => update(index, { address: e.target.value })}
+                    required
+                  />
+                </Field>
+              </div>
               {/* Asked only where there is none on file. An Aadhaar or PAN
                   already recorded is never re-asked and never overwritten from
                   here. The Aadhaar is required because a registry cannot be
@@ -3930,7 +4141,7 @@ export function DeliverDialog({
                   <Input
                     value={buyer.aadhaar}
                     onChange={(e) => update(index, { aadhaar: e.target.value })}
-                    inputMode="numeric"
+                    {...AADHAAR_INPUT}
                     placeholder={knownMissing(buyer.personId) ? "12 digits" : "12 digits, if not on file"}
                     // Required only where the Booking's own parties say this
                     // Person has none. An Additional Customer picked here may
@@ -3977,12 +4188,13 @@ export function DeliverDialog({
                 Remove last
               </Button>
             )}
+            <SharesLeft rows={rows} />
           </div>
         </div>
 
         <div className="space-y-3 border-t border-border/60 pt-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Completion route — one only, there is no Allotment-then-Registry sequence
+            Completion route
           </p>
           <Field label="Route">
             <select
@@ -4038,7 +4250,7 @@ export function DeliverDialog({
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Back
           </Button>
-          <Button type="submit" size="sm" disabled={busy}>
+          <Button type="submit" size="sm" disabled={busy || sharesUnbalanced(rows)}>
             {busy ? "Recording…" : "Record and mark Delivered"}
           </Button>
         </div>
@@ -4282,16 +4494,12 @@ function ChangePlotDialog({
   return (
     <Modal
       title="Change Plot"
-      description="Within the same Project only. Cross-Project movement needs Cancel Booking and a new Booking Request."
       onClose={onClose}
     >
+      {/* Owner 4 Nov 2026 — no explanation lines: no same-Project note, no PLC paragraph. */}
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
         <p className="font-semibold text-foreground">
           {row.bookingNumber ?? "Booking Request"} · {row.project} {row.plotNumber}
-        </p>
-        <p className="mt-1 text-muted-foreground">
-          The replacement Plot is reserved with its own PLC snapshot. Accounts then records the
-          Payment Received percentage that applies to it — no rupee conversion happens anywhere.
         </p>
       </div>
 
@@ -4363,7 +4571,9 @@ function ChangePlotDecisionDialog({
   return (
     <Modal
       title={approve ? "Approve Change Plot" : "Reject Change Plot"}
-      wide={approve}
+      // Portrait (owner, 4 Nov 2026), like Revise Payment Schedule.
+      width="w-[min(32rem,94vw)]"
+      centerTitle
       onClose={onClose}
     >
       <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
@@ -4388,21 +4598,15 @@ function ChangePlotDecisionDialog({
         {approve && (
           <>
             <Field label="Payment Received % applicable to the replacement Plot">
-              <Input
-                name="appliedPercent"
-                required
-                inputMode="decimal"
-                defaultValue={row.paymentReceivedPercent}
-              />
+              {/* Owner 4 Nov 2026 — blank, never the old Plot's %: what was paid is
+                  a different % of a Plot at another price, and a prefilled old
+                  figure confirmed unchanged would carry the wrong one across. */}
+              <Input name="appliedPercent" required inputMode="decimal" />
             </Field>
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Revised payment schedule</p>
-              <ScheduleEditor
-                schedule={schedule}
-                setSchedule={setSchedule}
-                minDate={istDay(new Date())}
-              />
-            </div>
+            {/* The editor carries its own Payment Schedule heading; a second
+                "Revised payment schedule" label over it said the same twice. */}
+            <ScheduleEditor schedule={schedule} setSchedule={setSchedule} minDate={istDay(new Date())} />
+
           </>
         )}
 

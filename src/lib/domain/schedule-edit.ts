@@ -7,7 +7,8 @@
 // total comes from shares.ts, which is where a column of percentage inputs is
 // already added up without float noise.
 
-import { percentSum, round2 } from "./shares";
+// Four places, as stored (Decimal(7,4)): two rounded a received 33.3333 to 33.33.
+import { percentSum, round4 } from "./shares";
 
 export type ScheduleRow = { seq: number; percent: string; dueDate: string };
 
@@ -29,8 +30,8 @@ function capToHundred<T extends ScheduleRow>(rows: T[]): T[] {
   let used = 0;
   return rows.map((row) => {
     const typed = value(row.percent);
-    const headroom = round2(Math.max(0, 100 - used));
-    used = round2(used + Math.min(typed, headroom));
+    const headroom = round4(Math.max(0, 100 - used));
+    used = round4(used + Math.min(typed, headroom));
     return typed <= headroom ? row : { ...row, percent: String(headroom) };
   });
 }
@@ -46,7 +47,7 @@ export function fillForward<T extends ScheduleRow>(rows: T[], typedIndex = -1): 
   const last = out.length - 1;
   if (last < 1 || typedIndex === last) return out;
   const others = out.reduce((sum, r, i) => (i === last ? sum : sum + value(r.percent)), 0);
-  out[last] = { ...out[last], percent: String(Math.max(0, round2(100 - others))) };
+  out[last] = { ...out[last], percent: String(Math.max(0, round4(100 - others))) };
   return out;
 }
 
@@ -54,20 +55,33 @@ export function fillForward<T extends ScheduleRow>(rows: T[], typedIndex = -1): 
  * Removing an instalment gives its percentage to the row above it, rather than
  * leaving a hole for someone to notice and close by hand. The first row has no
  * row above, so its share goes to the row that takes its place.
+ *
+ * A row that cannot take more — on Revise, a fully received instalment, shown
+ * as text — is passed over for the nearest row above that can, else below.
+ * If none can, the share is left for the Short-by total to show.
  */
-export function removeRow<T extends ScheduleRow>(rows: T[], index: number): T[] {
+export function removeRow<T extends ScheduleRow>(
+  rows: T[],
+  index: number,
+  canTake: (row: T) => boolean = () => true
+): T[] {
   const freed = value(rows[index]?.percent ?? "0");
   const out = rows.filter((_, i) => i !== index);
-  if (out.length === 0) return out;
-  const above = Math.max(0, index - 1);
-  out[above] = { ...out[above], percent: String(round2(value(out[above].percent) + freed)) };
-  return fillForward(out, above);
+  const above = out.slice(0, index).findLastIndex(canTake);
+  const below = out.findIndex((row, i) => i >= index && canTake(row));
+  const target = above >= 0 ? above : below;
+  if (target < 0) return out.map((r, i) => ({ ...r, seq: i + 1 }));
+  out[target] = { ...out[target], percent: String(round4(value(out[target].percent) + freed)) };
+  return fillForward(out, target);
 }
 
 /** YYYY-MM-DD plus N calendar days — done in UTC so it never drifts across a DST edge. */
 export function addDays(date: string, days: number): string {
+  // A cleared date field is "": toISOString of an Invalid Date threw and took
+  // the whole schedule editor down. Nothing to add to is nothing back.
   const [y, m, d] = date.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+  const at = new Date(Date.UTC(y, m - 1, d + days));
+  return Number.isNaN(at.getTime()) ? "" : at.toISOString().slice(0, 10);
 }
 
 /**
@@ -79,7 +93,7 @@ export function addDays(date: string, days: number): string {
 export function fillDatesForward<T extends ScheduleRow>(rows: T[], changedIndex: number): T[] {
   const out = rows.map((r) => ({ ...r }));
   for (let i = changedIndex + 1; i < out.length; i++) {
-    if (out[i].dueDate <= out[i - 1].dueDate) {
+    if (out[i - 1].dueDate && out[i].dueDate <= out[i - 1].dueDate) {
       out[i] = { ...out[i], dueDate: addDays(out[i - 1].dueDate, 1) };
     }
   }

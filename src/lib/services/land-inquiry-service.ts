@@ -84,19 +84,38 @@ function validate(input: LandInquiryInput) {
   ]);
   if (rates) blocked(rates);
 
-  for (const [label, value] of [
-    ["Total Asking Value", input.totalAskingValue],
-    ["Bigha", input.areaBigha],
-    ["Biswa", input.areaBiswa],
-    ["the metric area", input.areaSourceValue],
-    ["Frontage", input.frontageValue],
-    ["Approach Road Width", input.roadWidthValue],
+  // Each judged at its own column's decimal places, so nothing positive here
+  // is stored as zero.
+  for (const [label, value, places] of [
+    ["Total Asking Value", input.totalAskingValue, 2],
+    ["Bigha", input.areaBigha, 6],
+    ["Biswa", input.areaBiswa, 6],
+    ["the metric area", input.areaSourceValue, 6],
+    ["Frontage", input.frontageValue, 4],
+    ["Approach Road Width", input.roadWidthValue, 4],
   ] as const) {
-    if (value.trim() && !isPositiveDecimal(value)) blocked(`${label} must be a positive number.`);
+    if (value.trim() && !isPositiveDecimal(value, places)) blocked(`${label} must be a positive number.`);
+  }
+  // Money is stored to two places. "1,000.555" passed the positive check, and
+  // parseAmount then handed the raw text to Decimal, which threw at the user.
+  for (const [label, value] of [
+    ["Owner Asking Rate", input.ownerAskingRate],
+    ["DLC Rate", input.dlcRate],
+    ["Expected Purchase Rate", input.expectedPurchaseRate],
+    ["Total Asking Value", input.totalAskingValue],
+  ] as const) {
+    if (value.trim() && parseAmount(value) !== value.replace(/[,\s₹]/g, "")) {
+      blocked(`${label} can have at most 2 decimal places.`);
+    }
   }
 
   if (input.areaSourceValue.trim() && !input.areaSourceUnit) {
     blocked("Say which metric unit the area was measured in.");
+  }
+  // The canonical square metres are stored to six places after conversion.
+  if (input.areaSourceValue.trim() && input.areaSourceUnit) {
+    const sqM = toSquareMetres(Number(input.areaSourceValue.replace(/[,\s]/g, "")), input.areaSourceUnit);
+    if (!(Number(sqM.toFixed(6)) > 0)) blocked("The metric area is too small to record.");
   }
   if (input.frontageValue.trim() && !input.frontageUnit) blocked("Frontage needs a unit.");
   if (input.roadWidthValue.trim() && !input.roadWidthUnit) blocked("Approach Road Width needs a unit.");
@@ -275,6 +294,7 @@ export async function createLandInquiry(args: {
       },
     },
     async (tx) => {
+      await assertActiveAssignee(tx, args.input.assignedToId);
       const source = await resolveSource(tx, args.input);
       const inquiryNo = await nextReference(tx, "LI", "LandInquiry");
 
@@ -340,20 +360,44 @@ export async function updateLandInquiry(args: {
       payload: { id: args.id, version: args.version },
     },
     async (tx) => {
-      const before = await tx.landInquiry.findUniqueOrThrow({ where: { id: args.id } });
+      const before = await lockedInquiry(tx, args.id);
       if (before.archivedAt) blocked("This inquiry is archived and cannot be edited.");
       if (before.status === "CLOSED") {
         blocked("This inquiry is Closed. MD must reopen it before it can be edited.");
       }
       assertVersion(before.version, args.version);
+      await assertActiveAssignee(tx, args.input.assignedToId);
 
       const source = await resolveSource(tx, args.input);
       const data = scalarData(args.input, source);
+      // Owners and Khasra rows are replaced wholesale; the audit holds what they
+      // were, so an owner's or a Khasra number's change is not untraceable.
+      const [ownersBefore, entriesBefore] = await Promise.all([
+        tx.landInquiryOwner.findMany({
+          where: { landInquiryId: args.id },
+          orderBy: { sortOrder: "asc" },
+          select: { ownerName: true, mobile: true, isPrimary: true },
+        }),
+        tx.landInquiryJamabandiEntry.findMany({ where: { landInquiryId: args.id }, orderBy: { sortOrder: "asc" } }),
+      ]);
       const after = await tx.landInquiry.update({
         where: { id: args.id },
         data: { ...data, version: before.version + 1, updatedByRef: args.actorRef },
       });
-      await writeChildren(tx, args.id, args.input);
+      const children = await writeChildren(tx, args.id, args.input);
+      const strip = (rows: Record<string, unknown>[]) =>
+        rows.map(({ id: _id, landInquiryId: _l, sortOrder: _s, createdAt: _c, updatedAt: _u, ...rest }) => rest);
+      const changes = changedFields(before, after);
+      const ownersMoved = JSON.stringify(strip(ownersBefore)) !== JSON.stringify(strip(children.owners));
+      const entriesMoved = JSON.stringify(strip(entriesBefore)) !== JSON.stringify(strip(children.entries));
+      if (ownersMoved) {
+        changes.before.owners = strip(ownersBefore);
+        changes.after.owners = strip(children.owners);
+      }
+      if (entriesMoved) {
+        changes.before.jamabandiEntries = strip(entriesBefore);
+        changes.after.jamabandiEntries = strip(children.entries);
+      }
 
       return {
         result: { id: args.id, version: after.version },
@@ -362,12 +406,29 @@ export async function updateLandInquiry(args: {
           entityId: args.id,
           action: "LAND_INQUIRY_UPDATED",
           // Only what moved: an audit trail nobody can read is not one.
-          before: changedFields(before, after).before,
-          after: changedFields(before, after).after,
+          before: changes.before,
+          after: changes.after,
         },
       };
     }
   );
+}
+
+/**
+ * Read under a row lock. The version check was read-then-update with no lock,
+ * so two saves of one version both passed and the second silently overwrote
+ * the first — and wrote the next version number over it too.
+ */
+async function lockedInquiry(tx: Tx, id: string) {
+  await tx.$queryRaw`SELECT id FROM "LandInquiry" WHERE id = ${id} FOR UPDATE`;
+  return tx.landInquiry.findUniqueOrThrow({ where: { id } });
+}
+
+/** An inquiry is assigned to a live staff account; a stale or forged id was stored as is. */
+async function assertActiveAssignee(tx: Tx, assignedToId: string | null | undefined) {
+  if (!assignedToId) return;
+  const staff = await tx.staffAccount.findUnique({ where: { id: assignedToId }, select: { status: true } });
+  if (!staff || staff.status !== "ACTIVE") blocked("That staff account is not active. Pick someone else.");
 }
 
 function assertVersion(current: number, submitted: number) {
@@ -414,7 +475,7 @@ export async function changeLandInquiryStage(args: {
       payload: { id: args.id, stage: args.stage },
     },
     async (tx) => {
-      const inquiry = await tx.landInquiry.findUniqueOrThrow({ where: { id: args.id } });
+      const inquiry = await lockedInquiry(tx, args.id);
       if (inquiry.archivedAt) blocked("This inquiry is archived.");
       assertVersion(inquiry.version, args.version);
 
@@ -480,7 +541,7 @@ export async function setLandInquiryStatus(args: {
       payload: { id: args.id, status: args.status },
     },
     async (tx) => {
-      const inquiry = await tx.landInquiry.findUniqueOrThrow({ where: { id: args.id } });
+      const inquiry = await lockedInquiry(tx, args.id);
       if (inquiry.archivedAt) blocked("This inquiry is archived.");
       assertVersion(inquiry.version, args.version);
       if (inquiry.status === args.status) {
@@ -540,7 +601,8 @@ export async function reassignLandInquiry(args: {
       payload: { id: args.id, assignedToId: args.assignedToId },
     },
     async (tx) => {
-      const inquiry = await tx.landInquiry.findUniqueOrThrow({ where: { id: args.id } });
+      const inquiry = await lockedInquiry(tx, args.id);
+      if (inquiry.archivedAt) blocked("This inquiry is archived and cannot be reassigned.");
       assertVersion(inquiry.version, args.version);
 
       if (args.assignedToId) {
@@ -598,7 +660,7 @@ export async function archiveLandInquiry(args: {
       payload: { id: args.id },
     },
     async (tx) => {
-      const inquiry = await tx.landInquiry.findUniqueOrThrow({ where: { id: args.id } });
+      const inquiry = await lockedInquiry(tx, args.id);
       if (inquiry.archivedAt) blocked("This inquiry is already archived.");
       assertVersion(inquiry.version, args.version);
 

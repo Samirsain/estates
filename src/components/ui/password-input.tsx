@@ -29,7 +29,6 @@ export function PasswordInput({ className, ...props }: Omit<InputProps, "type">)
         // A password is not read out; the button is what needs the name.
         aria-label={shown ? "Hide password" : "Show password"}
         aria-pressed={shown}
-        tabIndex={-1}
         className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       >
         {shown ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

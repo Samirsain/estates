@@ -4,6 +4,7 @@
 // Actions are hidden by permission for clarity; the server re-checks every one.
 
 import React from "react";
+import { safely } from "@/lib/safely";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, ChevronsUpDown, Plus, X, Trash2, Pencil, Lock, Pause, Calendar, XCircle } from "lucide-react";
@@ -13,7 +14,8 @@ import { PersonLink } from "@/components/person-link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, NO_STEPPER } from "@/components/ui/input";
-import { Field, Modal } from "@/components/ui/modal";
+import { MOBILE_INPUT } from "@/components/ui/field-formats";
+import { Field, Modal, ModalError } from "@/components/ui/modal";
 import { RemarkSelect } from "@/components/ui/remark-select";
 import type { SoldByType } from "@prisma/client";
 import { PersonPicker, personLabel } from "@/components/person-picker";
@@ -388,6 +390,9 @@ export function parseDimension(input: string): string {
     const inchesStr = match[3] || match[4] || match[5] || "0";
     const feet = parseInt(feetStr, 10);
     const inches = parseInt(inchesStr, 10);
+    // 12 inches is a foot: "25'18" read as 26.5 ft without a word. Left as
+    // typed, the server refuses it as not a number of feet.
+    if (inches >= 12) return clean;
     if (!isNaN(feet) || !isNaN(inches)) {
       const decimalValue = feet + (inches / 12);
       return String(Number(decimalValue.toFixed(4)));
@@ -1021,7 +1026,7 @@ export default function PlotsClient({
     if (busy) return false;
     setBusy(true);
     setNotice(null);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
     setNotice(
       result.ok
@@ -1038,6 +1043,8 @@ export default function PlotsClient({
   const newKey = () => globalThis.crypto.randomUUID();
 
   return (
+    // The refusal shows inside the open dialog; behind it, nobody saw it.
+    <ModalError.Provider value={notice?.kind === "error" ? notice.text : null}>
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
       <div className="mx-auto max-w-6xl space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
@@ -1413,6 +1420,8 @@ export default function PlotsClient({
                             className={rowButton}
                             onClick={() => {
                               setHoldPerson(forPerson?.personId ?? "");
+                              setHoldSourceType("THREE_PERCENT_CLUB");
+                              setHoldSourcePerson("");
                               setDialog({ kind: "HOLD", plot });
                             }}
                           >
@@ -1489,7 +1498,7 @@ export default function PlotsClient({
               {holdPerson === "NEW" && (
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Input name="fullName" placeholder="Full name" required />
-                  <Input name="mobile" placeholder="Mobile" inputMode="numeric" required />
+                  <Input name="mobile" required {...MOBILE_INPUT} placeholder="Mobile" />
                 </div>
               )}
 
@@ -1696,6 +1705,8 @@ export default function PlotsClient({
             // The second half of Make Available & Hold, on the Plot now Available.
             if (ok && thenHold) {
               setHoldPerson(forPerson?.personId ?? "");
+                              setHoldSourceType("THREE_PERCENT_CLUB");
+                              setHoldSourcePerson("");
               setDialog({ kind: "HOLD", plot: { ...plot, status: "AVAILABLE" } });
             }
           }}
@@ -1842,6 +1853,7 @@ export default function PlotsClient({
       )}
 
     </AppShell>
+    </ModalError.Provider>
   );
 }
 
@@ -2283,13 +2295,25 @@ export function PrepareInventoryForm({
 
                 {/* Dimensions */}
                 {row.irregular ? (
-                  <input
-                    className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
-                    placeholder="Area sq ft"
-                    inputMode="decimal"
-                    value={row.exactAreaSqFt}
-                    onChange={(e) => update(i, { exactAreaSqFt: e.target.value })}
-                  />
+                  <div className="flex flex-col gap-1">
+                    <input
+                      className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
+                      placeholder="Area sq ft"
+                      inputMode="decimal"
+                      value={row.exactAreaSqFt}
+                      onChange={(e) => update(i, { exactAreaSqFt: e.target.value })}
+                    />
+                    {/* The server asks a reason for every exact area, and the
+                        grid had no field for one: no irregular Plot could be saved. */}
+                    <input
+                      className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
+                      placeholder="Reason for exact area"
+                      aria-label="Reason for exact area"
+                      value={row.exactAreaReason}
+                      onChange={(e) => update(i, { exactAreaReason: e.target.value })}
+                      required
+                    />
+                  </div>
                 ) : (
                   <div className="flex items-center gap-2">
                     <input

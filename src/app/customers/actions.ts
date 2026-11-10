@@ -3,6 +3,7 @@
 // Customer server actions — design.md §12; prd-complete §6.
 // The Customer has no portal (PRD §1.3); this is the staff-side profile only.
 
+import { actionErrorText } from "@/lib/action-error";
 import { requireStaff } from "@/lib/security/current-actor";
 import { canViewField } from "@/lib/security/permissions";
 import { recordAudit } from "@/lib/security/audit";
@@ -16,7 +17,7 @@ export type CloserActionResult = { ok: true } | { ok: false; error: string };
 
 const asResult = (error: unknown): CloserActionResult => ({
   ok: false,
-  error: error instanceof CommandError || error instanceof Error ? error.message : "Action failed.",
+  error: actionErrorText(error, "Action failed."),
 });
 
 /** v2.1 §22, §77 — Accounts marks a recorded Aadhaar as Verified. */

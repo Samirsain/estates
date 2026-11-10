@@ -8,6 +8,7 @@
 // is the honest place to make them. The list went back to being a list.
 
 import React from "react";
+import { safely } from "@/lib/safely";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Modal } from "@/components/ui/modal";
+import { Modal, ModalError } from "@/components/ui/modal";
 import { useHashOpen } from "@/lib/hash-open";
 import { MemberDialog, ReraFields } from "../members-client";
 import { InviterDialog } from "./trip-section";
@@ -39,6 +40,8 @@ export type MemberActionsView = {
   reraNumber: string | null;
   reraExpiryDate: string | null;
   reraNotApplicableReason: string | null;
+  /** The inviter's Member ID now; null for 3% Club. */
+  invitedByMemberId: string | null;
 };
 
 type Dialog =
@@ -76,9 +79,16 @@ export function MemberActions({
     if (busy) return;
     setBusy(true);
     setNotice(null);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
-    setNotice(result.ok ? { ok: true, text: result.message ?? "Done." } : { ok: false, text: result.error });
+    // A success with nothing to say (Update RERA) prints no line at all.
+    setNotice(
+      result.ok
+        ? result.message
+          ? { ok: true, text: result.message }
+          : null
+        : { ok: false, text: result.error }
+    );
     if (result.ok) {
       setDialog(null);
       router.refresh();
@@ -86,6 +96,8 @@ export function MemberActions({
   }
 
   return (
+    // The refusal shows inside the open dialog; behind it, nobody saw it.
+    <ModalError.Provider value={notice && !notice.ok ? notice.text : null}>
     <>
       <div className="flex flex-col items-end gap-1">
         <DropdownMenu>
@@ -174,6 +186,7 @@ export function MemberActions({
 
       {dialog?.kind === "INVITER" && (
         <InviterDialog
+          current={member.invitedByMemberId}
           busy={busy}
           error={notice && !notice.ok ? notice.text : null}
           onClose={() => setDialog(null)}
@@ -217,6 +230,7 @@ export function MemberActions({
         </Modal>
       )}
     </>
+    </ModalError.Provider>
   );
 }
 

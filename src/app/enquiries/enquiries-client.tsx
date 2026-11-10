@@ -3,6 +3,7 @@
 // Enquiry list, create and follow-up — design.md §8.
 
 import React from "react";
+import { safely } from "@/lib/safely";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, ChevronDown, Plus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
@@ -17,7 +18,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { MOBILE_INPUT } from "@/components/ui/field-formats";
+import { Field, Modal, inputClass, ModalError } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
 import { FOLLOW_UP_OUTCOME_LABEL } from "@/lib/domain/enquiry";
 import {
@@ -201,7 +203,7 @@ export default function EnquiriesClient({
     if (busy) return false;
     setBusy(true);
     setNotice(null);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
     setNotice(result.ok ? { kind: "ok", text: result.message ?? "Done." } : { kind: "error", text: result.error });
     if (result.ok) router.refresh();
@@ -211,6 +213,8 @@ export default function EnquiriesClient({
   const newKey = () => globalThis.crypto.randomUUID();
 
   return (
+    // The refusal shows inside the open dialog; behind it, nobody saw it.
+    <ModalError.Provider value={notice?.kind === "error" ? notice.text : null}>
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
       <div className="mx-auto max-w-6xl space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
@@ -485,6 +489,7 @@ export default function EnquiriesClient({
         </Modal>
       )}
     </AppShell>
+    </ModalError.Provider>
   );
 }
 
@@ -770,15 +775,15 @@ function CreateEnquiryDialog({
               <Input
                 className="h-9 text-xs"
                 name="mobile"
-                placeholder="Mobile"
-                inputMode="numeric"
                 required
+                {...MOBILE_INPUT}
+                placeholder="Mobile"
               />
               <Input
                 className="h-9 text-xs"
                 name="altMobile"
+                {...MOBILE_INPUT}
                 placeholder="Alternate Mobile (optional)"
-                inputMode="numeric"
                 aria-label="Alternate Mobile"
               />
               <Input className="h-9 text-xs" name="city" placeholder="City" />
@@ -790,6 +795,7 @@ function CreateEnquiryDialog({
               name="date"
               type="date"
               required
+              min={istDay(new Date())}
               defaultValue={addIstDays(istDay(new Date()), 1)}
               className={inputClass}
             />
@@ -886,6 +892,7 @@ function FollowUpDialog({
             name="date"
             type="date"
             required
+            min={istDay(new Date())}
             defaultValue={addIstDays(istDay(new Date()), 2)}
             className={inputClass}
           />

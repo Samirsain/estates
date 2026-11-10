@@ -5,6 +5,7 @@
 // Received (PRD §1.2).
 
 import React from "react";
+import { safely } from "@/lib/safely";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Plus, Wallet } from "lucide-react";
@@ -14,10 +15,10 @@ import { PersonLink } from "@/components/person-link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Field, Modal, inputClass } from "@/components/ui/modal";
+import { Field, Modal, inputClass, ModalError } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
 import { istDay, type StaffRole } from "@/lib/tasks";
-import { round2 } from "@/lib/domain/shares";
+import { round4 } from "@/lib/domain/shares";
 import {
   addDays,
   fillDatesForward,
@@ -92,7 +93,7 @@ export default function AcquisitionsClient({
 
   async function run(action: () => Promise<ActionResult>) {
     setBusy(true);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
     setNotice(result.ok ? { ok: true, text: result.message } : { ok: false, text: result.error });
     if (result.ok) {
@@ -102,6 +103,8 @@ export default function AcquisitionsClient({
   }
 
   return (
+    // The refusal shows inside the open dialog; behind it, nobody saw it.
+    <ModalError.Provider value={notice && !notice.ok ? notice.text : null}>
     <AppShell role={role} actorName={actorName} staffAccountId={staffAccountId}>
       {/* Plot Inventory's layout: heading and action, filters, then the
           table ruled by hairlines rather than boxed in a card. */}
@@ -296,6 +299,7 @@ export default function AcquisitionsClient({
         onClose={() => setDialog(null)}
       />
     </AppShell>
+    </ModalError.Provider>
   );
 }
 
@@ -329,7 +333,7 @@ function NewAcquisitionDialog({
   ]);
   const [acknowledge, setAcknowledge] = React.useState(false);
 
-  const remaining = round2(100 - scheduleTotal(schedule));
+  const remaining = round4(100 - scheduleTotal(schedule));
   const selected = buybackable.find((b) => b.id === sourceBookingId);
 
   return (
@@ -404,7 +408,7 @@ function NewAcquisitionDialog({
               <Input name="propertyNumber" required />
             </Field>
             <Field label="Area (sq ft)">
-              <Input name="areaSqFt" inputMode="decimal" />
+              <Input name="areaSqFt" inputMode="decimal" required />
             </Field>
             <Field label="External Resale Property Group">
               <select name="resaleGroupId" className={inputClass} required defaultValue="">
@@ -447,7 +451,10 @@ function NewAcquisitionDialog({
               <PersonPicker
                 name="arrangedByPersonId"
                 required
-                options={people.map((p) => ({ id: p.id, label: personLabel(p) }))}
+                key={arrangedByType}
+                options={people
+                  .filter((p) => (arrangedByType === "MEMBER" ? p.memberId : p.customerId))
+                  .map((p) => ({ id: p.id, label: personLabel(p) }))}
               />
             </Field>
           )}
@@ -536,7 +543,7 @@ function NewAcquisitionDialog({
                 ? "Total 100% — complete."
                 : remaining > 0
                   ? `Remaining ${remaining}%`
-                  : `Over by ${round2(-remaining)}%`}
+                  : `Over by ${round4(-remaining)}%`}
             </p>
           </div>
         </section>

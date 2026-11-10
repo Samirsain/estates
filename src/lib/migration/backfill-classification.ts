@@ -137,7 +137,9 @@ export async function backfillClassification(
           },
         });
       }
-    });
+      // Three statements a Booking at ~40 ms each: Prisma's default 5 s timeout
+      // rolled the whole backfill back past about 40 Bookings.
+    }, { timeout: Math.max(30_000, planned.length * 500), maxWait: 10_000 });
   }
 
   return {

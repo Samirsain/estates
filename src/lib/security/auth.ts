@@ -66,18 +66,17 @@ export function burnPasswordTime(password: string): void {
 /**
  * Break-glass phrase for the Forgot password page. Case-insensitive by request,
  * so it is compared lower-cased — and in constant time, so it cannot be guessed
- * one character at a time. Set RECOVERY_KEY in the environment to change it
- * without a code change.
+ * one character at a time. The phrase lives only in RECOVERY_KEY: a default in
+ * source let anyone who read the repository reset the MD. Unset, recovery is off.
  *
  * ponytail: ONE phrase resets ANY staff account. Its strength is exactly the
  * number of people who know it. Move to per-account tokens sent to a verified
  * mobile the day this system is reachable from outside the office.
  */
-const RECOVERY_KEY = process.env.RECOVERY_KEY || "3preclub@2026fgpass";
-
-export function verifyRecoveryKey(given: string): boolean {
+export function verifyRecoveryKey(given: string, phrase = process.env.RECOVERY_KEY ?? ""): boolean {
+  const b = Buffer.from(phrase.trim().toLowerCase(), "utf8");
+  if (b.length === 0) return false;
   const a = Buffer.from(given.trim().toLowerCase(), "utf8");
-  const b = Buffer.from(RECOVERY_KEY.trim().toLowerCase(), "utf8");
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
@@ -127,15 +126,31 @@ const WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 20;
 const buckets = new Map<string, { count: number; resetAt: number }>();
 
-export function rateLimit(key: string, now: Date = new Date()): boolean {
+export function rateLimit(
+  key: string,
+  now: Date = new Date(),
+  max = MAX_PER_WINDOW,
+  windowMs = WINDOW_MS
+): boolean {
+  // One bucket per typed loginId: without pruning, random ids grew the Map forever.
+  if (buckets.size > 10_000) {
+    for (const [k, b] of buckets) if (b.resetAt <= now.getTime()) buckets.delete(k);
+  }
   const bucket = buckets.get(key);
   if (!bucket || bucket.resetAt <= now.getTime()) {
-    buckets.set(key, { count: 1, resetAt: now.getTime() + WINDOW_MS });
+    buckets.set(key, { count: 1, resetAt: now.getTime() + windowMs });
     return true;
   }
   bucket.count += 1;
-  return bucket.count <= MAX_PER_WINDOW;
+  return bucket.count <= max;
 }
+
+/**
+ * The recovery phrase opens every account, and a bucket per loginId let it be
+ * guessed without limit by changing the id. One shared bucket caps the guesses.
+ */
+export const RECOVERY_MAX_ATTEMPTS = 10;
+export const RECOVERY_WINDOW_MS = 15 * 60_000;
 
 export function resetRateLimit(): void {
   buckets.clear();

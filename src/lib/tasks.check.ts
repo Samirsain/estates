@@ -219,6 +219,7 @@ assert.equal(remainingPercent("30.00"), "70.00");
 assert.equal(remainingPercent("99.75"), "0.25");
 // A Booking that is fully paid offers nothing, rather than offering 100 again.
 assert.equal(remainingPercent("100.00"), "0.00");
+assert.equal(remainingPercent("99.996"), "0.004", "four places, not rounded away");
 
 // A due date, as a list has room for it. Fixed instants, so the assertions do
 // not drift with the clock.

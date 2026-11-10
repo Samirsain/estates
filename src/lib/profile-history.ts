@@ -4,7 +4,9 @@
 // Person (detail edits, bank, identity views) read the same on either page.
 // Each page adds the events only it has, then sorts with `newestFirst`.
 
-export type HistoryItem = { at: Date; title: string; detail?: string; by?: string };
+import { dealsInLabel, experienceLabel } from "@/lib/domain/member-business";
+
+export type HistoryItem ={ at: Date; title: string; detail?: string; by?: string };
 
 /** The fields Edit details changes, in the words the Profile card uses. */
 const FIELD_LABEL: Record<string, string> = {
@@ -15,6 +17,10 @@ const FIELD_LABEL: Record<string, string> = {
   city: "City",
   addressLine: "Address",
   dateOfBirth: "Date of Birth",
+  firmName: "Firm Name",
+  dealsIn: "Deals In",
+  businessExperience: "Experience",
+  aadhaarStatus: "Aadhaar",
 };
 
 const AUDIT_TITLE: Record<string, string> = {
@@ -62,17 +68,20 @@ export function auditHistory(
     .map((e) => {
       const before = (e.beforeMasked ?? {}) as Record<string, unknown>;
       const after = (e.afterMasked ?? {}) as Record<string, unknown>;
-      const shown = (field: string, value: unknown) =>
-        value == null || value === ""
-          ? "blank"
-          : field === "primaryMobile" || field === "altMobile"
-            ? contact(String(value))
-            : String(value);
+      const shown = (field: string, value: unknown) => {
+        if (value == null || value === "" || (Array.isArray(value) && value.length === 0)) return "blank";
+        if (field === "primaryMobile" || field === "altMobile") return contact(String(value));
+        if (field === "dealsIn") return dealsInLabel(value as string[]);
+        if (field === "businessExperience") return experienceLabel(String(value));
+        if (field === "aadhaarStatus") return words(String(value));
+        return String(value);
+      };
 
       let detail: string | undefined;
       if (e.action === "PERSON_DETAILS_UPDATED") {
         detail = Object.keys(FIELD_LABEL)
-          .filter((k) => before[k] !== after[k])
+          // String() so the Deals In list compares by content, not by reference.
+          .filter((k) => String(before[k] ?? "") !== String(after[k] ?? ""))
           .map((k) => `${FIELD_LABEL[k]}: ${shown(k, before[k])} → ${shown(k, after[k])}`)
           .join(" · ");
       } else if (e.action === "BANK_DETAILS_ENTERED") {

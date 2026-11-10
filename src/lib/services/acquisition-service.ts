@@ -12,6 +12,7 @@ import {
   canApproveAcquisition,
   cancelAcquisition,
   likelyDuplicateReasons,
+  MIN_PAYMENT_GIVEN_FOR_APPROVAL,
   plotStateAfterAcquisitionApproval,
   plotStateAfterAcquisitionCancelled,
   resolvePaymentGivenCorrection,
@@ -22,11 +23,12 @@ import {
   allocatePayment,
   canTransition,
   notFutureDated,
+  percentInputError,
   progressAfter,
   validateSchedule,
   type BookingStatus,
 } from "@/lib/domain/booking";
-import type { PlotStatus } from "@/lib/domain/inventory";
+import { plotReturnState, type PlotStatus } from "@/lib/domain/inventory";
 import { blocked, lockKey, lockPlot, nextReference, runCommand, type Tx } from "./command";
 import {
   applyAllocation,
@@ -159,7 +161,20 @@ export async function createAcquisition(args: {
     async (tx) => {
       let plotId: string | null = null;
       let duplicateKey: string | null = null;
+      let areaSqFt: string | null = null;
       const duplicateWarnings: string[] = [];
+
+      // Arranged by Member / Customer must name someone who holds that profile.
+      if (args.arrangedByPersonId) {
+        const arranger = await tx.person.findUnique({
+          where: { id: args.arrangedByPersonId },
+          select: { mergeStatus: true, memberProfile: { select: { id: true } }, customerProfile: { select: { id: true } } },
+        });
+        const profile = args.arrangedByType === "MEMBER" ? arranger?.memberProfile : arranger?.customerProfile;
+        if (!arranger || arranger.mergeStatus === "MERGED_AWAY" || !profile) {
+          blocked(`The arranging Person is not a ${args.arrangedByType === "MEMBER" ? "Member" : "Customer"}.`);
+        }
+      }
 
       if (args.type === "BUYBACK") {
         if (!args.sourceBookingId) blocked("A Buyback names the Booking it takes back.");
@@ -207,6 +222,26 @@ export async function createAcquisition(args: {
         });
       } else {
         if (!args.property) blocked("A Purchase for Resale needs the outside property details.");
+        // Approval turns this into a Plot, and a Plot needs an area above zero
+        // (area_is_positive). Nothing edits the area later, so ask for it now.
+        // "1,200" and " 1200 " read as 1200, and the cleaned value is what is
+        // stored. Decimal(12,4) holds eight digits before the point.
+        const area = (args.property.areaSqFt ?? "").replace(/[,\s]/g, "");
+        if (!/^\d{1,8}(\.\d{1,4})?$/.test(area) || new D(area).lt(1)) {
+          blocked("Enter the Area (sq ft) of the resale property — from 1 to 99999999, up to 4 decimal places.");
+        }
+        areaSqFt = area;
+        // Approval makes the Plot inside this group, and nothing sets the group
+        // later: left blank the deal could never be approved, and a normal
+        // Project's id put an Informal Sector Plot inside that Project.
+        if (!args.property.resaleGroupId) {
+          blocked("Select the External Resale Property Group this property belongs to.");
+        }
+        const group = await tx.project.findUnique({
+          where: { id: args.property.resaleGroupId },
+          select: { isExternalResaleGroup: true },
+        });
+        if (!group?.isExternalResaleGroup) blocked("Choose an External Resale Property Group, not a Project.");
 
         duplicateKey = acquisitionDuplicateKey({
           propertyName: args.property.propertyName,
@@ -227,7 +262,7 @@ export async function createAcquisition(args: {
           location: args.property.location,
           propertyNumber: args.property.propertyNumber,
           sellerPersonId: args.sellerPersonId,
-          areaSqFt: args.property.areaSqFt ?? null,
+          areaSqFt,
         };
         for (const existing of candidates) {
           if (existing.duplicateKey === duplicateKey) {
@@ -267,7 +302,7 @@ export async function createAcquisition(args: {
           location: args.property?.location ?? null,
           projectType: args.property?.projectType ?? null,
           propertyNumber: args.property?.propertyNumber ?? null,
-          areaSqFt: args.property?.areaSqFt ?? null,
+          areaSqFt,
           plcPercent: args.property?.plcPercent ?? null,
           duplicateKey,
           resaleGroupId: args.property?.resaleGroupId ?? null,
@@ -352,6 +387,8 @@ export async function confirmPaymentGiven(args: {
       payload: { acquisitionId: args.acquisitionId, percent: args.percent, reference: args.reference },
     },
     async (tx) => {
+      const badPercent = percentInputError(args.percent);
+      if (badPercent) blocked(badPercent);
       await lockKey(tx, `acquisition:${args.acquisitionId}`);
       const acquisition = await tx.acquisition.findUniqueOrThrow({
         where: { id: args.acquisitionId },
@@ -396,6 +433,7 @@ export async function confirmPaymentGiven(args: {
         where: { id: args.acquisitionId },
         data: { paymentGivenPercent: progress.toFixed(4) },
       });
+      await releasePlotAtThreshold(tx, acquisition, acquisition.paymentGivenPercent, progress, args.actorRef);
 
       // PRD §11.7 — the Buying Commission milestone is 100% Payment Given.
       if (buyingCommissionMilestoneReached(progress)) {
@@ -461,6 +499,15 @@ export async function correctPaymentGiven(args: {
       payload: { entryId: args.entryId, percent: args.percent, reference: args.reference },
     },
     async (tx) => {
+      const badPercent = percentInputError(args.percent);
+      if (badPercent) blocked(badPercent);
+      // Locked before the entry is checked: checked first, two corrections of
+      // one entry both passed and the second subtracted it a second time.
+      const { acquisitionId } = await tx.paymentGivenEntry.findUniqueOrThrow({
+        where: { id: args.entryId },
+        select: { acquisitionId: true },
+      });
+      await lockKey(tx, `acquisition:${acquisitionId}`);
       const original = await tx.paymentGivenEntry.findUniqueOrThrow({
         where: { id: args.entryId },
         include: { externalReference: true },
@@ -471,18 +518,31 @@ export async function correctPaymentGiven(args: {
         blocked("A Payment Given correction must be made by a different staff account.");
       }
 
-      await lockKey(tx, `acquisition:${original.acquisitionId}`);
       const acquisition = await tx.acquisition.findUniqueOrThrow({
         where: { id: original.acquisitionId },
         include: { plot: true },
       });
+      // As confirming requires: a Cancelled or Rejected deal is closed.
+      if (!["PENDING_APPROVAL", "APPROVED"].includes(acquisition.status)) {
+        blocked(`This acquisition is ${acquisition.status.replaceAll("_", " ").toLowerCase()}.`);
+      }
 
       const schedule = await activeGivenSchedule(tx, original.acquisitionId);
       if (!schedule) blocked("This acquisition has no live Payment Given schedule.");
 
-      // Reverse the original, then apply the replacement.
-      const originalAllocations = original.allocations as unknown as Array<{ seq: number; percent: string }>;
-      await applyAllocation(tx, schedule.id, originalAllocations, -1);
+      // Reverse the original, then apply the replacement. Taken back from the
+      // latest money given, not by the original's instalment numbers, which a
+      // schedule revision may have given to other instalments.
+      let left = new D(original.percent);
+      const takeBack: { seq: number; percent: string }[] = [];
+      for (const i of [...schedule.instalments].reverse()) {
+        if (left.lte(0)) break;
+        const take = i.receivedPercent.lt(left) ? i.receivedPercent : left;
+        if (take.gt(0)) takeBack.push({ seq: i.seq, percent: take.toString() });
+        left = left.sub(take);
+      }
+      if (left.gt(0)) blocked("The live schedule holds less Payment Given than this entry. Raise an Accounts adjustment.");
+      await applyAllocation(tx, schedule.id, takeBack, -1);
 
       const reversed = new D(acquisition.paymentGivenPercent).sub(original.percent);
       let allocations;
@@ -564,7 +624,11 @@ export async function correctPaymentGiven(args: {
             ? `Payment Given is ${given}% Plot not available.`
             : "Payment Given less than 100%";
         await stepBackBuyingCommission(tx, acquisition.id, args.actorRef, outcome.note, cause);
+      } else {
+        // Back to 100% after a step back: the Buying Commission is due again.
+        await refreshBuyingCommission(tx, acquisition.id, args.actorRef);
       }
+      await releasePlotAtThreshold(tx, acquisition, acquisition.paymentGivenPercent, progress, args.actorRef);
       await refreshStableCompletion(tx, acquisition.id, args.actorRef);
 
       if (outcome.managementActionRequired) {
@@ -665,6 +729,35 @@ export async function syncGivenFollowUp(tx: Tx, acquisitionId: string, actorRef:
 /* ---------------------------------------------------------- decision */
 
 /**
+ * PRD §11.3 — a Plot made Not Available when Payment Given fell below 20% is
+ * released once Payment Given returns to 20%. Nothing did, so it stayed unsellable.
+ */
+async function releasePlotAtThreshold(
+  tx: Tx,
+  acquisition: { status: string; plotId: string | null },
+  previous: Prisma.Decimal,
+  next: Prisma.Decimal,
+  actorRef: string
+) {
+  if (acquisition.status !== "APPROVED" || !acquisition.plotId) return;
+  if (!previous.lt(MIN_PAYMENT_GIVEN_FOR_APPROVAL) || next.lt(MIN_PAYMENT_GIVEN_FOR_APPROVAL)) return;
+  const plot = await tx.plot.findUniqueOrThrow({ where: { id: acquisition.plotId } });
+  if (plot.status !== "NOT_AVAILABLE") return;
+  const back = plotReturnState(plot.restriction, plot.restrictionReason);
+  await tx.plot.update({ where: { id: plot.id }, data: { status: back.status } });
+  await tx.plotEvent.create({
+    data: {
+      plotId: plot.id,
+      actorRef,
+      action: "PAYMENT_GIVEN_RESTORED",
+      fromStatus: "NOT_AVAILABLE",
+      toStatus: back.status,
+      reason: `Payment Given is back to ${next.toFixed(2)}%.`,
+    },
+  });
+}
+
+/**
  * PRD §11.3 — Accounts approves only at 20% Payment Given or above. On approval
  * a Purchase for Resale enters normal inventory as Available + RESALE, and a
  * Buyback returns its Plot through the one restriction-aware rule.
@@ -720,6 +813,8 @@ export async function decideAcquisition(args: {
             where: { id: acquisition.sourceBookingId },
             data: { activeProcess: "NONE" },
           });
+          // The Buyback Pending hold on the old sale's commission goes with it.
+          await reassessCommission(tx, acquisition.sourceBookingId, args.actorRef);
         }
         await closeTasksFor(
           tx,
@@ -764,18 +859,34 @@ export async function decideAcquisition(args: {
               "."
           );
         }
+        // Said here, not as a raw CHECK / unique-key error from plot.create.
+        if (!acquisition.areaSqFt || acquisition.areaSqFt.lt(1)) {
+          blocked(
+            "This Resale has no Area (sq ft), so its Plot cannot be created. Reject it and enter it again with the Area."
+          );
+        }
+        const clash = await tx.plot.findFirst({
+          where: {
+            projectId: acquisition.resaleGroupId,
+            plotType: "INFORMAL_SECTOR",
+            plotNumber: acquisition.propertyNumber!,
+          },
+          select: { id: true },
+        });
+        if (clash) {
+          blocked(
+            `Property Number ${acquisition.propertyNumber} is already a Plot in this External Resale Property Group.`
+          );
+        }
         const created = await tx.plot.create({
           data: {
             projectId: acquisition.resaleGroupId,
             plotType: "INFORMAL_SECTOR",
             plotNumber: acquisition.propertyNumber!,
-            areaSqFt: acquisition.areaSqFt ?? "0",
-            areaSqYd: acquisition.areaSqFt
-              ? new D(acquisition.areaSqFt).div(9).toFixed(3)
-              : "0",
-            areaSqM: acquisition.areaSqFt
-              ? new D(acquisition.areaSqFt).mul("0.09290304").toFixed(3)
-              : "0",
+            // Present and at least 1 — refused above otherwise.
+            areaSqFt: acquisition.areaSqFt,
+            areaSqYd: acquisition.areaSqFt.div(9).toFixed(3),
+            areaSqM: acquisition.areaSqFt.mul("0.09290304").toFixed(3),
             status: "NOT_AVAILABLE",
             restriction: "NONE",
           },
@@ -1225,6 +1336,9 @@ export async function cancelAcquisitionDeal(args: {
         // still the status the acquisition had on the way in.
         if (wasApproved && acquisition.type === "BUYBACK") {
           await unwindApprovedBuyback(tx, acquisition, args.actorRef, args.reason);
+        } else {
+          // A pending Buyback cancelled: its hold on the old sale's commission goes.
+          await reassessCommission(tx, acquisition.sourceBookingId, args.actorRef);
         }
       }
 
@@ -1293,6 +1407,16 @@ export async function recordBuyingCommission(args: {
         where: { acquisitionId: args.acquisitionId, isCurrent: true },
       });
       if (existing) blocked("This acquisition already carries a current Buying Commission record.");
+      // PRD §11.7 — earned by the person who arranged a live deal, nobody else.
+      if (!["PENDING_APPROVAL", "APPROVED"].includes(acquisition.status)) {
+        blocked(`This acquisition is ${acquisition.status.replaceAll("_", " ").toLowerCase()}, so it earns no Buying Commission.`);
+      }
+      if (acquisition.arrangedByType === "THREE_PERCENT_CLUB" || !acquisition.arrangedByPersonId) {
+        blocked("This deal was arranged by 3% Club, which earns no Buying Commission.");
+      }
+      if (args.beneficiaryPersonId !== acquisition.arrangedByPersonId) {
+        blocked("The Buying Commission belongs to the person recorded as arranging this deal.");
+      }
 
       const check = validateBuyingCommission({
         beneficiaryPersonId: args.beneficiaryPersonId,

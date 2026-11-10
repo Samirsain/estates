@@ -41,9 +41,11 @@ const LIST_PAGE: Record<string, string> = {
 };
 
 /** null: this role is not served the feed, so it gets no bell. */
-export async function recentNotifications(): Promise<Notification[] | null> {
+export async function recentNotifications(): Promise<{ items: Notification[]; canOpenAdministration: boolean } | null> {
   const actor = await currentStaff();
   if (!actor || !can(actor.role, "AUDIT_VIEW", actor.extraPermissions)) return null;
+  // /administration needs STAFF_MANAGE; AUDIT_VIEW alone (an extra) would land on a refusal.
+  const canOpenAdministration = can(actor.role, "STAFF_MANAGE", actor.extraPermissions);
   const rows = await db.auditEvent.findMany({
     where: {
       actorRef: { not: actor.staffAccountId },
@@ -68,9 +70,10 @@ export async function recentNotifications(): Promise<Notification[] | null> {
       const bookingId = commission.get(id);
       return bookingId ? `/bookings/${bookingId}` : "/rewards?tab=monetary";
     }
+    if (entity === "StaffAccount" && !canOpenAdministration) return null;
     return RECORD_PAGE[entity]?.(id) ?? LIST_PAGE[entity] ?? null;
   };
-  return rows.map((r) => ({
+  const items = rows.map((r) => ({
     id: r.id,
     at: r.at.toISOString(),
     actorRef: r.actorRef,
@@ -79,4 +82,5 @@ export async function recentNotifications(): Promise<Notification[] | null> {
     reason: r.reason,
     href: hrefOf(r.entity, r.entityId),
   }));
+  return { items, canOpenAdministration };
 }

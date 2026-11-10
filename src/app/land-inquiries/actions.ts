@@ -9,6 +9,7 @@
 // presentation; this is the control (DESIGN §1, spec §27 "UI hiding is not
 // authorization").
 
+import { actionErrorText } from "@/lib/action-error";
 import type { LandInquiryStage, LandInquiryStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -29,7 +30,7 @@ export type ActionResult =
 
 function toResult(error: unknown): ActionResult {
   if (error instanceof CommandError) return { ok: false, error: error.message };
-  return { ok: false, error: error instanceof Error ? error.message : "Action failed." };
+  return { ok: false, error: actionErrorText(error, "Action failed.") };
 }
 
 function refresh(id?: string) {

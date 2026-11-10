@@ -22,7 +22,7 @@ export function projectRowView(project: Awaited<ReturnType<typeof listProjects>>
     locationUrl: project.locationUrl,
     driveUrl: project.driveUrl,
     layoutUrl:
-      onPortal && siteLayout(project.projectCode) ? `/p/${projectSlug(project.name)}` : project.driveUrl,
+      onPortal && siteLayout(project.projectCode) ? `/p/${projectSlug(project.name, project.projectCode)}` : project.driveUrl,
     renderUrl: project.renderUrl,
     city: project.city,
     amenities: project.amenities,

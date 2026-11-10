@@ -58,7 +58,7 @@ export async function requireStaff(action?: Action): Promise<StaffActor> {
       entity: "StaffAccount",
       entityId: actor.accountId,
       action: "PERMISSION_DENIED",
-      reason: ` attempted `,
+      reason: `${actor.role} attempted ${action}`,
     });
     throw new PermissionError(actor.role, action);
   }

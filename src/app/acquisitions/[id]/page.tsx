@@ -39,7 +39,7 @@ export default async function AcquisitionDetailPage({
         memberProfile: { select: { memberId: true } },
       },
       orderBy: { fullName: "asc" },
-      take: 500,
+      // ponytail: every person ships to the picker (a cap hid the arranger past it); server-side search when this reaches thousands.
     }),
   ]);
 

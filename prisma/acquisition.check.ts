@@ -75,7 +75,11 @@ async function main() {
     data: { fullName: `${TAG} Seller`, primaryMobile: "9500000801" },
   });
   const arranger = await db.person.create({
-    data: { fullName: `${TAG} Arranger`, primaryMobile: "9500000802" },
+    data: {
+      fullName: `${TAG} Arranger`,
+      primaryMobile: "9500000802",
+      memberProfile: { create: { memberId: `${TAG}-M-ARR` } },
+    },
   });
 
   /* ==================================== approval needs 20% Payment Given == */

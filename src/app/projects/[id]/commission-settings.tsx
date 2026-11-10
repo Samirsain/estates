@@ -9,6 +9,7 @@
 // Everyone else reads. The service is the control; the buttons only follow it.
 
 import React from "react";
+import { safely } from "@/lib/safely";
 import { useRouter } from "next/navigation";
 import {
   DIRECT_MAX_PERCENT,
@@ -22,7 +23,7 @@ import { formatIst } from "@/lib/tasks";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Field, Modal } from "@/components/ui/modal";
+import { Field, Modal, ModalError } from "@/components/ui/modal";
 import { createCommissionVersionAction, type ActionResult, type CommissionDraftInput } from "../actions";
 import { RemarkSelect } from "@/components/ui/remark-select";
 
@@ -120,7 +121,7 @@ export default function CommissionSettings({
 
   async function run(action: () => Promise<ActionResult>) {
     setBusy(true);
-    const result = await action();
+    const result = await safely(action);
     setBusy(false);
     setNotice(result);
     if (result.ok) {
@@ -140,6 +141,8 @@ export default function CommissionSettings({
   );
 
   return (
+    // The refusal shows inside the open dialog; behind it, nobody saw it.
+    <ModalError.Provider value={notice && !notice.ok ? notice.error : null}>
     <Card className="p-3">
       <section className="space-y-2">
         <div className="flex items-baseline justify-between gap-3">
@@ -177,13 +180,16 @@ export default function CommissionSettings({
         <VersionForm
           busy={busy}
           plots={plots}
-          start={active}
+          // The version being replaced is the one to start from: prefilled
+          // from Active, a save threw away the waiting version's values.
+          start={open ?? active}
           replacing={open?.version ?? null}
           onClose={() => setEditing(false)}
           onSubmit={(input) => run(() => createCommissionVersionAction(projectId, input, newKey()))}
         />
       )}
     </Card>
+    </ModalError.Provider>
   );
 }
 

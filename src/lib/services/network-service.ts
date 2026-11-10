@@ -17,6 +17,71 @@ import {
 } from "./royalty-service";
 import { refreshTripOfMember, refuseInviteLoop } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
+import { linkOrCreatePerson } from "./enquiry-service";
+import { recordAadhaar, recordPan } from "./completion-service";
+import { blindIndex, normaliseAadhaar, normalisePan } from "@/lib/security/identity";
+
+/** Add Member's Person, made inside the activation so a refused activation leaves nothing behind. */
+export type NewMemberPerson = {
+  fullName: string;
+  mobile: string;
+  city: string;
+  email: string | null;
+  firmName: string | null;
+  dealsIn: string[];
+  businessExperience: string | null;
+  aadhaar: string | null;
+  pan: string | null;
+};
+
+/**
+ * The same Person typed again is matched on name and mobile; only blanks are
+ * filled, nothing is overwritten. A typed value that differs from what is on
+ * file is refused by name — it used to be dropped while Add Member said it worked.
+ */
+async function addMemberPerson(tx: Tx, input: NewMemberPerson) {
+  const found = await linkOrCreatePerson(tx, { fullName: input.fullName, mobile: input.mobile, city: input.city });
+  const differs = (onFile: string | null, typed: string | null) =>
+    !!onFile?.trim() && !!typed?.trim() && onFile.trim().toLowerCase() !== typed.trim().toLowerCase();
+  const typedAadhaar = input.aadhaar?.trim();
+  const typedPan = input.pan?.trim();
+  const clashes = [
+    differs(found.email, input.email) && "Email",
+    typedAadhaar &&
+      found.aadhaarStatus !== "PENDING" &&
+      found.aadhaarBlindIndex !== blindIndex(normaliseAadhaar(typedAadhaar)) &&
+      "Aadhaar Number",
+    typedPan &&
+      found.panStatus !== "NOT_AVAILABLE" &&
+      found.panBlindIndex !== blindIndex(normalisePan(typedPan)) &&
+      "PAN Number",
+    differs(found.firmName, input.firmName) && "Firm Name",
+    found.dealsIn.length > 0 &&
+      input.dealsIn.length > 0 &&
+      [...found.dealsIn].sort().join() !== [...input.dealsIn].sort().join() &&
+      "Deals In",
+    differs(found.businessExperience, input.businessExperience) && "Experience",
+  ].filter(Boolean);
+  if (clashes.length > 0) {
+    blocked(
+      `${found.fullName} (${found.primaryMobile}) is already on file with a different ${clashes.join(", ")}. ` +
+        `Leave ${clashes.length > 1 ? "those fields" : "it"} blank to keep what is on file, or change it first with Edit details on their profile.`
+    );
+  }
+  await tx.person.update({
+    where: { id: found.id },
+    data: {
+      city: found.city ?? input.city,
+      email: found.email ?? input.email,
+      firmName: found.firmName ?? input.firmName,
+      dealsIn: found.dealsIn.length ? found.dealsIn : input.dealsIn,
+      businessExperience: found.businessExperience ?? input.businessExperience,
+    },
+  });
+  await recordAadhaar(tx, found.id, input.aadhaar);
+  await recordPan(tx, found.id, input.pan);
+  return found.id;
+}
 
 /**
  * The Royalty relationship — SSOT §67–§71; CP §40–§42 — recomputed from the
@@ -213,7 +278,9 @@ export async function activateMember(args: {
   idempotencyKey: string;
   actorRef: string;
   actorRole: string;
-  personId: string;
+  /** An existing Person — or `newPerson` for Add Member, never both. */
+  personId?: string;
+  newPerson?: NewMemberPerson;
   invitedByMemberId?: string | null;
   reraStatus?: "REGISTERED" | "PENDING" | "EXPIRED" | "NOT_APPLICABLE";
   reraNumber?: string | null;
@@ -223,6 +290,7 @@ export async function activateMember(args: {
   if (args.actorRole !== "MD") {
     blocked("Only MD may activate a Member.");
   }
+  if (!args.personId === !args.newPerson) blocked("Choose the Person to activate.");
 
   return runCommand(
     {
@@ -230,11 +298,18 @@ export async function activateMember(args: {
       operation: "MEMBER_ACTIVATE",
       actorRef: args.actorRef,
       actorRole: args.actorRole,
-      payload: { personId: args.personId, invitedByMemberId: args.invitedByMemberId ?? null },
+      payload: {
+        personId: args.personId ?? null,
+        newPerson: args.newPerson ?? null,
+        invitedByMemberId: args.invitedByMemberId ?? null,
+      },
     },
     async (tx) => {
+      // Inside the command: any refusal below rolls the new Person and its
+      // write-once Aadhaar back with it.
+      const personId = args.newPerson ? await addMemberPerson(tx, args.newPerson) : args.personId!;
       const person = await tx.person.findUniqueOrThrow({
-        where: { id: args.personId },
+        where: { id: personId },
         include: { memberProfile: true, customerProfile: { select: { id: true } } },
       });
       if (person.memberProfile?.activationDate) {

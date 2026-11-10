@@ -30,7 +30,10 @@ export async function GET() {
     await db.$queryRaw`SELECT 1`;
     database = "up";
   } catch (error) {
-    databaseError = error instanceof Error ? error.message : "unreachable";
+    // The raw message names the database host and port, and this route needs
+    // no sign-in. The detail goes to the server log instead.
+    console.error("health: database unreachable", error);
+    databaseError = "unreachable";
   }
 
   // The last successful run of each job, so a stalled scheduler is visible

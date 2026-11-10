@@ -35,7 +35,7 @@ export function canApproveAcquisition(paymentGivenPercent: Numeric): Check {
   if (given.lt(MIN_PAYMENT_GIVEN_FOR_APPROVAL)) {
     return fail(
       `Accounts may approve a Buyback or Purchase for Resale only after at least 20% Payment Given ` +
-        `is confirmed. Currently ${given.toFixed(2)}%.`
+        `is confirmed. Currently ${given.toString()}%.`
     );
   }
   return OK;
@@ -212,7 +212,7 @@ export function resolvePaymentGivenCorrection(args: {
       buyingCommissionMilestoneLost: fellBelowFull,
       newSaleCommissionOnHold: true,
       note:
-        `Payment Given fell to ${next.toFixed(2)}%, below the 20% approval threshold, while a buyer ` +
+        `Payment Given fell to ${next.toString()}%, below the 20% approval threshold, while a buyer ` +
         `process is active. Nothing is cancelled or released automatically: complete the acquisition ` +
         `or unwind the buyer process through the approved workflow.`,
     };
@@ -226,7 +226,7 @@ export function resolvePaymentGivenCorrection(args: {
       buyingCommissionMilestoneLost: fellBelowFull,
       newSaleCommissionOnHold: true,
       note:
-        `Payment Given fell to ${next.toFixed(2)}%. The Plot stays Not Available until Payment Given ` +
+        `Payment Given fell to ${next.toString()}%. The Plot stays Not Available until Payment Given ` +
         `returns to 20% or the deal is cancelled.`,
     };
   }
@@ -239,7 +239,7 @@ export function resolvePaymentGivenCorrection(args: {
       buyingCommissionMilestoneLost: true,
       newSaleCommissionOnHold: true,
       note:
-        `Payment Given fell from 100% to ${next.toFixed(2)}%. Payment Pending is shown again and the ` +
+        `Payment Given fell from 100% to ${next.toString()}%. Payment Pending is shown again and the ` +
         `Buying Commission returns to Payment Pending.`,
     };
   }
@@ -251,7 +251,7 @@ export function resolvePaymentGivenCorrection(args: {
     managementActionRequired: false,
     buyingCommissionMilestoneLost: false,
     newSaleCommissionOnHold: stillPending,
-    note: `Payment Given is now ${next.toFixed(2)}%.`,
+    note: `Payment Given is now ${next.toString()}%.`,
   };
 }
 
@@ -278,7 +278,7 @@ export function validateBuyingCommission(args: {
   if (percent.gt(BUYING_CAP_PERCENT)) {
     return fail(
       `Buying Commission is capped at ${BUYING_CAP_PERCENT.toFixed(0)}%. ` +
-        `${percent.toFixed(2)}% exceeds the cap — correct the percentage before approval.`
+        `${percent.toString()}% exceeds the cap — correct the percentage before approval.`
     );
   }
 

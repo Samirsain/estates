@@ -6,8 +6,10 @@ import { Prisma } from "@prisma/client";
 import { retryTransient } from "@/lib/db-retry";
 import { db } from "@/lib/db";
 import { recordAudit } from "@/lib/security/audit";
+import { redactForAudit } from "@/lib/security/identity";
 import {
   expiryFrom,
+  legacyRequestHash,
   requestHash,
   resolveIdempotency,
 } from "@/lib/security/idempotency";
@@ -69,56 +71,55 @@ export type CommandContext = {
  */
 export function runCommand<T>(
   ctx: CommandContext,
-  work: (
-    tx: Tx,
-  ) => Promise<{
-    result: T;
-    audit: Omit<Parameters<typeof recordAudit>[0], "actorRef" | "actorRole">;
-  }>,
+  work: Work<T>,
 ): Promise<T> {
-  return retryTransient(() => runCommandOnce(ctx, work));
+  return retryTransient(() =>
+    runCommandOnce(ctx, work).catch((error) => {
+      // A concurrent writer took the same max+1 reference or created the same
+      // find-then-create row first. This run rolled back whole, so one fresh
+      // try sees the winner's row: it reuses it, or refuses in words.
+      if (!isUniqueConflict(error)) throw error;
+      return runCommandOnce(ctx, work).catch((again) => {
+        if (!isUniqueConflict(again)) throw again;
+        throw new CommandError(
+          "CONFLICT",
+          "This could not be saved because the same record was just saved by someone else. Refresh, check it, and try again.",
+        );
+      });
+    }),
+  );
 }
 
-async function runCommandOnce<T>(
-  ctx: CommandContext,
-  work: (
-    tx: Tx,
-  ) => Promise<{
-    result: T;
-    audit: Omit<Parameters<typeof recordAudit>[0], "actorRef" | "actorRole">;
-  }>,
-): Promise<T> {
+type Work<T> = (tx: Tx) => Promise<{
+  result: T;
+  audit: Omit<Parameters<typeof recordAudit>[0], "actorRef" | "actorRole">;
+}>;
+
+const isUniqueConflict = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+
+async function runCommandOnce<T>(ctx: CommandContext, work: Work<T>): Promise<T> {
   const hash = requestHash(ctx.operation, ctx.payload);
+  const legacyHash = legacyRequestHash(ctx.operation, ctx.payload);
   const now = new Date();
-
-  const existing = await db.idempotencyRecord.findUnique({
-    where: { key: ctx.idempotencyKey },
-  });
-  const resolution = resolveIdempotency(
-    existing
-      ? {
-          key: existing.key,
-          operation: existing.operation,
-          requestHash: existing.requestHash,
-          resultJson: existing.resultJson,
-          expiresAt: existing.expiresAt,
-        }
-      : null,
-    ctx.operation,
-    hash,
-    now,
-  );
-
-  if (resolution.status === "REPLAY") return resolution.result as T;
-  if (resolution.status === "CONFLICT") {
-    throw new CommandError(
-      "CONFLICT",
-      "This request key was already used for different details. Start the action again.",
-    );
-  }
 
   return db.$transaction(
     async (tx) => {
+      // Checked under a lock on the key, inside the transaction: checked before
+      // it, a double-click's two requests both found no record and both ran.
+      await lockKey(tx, `idempotency:${ctx.idempotencyKey}`);
+      const existing = await tx.idempotencyRecord.findUnique({
+        where: { key: ctx.idempotencyKey },
+      });
+      const resolution = resolveIdempotency(existing, ctx.operation, hash, now, legacyHash);
+      if (resolution.status === "REPLAY") return resolution.result as T;
+      if (resolution.status === "CONFLICT") {
+        throw new CommandError(
+          "CONFLICT",
+          "This request key was already used for different details. Start the action again.",
+        );
+      }
+
       const { result, audit } = await work(tx);
 
       await tx.auditEvent.create({
@@ -128,26 +129,30 @@ async function runCommandOnce<T>(
           entity: audit.entity,
           entityId: audit.entityId,
           action: audit.action,
+          // Redacted here once, as recordAudit does: masking used to depend on
+          // every caller remembering, and full mobiles reached these columns.
           beforeMasked:
-            audit.before === undefined ? undefined : (audit.before as never),
+            audit.before === undefined ? undefined : (redactForAudit(audit.before) as never),
           afterMasked:
-            audit.after === undefined ? undefined : (audit.after as never),
+            audit.after === undefined ? undefined : (redactForAudit(audit.after) as never),
           reason: audit.reason,
           correlationId: ctx.idempotencyKey,
         },
       });
 
+      // An expired record is replaced: left as it was, every later retry of
+      // its key ran the command again instead of replaying.
+      const record = {
+        actorRef: ctx.actorRef,
+        operation: ctx.operation,
+        requestHash: hash,
+        resultJson: result as never,
+        expiresAt: expiryFrom(now),
+      };
       await tx.idempotencyRecord.upsert({
         where: { key: ctx.idempotencyKey },
-        create: {
-          key: ctx.idempotencyKey,
-          actorRef: ctx.actorRef,
-          operation: ctx.operation,
-          requestHash: hash,
-          resultJson: result as never,
-          expiresAt: expiryFrom(now),
-        },
-        update: {},
+        create: { key: ctx.idempotencyKey, ...record },
+        update: record,
       });
 
       await settleConstraints(tx);

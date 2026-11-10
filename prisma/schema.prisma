@@ -79,6 +79,12 @@ model Person {
   city          String?
   addressLine   String?
 
+  /// A Member's own business — Add Member and Edit details, all optional.
+  /// Values and labels in src/lib/domain/member-business.ts.
+  firmName           String?
+  dealsIn            String[] @default([])
+  businessExperience String?
+
   // Aadhaar — protected field, never an uploaded document (PRD RD-05).
   aadhaarCipher     String? // AES-256-GCM payload
   aadhaarLastFour   String?
@@ -271,6 +277,8 @@ model MemberProfile {
   tripRewards            TripReward[]
   sourcedEnquiries       Enquiry[]          @relation("MemberSourcedEnquiries")
   holdRequests           HoldRequest[]
+
+  @@index([invitedByMemberId])
 }
 
 /// Someone who may invest later — a name, a mobile and a city, nothing more.
@@ -880,7 +888,8 @@ model Hold {
 
   /// Milliseconds left when the Hold was frozen for a Booking Request. Restored
   /// exactly on Accounts rejection (PRD §10.5).
-  frozenRemainingMs Int?
+  /// Float, not Int: INT4 stops at ~24.8 days and extensions are unlimited (audit DB08).
+  frozenRemainingMs Float?
   frozenAt          DateTime?
 
   createdAt DateTime @default(now())
@@ -1186,6 +1195,7 @@ model Booking {
   @@index([status])
   @@index([primaryPersonId, status])
   @@index([plotId, status])
+  @@index([soldByPersonId])
 }
 
 /// PRD §9.1 — the immutable submission snapshot. While Waiting for Booking
@@ -1236,6 +1246,7 @@ model BookingParty {
   actorRef      String
 
   @@index([bookingId, kind, effectiveTo])
+  @@index([personId])
 }
 
 /// PRD §10.2 — received portions stay locked; only the unpaid remainder may be
@@ -2254,6 +2265,7 @@ model Acquisition {
 
   @@index([status])
   @@index([duplicateKey])
+  @@index([sourceBookingId])
 }
 
 /// PRD §1.2 — Payment Given is its own dataset, never merged with Payment

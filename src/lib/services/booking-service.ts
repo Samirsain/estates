@@ -70,6 +70,11 @@ async function resolveParties(
       p.personId || (await linkOrCreatePerson(tx, { fullName: p.fullName ?? "", mobile: p.mobile ?? "", city: p.city })).id;
     out.push({ personId, role: p.role, sharePercent: p.sharePercent });
   }
+  // A first-time buyer typed twice, or typed as someone already picked,
+  // resolves to the same Person — one buyer, two share rows.
+  if (new Set(out.map((p) => p.personId)).size !== out.length) {
+    blocked("The same Customer is listed twice. Each buyer appears once.");
+  }
   return out;
 }
 
@@ -341,7 +346,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
             projectId: plot.projectId,
             plotId: input.plotId,
             parties,
-            plc: { totalPercent: snapshot.totalPercent.toFixed(3), components: snapshot.components },
+            plc: { totalPercent: snapshot.totalPercent.toFixed(4), components: snapshot.components },
             soldByType: input.soldByType,
             soldByPersonId: input.soldByPersonId ?? null,
             bookingDate: input.bookingDate,
@@ -454,6 +459,21 @@ export async function reviseBookingRequest(args: {
       const parties = await resolveParties(tx, args.parties);
       const primary = parties.find((p) => p.role === "PRIMARY")!;
 
+      // A corrected request that names another Primary is checked as a new
+      // submission would be: the Hold it converts must be that buyer's, and
+      // the buyer's three-position limit applies (PRD §8.2).
+      if (primary.personId !== booking.primaryPersonId) {
+        if (booking.holdId) {
+          const hold = await tx.hold.findUniqueOrThrow({ where: { id: booking.holdId } });
+          if (hold.personId !== primary.personId) {
+            blocked("The Hold is held for a different Customer. Cancel it or book for the Customer on the Hold.");
+          }
+        } else {
+          const room = checkOpenPositions(await countOpenPositions(tx, primary.personId));
+          if (!room.ok) blocked(room.reason);
+        }
+      }
+
       const pending = await tx.bookingReviewVersion.findFirst({
         where: { bookingId: args.bookingId, status: "PENDING" },
       });
@@ -538,7 +558,7 @@ export async function reviseBookingRequest(args: {
             parties,
             // The Plot is unchanged, so the frozen PLC carries into the new version.
             plc: {
-              totalPercent: booking.plcSnapshot?.totalPercent.toFixed(3) ?? null,
+              totalPercent: booking.plcSnapshot?.totalPercent.toFixed(4) ?? null,
               components: booking.plcSnapshot?.components ?? null,
             },
             soldByType: args.soldByType,
@@ -647,14 +667,15 @@ function decideInTransaction(args: Parameters<typeof decideBookingRequest>[0]) {
       if (booking.status !== "REQUEST_PENDING") {
         blocked(`This request is already ${booking.status.replaceAll("_", " ").toLowerCase()}.`);
       }
-      // PRD §3.3 — the account that submitted may not be the account that decides.
-      if (booking.submittedByRef === args.actorRef) {
-        blocked("A Booking Request must be decided by a different staff account.");
-      }
-
       const review = await tx.bookingReviewVersion.findFirstOrThrow({
         where: { bookingId: args.bookingId, status: "PENDING" },
       });
+      // PRD §3.3 — the account that submitted may not be the account that
+      // decides. Whoever sent the corrected version submitted it too: checked
+      // against the first submitter only, the reviser approved their own work.
+      if (booking.submittedByRef === args.actorRef || review.submittedByRef === args.actorRef) {
+        blocked("A Booking Request must be decided by a different staff account.");
+      }
       const decision = { decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: args.note };
 
       if (!args.approve) {
@@ -1156,6 +1177,17 @@ export async function requestPrimaryCustomerChange(args: {
       if (!free.ok) blocked(free.reason);
       if (args.toPersonId === booking.primaryPersonId) {
         blocked("The proposed Customer is already the Primary Customer.");
+      }
+      // Approval opens a new COMMERCIAL row for them, which would sit beside
+      // the Additional row they already hold.
+      const alreadyBuyer = await tx.bookingParty.findFirst({
+        where: { bookingId: args.bookingId, personId: args.toPersonId, kind: "COMMERCIAL", effectiveTo: null },
+        select: { id: true },
+      });
+      if (alreadyBuyer) {
+        blocked(
+          "The proposed Customer is already an Additional Customer on this Booking. Use Change ownership shares instead."
+        );
       }
       await ensureCustomerProfile(tx, args.toPersonId);
 

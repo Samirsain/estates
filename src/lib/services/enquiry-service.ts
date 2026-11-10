@@ -2,13 +2,18 @@
 
 import type { EnquirySource, FollowUpOutcome } from "@prisma/client";
 import { db } from "@/lib/db";
-import { formatIst } from "@/lib/tasks";
+import { formatIst, istDay } from "@/lib/tasks";
 import { FOLLOW_UP_OUTCOME_LABEL, validateSource } from "@/lib/domain/enquiry";
 import { isValidMobile, normaliseMobile } from "@/lib/domain/land-inquiry";
 import { blocked, nextReference, runCommand, type Tx } from "./command";
 import { completeTask, ensureTask, reviseTask } from "./task-service";
 
 export const ENQUIRY_FOLLOW_UP_PURPOSE = "ENQUIRY_FOLLOW_UP";
+
+/** A next follow-up picked in the past made a task overdue the moment it existed. */
+function refusePastFollowUp(at: Date) {
+  if (istDay(at) < istDay(new Date())) blocked("The next follow-up date cannot be in the past.");
+}
 
 /**
  * PRD §23.2 — the Person duplicate check runs, but an existing Person's
@@ -21,8 +26,12 @@ export async function linkOrCreatePerson(
   input: { fullName: string; mobile: string; altMobile?: string; city?: string }
 ) {
   const fullName = input.fullName.trim();
-  const primaryMobile = input.mobile.replace(/\s/g, "");
-  if (!fullName || !primaryMobile) blocked("Enter the buyer's name and mobile number.");
+  const typedMobile = input.mobile.replace(/\s/g, "");
+  if (!fullName || !typedMobile) blocked("Enter the buyer's name and mobile number.");
+  // Normalised like the alternate one: "+91 98765 43210" and "9876543210"
+  // made two Persons for one buyer, and "12345" was stored as a mobile.
+  const primaryMobile = normaliseMobile(typedMobile);
+  if (!isValidMobile(primaryMobile)) blocked("Enter a 10-digit mobile number.");
   const altMobile = input.altMobile?.trim() ? normaliseMobile(input.altMobile) : null;
   if (altMobile && !isValidMobile(altMobile)) {
     blocked("Enter a 10-digit alternate mobile number, or leave it blank.");
@@ -30,7 +39,8 @@ export async function linkOrCreatePerson(
 
   const existing = await tx.person.findFirst({
     where: {
-      primaryMobile,
+      // Older records may hold the number as it was typed.
+      primaryMobile: { in: [...new Set([primaryMobile, typedMobile])] },
       fullName: { equals: fullName, mode: "insensitive" },
       mergeStatus: { not: "MERGED_AWAY" },
     },
@@ -114,6 +124,7 @@ export async function createEnquiry(input: CreateEnquiryInput) {
     input.sourceCustomerId ?? null
   );
   if (sourceError) blocked(sourceError);
+  refusePastFollowUp(input.nextFollowUpAt);
 
   return runCommand(
     {
@@ -210,6 +221,7 @@ export async function recordFollowUp(args: {
   remark?: string;
   nextAt: Date;
 }) {
+  refusePastFollowUp(args.nextAt);
   return runCommand(
     {
       idempotencyKey: args.idempotencyKey,
@@ -277,12 +289,19 @@ export async function closeEnquiry(args: {
       payload: { enquiryId: args.enquiryId },
     },
     async (tx) => {
+      // Only an Active Enquiry closes. Closing a Booked one overwrote BOOKED,
+      // so a later cancellation could no longer reopen it; a missing id was a
+      // raw "Record to update not found".
+      const enquiry = await tx.enquiry.findUnique({ where: { id: args.enquiryId }, select: { status: true } });
+      if (!enquiry) blocked("This Enquiry no longer exists.");
+      if (enquiry.status !== "ACTIVE") blocked(`This Enquiry is already ${enquiry.status.toLowerCase()}.`);
       await tx.enquiry.update({
         where: { id: args.enquiryId },
         data: { status: "CLOSED", closeReason: args.closeReason },
       });
+      // Its follow-up, not whatever task happens to be first.
       const task = await tx.task.findFirst({
-        where: { recordKind: "Enquiry", recordId: args.enquiryId, status: "PENDING" },
+        where: { recordKind: "Enquiry", recordId: args.enquiryId, purpose: ENQUIRY_FOLLOW_UP_PURPOSE, status: "PENDING" },
       });
       if (task) await completeTask(tx, task.id, args.actorRef, `Enquiry closed — ${args.closeReason}`);
 

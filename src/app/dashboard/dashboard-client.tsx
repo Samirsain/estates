@@ -4,6 +4,7 @@
 // §4.1 (overdue red / urgent yellow, red wins), §19 (empty, loading, blocked).
 
 import React from "react";
+import { safely } from "@/lib/safely";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PersonLink } from "@/components/person-link";
@@ -109,7 +110,9 @@ export default function DashboardClient({
   staffAccountId,
   initialTasks,
   seesAllWork,
+  canAddTask,
 }: {
+  canAddTask: boolean;
   role: StaffRole;
   actorName: string;
   staffAccountId: string;
@@ -149,10 +152,11 @@ export default function DashboardClient({
   const visible = React.useMemo(() => {
     if (!now) return [];
     const scoped = tasks.filter(
-      (t) => (showAllAssignees || t.assigneeRole === role) && (!taskType || taskFilter(t) === taskType)
+      // Non-MD rows are already scoped by the server, named tasks under an old role included.
+      (t) => (showAllAssignees || !seesAllWork || t.assigneeRole === role) && (!taskType || taskFilter(t) === taskType)
     );
     return sortTasks(filterTasks(scoped, view, now, range), now);
-  }, [tasks, view, now, range, role, showAllAssignees, taskType]);
+  }, [tasks, view, now, range, role, showAllAssignees, seesAllWork, taskType]);
 
 
   /** Every write carries a fresh idempotency key, so a double click writes once. */
@@ -160,7 +164,7 @@ export default function DashboardClient({
     if (busy) return false;
     setBusy(true);
     setBlocked(null);
-    const outcome = await action();
+    const outcome = await safely(action);
     setBusy(false);
     if (!outcome.ok) {
       setBlocked(outcome.error);
@@ -190,9 +194,11 @@ export default function DashboardClient({
                 Show all assignees
               </label>
             )}
-            <Button size="sm" variant="gradient" onClick={() => setAdding(true)}>
-              <Plus className="mr-1 h-4 w-4" /> Add Task
-            </Button>
+            {canAddTask && (
+              <Button size="sm" variant="gradient" onClick={() => setAdding(true)}>
+                <Plus className="mr-1 h-4 w-4" /> Add Task
+              </Button>
+            )}
           </div>
         </header>
 

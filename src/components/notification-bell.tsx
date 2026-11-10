@@ -21,11 +21,18 @@ const label = (action: string) => action.charAt(0) + action.slice(1).toLowerCase
 
 export function NotificationBell() {
   const [items, setItems] = React.useState<Notification[] | null>([]);
+  const [canOpenAdministration, setCanOpenAdministration] = React.useState(false);
   const [seen, setSeen] = React.useState("");
 
   React.useEffect(() => {
     setSeen(readSeen());
-    recentNotifications().then(setItems, () => setItems([]));
+    recentNotifications().then(
+      (feed) => {
+        setItems(feed?.items ?? null);
+        setCanOpenAdministration(feed?.canOpenAdministration ?? false);
+      },
+      () => setItems([])
+    );
   }, []);
 
   if (items === null) return null;
@@ -75,9 +82,11 @@ export function NotificationBell() {
           ))}
           {items.length === 0 && <li className="px-3 py-4 text-xs text-muted-foreground">Nothing new.</li>}
         </ul>
-        <a href="/administration" className="block px-3 py-2 text-center text-xs text-primary hover:underline">
-          Activity History
-        </a>
+        {canOpenAdministration && (
+          <a href="/administration" className="block px-3 py-2 text-center text-xs text-primary hover:underline">
+            Activity History
+          </a>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

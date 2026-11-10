@@ -6,6 +6,7 @@ import { matchPeople, personLabel } from "./person-search.ts";
 import { projectSlug, publicPlotStatus } from "./public-portal.ts";
 import { capPercent, capShare, percentRoom, percentSum, shareRoom, shareSum } from "./shares.ts";
 import {
+  addDays,
   fillForward,
   removeRow,
   scheduleTotal as typedTotal,
@@ -60,10 +61,20 @@ import {
   openPositionCount,
 } from "./holds.ts";
 import { parseTerms } from "../terms.ts";
+import { isValidAadhaarFormat, isValidPanFormat } from "../security/identity.ts";
+import {
+  AADHAAR_INPUT,
+  ACCOUNT_NUMBER_INPUT,
+  IFSC_INPUT,
+  MOBILE_INPUT,
+  PAN_INPUT,
+} from "../../components/ui/field-formats.ts";
 import {
   SQ_FT_PER_SQ_M,
   SQ_M_PER_HECTARE,
   SQ_M_PER_SQ_FT,
+  isValidEmail,
+  isValidMobile,
   isValidStatusStage,
   mapPinError,
   metricViews,
@@ -106,6 +117,10 @@ import {
   validateShares,
   type Check,
 } from "./booking.ts";
+import { percentInputError } from "./booking.ts";
+assert.equal(percentInputError("33.3333"), null);
+assert.equal(percentInputError(" 25 "), null);
+for (const bad of ["abc", "1e2", "33.33335", "-5", ""]) assert.ok(percentInputError(bad), bad);
 import {
   payoutStep,
   recoveryStep,
@@ -154,6 +169,7 @@ import { istDay, formatIst, formatIstDateTime } from "../tasks.ts";
 import { allocate, CREDIT_REASON, creditStatus, validateTripSettings, type AllocatableCredit } from "./trip.ts";
 import { MAX_TOKENS, allocate as allocateTokens, tokenFigures, validateBusinessDay, validateTokenQuantity } from "./tokens.ts";
 import { createsInviteCycle } from "./network.ts";
+import { cleanDealsIn, cleanExperience, dealsInLabel, experienceLabel } from "./member-business.ts";
 
 /** Reads the reason off a failed Check so the assertions stay one-liners. */
 const asReason = (check: Check) => (check.ok ? "" : check.reason);
@@ -410,6 +426,11 @@ assert.throws(
   () => validatePlcComponents([{ category: "PARK_FACING", threshold: "2", percent: "3" }]),
   /does not take a band/
 );
+// DB12 — 30.125 and 30.13 would both store as 30.13; 1000% overflows Decimal(7,4).
+assert.throws(() => validatePlcComponents([{ category: "ROAD_WIDTH", threshold: "30.125", percent: "3" }]), /at most 2 decimal/);
+assert.throws(() => validatePlcComponents([{ category: "PARK_FACING", percent: "1000" }]), /more than 100%/);
+assert.throws(() => validatePlcComponents([{ category: "PARK_FACING", percent: "1.23456" }]), /at most 4 decimal/);
+validatePlcComponents([{ category: "ROAD_WIDTH", threshold: "30.13", percent: "2.5" }]);
 assert.throws(
   () => validatePlcComponents([{ category: "OPEN_SIDES", threshold: "5", percent: "3" }]),
   /Open sides must be 2 \(Two Side Open\), 2.5 \(Corner Plot\), 3 \(Three Side Open\), or 4 \(Four Side Open\)/,
@@ -695,6 +716,10 @@ assert.match(
 );
 // A due date on the Booking Date itself is allowed.
 assert.deepEqual(validateSchedule([line(1, "100", "2026-08-19")], bookingDate), { ok: true });
+assert.match(
+  asReason(validateSchedule([line(1, "50.00005", "2026-08-19"), line(2, "49.99995", "2026-09-19")], bookingDate)),
+  /at most 4 decimal places/
+);
 
 /* ------------------------------------------------------- schedule revision */
 
@@ -810,6 +835,7 @@ assert.deepEqual(allocatePayment(schedule, "10").allocations, [{ seq: 1, percent
 // A fully received instalment is skipped.
 assert.deepEqual(allocatePayment(partlyPaid, "10").allocations, [{ seq: 2, percent: "10.0000" }]);
 assert.throws(() => allocatePayment(schedule, "0"), /greater than 0%/);
+assert.throws(() => allocatePayment(schedule, "0.00004"), /at most 4 decimal places/, "stored as 0.0000 otherwise");
 // PRD §10.4 — no Excess Receipt entry is ever created above 100%.
 assert.throws(() => allocatePayment(schedule, "101"), /cannot go above 100%/);
 assert.throws(() => allocatePayment(partlyPaid, "71"), /exceeds the outstanding schedule by 1.0000%/);
@@ -817,16 +843,16 @@ assert.throws(() => allocatePayment(partlyPaid, "71"), /exceeds the outstanding 
 assert.equal(progressAfter("25", "75").toFixed(4), "100.0000");
 // The refusal names what was allowed, not only what was exceeded — a fully
 // paid Booking has nothing left, and says so.
-assert.throws(() => progressAfter("100", "0.0001"), /cannot exceed the remaining 0\.00%/);
+assert.throws(() => progressAfter("100", "0.0001"), /cannot exceed the remaining 0%/);
 // Payment Received This Time is one payment against what is left, not a fresh
 // 100 each time: 30% then 80% is 110% and must be refused, however many
 // payments a Booking takes to get there.
 assert.equal(progressAfter("30", "70").toFixed(4), "100.0000");
-assert.throws(() => progressAfter("30", "80"), /cannot exceed the remaining 70\.00%/);
+assert.throws(() => progressAfter("30", "80"), /cannot exceed the remaining 70%/);
 assert.throws(() => progressAfter("30", "80"), /would take Payment Received to 110\.0000%/);
 // Four payments of 40 + 30 + 20 leave 10, and the fourth is measured against
 // that — not against a fresh 100.
-assert.throws(() => progressAfter("90", "11"), /cannot exceed the remaining 10\.00%/);
+assert.throws(() => progressAfter("90", "11"), /cannot exceed the remaining 10%/);
 assert.equal(progressAfter("90", "10").toFixed(4), "100.0000");
 assert.equal(
   ["30", "20", "25", "25"].reduce((t, p) => progressAfter(t, p).toString(), "0"),
@@ -841,6 +867,44 @@ assert.deepEqual(validateShares([{ personId: "P1" }]), { ok: true });
 assert.deepEqual(validateShares([{ personId: "P1", sharePercent: "100" }]), { ok: true });
 assert.equal(validateShares([{ personId: "P1", sharePercent: "60" }]).ok, false);
 assert.equal(validateShares([]).ok, false);
+
+// What the database refuses is refused here first, in words: a 0% share
+// (share_percent_bounds), a fifth decimal (Decimal(7,4) rounds it, and the 100%
+// trigger then fails at commit), and one Person listed twice.
+assert.match(
+  asReason(validateShares([{ personId: "P1", sharePercent: "100" }, { personId: "P2", sharePercent: "0" }])),
+  /more than 0%/
+);
+assert.match(
+  asReason(validateShares([{ personId: "P1", sharePercent: "60.00005" }, { personId: "P2", sharePercent: "39.99995" }])),
+  /at most 4 decimal places/
+);
+assert.match(
+  asReason(validateShares([{ personId: "P1", sharePercent: "50" }, { personId: "P1", sharePercent: "50" }])),
+  /listed twice/
+);
+// Not a number: a refusal in words, not a DecimalError thrown at the user.
+for (const typed of ["abc", "1e", "NaN"]) {
+  assert.match(
+    asReason(validateShares([{ personId: "P1", sharePercent: typed }, { personId: "P2", sharePercent: "50" }])),
+    /as a number/,
+    typed
+  );
+}
+// A first-time buyer has no personId yet, so two blanks are not a duplicate.
+assert.deepEqual(
+  validateShares([{ personId: "", sharePercent: "50" }, { personId: "", sharePercent: "50" }]),
+  { ok: true }
+);
+assert.deepEqual(
+  validateShares([
+    { personId: "P1", sharePercent: "33.3333" },
+    { personId: "P2", sharePercent: "33.3333" },
+    { personId: "P3", sharePercent: "33.3334" },
+  ]),
+  { ok: true },
+  "four places is what the column holds"
+);
 
 // Two or more buyers: every share compulsory, total exactly 100%.
 assert.deepEqual(
@@ -1480,6 +1544,11 @@ assert.match(
 );
 assert.equal(canMarkPaid("CANCELLED", "READY", true, true).ok, false);
 assert.equal(canMarkPaid("ACCOUNTS_ADJUSTMENT_REQUIRED", "READY", true, true).ok, false);
+// Paid Early skips the milestone and a Recovery Review only: an approval never
+// pays a deactivated Member or an unverified bank account.
+assert.equal(canMarkPaid("NOT_PAID", "ON_HOLD", true, true, "MEMBER_DEACTIVATED").ok, false);
+assert.equal(canMarkPaid("NOT_PAID", "ON_HOLD", true, true, "BANK_VERIFICATION_PENDING").ok, false);
+assert.equal(canMarkPaid("NOT_PAID", "ON_HOLD", true, true, "RECOVERY_CIRCUMVENTION_REVIEW").ok, true);
 
 // No second payment task once it is externally processed, and Paid Early is
 // excluded from Not Paid totals.
@@ -2277,6 +2346,14 @@ assert.equal(shareSum([...five.slice(0, 4), { sharePercent: "20" }]), 100);
 // A sixth buyer added onto a full 100% can only take nothing until room is made.
 assert.equal(shareRoom([...five.slice(0, 4), { sharePercent: "20" }, { sharePercent: "" }], 5), 0);
 
+// Shares are typed and stored to four places, so the total and the room are
+// read to four: 33.333 × 3 is not 100, and a 33.334 is not capped to 33.33.
+const thirds = [{ sharePercent: "33.333" }, { sharePercent: "33.333" }, { sharePercent: "" }];
+assert.equal(shareSum([...thirds.slice(0, 2), { sharePercent: "33.333" }]), 99.999);
+assert.equal(shareRoom(thirds, 2), 33.334);
+assert.equal(capShare(thirds, 2, "33.334"), "33.334");
+assert.equal(shareSum([...thirds.slice(0, 2), { sharePercent: "33.334" }]), 100);
+
 
 /* ------------------------------------- Plot Rate & Area Calculator */
 
@@ -2505,6 +2582,7 @@ assert.equal(
   "a 3% Club inquiry is the company's own and names nobody"
 );
 assert.equal(normaliseMobile("+91 98765 43210"), "9876543210");
+assert.equal(normaliseMobile("09876543210"), "9876543210", "a trunk 0 is dropped");
 
 // Spec §22 — Working with a Rejected / Closed stage is the one invalid pair.
 assert.equal(isValidStatusStage("WORKING", "NEGOTIATION"), true);
@@ -2582,6 +2660,13 @@ assert.match(
   /positive amount/
 );
 assert.equal(rateError([{ value: null, basis: null, label: "DLC Rate" }]), null);
+// A rate is stored to two places: 0.001 would be stored as 0.00 and refused by
+// land_inquiry_positive_numbers.
+assert.match(
+  rateError([{ value: "0.001", basis: "TOTAL", label: "DLC Rate" }]) ?? "",
+  /at least 0\.01/
+);
+assert.equal(rateError([{ value: "0.01", basis: "TOTAL", label: "DLC Rate" }]), null);
 assert.equal(parseAmount("1,25,00,000"), "12500000", "Indian grouping in, plain decimal out");
 
 // Spec §8 — the first owner is Primary, exactly one is, and a removed Primary
@@ -2664,6 +2749,11 @@ assert.deepEqual(
   removeRow(sched("30", "20", "50"), 1).map((r) => r.seq),
   [1, 2]
 );
+// Revise: a fully received row (here the first) cannot take a removed share;
+// it goes to the nearest row that can.
+assert.deepEqual(percents(removeRow(sched("30", "30", "40"), 1, (r) => r.seq !== 1)), ["30", "70"]);
+// Four places, as stored: 33.3333 twice leaves 33.3334, not 33.33.
+assert.deepEqual(percents(fillForward(sched("33.3333", "33.3333", ""), 1)), ["33.3333", "33.3333", "33.3334"]);
 
 /* ------------------------------------ CR-017 — Commissionable Sale Value */
 // approved-changes-pack §18: (Base + Applicable PLC) − Authorised Discount,
@@ -2883,6 +2973,9 @@ assert.equal(shown("REVERSED", null, "Approved after the programme cut-off (SSOT
 // The link: lower case, one hyphen between words, none at either end.
 assert.equal(projectSlug("Govind Vatika"), "govind-vatika");
 assert.equal(projectSlug("  Test Nagar (All Cases) "), "test-nagar-all-cases");
+// A name with no Latin letters made an empty link; the Project Code stands in.
+assert.equal(projectSlug("गोविंद वाटिका", "GV01"), "gv01");
+assert.equal(projectSlug("Govind Vatika", "GV01"), "govind-vatika", "a Latin name keeps its link");
 
 // Eight Plot statuses become three; a Plot not on sale is left out, not coloured.
 assert.equal(publicPlotStatus("AVAILABLE", "NONE"), "AVAILABLE");
@@ -2903,6 +2996,97 @@ for (const sold of ["BOOKED", "PAYMENT_COMPLETED", "DELIVERED", "REFUND_PENDING"
   assert.equal(recoveryStep(owed([rec("OUTSTANDING")]), false)?.kind, "PENDING");
   assert.equal(recoveryStep(owed([rec("CLEARED")]), false)?.kind, "RECOVERED", "cleared reads Recovered, not Recovery Pending");
   assert.equal(recoveryStep(owed([]), false)?.kind, "NONE", "closed without a Recovery");
+}
+
+/* ---------------------------- Member business (Add Member / Edit details) */
+assert.deepEqual(cleanDealsIn(["RENTAL", "X", "RESIDENTIAL", "RENTAL"]), ["RESIDENTIAL", "RENTAL"]);
+assert.equal(dealsInLabel(["RENTAL", "COMMERCIAL"]), "Commercial, Rental");
+assert.equal(cleanExperience("", "12"), null, "blank band = not recorded");
+assert.equal(cleanExperience("5-10", ""), "5-10");
+assert.equal(cleanExperience("OTHER", " 07 "), "7");
+assert.throws(() => cleanExperience("OTHER", "100"), "three digits refused");
+assert.throws(() => cleanExperience("OTHER", ""), "Other needs the years");
+assert.throws(() => cleanExperience("20+", ""), "unknown band refused");
+assert.equal(experienceLabel("10+"), "Above 10 years");
+assert.equal(experienceLabel("1"), "1 year");
+assert.equal(experienceLabel("12"), "12 years");
+assert.equal(experienceLabel(null), "");
+
+/* ---------------------------------------------- full audit, 7 Nov 2026 */
+
+// D07 — two roads on opposite sides are not a corner.
+assert.doesNotMatch(
+  derivedFacing([{ side: "NORTH", kind: "ROAD", roadWidthFt: "30" }, { side: "SOUTH", kind: "ROAD", roadWidthFt: "30" }]),
+  /Corner/
+);
+assert.match(
+  derivedFacing([{ side: "NORTH", kind: "ROAD", roadWidthFt: "30" }, { side: "EAST", kind: "ROAD", roadWidthFt: "30" }]),
+  /Corner/
+);
+// D04 — a dimension that is not a number is refused in words.
+for (const bad of ["abc", "NaN", "Infinity"]) {
+  assert.throws(() => calculateAreas({ kind: "REGULAR", widthFt: bad, lengthFt: "40" }), /numbers greater than zero/, bad);
+}
+// D08 — a hundred crore and above.
+assert.equal(rupeesInWords("1500000000"), "One Hundred Fifty Crore Rupees Only");
+// D09 — activated on the 31st, the end of a short month is a whole month.
+assert.match(experienceSince(new Date("2026-01-31T06:00:00Z"), new Date("2026-02-28T06:00:00Z"))!.label, /1 month/);
+// D12 — each final share is bounded, and a near miss is named exactly.
+assert.equal(
+  validateFinalBuyers([
+    { personId: "A", sharePercent: "150", aadhaarRecorded: true, dateOfBirth: new Date("1990-01-01"), address: "x" },
+    { personId: "B", sharePercent: "-50", aadhaarRecorded: true, dateOfBirth: new Date("1990-01-01"), address: "x" },
+  ]).ok,
+  false
+);
+// D16 — masked by whole words of the column name.
+assert.deepEqual(maskExportRow({ companyName: "Acme", panchayat: "Bassi", accountsApprovedBy: "STF-1", panNumber: "ABCDE1234F" }), {
+  companyName: "Acme",
+  panchayat: "Bassi",
+  accountsApprovedBy: "STF-1",
+  panNumber: "••••",
+});
+// D14 — Disabled carries no wind-down or version either.
+assert.equal(
+  validateTripSettings({
+    tripEnabled: false,
+    tripTotalTarget: null,
+    tripMinOwnCredits: null,
+    tripMaxReferenceCredits: null,
+    tripProgrammeCode: null,
+    tripProgrammeVersionRef: "P1",
+    tripTermsVersionRef: null,
+    tripCutOffAt: null,
+    tripWindDownAt: null,
+  }).ok,
+  false
+);
+// D01 — a cleared date adds up to nothing, rather than throwing.
+assert.equal(addDays("", 1), "");
+
+// Field formats: each input's pattern accepts exactly what its server rule
+// accepts, so a value the field lets through is never refused after Save,
+// and one the server refuses is flagged at the field. Browsers compile a
+// pattern as ^(?:…)$ with the v flag and silently drop one that fails to
+// compile, so the check compiles it exactly that way.
+{
+  const fits = (pattern: string, value: string) => new RegExp(`^(?:${pattern})$`, "v").test(value);
+  for (const v of ["9876543210", "6000000000", "5876543210", "987654321", "98765432101", "98765abcde"]) {
+    assert.equal(fits(MOBILE_INPUT.pattern, v), isValidMobile(v), `mobile ${v}`);
+  }
+  for (const v of ["234567890123", "2345 6789 0123", "123456789012", "23456789012", "2345678901234", "2345-6789-0123"]) {
+    assert.equal(fits(AADHAAR_INPUT.pattern, v), isValidAadhaarFormat(v), `aadhaar ${v}`);
+  }
+  for (const v of ["ABCDE1234F", "abcde1234f", "ABCD1234F", "ABCDE12345", "ABCDE1234"]) {
+    assert.equal(fits(PAN_INPUT.pattern, v), isValidPanFormat(v), `pan ${v}`);
+  }
+  assert.ok(fits(IFSC_INPUT.pattern, "HDFC0001234") && !fits(IFSC_INPUT.pattern, "HDFC1001234"));
+  assert.ok(fits(ACCOUNT_NUMBER_INPUT.pattern, "1234 5678 90") && !fits(ACCOUNT_NUMBER_INPUT.pattern, "12345"));
+
+  assert.ok(isValidEmail("name@example.com") && isValidEmail(" a.b@x.co.in "));
+  for (const v of ["name", "name@", "@x.com", "name@x", "na me@x.com", "a@b@c.com"]) {
+    assert.equal(isValidEmail(v), false, `email ${v}`);
+  }
 }
 
 console.log("domain.check.ts OK");

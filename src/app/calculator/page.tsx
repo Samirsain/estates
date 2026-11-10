@@ -47,6 +47,15 @@ const LIVE_BOOKING: Prisma.EnumBookingStatusFilter = {
   notIn: ["REQUEST_REJECTED", "REQUEST_CANCELLED", "CANCELLED"],
 };
 
+/**
+ * The deal on a Plot now. A bought-back sale was a purchase (it still counts
+ * above), but it is not the Plot's deal: the Plot showed as sold with the old
+ * buyer's commission, and once re-booked the two Bookings' records mixed.
+ */
+const DEAL_ON_PLOT: Prisma.EnumBookingStatusFilter = {
+  notIn: ["REQUEST_REJECTED", "REQUEST_CANCELLED", "CANCELLED", "BUYBACK_COMPLETED"],
+};
+
 export default async function CalculatorPage({
   searchParams,
 }: {
@@ -77,7 +86,9 @@ export default async function CalculatorPage({
       db.plot.findMany({
         include: { boundaries: true },
         orderBy: [{ plotType: "asc" }, { plotNumber: "asc" }],
-        take: 1000,
+        // No silent cap: a Project past the first 1000 Plots lost Plots, and a
+        // ?plot= link past it opened nothing.
+        // ponytail: whole inventory in one read; page by Project if it grows past a few thousand.
       }),
       // The same list every other picker screen ships, plus the facts that decide
       // a commission. Nobody is invented here: a beneficiary is a Person on file.
@@ -99,7 +110,7 @@ export default async function CalculatorPage({
           },
         },
         orderBy: { fullName: "asc" },
-        take: 300,
+        // No silent cap of 300: a sold Plot whose buyer sorted past it showed no buyer.
       }),
       /*
        * The commission a sold Plot already carries.
@@ -112,7 +123,7 @@ export default async function CalculatorPage({
        * never written back.
        */
       db.commissionRecord.findMany({
-        where: { isCurrent: true, booking: { status: LIVE_BOOKING } },
+        where: { isCurrent: true, booking: { status: DEAL_ON_PLOT } },
         include: {
           beneficiaryPerson: {
             select: {
@@ -132,6 +143,7 @@ export default async function CalculatorPage({
               primaryPersonId: true,
               paymentReceivedPercent: true,
               soldByPerson: { select: { fullName: true } },
+              plcSnapshot: { select: { totalPercent: true } },
             },
           },
         },
@@ -192,9 +204,12 @@ export default async function CalculatorPage({
   });
 
   const dealByPlot = new Map<string, CalcDealRecordView[]>();
+  // A sold Plot is priced on the PLC its Booking froze, not today's rules.
+  const frozenPlc = new Map<string, string>();
   for (const record of records) {
     const booking = record.booking;
     if (!booking) continue; // Buying Commission hangs off an Acquisition.
+    if (booking.plcSnapshot) frozenPlc.set(booking.plotId, booking.plcSnapshot.totalPercent.toFixed(4));
     const person = record.beneficiaryPerson;
     const list = dealByPlot.get(booking.plotId) ?? [];
     list.push({
@@ -214,7 +229,7 @@ export default async function CalculatorPage({
       soldByType: booking.soldByType,
       soldByPersonId: booking.soldByPersonId,
       buyerPersonId: booking.primaryPersonId,
-      paymentReceivedPercent: booking.paymentReceivedPercent.toFixed(2),
+      paymentReceivedPercent: booking.paymentReceivedPercent.toString(),
     });
     dealByPlot.set(booking.plotId, list);
   }
@@ -226,10 +241,10 @@ export default async function CalculatorPage({
 
   const plotRows: CalcPlotView[] = plots.map((plot) => {
     const version = published.get(plot.projectId) ?? null;
-    let plcPercent: string | null = null;
-    let plcIssue: string | null = version ? null : "No published PLC version for this Project";
+    let plcPercent: string | null = frozenPlc.get(plot.id) ?? null;
+    let plcIssue: string | null = plcPercent || version ? null : "No published PLC version for this Project";
 
-    if (version) {
+    if (version && plcPercent === null) {
       try {
         const effective = buildPlcSnapshot(
           plot.boundaries.map((b) => ({

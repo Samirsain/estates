@@ -4,6 +4,7 @@
 // Every action re-checks permission on the server; the hidden button is never
 // the control (DESIGN §1).
 
+import { actionErrorText } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -17,16 +18,17 @@ import {
 } from "@/lib/security/permissions";
 import { hashPassword, oneTimePassword, validatePassword } from "@/lib/security/auth";
 import { decryptSensitive, maskAadhaar, maskMobile } from "@/lib/security/identity";
+import { isValidEmail, isValidMobile, normaliseMobile } from "@/lib/domain/land-inquiry";
 import { recordAudit } from "@/lib/security/audit";
 import { CommandError, blocked, runCommand } from "@/lib/services/command";
-import { disableStaffAccount, reassignWork } from "@/lib/services/admin-service";
+import { disableStaffAccount, reassignWork, refuseMdTarget } from "@/lib/services/admin-service";
 import { decidePersonMerge, requestPersonMerge } from "@/lib/services/merge-service";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
 function toResult(error: unknown): ActionResult {
   if (error instanceof CommandError) return { ok: false, error: error.message };
-  return { ok: false, error: error instanceof Error ? error.message : "Action failed." };
+  return { ok: false, error: actionErrorText(error, "Action failed.") };
 }
 
 function refresh() {
@@ -311,8 +313,9 @@ export async function createStaffAccountAction(
         if (!id) blocked("A Staff Account ID is required.");
 
         const fullName = input.fullName.trim();
-        const primaryMobile = input.mobile.replace(/\s/g, "");
+        const primaryMobile = normaliseMobile(input.mobile);
         if (!fullName || !primaryMobile) blocked("Enter the employee's full name and mobile number.");
+        if (!isValidMobile(primaryMobile)) blocked("Enter a 10-digit mobile number.");
 
         const clash = await tx.staffAccount.findUnique({ where: { staffAccountId: id } });
         if (clash) blocked(`Staff Account ID ${id} already exists.`);
@@ -343,6 +346,7 @@ export async function createStaffAccountAction(
 
         // PRD §3.1 — exactly one active MD in normal operation. The database
         // enforces it too; this is the readable refusal.
+        refuseMdTarget(actor.role, input.role);
         if (input.role === "MD") {
           const activeMd = await tx.staffAccount.findFirst({
             where: { role: "MD", status: "ACTIVE" },
@@ -423,6 +427,9 @@ export async function changeStaffRoleAction(
         if (account.status !== "ACTIVE") {
           blocked("This account is disabled. Re-enable it before changing the role.");
         }
+        // Neither from MD nor to MD unless the actor is MD.
+        refuseMdTarget(actor.role, account.role);
+        refuseMdTarget(actor.role, role);
         if (account.role === role) blocked(`${account.staffAccountId} is already ${role}.`);
 
         // PRD §3.1 — exactly one active MD, the same rule account creation applies.
@@ -508,6 +515,7 @@ export async function setStaffPermissionsAction(
         if (account.status !== "ACTIVE") {
           blocked("This account is disabled. Re-enable it before changing permissions.");
         }
+        refuseMdTarget(actor.role, account.role);
 
         // Anything the role already grants is noise in this column: it would
         // survive a later role change as a grant nobody chose to give.
@@ -589,6 +597,7 @@ export async function resetStaffPasswordAction(
         if (account.status !== "ACTIVE") {
           blocked("This account is disabled. Re-enable it before resetting the password.");
         }
+        refuseMdTarget(actor.role, account.role);
 
         await tx.staffAccount.update({
           where: { id: account.id },
@@ -671,7 +680,7 @@ export async function staffDetailAction(
     where: { id: staffAccountId },
     include: {
       person: true,
-      _count: { select: { assignedTasks: true, assignedEnquiries: true } },
+      _count: { select: { assignedTasks: { where: { status: "PENDING" } }, assignedEnquiries: { where: { status: "ACTIVE" } } } },
     },
   });
   if (!account) return { ok: false, error: "That staff account no longer exists." };
@@ -724,8 +733,17 @@ export async function updateStaffDetailsAction(
   if (!reason.trim()) return { ok: false, error: "A compulsory reason is required to change details." };
 
   const fullName = input.fullName.trim();
-  const primaryMobile = input.mobile.replace(/\s/g, "");
+  const primaryMobile = normaliseMobile(input.mobile);
+  const altMobile = input.altMobile.trim() ? normaliseMobile(input.altMobile) : "";
+  const email = input.email.trim();
   if (!fullName || !primaryMobile) return { ok: false, error: "Full name and mobile are both required." };
+  if (!isValidMobile(primaryMobile)) return { ok: false, error: "Enter a 10-digit mobile number." };
+  if (altMobile && !isValidMobile(altMobile)) {
+    return { ok: false, error: "Enter a 10-digit alternate mobile number, or leave it blank." };
+  }
+  if (email && !isValidEmail(email)) {
+    return { ok: false, error: "Enter a valid email address, e.g. name@example.com." };
+  }
 
   try {
     const result = await runCommand<{ staffAccountId: string }>(
@@ -741,6 +759,7 @@ export async function updateStaffDetailsAction(
           where: { id: staffAccountId },
           include: { person: true },
         });
+        refuseMdTarget(actor.role, account.role);
 
         // D-06 again, from the other side: editing a staff member onto a
         // Member's or Customer's identity would smuggle in what creation
@@ -763,8 +782,8 @@ export async function updateStaffDetailsAction(
           data: {
             fullName,
             primaryMobile,
-            altMobile: input.altMobile.replace(/\s/g, "") || null,
-            email: input.email.trim() || null,
+            altMobile: altMobile || null,
+            email: email || null,
             city: input.city.trim() || null,
           },
         });
@@ -822,11 +841,23 @@ export type IdentityReveal = {
  * was read for. Nothing here is cached: each look-up is its own logged event.
  */
 export async function revealIdentityAction(
-  personId: string
+  personId: string,
+  /** One field, under its own permission: PAN_FULL is MD and Accounts, Aadhaar MD only. */
+  field?: "aadhaar" | "pan"
 ): Promise<{ ok: true; reveal: IdentityReveal } | { ok: false; error: string }> {
   const actor = await requireStaff();
 
-  if (!canViewField(actor.role, "AADHAAR_FULL")) {
+  if (field === "pan" && !canViewField(actor.role, "PAN_FULL")) {
+    await recordAudit({
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      entity: "Person",
+      entityId: personId,
+      action: "IDENTITY_REVEAL_DENIED",
+    });
+    return { ok: false, error: `${actor.role} is not permitted to view a full PAN.` };
+  }
+  if (field !== "pan" && !canViewField(actor.role, "AADHAAR_FULL")) {
     await recordAudit({
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
@@ -859,6 +890,7 @@ export async function revealIdentityAction(
     entity: "Person",
     entityId: person.id,
     action: "IDENTITY_REVEALED",
+    reason: field ? `${field} only` : undefined,
   });
 
   return {
@@ -866,9 +898,10 @@ export async function revealIdentityAction(
     reveal: {
       personId: person.id,
       fullName: person.fullName,
-      aadhaar: person.aadhaarCipher ? decryptSensitive(person.aadhaarCipher) : null,
+      // A PAN-only reveal never decrypts the Aadhaar beside it.
+      aadhaar: field !== "pan" && person.aadhaarCipher ? decryptSensitive(person.aadhaarCipher) : null,
       aadhaarStatus: person.aadhaarStatus,
-      pan: person.panCipher ? decryptSensitive(person.panCipher) : null,
+      pan: field !== "aadhaar" && person.panCipher ? decryptSensitive(person.panCipher) : null,
       panStatus: person.panStatus,
     },
   };

@@ -90,9 +90,16 @@ export function validateFinalBuyers(buyers: readonly FinalBuyer[]): Check {
   // A single final buyer may omit the share and is treated as 100% (PRD §12.1).
   if (buyers.length === 1 && buyers[0].sharePercent == null) return OK;
 
+  // Each share bounded as validateShares bounds it: [150, -50] totalled 100
+  // and passed, and readyForCompletion relies on this check alone.
+  for (const b of buyers) {
+    if (b.sharePercent == null) continue;
+    const share = new D(b.sharePercent);
+    if (share.lte(0) || share.gt(100)) return fail("Every ownership share must be more than 0% and at most 100%.");
+  }
   const total = buyers.reduce((sum, b) => sum.add(new D(b.sharePercent ?? 0)), new D(0));
   if (!total.equals(100)) {
-    return fail(`Ownership shares total ${total.toFixed(2)}%, not 100%.`);
+    return fail(`Ownership shares total ${total.toString()}%, not 100%.`);
   }
   return OK;
 }
@@ -140,7 +147,15 @@ export function canReopenDelivered(role: string, reason: string): Check {
  * sensitive-looking column is masked rather than passed through, and only the
  * already-masked forms (last four, masked, status) survive.
  */
-const SENSITIVE = /aadhaar|pan|account|ifsc|password|secret|cipher|mobile|blindindex/i;
+// Matched on whole words of the column name: as a bare substring, "pan" masked
+// companyName and panchayat, and "account" masked accountsApprovedBy.
+const SENSITIVE_WORDS = new Set(["aadhaar", "pan", "account", "ifsc", "password", "secret", "cipher", "mobile", "blind"]);
+const SENSITIVE = {
+  test: (key: string) =>
+    key
+      .split(/(?=[A-Z])|[_\s]+/)
+      .some((word) => SENSITIVE_WORDS.has(word.toLowerCase())),
+};
 const ALREADY_MASKED = /lastfour|masked|status/i;
 
 export function maskExportRow(row: Record<string, unknown>): Record<string, unknown> {

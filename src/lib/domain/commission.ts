@@ -152,7 +152,10 @@ export function experienceSince(
   const [nowYear, nowMonth, nowDayOfMonth] = today.split("-").map(Number);
 
   let months = (nowYear - annYear) * 12 + (nowMonth - annMonth);
-  if (nowDayOfMonth < annDayOfMonth) months--;
+  // Against this month's mark, clamped like the mark below: activated on the
+  // 31st, 28 February is a whole month, not "28 days".
+  const markThisMonth = Math.min(annDayOfMonth, new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate());
+  if (nowDayOfMonth < markThisMonth) months--;
 
   // Whole days since the month mark just passed; a 31st falls back to the
   // month's last day, the way a 29 February anniversary does.
@@ -642,7 +645,8 @@ export function canMarkPaid(
   current: PaymentState,
   eligibility: EligibilityState,
   early: boolean,
-  mdApproved = false
+  mdApproved = false,
+  holdReason: string | null = null
 ): Check {
   if (current === "PAID") return fail("This commission is already Paid.");
   if (current === "PAID_EARLY") {
@@ -651,6 +655,12 @@ export function canMarkPaid(
   if (current === "CANCELLED") return fail("A cancelled commission cannot be paid.");
   if (current === "ACCOUNTS_ADJUSTMENT_REQUIRED") {
     return fail("This record needs an Accounts adjustment before any further payment action.");
+  }
+  // Paid Early skips the payment milestone (and a Recovery Review), nothing
+  // else: a stored approval used to pay a deactivated Member or an unverified
+  // bank account too, holds that came before or after the approval alike.
+  if (early && eligibility !== "READY" && !earlyPayable({ eligibility, holdReason })) {
+    return fail(EARLY_BLOCKED_BY_HOLD);
   }
   if (early && !mdApproved) {
     return fail(
@@ -672,6 +682,9 @@ export type PayoutStep = "PAY" | "REQUEST" | "PAY_EARLY";
 
 /** Not Ready, but may be paid early: Payment Pending, or held for a Recovery
  *  Review (owner, 27 Oct 2026). Other holds must clear first. */
+export const EARLY_BLOCKED_BY_HOLD =
+  "Paid Early skips only the payment milestone. This commission is on hold for another reason; clear that hold first.";
+
 export function earlyPayable(c: { eligibility: string; holdReason: string | null }): boolean {
   return c.eligibility === "MILESTONE_PENDING" || (c.eligibility === "ON_HOLD" && c.holdReason === "RECOVERY_CIRCUMVENTION_REVIEW");
 }
@@ -694,7 +707,7 @@ export function payoutStep(
 ): PayoutStep | null {
   if (!canProcess || c.payment !== "NOT_PAID") return null;
   if (c.eligibility === "READY") return "PAY";
-  if (c.earlyApprovedAt) return "PAY_EARLY";
+  if (c.earlyApprovedAt) return earlyPayable(c) ? "PAY_EARLY" : null;
   if (!earlyPayable(c)) return null;
   if (role === "MD") return "PAY_EARLY";
   return role === "ACCOUNTS" && !c.earlyRequestedAt ? "REQUEST" : null;

@@ -9,11 +9,12 @@ import type { BookingStatus, PlotStatus } from "@prisma/client";
 import { canTransition } from "@/lib/domain/booking";
 import { plotReturnState } from "@/lib/domain/inventory";
 import { enquiryStatusAfterBookingCancelled } from "@/lib/domain/enquiry";
-import { normaliseReference, notFutureDated } from "@/lib/domain/booking";
+import { notFutureDated } from "@/lib/domain/booking";
 import { blocked, lockBooking, runCommand } from "./command";
 import { cancelCommissionForBooking, reassessCommission } from "./commission-service";
 import { syncRoyaltyLink } from "./network-service";
-import { syncPaymentFollowUp } from "./payment-service";
+import { createReference, syncPaymentFollowUp } from "./payment-service";
+import { closeCompletionTasks } from "./completion-service";
 import { syncTripForBooking } from "./trip-service";
 import { closeTasksFor } from "./task-service";
 import { closeSellingTasksIfClear } from "./selling-task";
@@ -162,24 +163,13 @@ export async function decideCancellation(args: {
         const dated = notFutureDated("Refund action date", args.actionDate);
         if (!dated.ok) blocked(dated.reason);
 
-        const normalisedKey = normaliseReference(args.reference);
-        const clash = await tx.externalReference.findFirst({
-          where: { normalisedKey, status: "ACTIVE" },
-        });
-        if (clash) {
-          blocked(
-            `Payment Reference No. "${args.reference.trim()}" is already recorded against another ` +
-              `entry. References are unique across every approved external reference.`
-          );
-        }
-        const reference = await tx.externalReference.create({
-          data: {
-            rawValue: args.reference.trim(),
-            normalisedKey,
-            purpose: "REFUND",
-            actionDate: args.actionDate,
-            actorRef: args.actorRef,
-          },
+        // The one rule for references, with its lock: a copy of the check here
+        // let a refund and a payment store the same value at the same moment.
+        const reference = await createReference(tx, {
+          rawValue: args.reference,
+          purpose: "REFUND",
+          actionDate: args.actionDate,
+          actorRef: args.actorRef,
         });
         referenceId = reference.id;
       }
@@ -258,6 +248,15 @@ export async function decideCancellation(args: {
         "Booking cancelled.",
         "PAYMENT_FOLLOW_UP"
       );
+      // The rest of the Booking's open work ends with it: completion tasks
+      // stayed open, and a waiting schedule revision could still be approved
+      // and bring Payment Follow-Up back on a cancelled Booking.
+      await closeCompletionTasks(tx, args.bookingId, args.actorRef, "Booking cancelled.");
+      await tx.paymentScheduleVersion.updateMany({
+        where: { bookingId: args.bookingId, status: "PENDING" },
+        data: { status: "REJECTED", decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: "Booking cancelled." },
+      });
+      await closeTasksFor(tx, "Booking", args.bookingId, args.actorRef, "Booking cancelled.", "PAYMENT_SCHEDULE_REVIEW");
       await tx.bookingEvent.create({
         data: {
           bookingId: args.bookingId,

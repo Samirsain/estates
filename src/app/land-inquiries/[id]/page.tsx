@@ -87,8 +87,9 @@ export default async function LandInquiryDetailPage({
   const { id } = await params;
   const inquiry = await getLandInquiry(id);
   // Spec §26.4 — a record the caller may not see is simply not found. The
-  // response never says a hidden one exists.
-  if (!inquiry) notFound();
+  // response never says a hidden one exists. Archived is MD's to look past
+  // (spec §25), as the list already rules; an old link opened it for anyone.
+  if (!inquiry || (inquiry.archivedAt && actor.role !== "MD")) notFound();
 
 
   const metric = inquiry.areaSqM ? metricViews(Number(inquiry.areaSqM)) : null;

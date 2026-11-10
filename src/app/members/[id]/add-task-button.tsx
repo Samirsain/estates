@@ -4,6 +4,8 @@
 // the task linked to this Member so it opens from the task and shows in History.
 
 import React from "react";
+import { safely } from "@/lib/safely";
+import { ModalError } from "@/components/ui/modal";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,6 +26,8 @@ export function AddTaskButton({
   const [now] = React.useState(() => new Date());
 
   return (
+    // A refused task shows inside the open dialog, not on the page behind it.
+    <ModalError.Provider value={notice && !notice.ok ? notice.text : null}>
     <>
       <Button
         type="button"
@@ -48,13 +52,18 @@ export function AddTaskButton({
           record={record}
           onClose={() => setOpen(false)}
           onSubmit={async (input) => {
-            const result = await addTaskAction(input, globalThis.crypto.randomUUID());
-            setOpen(false);
+            const result = await safely(() => addTaskAction(input, globalThis.crypto.randomUUID()));
             setNotice(result.ok ? { ok: true, text: "Task added." } : { ok: false, text: result.error });
-            if (result.ok) router.refresh();
+            // Closed only on success: closed first, a refusal threw away what
+            // was typed and showed its reason on the page instead.
+            if (result.ok) {
+              setOpen(false);
+              router.refresh();
+            }
           }}
         />
       )}
     </>
+    </ModalError.Provider>
   );
 }
