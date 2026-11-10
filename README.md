@@ -53,7 +53,8 @@ The migration history cannot build a database from nothing (audit DB01/DB02,
 Nov 2026): the early migrations assume objects that `db push` created, and
 Land Inquiry has no creating migration. So a new database is built from the
 schema, then every migration is marked as already applied, and from then on
-`prisma migrate deploy` (the Render build) applies only new ones. Never point
+`prisma migrate deploy` (the Render build, followed by `prisma/constraints.sql`)
+applies only new ones. Never point
 these steps, or `prisma migrate dev`, at a database that holds data.
 
 Seeded accounts sign in with `STF-0001` … `STF-0008` and the password the seed

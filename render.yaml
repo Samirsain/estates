@@ -28,7 +28,14 @@ services:
     # The node -e prints only the host, never the password. It is here because a
     # stale DIRECT_URL is invisible otherwise: migrate deploy names the host it
     # failed on, but not which variable the value came from.
-    buildCommand: npm ci && node -e "console.log('DIRECT_URL host ->', new URL(process.env.DIRECT_URL).host)" && npx prisma migrate deploy && npm run build
+    #
+    # constraints.sql then re-applies the controls Prisma cannot express
+    # (partial unique indexes, CHECKs, triggers). Without it a deploy ships code
+    # that relies on a control the database never got (audit DB06). The file is
+    # safe to re-run. It goes through DIRECT_URL, as migrate deploy does, not the
+    # transaction pooler. A row that breaks a control fails the build, and the
+    # running version keeps serving.
+    buildCommand: npm ci && node -e "console.log('DIRECT_URL host ->', new URL(process.env.DIRECT_URL).host)" && npx prisma migrate deploy && npx prisma db execute --file prisma/constraints.sql --url "$DIRECT_URL" && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
