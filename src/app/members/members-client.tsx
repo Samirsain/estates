@@ -840,6 +840,9 @@ export function ReraFields({ row }: { row?: MemberRera }) {
   );
 }
 
+/** A form section's heading — the same small caps as Edit details' "Bank". */
+const FORM_SECTION = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
+
 function ActivateMemberDialogForm({
   rows,
   busy,
@@ -883,7 +886,11 @@ function ActivateMemberDialogForm({
           });
         }}
       >
-        <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+        {/* Four groups in the order the details usually arrive: who and how
+            to reach them, their papers, their business, then the Membership
+            itself. Headings as on Edit details' Bank section. */}
+        <section className="space-y-3">
+          <h3 className={FORM_SECTION}>Contact</h3>
           <Field label="Full Name">
             <Input name="fullName" required placeholder="e.g. Samir Sain" />
           </Field>
@@ -897,43 +904,51 @@ function ActivateMemberDialogForm({
             <Field label="City">
               <Input name="city" required placeholder="Jaipur" />
             </Field>
-            <Field label="Address (optional)">
-              <Input name="addressLine" placeholder="House, street, area" />
+            <Field label="Email (optional)">
+              <Input name="email" type="email" placeholder="name@example.com" />
             </Field>
           </div>
+          <Field label="Address (optional)">
+            <Input name="addressLine" placeholder="House, street, area" />
+          </Field>
+        </section>
+
+        <section className="space-y-3 border-t border-border/60 pt-4">
+          <h3 className={FORM_SECTION}>Identity</h3>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Email (optional)">
-              <Input name="email" type="email" />
-            </Field>
             <Field label="Aadhaar Number (optional)">
               <Input name="aadhaar" {...AADHAAR_INPUT} />
             </Field>
             <Field label="PAN Number (optional)">
-              <Input
-                name="pan"
-                {...PAN_INPUT}
-                className="uppercase"
-              />
+              <Input name="pan" {...PAN_INPUT} className="uppercase" />
             </Field>
           </div>
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex w-fit items-center gap-2 text-sm">
             <input type="checkbox" name="photoReceived" className="h-4 w-4 accent-primary" />
             Photo Received
           </label>
-          <MemberBusinessFields />
-        </div>
+        </section>
 
-        <Field label="Invited By — the Member who introduced them (optional)">
-          <PersonPicker
-            name="invitedByMemberId"
-            placeholder="Root Member — or search by name or Member ID"
-            options={rows
-              .filter((r) => r.status === "ACTIVE")
-              .map((r) => ({ id: r.id, label: `${r.memberId} · ${r.name}` }))}
-          />
-        </Field>
-        <ReraFields />
-        <div className="flex justify-end gap-2 pt-2">
+        <section className="space-y-3 border-t border-border/60 pt-4">
+          <h3 className={FORM_SECTION}>Business</h3>
+          <MemberBusinessFields />
+        </section>
+
+        <section className="space-y-3 border-t border-border/60 pt-4">
+          <h3 className={FORM_SECTION}>Membership</h3>
+          <Field label="Invited By — the Member who introduced them (optional)">
+            <PersonPicker
+              name="invitedByMemberId"
+              placeholder="Root Member — or search by name or Member ID"
+              options={rows
+                .filter((r) => r.status === "ACTIVE")
+                .map((r) => ({ id: r.id, label: `${r.memberId} · ${r.name}` }))}
+            />
+          </Field>
+          <ReraFields />
+        </section>
+
+        <div className="flex justify-end gap-2 border-t border-border/60 pt-4">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Back
           </Button>
