@@ -5,7 +5,7 @@
 import { actionErrorText } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
-import { CommandError, blocked, nextReference, runCommand } from "@/lib/services/command";
+import { CommandError, blocked, nextReference, runCommand, type Tx } from "@/lib/services/command";
 import { isValidMobile, normaliseMobile } from "@/lib/domain/land-inquiry";
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
@@ -32,6 +32,39 @@ function toResult(error: unknown): ActionResult {
   return { ok: false, error: actionErrorText(error, "Action failed.") };
 }
 
+/**
+ * Owner, 11 Nov 2026 — an Investor Lead is someone not yet on file. A mobile
+ * or alternate mobile already on any Customer's or Member's profile, as
+ * their mobile or their alternate, is refused and says who holds it. Older
+ * Persons may hold a number as it was typed, so the typed form is matched too.
+ */
+async function refuseNumberOnFile(tx: Tx, typed: string[]) {
+  const numbers = [
+    ...new Set(typed.flatMap((t) => (t.trim() ? [normaliseMobile(t), t.replace(/\s/g, "")] : []))),
+  ];
+  if (numbers.length === 0) return;
+  const holder = await tx.person.findFirst({
+    where: {
+      mergeStatus: { not: "MERGED_AWAY" },
+      OR: [{ primaryMobile: { in: numbers } }, { altMobile: { in: numbers } }],
+      AND: [{ OR: [{ customerProfile: { isNot: null } }, { memberProfile: { isNot: null } }] }],
+    },
+    select: {
+      fullName: true,
+      customerProfile: { select: { customerId: true } },
+      memberProfile: { select: { memberId: true } },
+    },
+  });
+  if (!holder) return;
+  const who = holder.memberProfile
+    ? `Member ${holder.memberProfile.memberId}`
+    : `Customer ${holder.customerProfile!.customerId}`;
+  blocked(
+    `Already in the system: this number is on ${who} · ${holder.fullName}. ` +
+      `An Investor Lead is only for someone who is not yet a Customer or Member.`
+  );
+}
+
 export async function addPotentialInvestorAction(input: InvestorInput, key: string): Promise<ActionResult> {
   // A sales lead list: read by every role, changed only by those who work leads.
   const actor = await requireStaff("ENQUIRY_MANAGE");
@@ -55,6 +88,7 @@ export async function addPotentialInvestorAction(input: InvestorInput, key: stri
         payload: input,
       },
       async (tx) => {
+        await refuseNumberOnFile(tx, [input.mobile, input.altMobile]);
         const row = await tx.potentialInvestor.create({
           data: {
             investorNo: await nextReference(tx, "PI", "PotentialInvestor"),
@@ -118,6 +152,8 @@ export async function updatePotentialInvestorAction(
       async (tx) => {
         const before = await tx.potentialInvestor.findUnique({ where: { id } });
         if (!before) blocked("This Investor Lead no longer exists.");
+        // Only a number being changed is checked: a blank field keeps the one on file.
+        await refuseNumberOnFile(tx, [input.mobile, input.altMobile]);
         const row = await tx.potentialInvestor.update({
           where: { id },
           data: {

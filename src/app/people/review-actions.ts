@@ -16,8 +16,11 @@ function toResult(error: unknown): ActionResult {
   return { ok: false, error: "Something went wrong. Nothing was saved." };
 }
 
+// Decided on the person's own Member or Customer page since the /rewards page
+// was removed (owner, 11 Nov 2026).
 function refresh() {
-  revalidatePath("/rewards");
+  revalidatePath("/members");
+  revalidatePath("/customers");
   revalidatePath("/dashboard");
   revalidatePath("/bookings");
 }

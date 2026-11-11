@@ -1388,7 +1388,7 @@ export default function BookingsClient({
           row={dialog.row}
           consequence={
             dialog.early
-              ? `${dialog.label}. Eligibility is not Ready, so this is Paid Early: MD has approved it, remarks are compulsory, eligibility keeps updating separately, and no second payment task is raised when the required payment is received. It can never be marked Paid again.`
+              ? `${dialog.label}. Eligibility is not Ready, so this is Paid Early.`
               : undefined
           }
           busy={busy}
@@ -1707,7 +1707,6 @@ export default function BookingsClient({
         <ActionDialog
           title="Reopen a Delivered Booking"
           row={dialog.row}
-          consequence="Exceptional MD correction. The Booking returns to Payment Completed, the completion record is kept as history, and the Allotment/Registry work is queued again."
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -1772,7 +1771,7 @@ function BookingDetailPanel({
   const waiting = (title: string, lines: React.ReactNode, canDecide: boolean, decide: (approve: boolean) => Dialog) => (
     <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
       <p className="font-semibold">{title}</p>
-      <div className="mt-1">{lines}</div>
+      {lines && <div className="mt-1">{lines}</div>}
       {canDecide && (
         <div className="mt-2 flex gap-2">
           <Button size="sm" onClick={() => onAction(decide(true))}>
@@ -1793,7 +1792,7 @@ function BookingDetailPanel({
       {row.status === "REFUND_PENDING" &&
         waiting(
           "Cancellation — Waiting for the Accounts decision",
-          "Approving refunds and closes the Booking; rejecting restores it as it was.",
+          null,
           permissions.decideCancellation,
           (approve) => ({ kind: "CANCEL_DECIDE", row, approve })
         )}
@@ -2165,7 +2164,7 @@ function BookingDetailPanel({
                         )}
                         {c.earlyRequestedAt && !c.earlyApprovedAt && (
                           <span className="block text-[11px] text-muted-foreground">
-                            Paid Early requested by {c.earlyRequestedByRef} — {c.earlyRequestReason}
+                            Paid Early by {c.earlyRequestedByRef} — {c.earlyRequestReason}
                           </span>
                         )}
                         {c.earlyApprovedAt && (
@@ -2492,93 +2491,113 @@ function SubmittedSnapshotView({
   const parties = snapshot.parties ?? [];
   const schedule = snapshot.schedule ?? [];
   const plc = snapshot.plcSnapshot;
+  const components = plc?.components ?? [];
+  const terms = snapshot.commissionTerms;
+  const rate = (r: string | null) => (r ? `${rateLabel(r)}%` : "Disabled");
 
+  // Every figure is the submitted snapshot's, not the live row's. Minimal on
+  // purpose (owner, 11 Nov 2026: portrait, minimalist): no cards or icons, a
+  // hairline between parts, each fact shown once.
   return (
-    <div className="space-y-4 rounded-xl border border-border/60 p-4 text-xs">
-      <section>
-        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Customers
-        </h4>
-        <ul className="mt-1 space-y-0.5">
-          {parties.map((p) => (
-            <li key={p.personId} className="flex justify-between gap-3">
-              <span>
-                {nameFor(p.personId)}
-                <span className="ml-2 text-[11px] text-muted-foreground">
+    <>
+      <Part title="Customers">
+        {parties.map((p) => (
+          <Line
+            key={p.personId}
+            label={
+              <>
+                {nameFor(p.personId)}{" "}
+                <span className="text-muted-foreground">
+                  ·{" "}
                   {parties.length === 1
                     ? "Customer"
                     : p.role === "PRIMARY"
                       ? "Primary Customer"
                       : "Additional Customer"}
                 </span>
-              </span>
-              <span className="tabular-nums">
-                {p.sharePercent ? `${p.sharePercent}%` : "100%"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
+              </>
+            }
+            value={p.sharePercent ? `${p.sharePercent}%` : "100%"}
+          />
+        ))}
+      </Part>
 
       {plc && (
-        <section>
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Plot Location Charge
-          </h4>
-          <p className="mt-1 text-sm font-semibold tabular-nums">
-            {Number(plc.totalPercent ?? 0).toFixed(2)}%
-          </p>
-          <ul className="mt-1 space-y-0.5">
-            {(plc.components ?? []).map((c) => (
-              <li key={c.category} className="flex justify-between gap-3">
-                <span>
-                  {c.label}
-                  <span className="ml-2 text-[11px] text-muted-foreground">{c.evidence}</span>
-                </span>
-                <span className="tabular-nums">{Number(c.percent).toFixed(2)}%</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <Part
+          title="PLC"
+          aside={<span className="font-semibold tabular-nums">{Number(plc.totalPercent ?? 0).toFixed(2)}%</span>}
+        >
+          {components.length === 0 ? (
+            <p className="text-muted-foreground">No location charge on this Plot.</p>
+          ) : (
+            components.map((c) => (
+              <Line
+                key={c.category}
+                label={
+                  <>
+                    {c.label} <span className="text-muted-foreground">· {c.evidence}</span>
+                  </>
+                }
+                value={`${Number(c.percent).toFixed(2)}%`}
+              />
+            ))
+          )}
+        </Part>
       )}
 
-      {snapshot.commissionTerms && (
-        <section>
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Commission terms
-          </h4>
-          <p className="mt-1">
-            {termsLine({
-              version: snapshot.commissionTerms.version,
-              direct: snapshot.commissionTerms.directPercent,
-              loyalty: snapshot.commissionTerms.loyaltyPercent,
-            })}
-          </p>
-        </section>
+      {terms && (
+        <Part
+          title="Commission and Rewards"
+          aside={<span className="text-[11px] text-muted-foreground">Settings v{terms.version}</span>}
+        >
+          <Line label="Commission" value={rate(terms.directPercent)} />
+          <Line label="Loyalty Points" value={rate(terms.loyaltyPercent)} />
+        </Part>
       )}
 
-      <section>
-        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Payment schedule
-        </h4>
-        <ul className="mt-1 space-y-0.5">
-          {schedule.map((i) => (
-            <li key={i.seq} className="flex justify-between gap-3 tabular-nums">
-              <span>
-                {i.seq}. due {formatIstDate(i.dueDate)}
-              </span>
-              <span>{Number(i.scheduledPercent).toFixed(2)}%</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <Part title="Payment Schedule">
+        {schedule.map((i) => (
+          <Line
+            key={i.seq}
+            label={
+              <>
+                <span className="text-muted-foreground">{i.seq}.</span> {formatIstDate(i.dueDate)}
+              </>
+            }
+            value={`${Number(i.scheduledPercent).toFixed(2)}%`}
+          />
+        ))}
+      </Part>
 
       {snapshot.remark && (
-        <section className="space-y-0.5 border-t border-border/50 pt-3 text-muted-foreground">
-          <p>Remark: {snapshot.remark}</p>
-        </section>
+        <Part title="Remark">
+          <p>{snapshot.remark}</p>
+        </Part>
       )}
-    </div>
+    </>
+  );
+}
+
+/** One part of the Verify dialog: its name, an optional figure at the right, its lines. */
+function Part({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="space-y-1.5">
+      <div className="flex items-baseline justify-between gap-3">
+        {/* Section's title style (record-section.tsx), without its card. */}
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Line({ label, value }: { label: React.ReactNode; value: React.ReactNode }) {
+  return (
+    <p className="flex justify-between gap-3">
+      <span className="min-w-0">{label}</span>
+      <span className="shrink-0 tabular-nums">{value}</span>
+    </p>
   );
 }
 
@@ -2612,22 +2631,8 @@ export function ReviewDialog({
     <Modal
       title={`Verify — Booking Payment · ${row.project} ${row.plotNumber}`}
       onClose={onClose}
-      wide
+      centerTitle
     >
-      <div className="rounded-xl border border-border/60 bg-secondary p-3 text-xs">
-        <p className="font-semibold text-foreground">
-          {row.project} · {row.plotNumber} · {row.primaryCustomer}
-        </p>
-        {/* Who, when, and who sold it. The Booking Date is usually the day it
-            was submitted, so it earns its place only when it is not. */}
-        <p className="mt-1 text-muted-foreground">
-          {row.submittedByRef} · {formatIstDate(row.submittedAt)}
-          {formatIstDate(row.bookingDate) !== formatIstDate(row.submittedAt) &&
-            ` · booked ${formatIstDate(row.bookingDate)}`}{" "}
-          · {SOLD_BY_LABEL[row.soldByType] ?? row.soldByType}
-        </p>
-      </div>
-
       {isMaker && (
         <p className="rounded-xl border border-red-500/40 bg-red-500/5 p-3 text-xs text-red-700">
           You submitted this request. A Booking Request must be decided by a different staff
@@ -2635,21 +2640,31 @@ export function ReviewDialog({
         </p>
       )}
 
-      {pending && ready ? (
-        <SubmittedSnapshotView
-          snapshot={pending.snapshot as SubmittedSnapshot}
-          detail={detail}
-        />
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          {ready
-            ? "This request has nothing waiting for a decision."
-            : "Loading the submitted snapshot…"}
-        </p>
-      )}
+      <div className="divide-y divide-border/60 text-xs [&>*:first-child]:pt-0 [&>*:last-child]:pb-0 [&>*]:py-3">
+        {/* Who, when, and who sold it. Project and Plot are in the title and
+            Customers names every buyer, so neither repeats here (owner,
+            11 Nov 2026: nothing shown twice). The Booking Date is usually the
+            day it was submitted, so it earns its place only when it is not. */}
+        <dl className="flex flex-wrap gap-x-10 gap-y-3">
+          <Stat label="Submitted by" value={row.submittedByRef} />
+          <Stat label="Submitted on" value={formatIstDate(row.submittedAt)} />
+          {formatIstDate(row.bookingDate) !== formatIstDate(row.submittedAt) && (
+            <Stat label="Booking Date" value={formatIstDate(row.bookingDate)} />
+          )}
+          <Stat label="Sold By" value={SOLD_BY_LABEL[row.soldByType] ?? row.soldByType} />
+        </dl>
+
+        {pending && ready ? (
+          <SubmittedSnapshotView snapshot={pending.snapshot as SubmittedSnapshot} detail={detail} />
+        ) : (
+          <p className="text-muted-foreground">
+            {ready ? "This request has nothing waiting for a decision." : "Loading the submitted snapshot…"}
+          </p>
+        )}
+      </div>
 
       <form
-        className="space-y-4"
+        className="space-y-4 border-t border-border/60 pt-4"
         onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);

@@ -179,14 +179,14 @@ export function PersonDetailsEditor({
                   />
                 </Field>
               )}
+              {/* Beside the PAN Number (owner, 11 Nov 2026), level with its box. */}
+              {photoReceived !== undefined && (
+                <label className="flex h-10 items-center gap-2 self-end text-sm">
+                  <input type="checkbox" name="photoReceived" defaultChecked={photoReceived} className="h-4 w-4 accent-primary" />
+                  Photo Received
+                </label>
+              )}
             </div>
-
-            {photoReceived !== undefined && (
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" name="photoReceived" defaultChecked={photoReceived} className="h-4 w-4 accent-primary" />
-                Photo Received
-              </label>
-            )}
 
             {business && <MemberBusinessFields {...business} />}
 

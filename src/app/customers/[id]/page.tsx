@@ -36,6 +36,8 @@ import { MergeButton } from "./merge-button";
 import { VerifyAadhaarButton } from "./closer-conditions";
 import HistoryButton from "@/app/members/[id]/history-button";
 import { BankAccounts } from "./bank-accounts";
+import { Reviews } from "@/app/people/recovery-reviews";
+import { reviewRows } from "@/lib/rewards-overview";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -130,6 +132,7 @@ export default async function CustomerDetailPage({
     merges,
     customerChanges,
     endedShares,
+    recoveryReviews,
   ] = await Promise.all([
     db.hold.findMany({
       where: { personId },
@@ -209,6 +212,7 @@ export default async function CustomerDetailPage({
       where: { personId, effectiveTo: { not: null } },
       include: { booking: { select: bookingRef } },
     }),
+    reviewRows(personId),
   ]);
 
   const now = Date.now();
@@ -813,6 +817,15 @@ export default async function CustomerDetailPage({
             )}
           </div>
         </Section>
+
+        {/* Decided here since the /rewards page was removed (11 Nov 2026). */}
+        {recoveryReviews.length > 0 && (
+          <div id="recovery-reviews" className="scroll-mt-24">
+            <Section title="Recovery Reviews" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
+              <Reviews rows={recoveryReviews} role={actor.role} />
+            </Section>
+          </div>
+        )}
       </div>
     </AppShell>
   );

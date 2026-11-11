@@ -83,18 +83,79 @@ export type Task = {
   revisions: number;
 };
 
-export type Recurrence = "NONE" | "DAILY" | "WEEKLY" | "MONTHLY";
+/**
+ * Owner, 11 Nov 2026 — Weekly is on a chosen day ("WEEKLY:1" = every Monday,
+ * 0 = Sunday) and Monthly on a chosen date ("MONTHLY:15"). The bare WEEKLY and
+ * MONTHLY of older tasks step from their own due date.
+ */
+export type Recurrence = "NONE" | "DAILY" | "WEEKLY" | "MONTHLY" | `WEEKLY:${number}` | `MONTHLY:${number}`;
+
+const RECURRENCE = /^(NONE|DAILY|WEEKLY(:[0-6])?|MONTHLY(:([1-9]|[12][0-9]|3[01]))?)$/;
+export const isRecurrence = (value: string): value is Recurrence => RECURRENCE.test(value);
+
+export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+
+/** "Every Monday", "Every month on the 15th" — what a person reads. */
+export function recurrenceLabel(recurrence: string | undefined): string {
+  const [rule, arg] = (recurrence ?? "NONE").split(":");
+  if (rule === "DAILY") return "Every day";
+  if (rule === "WEEKLY") return arg ? `Every ${WEEKDAYS[Number(arg)]}` : "Every week";
+  if (rule === "MONTHLY") return arg ? `Every month on the ${ordinal(Number(arg))}` : "Every month";
+  return "Does not repeat";
+}
+
+const ordinal = (n: number) =>
+  `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")}`;
+
+// Due times are Asia/Kolkata wall-clock times, and IST has no daylight
+// saving, so shifting by +5:30 and reading the UTC fields reads IST: a task at
+// 02:00 IST sits on the previous UTC day and would otherwise land a day early.
+const IST_MS = 330 * 60_000;
+const toWall = (d: Date) => new Date(d.getTime() + IST_MS);
+const fromWall = (d: Date) => new Date(d.getTime() - IST_MS);
+const daysIn = (year: number, month: number) => new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+
+/** Moves a wall-clock date to `date` of the following month, or that month's last day. */
+function nextMonthOn(wall: Date, date: number): Date {
+  const next = new Date(wall);
+  next.setUTCDate(1);
+  next.setUTCMonth(next.getUTCMonth() + 1);
+  next.setUTCDate(Math.min(date, daysIn(next.getUTCFullYear(), next.getUTCMonth())));
+  return next;
+}
 
 /** The next due time after `now`, stepping from the last due by the recurrence. */
 export function nextDue(from: Date, recurrence: string, now: Date): Date {
-  const next = new Date(from);
+  const [rule, arg] = recurrence.split(":");
+  const wallNow = toWall(now);
+  // A bare MONTHLY keeps the date it started on: stepping by setUTCMonth sent
+  // the 31st to the 3rd of the month after a short one, and it stayed there.
+  const date = arg ? Number(arg) : toWall(from).getUTCDate();
+  let next = toWall(from);
   do {
-    if (recurrence === "DAILY") next.setUTCDate(next.getUTCDate() + 1);
-    else if (recurrence === "WEEKLY") next.setUTCDate(next.getUTCDate() + 7);
-    else if (recurrence === "MONTHLY") next.setUTCMonth(next.getUTCMonth() + 1);
+    if (rule === "DAILY") next.setUTCDate(next.getUTCDate() + 1);
+    else if (rule === "WEEKLY") next.setUTCDate(next.getUTCDate() + 7);
+    else if (rule === "MONTHLY") next = nextMonthOn(next, date);
     else throw new Error(`Unknown recurrence ${recurrence}`);
-  } while (next <= now);
-  return next;
+  } while (next <= wallNow);
+  return fromWall(next);
+}
+
+/**
+ * The first due time of a new task — the chosen day or date at `time`
+ * ("HH:MM", IST), this week or month if still ahead, else the next one.
+ */
+export function firstDue(recurrence: string, time: string, now: Date): Date {
+  const [rule, arg] = recurrence.split(":");
+  const [hours, minutes] = time.split(":").map(Number);
+  const wallNow = toWall(now);
+  const at = new Date(
+    Date.UTC(wallNow.getUTCFullYear(), wallNow.getUTCMonth(), wallNow.getUTCDate(), hours, minutes)
+  );
+  if (rule === "WEEKLY") at.setUTCDate(at.getUTCDate() + ((Number(arg) - at.getUTCDay() + 7) % 7));
+  else if (rule === "MONTHLY") at.setUTCDate(Math.min(Number(arg), daysIn(at.getUTCFullYear(), at.getUTCMonth())));
+  else throw new Error(`firstDue takes a day or a date rule, not ${recurrence}`);
+  return at > wallNow ? fromWall(at) : nextDue(fromWall(at), recurrence, now);
 }
 
 /* ---------------------------------------------------------------- Asia/Kolkata */
@@ -496,7 +557,11 @@ export function recordHref(
     return subject?.partyPersonId ? `/people/${subject.partyPersonId}?as=member` : null;
   }
   // CP §65 NT08 — circumvention reviews are decided on the Rewards page.
-  if (record.kind === "Circumvention Review") return "/rewards?tab=reviews";
+  // Decided on the reviewed person's own page (the /rewards page was removed,
+  // 11 Nov 2026), which the Person resolver opens as Customer or Member.
+  if (record.kind === "Circumvention Review") {
+    return subject?.partyPersonId ? `/people/${subject.partyPersonId}#recovery-reviews` : null;
+  }
   if (!INTERNAL_ID.test(record.id)) return null;
   switch (record.kind) {
     case "Booking":

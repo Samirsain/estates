@@ -2,6 +2,9 @@
 import assert from "node:assert/strict";
 import {
   nextDue,
+  firstDue,
+  isRecurrence,
+  recurrenceLabel,
   addIstDays,
   emphasis,
   filterTasks,
@@ -241,8 +244,33 @@ assert.equal(formatDue(new Date("2026-08-31T18:29:00.000Z"), noon), "11:59 PM");
 const due = new Date("2026-08-31T05:30:00.000Z"); // 11:00 AM IST
 assert.equal(nextDue(due, "DAILY", noon).toISOString(), "2026-09-01T05:30:00.000Z");
 assert.equal(nextDue(due, "WEEKLY", noon).toISOString(), "2026-09-07T05:30:00.000Z");
-assert.equal(nextDue(due, "MONTHLY", noon).toISOString(), "2026-10-01T05:30:00.000Z");
+// The 31st steps to the 30th of September, not to 1 October (it used to drift).
+assert.equal(nextDue(due, "MONTHLY", noon).toISOString(), "2026-09-30T05:30:00.000Z");
 assert.equal(nextDue(due, "DAILY", new Date("2026-09-03T06:00:00.000Z")).toISOString(), "2026-09-04T05:30:00.000Z", "closed late: the next one is still ahead");
+
+// Owner, 11 Nov 2026 — Monthly by date, Weekly by day.
+const jan31 = new Date("2027-01-31T05:30:00.000Z");
+const feb28 = nextDue(jan31, "MONTHLY:31", jan31);
+assert.equal(feb28.toISOString(), "2027-02-28T05:30:00.000Z", "the 31st falls on a short month's last day");
+assert.equal(nextDue(feb28, "MONTHLY:31", feb28).toISOString(), "2027-03-31T05:30:00.000Z", "and returns to the 31st");
+// 02:00 IST on the 15th is still the 14th in UTC; the date is the IST one.
+const early = new Date("2026-11-14T20:30:00.000Z");
+assert.equal(nextDue(early, "MONTHLY:15", early).toISOString(), "2026-12-14T20:30:00.000Z");
+assert.equal(nextDue(early, "WEEKLY:0", early).toISOString(), "2026-11-21T20:30:00.000Z");
+
+const wedMorning = new Date("2026-11-11T06:00:00.000Z"); // Wed 11:30 AM IST
+assert.equal(firstDue("WEEKLY:1", "11:00", wedMorning).toISOString(), "2026-11-16T05:30:00.000Z", "next Monday");
+assert.equal(firstDue("WEEKLY:3", "11:00", wedMorning).toISOString(), "2026-11-18T05:30:00.000Z", "today's time has passed");
+assert.equal(firstDue("WEEKLY:3", "12:00", wedMorning).toISOString(), "2026-11-11T06:30:00.000Z", "today, still ahead");
+assert.equal(firstDue("MONTHLY:31", "11:00", wedMorning).toISOString(), "2026-11-30T05:30:00.000Z");
+assert.equal(firstDue("MONTHLY:5", "11:00", wedMorning).toISOString(), "2026-12-05T05:30:00.000Z");
+
+assert.ok(isRecurrence("WEEKLY:6") && isRecurrence("MONTHLY:31") && isRecurrence("WEEKLY") && isRecurrence("NONE"));
+assert.ok(!isRecurrence("WEEKLY:7") && !isRecurrence("MONTHLY:0") && !isRecurrence("MONTHLY:32") && !isRecurrence("YEARLY"));
+assert.equal(recurrenceLabel("WEEKLY:1"), "Every Monday");
+assert.equal(recurrenceLabel("MONTHLY:1"), "Every month on the 1st");
+assert.equal(recurrenceLabel("MONTHLY:22"), "Every month on the 22nd");
+assert.equal(recurrenceLabel("MONTHLY:13"), "Every month on the 13th");
 
 // ID Guide §5 — a stored record name never prints a hidden number; shown ones stay.
 assert.equal(shownRecordName("REQ-000057 · Shri Ram Enclave SR-03"), "Booking Request · Shri Ram Enclave SR-03");

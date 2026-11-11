@@ -39,6 +39,8 @@ import { PayoutCell } from "./payout-button";
 import { tripProgrammes } from "@/lib/trip-view";
 import HistoryButton from "./history-button";
 import { BankAccounts } from "@/app/customers/[id]/bank-accounts";
+import { Reviews } from "@/app/people/recovery-reviews";
+import { reviewRows } from "@/lib/rewards-overview";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -249,6 +251,7 @@ export default async function MemberDetailPage({
     tripBuckets,
     referenceWins,
     openRecoveries,
+    recoveryReviews,
   ] = await Promise.all([
     db.commissionRecord.findMany({
       where: {
@@ -377,6 +380,7 @@ export default async function MemberDetailPage({
       orderBy: { bookingDate: "asc" },
     }),
     db.recovery.findMany({ where: { personId, status: "OUTSTANDING" }, orderBy: { dueOn: "asc" } }),
+    reviewRows(personId),
   ]);
 
   // Royalty Customers shows only those who acted after their first purchase:
@@ -437,7 +441,7 @@ export default async function MemberDetailPage({
       case "OLD_RECOVERY_PENDING":
         return booking && actor.role === "MD" ? { label: "Approve Before Recovery", href: booking } : null;
       case "RECOVERY_CIRCUMVENTION_REVIEW":
-        return actor.role === "ACCOUNTS" || actor.role === "MD" ? { label: "Review", href: "/rewards?tab=reviews" } : null;
+        return actor.role === "ACCOUNTS" || actor.role === "MD" ? { label: "Review", href: "#recovery-reviews" } : null;
       case "AADHAAR_PENDING":
         // Edit details asks for the Aadhaar now (askAadhaar), so the hold has a way out.
         return may("PERSON_DETAILS_EDIT") ? { label: "Add Aadhaar", href: "#edit-details" } : null;
@@ -1316,6 +1320,16 @@ export default async function MemberDetailPage({
           <Section title="Commission from other Bookings" icon={<Banknote className="h-3.5 w-3.5" />}>
             <ShortList items={otherBookingLines} first={5} render={commissionRow} />
           </Section>
+        )}
+
+        {/* Decided here since the /rewards page was removed (11 Nov 2026);
+            the "Review" badge above jumps to it. */}
+        {recoveryReviews.length > 0 && (
+          <div id="recovery-reviews" className="scroll-mt-24">
+            <Section title="Recovery Reviews" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
+              <Reviews rows={recoveryReviews} role={actor.role} />
+            </Section>
+          </div>
         )}
       </div>
     </AppShell>

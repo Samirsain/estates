@@ -35,7 +35,6 @@ const LIST_PAGE: Record<string, string> = {
   Hold: "/enquiries",
   HoldRequest: "/enquiries",
   HoldExtensionRequest: "/enquiries",
-  Recovery: "/rewards?tab=recovery",
   Task: "/dashboard",
   StaffAccount: "/administration",
 };
@@ -56,19 +55,28 @@ export async function recentNotifications(): Promise<{ items: Notification[]; ca
     orderBy: { at: "desc" },
     take: 30,
   });
-  // A commission line is worked from its Booking.
-  const commission = new Map(
-    (
-      await db.commissionRecord.findMany({
-        where: { id: { in: rows.filter((r) => r.entity === "CommissionRecord").map((r) => r.entityId) } },
-        select: { id: true, bookingId: true },
-      })
-    ).map((c) => [c.id, c.bookingId])
-  );
+  // A commission line is worked from its Booking, or its Buyback / Resale deal;
+  // a Recovery from the owing person's own page. (The /rewards page that used
+  // to catch both was removed, 11 Nov 2026.)
+  const idsOf = (entity: string) => rows.filter((r) => r.entity === entity).map((r) => r.entityId);
+  const [commissionRows, recoveryRows] = await Promise.all([
+    db.commissionRecord.findMany({
+      where: { id: { in: idsOf("CommissionRecord") } },
+      select: { id: true, bookingId: true, acquisitionId: true },
+    }),
+    db.recovery.findMany({ where: { id: { in: idsOf("Recovery") } }, select: { id: true, personId: true } }),
+  ]);
+  const commission = new Map(commissionRows.map((c) => [c.id, c]));
+  const recoveryPerson = new Map(recoveryRows.map((r) => [r.id, r.personId]));
   const hrefOf = (entity: string, id: string): string | null => {
     if (entity === "CommissionRecord") {
-      const bookingId = commission.get(id);
-      return bookingId ? `/bookings/${bookingId}` : "/rewards?tab=monetary";
+      const c = commission.get(id);
+      if (c?.bookingId) return `/bookings/${c.bookingId}`;
+      return c?.acquisitionId ? `/acquisitions/${c.acquisitionId}` : null;
+    }
+    if (entity === "Recovery") {
+      const personId = recoveryPerson.get(id);
+      return personId ? `/people/${personId}` : null;
     }
     if (entity === "StaffAccount" && !canOpenAdministration) return null;
     return RECORD_PAGE[entity]?.(id) ?? LIST_PAGE[entity] ?? null;

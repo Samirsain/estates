@@ -9,7 +9,16 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PersonLink } from "@/components/person-link";
 import { AlertTriangle, ChevronDown, Plus, CheckCircle2 } from "lucide-react";
-import { addTaskAction, assignableStaffAction, completeTaskAction, reviseTaskAction, type ActionResult } from "./actions";
+import {
+  addTaskAction,
+  assignableStaffAction,
+  completeTaskAction,
+  reviseTaskAction,
+  taskLinkOptionsAction,
+  type ActionResult,
+  type TaskLinkKind,
+} from "./actions";
+import { PersonPicker, type PickerOption } from "@/components/person-picker";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,10 +35,13 @@ import {
   addIstDays,
   emphasis,
   filterTasks,
+  firstDue,
   formatIst,
   formatIstDate,
   istDay,
   istInstant,
+  recurrenceLabel,
+  WEEKDAYS,
   sortTasks,
   type DateRange,
   type Emphasis,
@@ -75,18 +87,13 @@ const VIEWS: { id: TaskView; label: string }[] = [
   { id: "RANGE", label: "Date Range" },
 ];
 
-// The kind is what gets stored, the label is what gets read. They were the same
-// string until "Acquisition" needed to read as the two deals it actually means,
-// and an <option> without an explicit value posts its own text — so the label
-// alone would have written "Buyback / Resale" into recordKind.
-const RECORD_KINDS: { kind: RecordKind; label: string }[] = [
-  { kind: "Plot", label: "Plot" },
-  { kind: "Enquiry", label: "Enquiry" },
-  { kind: "Booking", label: "Booking" },
-  { kind: "Booking Request", label: "Booking Request" },
-  { kind: "Customer", label: "Customer" },
-  { kind: "Member", label: "Member" },
-  { kind: "Acquisition", label: "Buyback / Resale" },
+// Owner, 11 Nov 2026 — Link to picks a real record from a searchable list, so
+// the task's row shows its Project / Plot / ID / Name and opens it on click.
+const LINK_KINDS: { kind: TaskLinkKind; placeholder: string }[] = [
+  { kind: "Plot", placeholder: "Search by Project or Plot number" },
+  { kind: "Enquiry", placeholder: "Search by Enquiry ID, name or Project" },
+  { kind: "Member", placeholder: "Search by Member ID, name or mobile" },
+  { kind: "Customer", placeholder: "Search by Customer ID, name or mobile" },
 ];
 
 /** Stored kinds that read differently: the Reward records keep their old internal name. */
@@ -613,7 +620,7 @@ function TaskDetailsDialog({ task, onClose }: { task: Task; onClose: () => void 
     ["Due", formatIst(task.dueAt)],
     ["Status", task.status === "COMPLETED" ? "Completed" : task.urgent ? "Pending · Urgent" : "Pending"],
     ["Assignee", `${task.assigneeName} (${task.assigneeRole})`],
-    ["Recurrence", task.recurrence ?? "NONE"],
+    ["Recurrence", recurrenceLabel(task.recurrence)],
     ["Revised", String(task.revisions)],
     ["What happened", task.latestResult ?? "—"],
   ];
@@ -729,10 +736,40 @@ export function AddTaskDialog({
   React.useEffect(() => {
     assignableStaffAction().then(setStaff, () => setStaff([]));
   }, []);
+
+  // Owner, 11 Nov 2026 — the four repeats stay as they were (stepping from the
+  // Due date), and two are added: Weekly on a chosen day, Monthly on a chosen
+  // date. Those two start on that day or date, so they ask for no Due date.
+  const tomorrow = addIstDays(istDay(now), 1);
+  const [repeat, setRepeat] = React.useState<
+    "NONE" | "DAILY" | "WEEKLY" | "MONTHLY" | "WEEKLY_DAY" | "MONTHLY_DATE"
+  >("NONE");
+  const [weekday, setWeekday] = React.useState(new Date(`${tomorrow}T00:00:00Z`).getUTCDay());
+  const [monthDate, setMonthDate] = React.useState(Number(tomorrow.slice(8, 10)));
+  const [time, setTime] = React.useState("11:00");
+  const recurrence =
+    repeat === "WEEKLY_DAY" ? `WEEKLY:${weekday}` : repeat === "MONTHLY_DATE" ? `MONTHLY:${monthDate}` : repeat;
+  const byRule = repeat === "WEEKLY_DAY" || repeat === "MONTHLY_DATE";
+  const ruleFirst = byRule && /^\d{2}:\d{2}$/.test(time) ? firstDue(recurrence, time, new Date()) : null;
+
+  // Link to: the kind, then a record picked from that kind's list. Each list
+  // is fetched once, the first time its kind is chosen.
+  const [linkKind, setLinkKind] = React.useState<TaskLinkKind>("Customer");
+  const [linkId, setLinkId] = React.useState("");
+  const [lists, setLists] = React.useState<Partial<Record<TaskLinkKind, PickerOption[]>>>({});
+  React.useEffect(() => {
+    if (record || lists[linkKind]) return;
+    taskLinkOptionsAction(linkKind).then(
+      (options) => setLists((all) => ({ ...all, [linkKind]: options })),
+      () => setLists((all) => ({ ...all, [linkKind]: [] }))
+    );
+  }, [record, linkKind, lists]);
+  const options = lists[linkKind];
+  const linked = options?.find((o) => o.id === linkId);
+
   return (
     <Modal
       title="Add Task"
-      description="Manual task. One record may hold only one Pending task per purpose."
       onClose={onClose}
     >
       <form
@@ -743,13 +780,13 @@ export function AddTaskDialog({
           const title = String(f.get("title"));
           onSubmit({
             title,
-            recordKind: record?.kind ?? String(f.get("kind")),
-            recordId: record?.id ?? String(f.get("recordId") ?? ""),
-            recordName: record?.name ?? String(f.get("recordName") ?? ""),
+            recordKind: record?.kind ?? linkKind,
+            recordId: record?.id ?? linked?.id ?? "",
+            recordName: record?.name ?? linked?.label ?? "",
             assignee: String(f.get("assignee")),
-            dueAtIso: istInstant(String(f.get("date")), String(f.get("time"))),
+            dueAtIso: ruleFirst ? ruleFirst.toISOString() : istInstant(String(f.get("date")), time),
             urgent: f.get("urgent") === "on",
-            recurrence: String(f.get("recurrence")),
+            recurrence,
             remark: String(f.get("remark") ?? ""),
           });
         }}
@@ -759,12 +796,12 @@ export function AddTaskDialog({
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Assignee">
-            <select name="assignee" defaultValue="ROLE:CRM" className={inputClass}>
-              {(["CRM", "ACCOUNTS", "MD"] as const).map((r) => (
-                <option key={r} value={`ROLE:${r}`}>
-                  Anyone in {r}
-                </option>
-              ))}
+            {/* Owner, 11 Nov 2026 — a task goes to one named person; the
+                "Anyone in CRM / ACCOUNTS / MD" choices were removed. */}
+            <select name="assignee" required defaultValue="" className={inputClass}>
+              <option value="" disabled>
+                {staff.length ? "Select a person" : "Loading…"}
+              </option>
               {staff.map((s) => (
                 <option key={s.id} value={`STAFF:${s.id}`}>
                   {s.name} · {s.role}
@@ -772,24 +809,53 @@ export function AddTaskDialog({
               ))}
             </select>
           </Field>
-          <Field label="Due date">
+          <Field label="Recurrence">
+            <select
+              value={repeat}
+              onChange={(e) => setRepeat(e.target.value as typeof repeat)}
+              className={inputClass}
+            >
+              <option value="NONE">None</option>
+              <option value="DAILY">Daily</option>
+              <option value="WEEKLY">Weekly</option>
+              <option value="MONTHLY">Monthly</option>
+              <option value="WEEKLY_DAY">Weekly — by day</option>
+              <option value="MONTHLY_DATE">Monthly — by date</option>
+            </select>
+          </Field>
+          {repeat === "WEEKLY_DAY" ? (
+            <Field label="Every">
+              <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} className={inputClass}>
+                {WEEKDAYS.map((day, i) => (
+                  <option key={day} value={i}>
+                    {day}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : repeat === "MONTHLY_DATE" ? (
+            <Field label="On date">
+              <select value={monthDate} onChange={(e) => setMonthDate(Number(e.target.value))} className={inputClass}>
+                {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : (
+            <Field label="Due date">
+              <input name="date" type="date" required defaultValue={tomorrow} className={inputClass} />
+            </Field>
+          )}
+          <Field label="Time">
             <input
-              name="date"
-              type="date"
+              type="time"
               required
-              defaultValue={addIstDays(istDay(now), 1)}
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
               className={inputClass}
             />
-          </Field>
-          <Field label="Time">
-            <input name="time" type="time" required defaultValue="11:00" className={inputClass} />
-          </Field>
-          <Field label="Recurrence">
-            <select name="recurrence" defaultValue="NONE" className={inputClass}>
-              {["NONE", "DAILY", "WEEKLY", "MONTHLY"].map((r) => (
-                <option key={r}>{r}</option>
-              ))}
-            </select>
           </Field>
           <Field label="Urgent">
             <span className="flex h-10 items-center gap-2 text-sm text-foreground">
@@ -797,6 +863,13 @@ export function AddTaskDialog({
             </span>
           </Field>
         </div>
+        {ruleFirst && (
+          <p className="-mt-1 text-xs text-muted-foreground">
+            {recurrenceLabel(recurrence)}
+            {repeat === "MONTHLY_DATE" && monthDate > 28 && " (the last day in a shorter month)"} · first on{" "}
+            <span className="font-semibold text-foreground">{formatIst(ruleFirst.toISOString())}</span>
+          </p>
+        )}
         {record ? (
           <p className="text-xs text-muted-foreground">
             Linked to <span className="font-semibold text-foreground">{record.name}</span>
@@ -804,20 +877,36 @@ export function AddTaskDialog({
         ) : (
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Link to">
-              <select name="kind" defaultValue="Customer" className={inputClass}>
-                {RECORD_KINDS.map(({ kind, label }) => (
+              <select
+                value={linkKind}
+                onChange={(e) => {
+                  setLinkKind(e.target.value as TaskLinkKind);
+                  setLinkId("");
+                }}
+                className={inputClass}
+              >
+                {LINK_KINDS.map(({ kind }) => (
                   <option key={kind} value={kind}>
-                    {label}
+                    {kind}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="Record ID">
-              <Input name="recordId" placeholder="CUS-3390" />
-            </Field>
-            <Field label="Record name">
-              <Input name="recordName" placeholder="Vikram Shah" />
-            </Field>
+            <div className="sm:col-span-2">
+              <Field label={linkKind}>
+                {/* key: a new kind starts the search box empty. */}
+                <PersonPicker
+                  key={linkKind}
+                  value={linkId}
+                  onChange={setLinkId}
+                  disabled={!options}
+                  placeholder={
+                    options ? LINK_KINDS.find((k) => k.kind === linkKind)!.placeholder : "Loading…"
+                  }
+                  options={options ?? []}
+                />
+              </Field>
+            </div>
           </div>
         )}
         <Field label="Remark">

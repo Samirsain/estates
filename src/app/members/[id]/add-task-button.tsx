@@ -41,11 +41,9 @@ export function AddTaskButton({
         <Plus className="mr-1.5 h-3.5 w-3.5" />
         {label}
       </Button>
-      {notice && (
-        <p className={`w-full text-right text-xs ${notice.ok ? "text-emerald-700" : "text-red-700"}`}>
-          {notice.text}
-        </p>
-      )}
+      {/* No "Task added." line: it wrapped onto a new row of the header and
+          moved every button (owner, 11 Nov 2026). The dialog closes only on
+          success; a refusal shows inside it. */}
       {open && (
         <AddTaskDialog
           now={now}

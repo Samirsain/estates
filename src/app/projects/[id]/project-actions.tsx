@@ -57,7 +57,7 @@ export default function ProjectActions({
     // The refusal shows inside the open dialog; behind it, nobody saw it.
     <ModalError.Provider value={notice && !notice.ok ? notice.error : null}>
     <>
-      <div className="flex flex-col items-end gap-1">
+      <div className="relative flex flex-col items-end gap-1">
         <div className="flex flex-wrap justify-end gap-2">
           <Button size="sm" variant="outline" onClick={() => setOpen("EDIT")}>
             <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit Project
@@ -106,9 +106,12 @@ export default function ProjectActions({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        {notice && (
-          <p className={`text-xs ${notice.ok ? "text-emerald-700" : "text-red-700"}`}>
-            {notice.ok ? notice.message : notice.error}
+        {/* Only a refusal, and out of the flow: a line under the buttons grew
+            the header row and moved them (owner, 11 Nov 2026). The Public
+            Portal item has no dialog, so its refusal needs this line. */}
+        {notice && !notice.ok && (
+          <p className="absolute right-0 top-full mt-1 w-max max-w-xs text-right text-xs text-red-700">
+            {notice.error}
           </p>
         )}
       </div>

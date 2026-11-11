@@ -6,8 +6,10 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import { blocked, CommandError, runCommand } from "@/lib/services/command";
 import { completeTask, ensureTask, reviseTask } from "@/lib/services/task-service";
-import { FOLLOW_UP_PURPOSES, reviseGroup, reviseProblem } from "@/lib/tasks";
+import { FOLLOW_UP_PURPOSES, isRecurrence, reviseGroup, reviseProblem } from "@/lib/tasks";
 import type { StaffRole } from "@/lib/security/permissions";
+import { maskMobile } from "@/lib/security/identity";
+import { personLabel, type PickerOption } from "@/lib/domain/person-search";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -110,10 +112,74 @@ export async function assignableStaffAction(): Promise<{ id: string; name: strin
   return staff.map((s) => ({ id: s.id, name: s.person.fullName, role: s.role as StaffRole }));
 }
 
+/** The record kinds a manual task can be linked to from the Add Task form. */
+export type TaskLinkKind = "Plot" | "Enquiry" | "Member" | "Customer";
+
+/**
+ * Owner, 11 Nov 2026 — Link to is a searchable list, not a typed ID. Each
+ * option carries the record's own database id, the one the Task List resolves
+ * into its Project / Plot / ID / Name columns and opens on click; the label
+ * is what is searched and what the task stores as its record name.
+ */
+export async function taskLinkOptionsAction(kind: TaskLinkKind): Promise<PickerOption[]> {
+  await requireStaff("TASK_CREATE");
+  if (kind === "Plot") {
+    const plots = await db.plot.findMany({
+      select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true } } },
+      orderBy: [{ project: { name: "asc" } }, { plotNumber: "asc" }],
+      take: 2000,
+    });
+    return plots.map((p) => ({
+      id: p.id,
+      // RESIDENTIAL → Residential, INFORMAL_SECTOR → Informal Sector, as the lists read.
+      label: `${p.project.name} · ${p.plotType
+        .toLowerCase()
+        .replace(/(^|_)([a-z])/g, (_, sep: string, c: string) => (sep ? " " : "") + c.toUpperCase())} ${p.plotNumber}`,
+    }));
+  }
+  if (kind === "Enquiry") {
+    const enquiries = await db.enquiry.findMany({
+      select: {
+        id: true,
+        enquiryNo: true,
+        person: { select: { fullName: true } },
+        project: { select: { name: true } },
+        plot: { select: { plotNumber: true } },
+      },
+      // Open ones first, newest first: a task is nearly always for a live lead.
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      take: 1000,
+    });
+    return enquiries.map((e) => ({
+      id: e.id,
+      label: [e.enquiryNo, e.person.fullName, [e.project.name, e.plot?.plotNumber].filter(Boolean).join(" ")].join(" · "),
+    }));
+  }
+  const person = { select: { fullName: true, primaryMobile: true } } as const;
+  if (kind === "Member") {
+    const members = await db.memberProfile.findMany({
+      select: { id: true, memberId: true, person },
+      orderBy: { memberId: "asc" },
+    });
+    return members.map((m) => ({
+      id: m.id,
+      label: personLabel({ ...m.person, mobileMasked: maskMobile(m.person.primaryMobile), memberId: m.memberId }, "MEMBER"),
+    }));
+  }
+  const customers = await db.customerProfile.findMany({
+    select: { id: true, customerId: true, person },
+    orderBy: { customerId: "asc" },
+  });
+  return customers.map((c) => ({
+    id: c.id,
+    label: personLabel({ ...c.person, mobileMasked: maskMobile(c.person.primaryMobile), customerId: c.customerId }),
+  }));
+}
+
 export async function addTaskAction(
   input: {
     title: string;
-    /** "ROLE:CRM" — anyone in that role — or "STAFF:<account id>" — that person. */
+    /** "STAFF:<account id>" — the one person the task is for. */
     assignee: string;
     dueAtIso: string;
     urgent: boolean;
@@ -126,16 +192,18 @@ export async function addTaskAction(
   key: string
 ): Promise<ActionResult> {
   const actor = await requireStaff("TASK_CREATE");
+  if (!isRecurrence(input.recurrence)) return { ok: false, error: "Choose how the task repeats." };
   const purpose = `MANUAL:${input.title.trim().toUpperCase()}`;
-  // The chosen person is saved, and the task carries their role too.
+  // Owner, 11 Nov 2026 — a manual task goes to one named person; "Anyone in a
+  // role" is gone. The person is saved, and the task carries their role too.
   const [kind, value] = input.assignee.split(":");
-  const person =
-    kind === "STAFF"
-      ? await db.staffAccount.findFirst({ where: { id: value, status: "ACTIVE" }, select: { id: true, role: true } })
-      : null;
-  if (kind === "STAFF" && !person) return { ok: false, error: "That staff member is not active. Choose someone else." };
-  const assigneeRole = (person?.role ?? value) as StaffRole;
-  if (!person && !["MD", "ACCOUNTS", "CRM", "MIS", "PC"].includes(assigneeRole)) return { ok: false, error: "Choose who the task is for." };
+  if (kind !== "STAFF" || !value) return { ok: false, error: "Choose who the task is for." };
+  const person = await db.staffAccount.findFirst({
+    where: { id: value, status: "ACTIVE" },
+    select: { id: true, role: true },
+  });
+  if (!person) return { ok: false, error: "That staff member is not active. Choose someone else." };
+  const assigneeRole = person.role as StaffRole;
   const recordId = input.recordId.trim() || `UNLINKED:${actor.staffAccountId}`;
 
   try {

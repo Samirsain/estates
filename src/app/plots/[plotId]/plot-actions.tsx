@@ -117,9 +117,8 @@ export default function PlotActions({
             </Button>
           )}
         </div>
-        {notice && (
-          <p className={`text-xs ${notice.ok ? "text-muted-foreground" : "text-amber-800"}`}>{notice.text}</p>
-        )}
+        {/* No line under the buttons: it grew the header row and moved them
+            (owner, 11 Nov 2026). A refusal shows inside the open dialog. */}
       </div>
 
       {editing && (
@@ -144,7 +143,7 @@ export default function PlotActions({
           title={`${target === "NONE" && current ? `Remove ${LABEL[current]}` : LABEL[target as "NOT_FOR_SALE" | "PLEDGE"]} — ${plot.plotNumber}`}
           description={
             target === "NONE"
-              ? "The restriction is lifted. A Not Available Plot still needs Make Available before it can be sold."
+              ? undefined
               : "Not for Sale and Pledge keep the Plot Not Available, including whenever it returns from a Hold or a cancelled Booking."
           }
           onClose={() => setTarget(null)}

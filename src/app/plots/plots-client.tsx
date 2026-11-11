@@ -2044,7 +2044,7 @@ export function EditPlotDetailsDialog({
       </details>
 
       <p className="text-[11px] text-muted-foreground">
-        Boundaries — the Location Charge is read from these
+        Boundaries
       </p>
       {/* Two across at this width: four sides down one column spent four rows
           on four short controls, and the dialog has more width than height. */}

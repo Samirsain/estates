@@ -59,8 +59,9 @@ const NAV = [
   // sourcing is its own stage of the business and reads oddly filed under the
   // Plots it does not have yet.
   { label: "Land Inquiries", icon: LandPlot, href: "/land-inquiries", phase: null },
-  // Rewards is not here: the owner took it off the menu on 28 Oct 2026. The
-  // /rewards page stays for the Task List and the bell, which link into it.
+  // Rewards is not here: the owner took it off the menu on 28 Oct 2026 and
+  // removed the /rewards page on 11 Nov 2026. Recovery Reviews are decided on
+  // the person's own Member / Customer page.
   // Calculator is not here: the owner wants it only as the top-bar button.
   { label: "Reports", icon: BarChart3, href: "/reports", phase: null },
   { label: "Administration", icon: Settings, href: "/administration", phase: null, admin: true },

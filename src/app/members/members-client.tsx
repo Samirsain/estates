@@ -748,7 +748,8 @@ export function MemberDialog({
   presets: RemarkPresetKey;
   kind: string;
   row: { memberId: string; name: string };
-  consequence: string;
+  /** Left out, the box shows the Member alone. */
+  consequence?: string;
   busy: boolean;
   onClose: () => void;
   onSubmit: (form: FormData) => void;
@@ -759,7 +760,7 @@ export function MemberDialog({
         <p className="font-semibold text-foreground">
           {row.memberId} · {row.name}
         </p>
-        <p className="mt-1 text-muted-foreground">{consequence}</p>
+        {consequence && <p className="mt-1 text-muted-foreground">{consequence}</p>}
       </div>
       <form
         className="space-y-4"

@@ -577,7 +577,7 @@ function ComponentEditor({
       {group(
         "Road width",
         "ROAD_WIDTH",
-        "Every width set on this Project's Plots. A Plot pays the highest band its road reaches.",
+        undefined,
         <button
           type="button"
           onClick={() => {
@@ -819,7 +819,6 @@ export function EditProjectDialog({
   return (
     <Modal
       title={`Edit ${project.name}`}
-      description="The Project Code and the External Resale Property Group setting cannot be changed. Use Change status to release the Project."
       wide
       onClose={onClose}
     >
@@ -876,7 +875,6 @@ export function PlcDialog({
   return (
     <Modal
       title={`PLC — ${project.projectCode}`}
-      description="Leave a box empty for no charge."
       width="w-[min(32rem,94vw)]"
       onClose={onClose}
     >

@@ -99,8 +99,10 @@ export function MemberActions({
     // The refusal shows inside the open dialog; behind it, nobody saw it.
     <ModalError.Provider value={notice && !notice.ok ? notice.text : null}>
     <>
-      <div className="flex flex-col items-end gap-1">
-        <DropdownMenu>
+      {/* No line under the button: it grew the header row and moved every
+          button in it (owner, 11 Nov 2026). A refusal shows inside the open
+          dialog; a success closes it and the page shows the change. */}
+      <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="sm" variant="outline" disabled={busy}>
               {busy ? "Working…" : "Update"}
@@ -135,28 +137,12 @@ export function MemberActions({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {notice && (
-          <p
-            className={`max-w-xs text-right text-[11px] ${
-              notice.ok ? "text-muted-foreground" : "text-destructive"
-            }`}
-          >
-            {notice.text}
-          </p>
-        )}
-      </div>
-
       {dialog?.kind === "STATUS" && (
         <MemberDialog
           title={dialog.active ? "Reactivate Member" : "Deactivate Member"}
           presets="memberStatus"
           kind={dialog.active ? "Reactivated" : "Deactivated"}
           row={member}
-          consequence={
-            dialog.active
-              ? "The Member may act again, and unpaid commission eligibility is rechecked rather than assumed. Network positions are unchanged."
-              : "No new Member-linked Booking Requests may be created, and every unpaid commission goes On Hold — Member Deactivated. Paid and Paid Early records stay historical, and Network positions stay exactly as they are."
-          }
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>
@@ -171,11 +157,7 @@ export function MemberActions({
           presets="commissionHold"
           kind={dialog.hold ? "Hold" : "Removed"}
           row={member}
-          consequence={
-            dialog.hold
-              ? "Every unpaid commission record for this Member goes On Hold. Paid and Paid Early history is untouched."
-              : "Affected records are reassessed and the same Accounts task resumes rather than a duplicate being created."
-          }
+          consequence={dialog.hold ? "Every unpaid commission for this Member goes On Hold." : undefined}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(f) =>

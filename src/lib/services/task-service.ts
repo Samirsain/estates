@@ -187,6 +187,7 @@ export async function taskSubjects(
   const tripRewardIds = idsFor("Trip Reward");
   const tripBucketIds = idsFor("Trip Bucket");
   const personIds = idsFor("Person");
+  const reviewIds = idsFor("Circumvention Review");
 
   /** A Person carries at most one of each id; the task is about the Person. */
   const party = (person: {
@@ -208,7 +209,7 @@ export async function taskSubjects(
     customerProfile: { select: { customerId: true } },
   } as const;
 
-  const [bookings, enquiries, members, customers, plots, acquisitions, commissions, redemptions, tripOwners, persons] =
+  const [bookings, enquiries, members, customers, plots, acquisitions, commissions, redemptions, tripOwners, persons, reviews] =
     await Promise.all([
       bookingIds.length
         ? db.booking.findMany({
@@ -309,6 +310,14 @@ export async function taskSubjects(
         : [],
       // The joint bank account task hangs off the Person.
       personIds.length ? db.person.findMany({ where: { id: { in: personIds } }, select: personSelect }) : [],
+      // CP §55 — a Recovery Review is about the person whose benefit it holds,
+      // and is decided on that person's own page.
+      reviewIds.length
+        ? db.circumventionReview.findMany({
+            where: { id: { in: reviewIds } },
+            select: { id: true, recovery: { select: { recoveryNo: true } }, subjectPerson: { select: personSelect } },
+          })
+        : [],
     ]);
 
   const subjects = new Map<string, TaskSubject>();
@@ -409,6 +418,9 @@ export async function taskSubjects(
   }
   for (const r of redemptions) {
     add(r.id, { project: null, plot: null, plotId: null, reference: `${r.tokens} points`, ...party(r.memberProfile.person) });
+  }
+  for (const r of reviews) {
+    add(r.id, { project: null, plot: null, plotId: null, reference: r.recovery.recoveryNo, ...party(r.subjectPerson) });
   }
 
   return subjects;

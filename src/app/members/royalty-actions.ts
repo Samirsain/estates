@@ -26,7 +26,6 @@ function refresh() {
   revalidatePath("/members");
   revalidatePath("/people");
   revalidatePath("/dashboard");
-  revalidatePath("/rewards");
 }
 
 async function act(

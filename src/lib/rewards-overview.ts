@@ -1,58 +1,14 @@
-// Benefits & rewards — Change Pack §90 (Monetary / Trip / Royalty / Recovery).
-// Read-only, current state, no rupee totals (CP §67 "Do not show rupee totals").
+// Recovery circumvention reviews — CP §55. Read on the reviewed person's own
+// Member and Customer pages; the /rewards overview page was removed (owner,
+// 11 Nov 2026).
 
 import { db } from "@/lib/db";
 import { istDay } from "@/lib/tasks";
 
-/** CP §90 — the open work behind each card, for the Rewards page. */
-export async function rewardLists() {
-  const [monetary, recoveries, heldAwards] = await Promise.all([
-    db.commissionRecord.findMany({
-      where: { isCurrent: true, payment: { in: ["NOT_PAID", "ACCOUNTS_ADJUSTMENT_REQUIRED"] }, eligibility: { in: ["READY", "ON_HOLD"] } },
-      include: {
-        beneficiaryPerson: { select: { id: true, fullName: true } },
-        booking: { select: { id: true, bookingNumber: true, project: { select: { name: true } }, plot: { select: { plotNumber: true, plotType: true } } } },
-        // A Purchase for Resale has no Plot until approval, only the outside
-        // property's own name and number.
-        acquisition: {
-          select: {
-            id: true,
-            acquisitionNo: true,
-            propertyName: true,
-            propertyNumber: true,
-            plot: { select: { plotNumber: true, plotType: true, project: { select: { name: true } } } },
-          },
-        },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 200,
-    }),
-    db.recovery.findMany({
-      where: { status: "OUTSTANDING" },
-      include: {
-        person: { select: { id: true, fullName: true } },
-        commissionRecord: { select: { type: true, booking: { select: { id: true, bookingNumber: true } } } },
-      },
-      orderBy: { dueOn: "asc" },
-    }),
-    // docss/11 — Royalty awards not yet posted or restricted.
-    db.royaltyAward.findMany({
-      where: { OR: [{ state: "PENDING" }, { state: "RELEASED", holdReason: { not: null } }] },
-      include: {
-        memberProfile: { select: { memberId: true, person: { select: { id: true, fullName: true } } } },
-        customerProfile: { select: { customerId: true } },
-        triggerBooking: { select: { id: true, bookingNumber: true } },
-        project: { select: { name: true } },
-      },
-      orderBy: { qualifiedAt: "asc" },
-    }),
-  ]);
-  return { monetary, recoveries, royalty: { heldAwards } };
-}
-
-/** CP §55 — circumvention reviews, open first, for the Reviews tab. */
-export async function reviewRows() {
+/** CP §55 — one person's circumvention reviews, open first. */
+export async function reviewRows(personId: string) {
   const circumventions = await db.circumventionReview.findMany({
+    where: { subjectPersonId: personId },
     include: {
       subjectPerson: { select: { id: true, fullName: true } },
       recovery: { select: { recoveryNo: true, status: true, person: { select: { fullName: true } } } },

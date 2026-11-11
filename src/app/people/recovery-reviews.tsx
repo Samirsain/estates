@@ -1,7 +1,8 @@
 "use client";
 
 // Recovery circumvention reviews — Change Pack §55, §65 NT08. Each decision
-// takes a compulsory note and is audited.
+// takes a compulsory note and is audited. Shown on the reviewed person's own
+// Member and Customer pages (the /rewards page was removed, 11 Nov 2026).
 
 import React from "react";
 import { useRouter } from "next/navigation";
