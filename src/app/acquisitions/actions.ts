@@ -17,6 +17,7 @@ import {
   recordBuyingCommission,
 } from "@/lib/services/acquisition-service";
 import { markCommissionPaid } from "@/lib/services/commission-service";
+import { requestPaymentApproval, type PaymentStep } from "@/lib/services/payment-approval-service";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
@@ -32,6 +33,22 @@ function refresh() {
   revalidatePath("/dashboard");
 }
 
+/**
+ * Owner, 10 Nov 2026 — a payment step by anyone but MD waits for MD's approval
+ * instead of running. Null for MD: the caller runs the step at once. Not
+ * exported: a "use server" export is callable from the browser.
+ */
+async function holdForMd(
+  actor: { staffAccountId: string; role: string },
+  key: string,
+  step: PaymentStep
+): Promise<ActionResult | null> {
+  if (actor.role === "MD") return null;
+  const message = await requestPaymentApproval({ idempotencyKey: key, actorRef: actor.staffAccountId, actorRole: actor.role, step });
+  refresh();
+  return { ok: true, message };
+}
+
 /** R1 — Accounts records a Buying Commission as Paid (or Paid Early, once MD approved it) on its deal. */
 export async function markBuyingCommissionPaidAction(
   input: { recordId: string; early: boolean; paidOn: string; reference: string; remarks: string },
@@ -39,15 +56,20 @@ export async function markBuyingCommissionPaidAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("COMMISSION_PROCESS");
   try {
-    const result = await markCommissionPaid({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
+    const args = {
       recordId: input.recordId,
       early: input.early,
       paidOn: new Date(input.paidOn),
       reference: input.reference,
       remarks: input.remarks,
+    };
+    const held = await holdForMd(actor, key, { kind: "COMMISSION_PAID", args });
+    if (held) return held;
+    const result = await markCommissionPaid({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      ...args,
     });
     refresh();
     return { ok: true, message: result.payment === "PAID_EARLY" ? "Buying Commission recorded as Paid Early." : "Buying Commission recorded as Paid." };
@@ -128,15 +150,20 @@ export async function confirmPaymentGivenAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("PAYMENT_GIVEN_CONFIRM");
   try {
-    const result = await confirmPaymentGiven({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
+    const args = {
       acquisitionId: input.acquisitionId,
       percent: input.percent,
       paidOn: new Date(input.paidOn),
       reference: input.reference,
       remark: input.remark || undefined,
+    };
+    const held = await holdForMd(actor, key, { kind: "PAYMENT_GIVEN", args });
+    if (held) return held;
+    const result = await confirmPaymentGiven({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      ...args,
     });
     refresh();
     return {
@@ -156,15 +183,20 @@ export async function correctPaymentGivenAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("PAYMENT_CORRECT");
   try {
-    const result = await correctPaymentGiven({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
+    const args = {
       entryId: input.entryId,
       percent: input.percent,
       paidOn: new Date(input.paidOn),
       reference: input.reference,
       reason: input.reason,
+    };
+    const held = await holdForMd(actor, key, { kind: "PAYMENT_GIVEN_CORRECT", args });
+    if (held) return held;
+    const result = await correctPaymentGiven({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      ...args,
     });
     refresh();
     return { ok: true, message: result.note };

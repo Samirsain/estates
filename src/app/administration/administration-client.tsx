@@ -1025,8 +1025,8 @@ function CreateStaffModal({
           <Field label="City">
             <Input name="city" placeholder="Indore" />
           </Field>
-          <Field label="Staff Account ID">
-            <Input name="staffAccountId" required placeholder="STF-0009" />
+          <Field label="User ID">
+            <Input name="staffAccountId" required placeholder="CRM-RAHUL" />
           </Field>
           <Field label="Role">
             <select name="role" className={inputClass} required defaultValue="CRM">
@@ -1263,7 +1263,7 @@ function StaffDetailModal({
             <h3 className="text-xs font-semibold">Account</h3>
             <DetailGrid
               rows={[
-                ["Staff Account ID", detail.staffAccountId],
+                ["User ID", detail.staffAccountId],
                 ["Role", detail.role],
                 [
                   "Status",

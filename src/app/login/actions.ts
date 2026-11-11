@@ -58,7 +58,8 @@ async function setSessionCookie(name: string, token: string) {
 /* ------------------------------------------------------------------ staff */
 
 async function attemptStaffLogin(form: FormData): Promise<Outcome> {
-  const loginId = String(form.get("loginId") ?? "").trim();
+  // User IDs are stored upper case; "md" signs in as MD.
+  const loginId = String(form.get("loginId") ?? "").trim().toUpperCase();
   const password = String(form.get("password") ?? "");
   const ip = await clientIp();
   const now = new Date();
@@ -132,7 +133,8 @@ export async function staffLogin(form: FormData): Promise<void> {
  * account-name oracle. Same rate-limit buckets as login.
  */
 export async function forgotStaffPassword(form: FormData): Promise<void> {
-  const loginId = String(form.get("loginId") ?? "").trim();
+  // User IDs are stored upper case; "md" signs in as MD.
+  const loginId = String(form.get("loginId") ?? "").trim().toUpperCase();
   const recoveryKey = String(form.get("recoveryKey") ?? "");
   const newPassword = String(form.get("newPassword") ?? "");
   const confirmPassword = String(form.get("confirmPassword") ?? "");

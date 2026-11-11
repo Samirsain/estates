@@ -14,7 +14,6 @@ import { PersonLink } from "@/components/person-link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, NO_STEPPER } from "@/components/ui/input";
-import { MOBILE_INPUT } from "@/components/ui/field-formats";
 import { Field, Modal, ModalError } from "@/components/ui/modal";
 import { RemarkSelect } from "@/components/ui/remark-select";
 import type { SoldByType } from "@prisma/client";
@@ -24,6 +23,7 @@ import { PersonPicker, personLabel } from "@/components/person-picker";
 // inventory bundle starts to matter.
 import {
   BookingFormDialog,
+  CustomerParties,
   DeliverDialog,
   PaymentPercentInput,
   ReviewDialog,
@@ -40,6 +40,7 @@ import {
   recordFinalBuyersAction,
   submitBookingRequestAction,
   type BookingDetail,
+  type PartyInput,
 } from "@/app/bookings/actions";
 import {
   DropdownMenu,
@@ -891,8 +892,11 @@ export default function PlotsClient({
   const [search, setSearch] = React.useState(
     () => rows.find((r) => r.id === initialPlotId)?.plotNumber ?? ""
   );
-  // "" until picked, "NEW" for a buyer typed on the form.
-  const [holdPerson, setHoldPerson] = React.useState("");
+  // The Booking form's Customer rows: personId "" until picked, "NEW" for a
+  // buyer typed on the form. The first row is the Primary, always.
+  const [holdParties, setHoldParties] = React.useState<PartyInput[]>([]);
+  const startHoldParties = () =>
+    setHoldParties([{ personId: forPerson?.personId ?? "", role: "PRIMARY", sharePercent: "" }]);
   // Who got the Hold done, in the Booking form's own three answers. The 3%
   // Club is the default because it is what "the company closed it" means.
   const [holdSourceType, setHoldSourceType] =
@@ -969,17 +973,6 @@ export default function PlotsClient({
       people
         .filter((p) => p.customerId)
         .map((p) => ({ id: p.id, label: personLabel(p) })),
-    [people]
-  );
-
-  // Who a Hold can be for. A Member buys plots too — for themselves, or through
-  // a Customer who brought it to them — and the list used to offer Customers
-  // only, so those Holds had to be filed against the wrong person.
-  const holdForOptions = React.useMemo(
-    () =>
-      people
-        .filter((p) => p.customerId || p.memberId)
-        .map((p) => ({ id: p.id, label: personLabel(p, p.customerId ? "CUSTOMER" : "MEMBER") })),
     [people]
   );
 
@@ -1419,7 +1412,7 @@ export default function PlotsClient({
                           <Button
                             className={rowButton}
                             onClick={() => {
-                              setHoldPerson(forPerson?.personId ?? "");
+                              startHoldParties();
                               setHoldSourceType("THREE_PERCENT_CLUB");
                               setHoldSourcePerson("");
                               setDialog({ kind: "HOLD", plot });
@@ -1482,25 +1475,11 @@ export default function PlotsClient({
           onClose={() => setDialog(null)}
           fields={
             <>
-              <Field label="Hold For">
-                {/* Anyone already on file, Member or Customer. A walk-in typed
-                    here is issued a Customer ID by the same match-or-create the
-                    Enquiry form uses — placing the Hold is what makes one. */}
-                <PersonPicker
-                  required
-                  value={holdPerson}
-                  onChange={setHoldPerson}
-                  newOptionLabel="+ New Customer — enter name and mobile"
-                  placeholder="Search by Member ID, Customer ID, name or mobile"
-                  options={holdForOptions}
-                />
-              </Field>
-              {holdPerson === "NEW" && (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Input name="fullName" placeholder="Full name" required />
-                  <Input name="mobile" required {...MOBILE_INPUT} placeholder="Mobile" />
-                </div>
-              )}
+              {/* Owner, 11 Nov 2026 — the Booking form's own Customer rows. A
+                  walk-in typed here is issued a Customer ID by the same
+                  match-or-create the Enquiry form uses — placing the Hold is
+                  what makes one. */}
+              <CustomerParties parties={holdParties} setParties={setHoldParties} people={people} />
 
               {/* Two questions, in the order they are asked on the phone: who
                   it is for, and on whose asking. Kind and person are their own
@@ -1552,18 +1531,19 @@ export default function PlotsClient({
               <PastHolds rows={dialog.plot.pastHolds} />
             </>
           }
-          onSubmit={(f) =>
+          onSubmit={() =>
             run(() =>
               createHoldAction(
                 dialog.plot.id,
-                holdPerson === "NEW" ? "" : holdPerson,
+                // As the Booking form sends them: "NEW" goes blank for the
+                // service's match-or-create, and a lone buyer sends no share.
+                holdParties.map((p) => {
+                  const sharePercent = holdParties.length > 1 ? p.sharePercent : "";
+                  return p.personId === "NEW"
+                    ? { ...p, personId: "", sharePercent }
+                    : { personId: p.personId, role: p.role, sharePercent };
+                }),
                 newKey(),
-                holdPerson === "NEW"
-                  ? {
-                      fullName: String(f.get("fullName") ?? ""),
-                      mobile: String(f.get("mobile") ?? ""),
-                    }
-                  : null,
                 {
                   type: holdSourceType,
                   personId:
@@ -1704,9 +1684,9 @@ export default function PlotsClient({
             const ok = await run(() => makeAvailableAction(plot.id, String(f.get("reason")), newKey()));
             // The second half of Make Available & Hold, on the Plot now Available.
             if (ok && thenHold) {
-              setHoldPerson(forPerson?.personId ?? "");
-                              setHoldSourceType("THREE_PERCENT_CLUB");
-                              setHoldSourcePerson("");
+              startHoldParties();
+              setHoldSourceType("THREE_PERCENT_CLUB");
+              setHoldSourcePerson("");
               setDialog({ kind: "HOLD", plot: { ...plot, status: "AVAILABLE" } });
             }
           }}
@@ -2040,7 +2020,7 @@ export function EditPlotDetailsDialog({
       <details open={Boolean(plot.exactAreaSqFt)} className="group">
         <summary className="cursor-pointer list-none text-[11px] text-muted-foreground hover:text-foreground">
           <span className="underline underline-offset-2 decoration-dotted">
-            Irregular Plot — set the area by hand
+            Irregular Plot — set the area manually
           </span>
         </summary>
         <div className="mt-2 grid grid-cols-2 gap-2">

@@ -18,10 +18,10 @@ import { CARD_PROJECTS, CUSTOMERS, MEMBERS, MOBILE_PREFIX, PROJECTS, type CastSp
 
 export const db = new PrismaClient();
 
-export const MD = "STF-0001";
-export const ACC = "STF-0003";
-export const ACC2 = "STF-0004";
-export const CRM = "STF-0005";
+export const MD = "MD";
+export const ACC = "ACCOUNTS-PRIYA";
+export const ACC2 = "ACCOUNTS-SURESH";
+export const CRM = "CRM-RAHUL";
 
 /** One id per run, read before any step moves the clock: story time repeats between runs, so keys built from it would replay an earlier run's. */
 const RUN = Date.now().toString(36);

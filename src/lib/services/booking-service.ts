@@ -33,50 +33,13 @@ import { createScheduleVersion, syncPaymentFollowUp, type ScheduleInput } from "
 import { syncTripForBooking } from "./trip-service";
 import { closeTasksFor, ensureTask } from "./task-service";
 import { closeSellingTasksIfClear } from "./selling-task";
-import { ensureCustomerProfile, linkOrCreatePerson } from "./enquiry-service";
+import { ensureCustomerProfile, resolveParties, type PartyInput } from "./enquiry-service";
 import { validateSoldBy } from "./sold-by";
 
 /** PRD §11.6 — the decision/follow-up period is seven calendar days. */
 export const BOOKING_DECISION_DAYS = 7;
 
-export type BookingPartyInput = {
-  /** Empty when this party is a first-time buyer typed straight into the form. */
-  personId: string;
-  role: "PRIMARY" | "ADDITIONAL";
-  /** Omitted only where this is the sole buyer, who is treated as 100%. */
-  sharePercent?: string | null;
-  /** Only meaningful alongside an empty personId. See resolveParties. */
-  fullName?: string;
-  mobile?: string;
-  city?: string;
-};
-
-/**
- * A party's personId, resolved. A blank one was typed straight into the form
- * as a first-time buyer — linkOrCreatePerson is the same find-or-create an
- * Enquiry uses. Called from inside the transaction the Booking itself commits
- * in, so a retried idempotency key replays before this ever runs twice: doing
- * this find-or-create against the bare `db` client, ahead of the transaction,
- * was the bug (a retry could miss the find and create the buyer twice, since
- * primaryMobile is deliberately not unique).
- */
-async function resolveParties(
-  tx: Tx,
-  parties: readonly BookingPartyInput[]
-): Promise<BookingPartyInput[]> {
-  const out: BookingPartyInput[] = [];
-  for (const p of parties) {
-    const personId =
-      p.personId || (await linkOrCreatePerson(tx, { fullName: p.fullName ?? "", mobile: p.mobile ?? "", city: p.city })).id;
-    out.push({ personId, role: p.role, sharePercent: p.sharePercent });
-  }
-  // A first-time buyer typed twice, or typed as someone already picked,
-  // resolves to the same Person — one buyer, two share rows.
-  if (new Set(out.map((p) => p.personId)).size !== out.length) {
-    blocked("The same Customer is listed twice. Each buyer appears once.");
-  }
-  return out;
-}
+export type BookingPartyInput = PartyInput;
 
 export type BookingDecisionResult = {
   bookingId: string;

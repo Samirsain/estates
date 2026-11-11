@@ -65,6 +65,7 @@ async function cleanup() {
   const plotIds = plots.map((p) => p.id);
   const scope = { OR: [{ personId: { in: personIds } }, { plotId: { in: plotIds } }] };
   await db.holdRequest.deleteMany({ where: scope });
+  await db.holdParty.deleteMany({ where: { OR: [{ hold: scope }, { personId: { in: personIds } }] } });
   await db.hold.deleteMany({ where: scope });
   await db.enquiryFollowUp.deleteMany({ where: { enquiry: { enquiryNo: { startsWith: TAG } } } });
   await db.enquiry.deleteMany({ where: { enquiryNo: { startsWith: TAG } } });
@@ -152,7 +153,7 @@ async function main() {
   assert.notEqual(shared.id, scratch.id, "shared mobile keeps Persons distinct");
 
   // Seeded credentials round-trip: the password verifies and is stored hashed.
-  const md = await db.staffAccount.findUniqueOrThrow({ where: { staffAccountId: "STF-0001" } });
+  const md = await db.staffAccount.findUniqueOrThrow({ where: { staffAccountId: "MD" } });
   assert.ok(verifyPassword(INITIAL_PASSWORD, md.passwordHash), "seeded password verifies");
   assert.ok(!verifyPassword(`${INITIAL_PASSWORD}x`, md.passwordHash));
   assert.ok(!md.passwordHash.includes(INITIAL_PASSWORD), "password is stored only as a hash");
@@ -211,7 +212,7 @@ async function main() {
 
   // PRD §8.3 — one Pending Hold Request per Customer and Plot; different
   // Customers may still request the same Plot.
-  const member = await db.memberProfile.findUniqueOrThrow({ where: { memberId: "MEM-0217" } });
+  const member = await db.memberProfile.findUniqueOrThrow({ where: { memberId: "MM0217" } });
   const tomorrow = new Date(Date.now() + 86_400_000);
   await db.holdRequest.create({
     data: { memberId: member.id, personId: personA.id, plotId: plot.id, expiresAt: tomorrow },

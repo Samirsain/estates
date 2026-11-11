@@ -4,13 +4,13 @@
 // reset their own row and lost the one-time password with the page. Not
 // reachable over HTTP; it needs the database URL.
 //
-//   npm run reset:password -- STF-0001 "SomeNewPassword#1"
+//   npm run reset:password -- MD "SomeNewPassword#1"
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, validatePassword } from "@/lib/security/auth";
 
 const [loginId, password] = process.argv.slice(2);
 if (!loginId || !password) {
-  console.error('Usage: npm run reset:password -- STF-0001 "<new password>"');
+  console.error('Usage: npm run reset:password -- MD "<new password>"');
   process.exit(1);
 }
 

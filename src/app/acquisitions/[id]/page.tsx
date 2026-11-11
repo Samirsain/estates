@@ -12,6 +12,7 @@ import { maskMobile } from "@/lib/security/identity";
 import { canViewField } from "@/lib/security/permissions";
 import { acquisitionInclude, toAcquisitionRow } from "../row-view";
 import AcquisitionDetailClient from "./detail-client";
+import { pendingPaymentApprovals } from "@/lib/services/payment-approval-service";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +26,10 @@ export default async function AcquisitionDetailPage({
   // MD and Admin read a contact number whole; everyone else gets the mask.
   const fullMobile = canViewField(actor.role, "MOBILE_FULL");
 
-  const [acquisition, people] = await Promise.all([
+  const [acquisition, paymentApprovals, people] = await Promise.all([
     db.acquisition.findUnique({ where: { id }, include: acquisitionInclude }),
+    // Owner, 10 Nov 2026 — payment steps Accounts entered, waiting for MD.
+    pendingPaymentApprovals({ acquisitionId: id }),
     // Only the Buying Commission dialog needs these, and only on a live deal —
     // but the picker is rendered by the same client, so they travel with it.
     db.person.findMany({
@@ -47,6 +50,12 @@ export default async function AcquisitionDetailPage({
 
   return (
     <AcquisitionDetailClient
+      paymentApprovals={paymentApprovals.map((a) => ({
+        id: a.id,
+        label: a.label,
+        requestedByRef: a.requestedByRef,
+        requestedAt: a.requestedAt.toISOString(),
+      }))}
       role={actor.role}
       actorName={actor.name}
       staffAccountId={actor.staffAccountId}

@@ -119,6 +119,7 @@ model Person {
   primaryBookings Booking[]      @relation("BookingPrimaryCustomer")
   soldBookings    Booking[]      @relation("BookingSoldBy")
   bookingParties  BookingParty[]
+  holdParties     HoldParty[]
 
   commissions             CommissionRecord[]   @relation("CommissionBeneficiary")
   recoveries              Recovery[]
@@ -304,6 +305,9 @@ model PotentialInvestor {
 
 model StaffAccount {
   id             String @id @default(uuid())
+  /// The User ID (owner, 11 Nov 2026): what the person signs in with, what
+  /// every screen shows and what every actorRef carries — MD, CRM-RAHUL. Set
+  /// by whoever creates the account; stored upper case.
   staffAccountId String @unique
   personId       String @unique
   person         Person @relation(fields: [personId], references: [id])
@@ -901,11 +905,31 @@ model Hold {
 
   extensionRequests HoldExtensionRequest[]
   bookings          Booking[]
+  parties           HoldParty[]
 
   @@index([plotId, status])
   @@index([personId, status])
   @@index([status, expiresAt])
   @@index([sourcedByPersonId])
+}
+
+/// Owner, 11 Nov 2026 — a Hold takes its buyers as a Booking does: one Primary,
+/// Additional Customers, a share each. The Primary also stays on Hold.personId,
+/// which the three-position limit and the Booking's own-Hold check read. Rows
+/// exist only for two or more buyers; a Hold without rows (every one placed
+/// before this, too) has one buyer, Hold.personId, at 100%.
+model HoldParty {
+  id           String    @id @default(uuid())
+  holdId       String
+  hold         Hold      @relation(fields: [holdId], references: [id])
+  personId     String
+  person       Person    @relation(fields: [personId], references: [id])
+  role         PartyRole
+  /// Null only where this is the sole buyer (treated as 100%).
+  sharePercent Decimal?  @db.Decimal(7, 4)
+
+  @@unique([holdId, personId])
+  @@index([personId])
 }
 
 model HoldExtensionRequest {
@@ -2270,6 +2294,39 @@ model Acquisition {
   @@index([status])
   @@index([duplicateKey])
   @@index([sourceBookingId])
+}
+
+/// Owner, 10 Nov 2026 — every payment step Accounts takes waits for MD: Payment
+/// Received and its correction, a commission payout, Payment Given and its
+/// correction, a Recovery repaid or set off, and a refund. The step is kept
+/// here as the service's own arguments and runs, as the person who entered
+/// it, only when MD approves; until then nothing it would change has moved.
+/// MD's own entry runs at once and never lands here.
+model PaymentApproval {
+  id            String         @id @default(uuid())
+  /// PAYMENT_RECEIVED | PAYMENT_CORRECT | COMMISSION_PAID | PAYMENT_GIVEN |
+  /// PAYMENT_GIVEN_CORRECT | RECOVERY_REPAID | RECOVERY_SET_OFF | REFUND
+  kind          String
+  /// What the step acts on (a Booking, an entry, a commission record, a
+  /// Recovery). One request per kind and target waits at a time.
+  targetKey     String
+  /// The service arguments without key and actor, replayed on approval.
+  payload       Json
+  /// What MD reads, e.g. "Payment Received 25% · UTR26… · 10/11/2026".
+  label         String
+  /// Where the request is shown and decided.
+  bookingId     String?
+  acquisitionId String?
+  status        ReviewDecision @default(PENDING)
+  requestedByRef  String
+  requestedByRole String
+  requestedAt     DateTime     @default(now())
+  decidedByRef  String?
+  decidedAt     DateTime?
+  decisionNote  String?
+
+  @@index([bookingId, status])
+  @@index([acquisitionId, status])
 }
 
 /// PRD §1.2 — Payment Given is its own dataset, never merged with Payment

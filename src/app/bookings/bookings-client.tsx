@@ -68,6 +68,7 @@ import {
   decidePrimaryCustomerChangeAction,
   decideScheduleRevisionAction,
   decideSoldByCorrectionAction,
+  decidePaymentApprovalAction,
   loadBookingDetail,
   approveBeforeOldRecoveryAction,
   approveCommissionPaidEarlyAction,
@@ -156,6 +157,8 @@ export type BookableView = {
   holdId: string | null;
   holdPersonId: string | null;
   holdPersonName: string | null;
+  /** The Hold's buyers when it has more than one; empty means holdPersonId alone. */
+  holdParties: PartyInput[];
 };
 
 /** Filters sit inline and size to their content, unlike a form field. */
@@ -374,6 +377,7 @@ type Dialog =
   | { kind: "RECOVERY_SET_OFF"; row: BookingRowView; recoveryId: string; recordId: string; label: string }
   | { kind: "SOLD_BY"; row: BookingRowView }
   | { kind: "SOLD_BY_DECIDE"; row: BookingRowView; approve: boolean }
+  | { kind: "PAYMENT_APPROVAL_DECIDE"; row: BookingRowView; approvalId: string; label: string; approve: boolean }
   | { kind: "FINAL_BUYERS"; row: BookingRowView }
   | { kind: "COMPLETION"; row: BookingRowView }
   | { kind: "DELIVER"; row: BookingRowView }
@@ -1356,6 +1360,28 @@ export default function BookingsClient({
         </ActionDialog>
       )}
 
+      {dialog?.kind === "PAYMENT_APPROVAL_DECIDE" && (
+        <ActionDialog
+          title={dialog.approve ? "Approve payment" : "Reject payment"}
+          row={dialog.row}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(f) =>
+            run(() =>
+              decidePaymentApprovalAction(
+                { approvalId: dialog.approvalId, approve: dialog.approve, note: String(f.get("note") ?? "") },
+                newKey()
+              )
+            )
+          }
+        >
+          <p className="rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-xs">{dialog.label}</p>
+          <Field label={dialog.approve ? "Remark (optional)" : "Reason — compulsory"}>
+            <Input name="note" required={!dialog.approve} />
+          </Field>
+        </ActionDialog>
+      )}
+
       {dialog?.kind === "COMMISSION_PAY" && (
         <ActionDialog
           title={dialog.early ? "Mark Commission Paid Early" : "Mark Commission Paid"}
@@ -1804,6 +1830,20 @@ function BookingDetailPanel({
           permissions.approveSoldBy,
           (approve) => ({ kind: "SOLD_BY_DECIDE", row, approve })
         )}
+      {/* Owner, 10 Nov 2026 — a payment step Accounts entered changes nothing
+          until MD approves it. approvePaidEarly is MD's flag. */}
+      {detail.paymentApprovals.map((a) => (
+        <React.Fragment key={a.id}>
+          {waiting(
+            "Payment — Waiting for MD approval",
+            <p>
+              {a.label} · entered by {a.requestedByRef} on {formatIst(a.requestedAt)}
+            </p>,
+            permissions.approvePaidEarly,
+            (approve) => ({ kind: "PAYMENT_APPROVAL_DECIDE", row, approvalId: a.id, label: a.label, approve })
+          )}
+        </React.Fragment>
+      ))}
       {pendingSchedule &&
         waiting(
           "Schedule revision — Waiting for the Accounts decision",
@@ -2727,8 +2767,14 @@ export function BookingFormDialog({
   const [soldByType, setSoldByType] = React.useState<FormOut["soldByType"]>(start?.soldByType ?? "THREE_PERCENT_CLUB");
   // The first row is the Primary Customer, always. There is no role to choose:
   // an Additional Customer is what the button underneath adds.
+  // A held Plot opens on the Hold's own buyers — the server refuses any other
+  // Primary — so a Hold taken for three is not retyped at the Booking.
   const [parties, setParties] = React.useState<PartyInput[]>(
-    start?.parties.length ? start.parties : [{ personId: initialPersonId ?? "", role: "PRIMARY", sharePercent: "" }]
+    start?.parties.length
+      ? start.parties
+      : initial?.holdParties.length
+        ? initial.holdParties
+        : [{ personId: initialPersonId ?? initial?.holdPersonId ?? "", role: "PRIMARY", sharePercent: "" }]
   );
   // Opens blank rather than at 100: a schedule is nearly always staged, and a
   // pre-filled 100 has to be cleared before the second instalment can take
@@ -2743,8 +2789,6 @@ export function BookingFormDialog({
   const projectPlots = bookable.filter((p) => p.projectId === projectId);
   const plot = bookable.find((p) => p.id === plotId);
   const shareTotal = shareSum(parties);
-  const patch = (index: number, next: Partial<PartyInput>) =>
-    setParties(parties.map((p, i) => (i === index ? { ...p, ...next } : p)));
 
   return (
     <Modal title={title} onClose={onClose}>
@@ -2870,6 +2914,103 @@ export function BookingFormDialog({
         )}
         </div>
 
+        <CustomerParties parties={parties} setParties={setParties} people={people} />
+
+        {/* Who sold it sits beside how it was sold; the Booking Date flows
+            after, and only a backdated one asks why, across the full width. */}
+        <div className="grid gap-3 border-t border-border/60 pt-4 sm:grid-cols-2">
+          <Field label="Sold By">
+            <select
+              className={inputClass}
+              value={soldByType}
+              onChange={(e) => setSoldByType(e.target.value as FormOut["soldByType"])}
+            >
+              <option value="THREE_PERCENT_CLUB">3% Club</option>
+              <option value="MEMBER">Member</option>
+              <option value="CUSTOMER">Customer</option>
+            </select>
+          </Field>
+          {soldByType !== "THREE_PERCENT_CLUB" && (
+            <SoldByPicker
+              key={soldByType}
+              name="soldByPersonId"
+              type={soldByType}
+              people={people}
+              members={members}
+              initialPersonId={soldByType === start?.soldByType ? (start?.soldByPersonId ?? "") : ""}
+            />
+          )}
+          <Field label="Booking Date">
+            <Input
+              className="h-9 text-xs"
+              type="date"
+              max={today}
+              required
+              value={bookingDate}
+              onChange={(e) => setBookingDate(e.target.value)}
+            />
+          </Field>
+          {bookingDate < today && (
+            <div className="sm:col-span-2">
+              <Field label="Reason for the backdated Booking Date — compulsory">
+                <RemarkSelect presets="backdatedBooking" name="bookingDateReason" className="h-9 text-xs" required />
+              </Field>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-border/60 pt-4">
+          {/* Due dates start at the Booking Date: a backdated Booking could not
+              take its first instalment on the day it was booked. */}
+          <ScheduleEditor schedule={schedule} setSchedule={setSchedule} minDate={bookingDate || today} />
+        </div>
+
+        {requireReason && (
+          <Field label="Reason for replacing this request — compulsory">
+            <RemarkSelect presets="resendBooking" name="reason" className="h-9 text-xs" required />
+          </Field>
+        )}
+
+        {/* Pinned to the dialog's foot: the dialog is the scroller, so Submit
+            never sits below the fold on a laptop. The negative margins cancel
+            the Modal's padding so the hairline runs edge to edge; the bottom
+            one is !important because space-y on the form resets it to 0. */}
+        <div className="sticky bottom-0 -mx-5 !-mb-5 flex justify-end gap-2 border-t border-border/60 bg-card px-5 py-3">
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+            Back
+          </Button>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={busy || (parties.length > 1 && shareTotal !== 100)}
+          >
+            {busy ? "Processing…" : "Confirm and submit"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * The Customer rows of a Booking — and, since 11 Nov 2026, of a Hold, which
+ * takes its buyers the same way (owner). One Primary, Additional Customers,
+ * a share each once there are two; "+ New Customer" types a first-time buyer.
+ */
+export function CustomerParties({
+  parties,
+  setParties,
+  people,
+}: {
+  parties: PartyInput[];
+  setParties: (rows: PartyInput[]) => void;
+  people: PersonView[];
+}) {
+  const shareTotal = shareSum(parties);
+  const patch = (index: number, next: Partial<PartyInput>) =>
+    setParties(parties.map((p, i) => (i === index ? { ...p, ...next } : p)));
+
+  return (
         <section className="space-y-2.5 border-t border-border/60 pt-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -2979,80 +3120,6 @@ export function BookingFormDialog({
             + Add Additional Customer
           </Button>
         </section>
-
-        {/* Who sold it sits beside how it was sold; the Booking Date flows
-            after, and only a backdated one asks why, across the full width. */}
-        <div className="grid gap-3 border-t border-border/60 pt-4 sm:grid-cols-2">
-          <Field label="Sold By">
-            <select
-              className={inputClass}
-              value={soldByType}
-              onChange={(e) => setSoldByType(e.target.value as FormOut["soldByType"])}
-            >
-              <option value="THREE_PERCENT_CLUB">3% Club</option>
-              <option value="MEMBER">Member</option>
-              <option value="CUSTOMER">Customer</option>
-            </select>
-          </Field>
-          {soldByType !== "THREE_PERCENT_CLUB" && (
-            <SoldByPicker
-              key={soldByType}
-              name="soldByPersonId"
-              type={soldByType}
-              people={people}
-              members={members}
-              initialPersonId={soldByType === start?.soldByType ? (start?.soldByPersonId ?? "") : ""}
-            />
-          )}
-          <Field label="Booking Date">
-            <Input
-              className="h-9 text-xs"
-              type="date"
-              max={today}
-              required
-              value={bookingDate}
-              onChange={(e) => setBookingDate(e.target.value)}
-            />
-          </Field>
-          {bookingDate < today && (
-            <div className="sm:col-span-2">
-              <Field label="Reason for the backdated Booking Date — compulsory">
-                <RemarkSelect presets="backdatedBooking" name="bookingDateReason" className="h-9 text-xs" required />
-              </Field>
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-border/60 pt-4">
-          {/* Due dates start at the Booking Date: a backdated Booking could not
-              take its first instalment on the day it was booked. */}
-          <ScheduleEditor schedule={schedule} setSchedule={setSchedule} minDate={bookingDate || today} />
-        </div>
-
-        {requireReason && (
-          <Field label="Reason for replacing this request — compulsory">
-            <RemarkSelect presets="resendBooking" name="reason" className="h-9 text-xs" required />
-          </Field>
-        )}
-
-        {/* Pinned to the dialog's foot: the dialog is the scroller, so Submit
-            never sits below the fold on a laptop. The negative margins cancel
-            the Modal's padding so the hairline runs edge to edge; the bottom
-            one is !important because space-y on the form resets it to 0. */}
-        <div className="sticky bottom-0 -mx-5 !-mb-5 flex justify-end gap-2 border-t border-border/60 bg-card px-5 py-3">
-          <Button type="button" variant="outline" size="sm" onClick={onClose}>
-            Back
-          </Button>
-          <Button
-            type="submit"
-            size="sm"
-            disabled={busy || (parties.length > 1 && shareTotal !== 100)}
-          >
-            {busy ? "Processing…" : "Confirm and submit"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 

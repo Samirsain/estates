@@ -73,6 +73,7 @@ async function main() {
   await db.enquiry.deleteMany({});
 
   await db.holdExtensionRequest.deleteMany({});
+  await db.holdParty.deleteMany({});
   await db.hold.deleteMany({});
   await db.holdRequest.deleteMany({});
 

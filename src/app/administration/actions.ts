@@ -309,8 +309,13 @@ export async function createStaffAccountAction(
         payload: { role: input.role, staffAccountId: input.staffAccountId },
       },
       async (tx) => {
+        // The User ID (owner, 11 Nov 2026) — chosen here, signed in with, shown
+        // on every screen and history line: MD, CRM-RAHUL.
         const id = input.staffAccountId.trim().toUpperCase();
-        if (!id) blocked("A Staff Account ID is required.");
+        if (!id) blocked("A User ID is required.");
+        if (!/^[A-Z0-9][A-Z0-9-]{1,23}$/.test(id)) {
+          blocked("A User ID is 2 to 24 letters, digits or dashes, such as CRM-RAHUL.");
+        }
 
         const fullName = input.fullName.trim();
         const primaryMobile = normaliseMobile(input.mobile);
@@ -318,7 +323,7 @@ export async function createStaffAccountAction(
         if (!isValidMobile(primaryMobile)) blocked("Enter a 10-digit mobile number.");
 
         const clash = await tx.staffAccount.findUnique({ where: { staffAccountId: id } });
-        if (clash) blocked(`Staff Account ID ${id} already exists.`);
+        if (clash) blocked(`User ID ${id} is already taken.`);
 
         // Same match the Member and Enquiry paths use, so one human entered
         // twice does not become two Persons.

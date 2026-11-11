@@ -23,7 +23,7 @@ const db = new PrismaClient();
 const { createLandInquiry, changeLandInquiryStage, setLandInquiryStatus } = await import("@/lib/services/land-inquiry-service");
 const { emptyInput } = await import("@/lib/domain/land-inquiry");
 
-const CRM = { actorRef: "STF-0005", actorRole: "CRM" };
+const CRM = { actorRef: "CRM-RAHUL", actorRole: "CRM" };
 const RUN = Date.now().toString(36);
 
 type Move = [day: string, to: LandInquiryStage | "CLOSED", reason?: string];
@@ -104,7 +104,7 @@ const INQUIRIES: { tag: string; day: string; source?: string; input: Partial<Lan
   {
     tag: "SANGARIA-ROAD",
     day: "2026-10-03",
-    source: "MEM-000001",
+    source: "MM0001",
     input: {
       receivedFrom: "MEMBER",
       owners: [
@@ -143,7 +143,7 @@ const INQUIRIES: { tag: string; day: string; source?: string; input: Partial<Lan
   {
     tag: "TILONIA-ROAD",
     day: "2026-10-06",
-    source: "MEM-000002",
+    source: "MM0002",
     input: {
       receivedFrom: "MEMBER",
       owners: [{ ownerName: "Bhanwar Lal Jat", mobile: "9460301201", isPrimary: true }],
@@ -216,7 +216,7 @@ const INQUIRIES: { tag: string; day: string; source?: string; input: Partial<Lan
   {
     tag: "MADANGANJ",
     day: "2026-10-12",
-    source: "MEM-000003",
+    source: "MM0003",
     input: {
       receivedFrom: "MEMBER",
       owners: [
@@ -298,7 +298,7 @@ const INQUIRIES: { tag: string; day: string; source?: string; input: Partial<Lan
 
 /** A Member by Member ID, a Customer by mobile. */
 const sourceOf = async (source: string) =>
-  source.startsWith("MEM-")
+  source.startsWith("MM")
     ? (await db.memberProfile.findFirstOrThrow({ where: { memberId: source, status: "ACTIVE" } })).personId
     : (await db.person.findFirstOrThrow({ where: { primaryMobile: source, customerProfile: { isNot: null } } })).id;
 

@@ -294,7 +294,8 @@ export function AppShell({
               <a href="/account" className="text-right hover:opacity-80" title="My Account">
                 <p className="text-xs font-semibold leading-tight">{actorName}</p>
                 <p className="text-[10px] text-muted-foreground">
-                  {staffAccountId} · {role}
+                  {/* A User ID that is the role itself (MD) says it once. */}
+                  {staffAccountId === role ? role : `${staffAccountId} · ${role}`}
                 </p>
               </a>
               <form action={signOut}>

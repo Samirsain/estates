@@ -135,6 +135,7 @@ export default function DashboardClient({
   }, [tasks]);
   const [revising, setRevising] = React.useState<Task | null>(null);
   const [detailing, setDetailing] = React.useState<Task | null>(null);
+  const [confirmingDone, setConfirmingDone] = React.useState<Task | null>(null);
   const [adding, setAdding] = React.useState(false);
   const [blocked, setBlocked] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -500,9 +501,9 @@ export default function DashboardClient({
                                     Open record
                                   </DropdownMenuItem>
                                 ) : (
-                                  <DropdownMenuItem
-                                    onSelect={() => run(() => completeTaskAction(task.id, newKey()))}
-                                  >
+                                  // Owner, 11 Nov 2026 — Done asks first: one
+                                  // stray click closed a task for good.
+                                  <DropdownMenuItem onSelect={() => setConfirmingDone(task)}>
                                     Done
                                   </DropdownMenuItem>
                                 )}
@@ -524,6 +525,32 @@ export default function DashboardClient({
       </div>
 
       {detailing && <TaskDetailsDialog task={detailing} onClose={() => setDetailing(null)} />}
+
+      {confirmingDone && (
+        <Modal
+          title="Are you sure?"
+          description={`Mark "${confirmingDone.title.trim()}" as Done? A Done task cannot be reopened.`}
+          onClose={() => setConfirmingDone(null)}
+        >
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setConfirmingDone(null)}>
+              No, go back
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={async () => {
+                const task = confirmingDone;
+                setConfirmingDone(null);
+                await run(() => completeTaskAction(task.id, newKey()));
+              }}
+            >
+              Yes, mark Done
+            </Button>
+          </div>
+        </Modal>
+      )}
 
       {revising && (
         <ReviseDialog

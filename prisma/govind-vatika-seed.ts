@@ -73,10 +73,10 @@ import {
 } from "@/lib/services/acquisition-service";
 
 const db = new PrismaClient();
-const MD = "STF-0001";
-const ACC = "STF-0003";
-const CRM = "STF-0005";
-const ACC2 = "STF-0004";
+const MD = "MD";
+const ACC = "ACCOUNTS-PRIYA";
+const CRM = "CRM-RAHUL";
+const ACC2 = "ACCOUNTS-SURESH";
 const actor = { actorRef: MD, actorRole: "MD" };
 const accounts = { actorRef: ACC, actorRole: "ACCOUNTS" };
 const crm = { actorRef: CRM, actorRole: "CRM" };

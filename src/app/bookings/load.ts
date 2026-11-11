@@ -33,7 +33,15 @@ export async function loadBookingFormData() {
           },
         },
         boundaries: true,
-        holds: { where: { status: "ACTIVE" }, include: { person: true }, take: 1 },
+        holds: {
+          where: { status: "ACTIVE" },
+          include: {
+            person: true,
+            // Primary first: the Booking form's first row is the Primary.
+            parties: { select: { personId: true, role: true, sharePercent: true }, orderBy: { role: "asc" } },
+          },
+          take: 1,
+        },
       },
       orderBy: [{ project: { name: "asc" } }, { plotNumber: "asc" }],
       take: 300,
@@ -83,6 +91,11 @@ export async function loadBookingFormData() {
     holdId: p.holds[0]?.id ?? null,
     holdPersonId: p.holds[0]?.personId ?? null,
     holdPersonName: p.holds[0]?.person.fullName ?? null,
+    holdParties: (p.holds[0]?.parties ?? []).map((h) => ({
+      personId: h.personId,
+      role: h.role,
+      sharePercent: h.sharePercent?.toString() ?? "",
+    })),
   }));
 
   return {

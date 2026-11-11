@@ -52,6 +52,43 @@ export async function linkOrCreatePerson(
   });
 }
 
+export type PartyInput = {
+  /** Empty when this party is a first-time buyer typed straight into the form. */
+  personId: string;
+  role: "PRIMARY" | "ADDITIONAL";
+  /** Omitted only where this is the sole buyer, who is treated as 100%. */
+  sharePercent?: string | null;
+  /** Only meaningful alongside an empty personId. See resolveParties. */
+  fullName?: string;
+  mobile?: string;
+  city?: string;
+};
+
+/**
+ * A party's personId, resolved. A blank one was typed straight into the form
+ * as a first-time buyer — linkOrCreatePerson is the same find-or-create an
+ * Enquiry uses. Called from inside the transaction the Booking or Hold itself
+ * commits in, so a retried idempotency key replays before this ever runs
+ * twice: doing this find-or-create against the bare `db` client, ahead of the
+ * transaction, was the bug (a retry could miss the find and create the buyer
+ * twice, since primaryMobile is deliberately not unique). Here, not in
+ * booking-service, for the reason ensureCustomerProfile is.
+ */
+export async function resolveParties(tx: Tx, parties: readonly PartyInput[]): Promise<PartyInput[]> {
+  const out: PartyInput[] = [];
+  for (const p of parties) {
+    const personId =
+      p.personId || (await linkOrCreatePerson(tx, { fullName: p.fullName ?? "", mobile: p.mobile ?? "", city: p.city })).id;
+    out.push({ personId, role: p.role, sharePercent: p.sharePercent });
+  }
+  // A first-time buyer typed twice, or typed as someone already picked,
+  // resolves to the same Person — one buyer, two share rows.
+  if (new Set(out.map((p) => p.personId)).size !== out.length) {
+    blocked("The same Customer is listed twice. Each buyer appears once.");
+  }
+  return out;
+}
+
 /**
  * PRD §5.2 — the Customer ID is permanent, never reused, and retained even if
  * whatever created it is later rejected. It is issued at the first moment the

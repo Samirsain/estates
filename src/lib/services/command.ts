@@ -212,13 +212,16 @@ export async function lockKey(tx: Tx, key: string): Promise<void> {
  * ponytail: max-plus-one elsewhere. Move another series to a sequence only if
  * its contention ever becomes visible to users.
  */
+// Owner, 11 Nov 2026 — the four IDs people read aloud carry no dash and a
+// short number: MM0011, CUS046, ENQ005, BKG0023. Every other series keeps
+// PREFIX-000123. A number past the width simply grows (CUS1000).
 const SERIES = {
-  Enquiry: { table: "Enquiry", column: "enquiryNo" },
+  Enquiry: { table: "Enquiry", column: "enquiryNo", dash: false, width: 3 },
   Task: { table: "Task", column: "taskNo", sequence: "task_no_seq" },
   BookingRequest: { table: "Booking", column: "requestNo" },
-  BookingNumber: { table: "Booking", column: "bookingNumber" },
-  Customer: { table: "CustomerProfile", column: "customerId" },
-  Member: { table: "MemberProfile", column: "memberId" },
+  BookingNumber: { table: "Booking", column: "bookingNumber", dash: false, width: 4 },
+  Customer: { table: "CustomerProfile", column: "customerId", dash: false, width: 3 },
+  Member: { table: "MemberProfile", column: "memberId", dash: false, width: 4 },
   Acquisition: { table: "Acquisition", column: "acquisitionNo" },
   Recovery: { table: "Recovery", column: "recoveryNo" },
   PotentialInvestor: { table: "PotentialInvestor", column: "investorNo" },
@@ -232,15 +235,18 @@ export async function nextReference(
   prefix: string,
   series: keyof typeof SERIES,
 ): Promise<string> {
-  const entry: { table: string; column: string; sequence?: string } = SERIES[series];
+  const entry: { table: string; column: string; sequence?: string; dash?: boolean; width?: number } =
+    SERIES[series];
   const { table, column } = entry;
+  const head = entry.dash === false ? prefix : `${prefix}-`;
+  const width = entry.width ?? 6;
 
   if (entry.sequence) {
     // Identifiers come from the closed table above, never from caller input.
     const issued = await tx.$queryRawUnsafe<Array<{ next: number }>>(
       `SELECT nextval('${entry.sequence}')::int AS next`
     );
-    return `${prefix}-${String(issued[0].next).padStart(6, "0")}`;
+    return `${head}${String(issued[0].next).padStart(width, "0")}`;
   }
 
   // The trailing digits are compared as a number, not as text: series written
@@ -251,10 +257,10 @@ export async function nextReference(
     `SELECT COALESCE(MAX(CAST(substring("${column}" FROM '[0-9]+$') AS INTEGER)), 0) AS max
        FROM "${table}"
       WHERE "${column}" LIKE $1`,
-    `${prefix}-%`,
+    `${head}%`,
   );
 
   const next = Number(rows[0]?.max ?? 0) + 1;
   if (!Number.isFinite(next)) throw new Error(`Cannot continue the ${prefix} series.`);
-  return `${prefix}-${String(next).padStart(6, "0")}`;
+  return `${head}${String(next).padStart(width, "0")}`;
 }

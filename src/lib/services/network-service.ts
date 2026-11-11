@@ -354,7 +354,7 @@ export async function activateMember(args: {
       // Activation is now; it cannot be backdated (prd-complete §7.1).
       const activationDate = new Date();
       const memberId =
-        person.memberProfile?.memberId ?? (await nextReference(tx, "MEM", "Member"));
+        person.memberProfile?.memberId ?? (await nextReference(tx, "MM", "Member"));
 
       const member = person.memberProfile
         ? await tx.memberProfile.update({

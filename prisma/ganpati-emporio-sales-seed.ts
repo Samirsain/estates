@@ -24,55 +24,55 @@ const { recordFinalBuyers, recordCompletion } = await import("@/lib/services/com
 const { createHold } = await import("@/lib/services/hold-service");
 const { inDays } = await import("./demo/toolkit.ts");
 
-const CRM = { actorRef: "STF-0005", actorRole: "CRM" };
-const ACC = { actorRef: "STF-0003", actorRole: "ACCOUNTS" };
+const CRM = { actorRef: "CRM-RAHUL", actorRole: "CRM" };
+const ACC = { actorRef: "ACCOUNTS-PRIYA", actorRole: "ACCOUNTS" };
 
 type Outcome = "DELIVERED" | "PAID" | "BOOKED" | "BOOKED_65" | "WAITING" | "HOLD";
-type By = "CLUB" | "MEM-000001" | "MEM-000002" | "MEM-000003";
+type By = "CLUB" | "MM0001" | "MM0002" | "MM0003";
 /** [unit, buyer, sold by, day booked (Sept/Oct 2026), what happened]. */
 const SALES: [string, string, By, string, Outcome][] = [
-  ["2A", "Rameshwar Lal Godara", "MEM-000001", "2026-09-03", "DELIVERED"],
-  ["2B", "Sushila Devi Godara", "MEM-000001", "2026-09-03", "DELIVERED"],
+  ["2A", "Rameshwar Lal Godara", "MM0001", "2026-09-03", "DELIVERED"],
+  ["2B", "Sushila Devi Godara", "MM0001", "2026-09-03", "DELIVERED"],
   ["12", "Om Prakash Bishnoi", "CLUB", "2026-09-04", "DELIVERED"],
   ["18", "Harpreet Singh Brar", "CLUB", "2026-09-06", "DELIVERED"],
   ["1A", "Mahaveer Prasad Jain", "CLUB", "2026-09-08", "PAID"],
   ["1B", "Kamla Jain", "CLUB", "2026-09-08", "PAID"],
-  ["3A", "Vinod Kumar Sihag", "MEM-000002", "2026-09-10", "PAID"],
+  ["3A", "Vinod Kumar Sihag", "MM0002", "2026-09-10", "PAID"],
   ["13", "Gurmeet Kaur", "CLUB", "2026-09-12", "PAID"],
-  ["19", "Rajkumar Saharan", "MEM-000003", "2026-09-13", "PAID"],
+  ["19", "Rajkumar Saharan", "MM0003", "2026-09-13", "PAID"],
   ["23", "Bhagirath Mal Poonia", "CLUB", "2026-09-15", "PAID"],
   ["24", "Sunil Kumar Swami", "CLUB", "2026-09-16", "PAID"],
   ["S-04", "Shyam Sunder Agarwal", "CLUB", "2026-09-18", "PAID"],
-  ["S-05", "Pawan Kumar Mittal", "MEM-000001", "2026-09-18", "PAID"],
-  ["3B", "Manju Sihag", "MEM-000002", "2026-09-20", "BOOKED_65"],
+  ["S-05", "Pawan Kumar Mittal", "MM0001", "2026-09-18", "PAID"],
+  ["3B", "Manju Sihag", "MM0002", "2026-09-20", "BOOKED_65"],
   ["14", "Jagdish Prasad Beniwal", "CLUB", "2026-09-22", "BOOKED_65"],
   ["15", "Anil Kumar Kaswan", "CLUB", "2026-09-24", "BOOKED"],
-  ["20", "Balwinder Singh", "MEM-000003", "2026-09-25", "BOOKED_65"],
+  ["20", "Balwinder Singh", "MM0003", "2026-09-25", "BOOKED_65"],
   ["21", "Satpal Godara", "CLUB", "2026-09-27", "BOOKED"],
   ["25", "Mukesh Kumar Garg", "CLUB", "2026-09-29", "BOOKED"],
   ["26", "Neelam Garg", "CLUB", "2026-09-29", "BOOKED"],
-  ["27", "Dharmpal Jakhar", "MEM-000001", "2026-10-01", "BOOKED_65"],
+  ["27", "Dharmpal Jakhar", "MM0001", "2026-10-01", "BOOKED_65"],
   ["S-06", "Rakesh Goyal", "CLUB", "2026-10-03", "BOOKED"],
   ["S-08", "Deepak Singla", "CLUB", "2026-10-04", "BOOKED"],
-  ["S-09", "Manoj Bansal", "MEM-000002", "2026-10-06", "BOOKED"],
+  ["S-09", "Manoj Bansal", "MM0002", "2026-10-06", "BOOKED"],
   ["S-14", "Sanjay Chhabra", "CLUB", "2026-10-08", "BOOKED_65"],
   ["S-15", "Vikas Sethi", "CLUB", "2026-10-09", "BOOKED"],
-  ["S-16", "Rohit Narang", "MEM-000003", "2026-10-11", "BOOKED"],
+  ["S-16", "Rohit Narang", "MM0003", "2026-10-11", "BOOKED"],
   ["S-17", "Amit Juneja", "CLUB", "2026-10-13", "BOOKED"],
   ["S-23", "Hari Ram Choudhary", "CLUB", "2026-10-15", "BOOKED"],
-  ["8A", "Surender Kumar", "MEM-000001", "2026-10-17", "BOOKED"],
-  ["8B", "Kavita Rani", "MEM-000001", "2026-10-17", "BOOKED"],
+  ["8A", "Surender Kumar", "MM0001", "2026-10-17", "BOOKED"],
+  ["8B", "Kavita Rani", "MM0001", "2026-10-17", "BOOKED"],
   ["10A", "Ishwar Singh Rathore", "CLUB", "2026-10-20", "BOOKED"],
   ["7B", "Pooja Bhadu", "CLUB", "2026-10-22", "BOOKED"],
-  ["11A", "Naresh Kumar Dudi", "MEM-000003", "2026-10-28", "WAITING"],
+  ["11A", "Naresh Kumar Dudi", "MM0003", "2026-10-28", "WAITING"],
   ["S-19", "Lalit Khurana", "CLUB", "2026-10-29", "WAITING"],
   ["9A", "Ramniwas Kularia", "CLUB", "2026-10-30", "HOLD"],
-  ["22", "Sukhdev Singh Sandhu", "MEM-000002", "2026-10-30", "HOLD"],
+  ["22", "Sukhdev Singh Sandhu", "MM0002", "2026-10-30", "HOLD"],
   ["S-20", "Ajay Kumar Bansal", "CLUB", "2026-10-30", "HOLD"],
   ["K-3", "Mohit Saini", "CLUB", "2026-10-30", "HOLD"],
-  ["16", "Gopal Krishan Sharma", "MEM-000001", "2026-10-30", "HOLD"],
+  ["16", "Gopal Krishan Sharma", "MM0001", "2026-10-30", "HOLD"],
   ["10B", "Rekha Rathore", "CLUB", "2026-10-30", "HOLD"],
-  ["29", "Parmjeet Singh Gill", "MEM-000003", "2026-10-30", "HOLD"],
+  ["29", "Parmjeet Singh Gill", "MM0003", "2026-10-30", "HOLD"],
   ["S-18", "Nitin Khurana", "CLUB", "2026-10-30", "HOLD"],
 ];
 
@@ -82,7 +82,7 @@ async function main() {
   const project = await db.project.findUniqueOrThrow({ where: { projectCode: "GEE" } });
   const plots = new Map((await db.plot.findMany({ where: { projectId: project.id }, select: { id: true, plotNumber: true } })).map((p) => [p.plotNumber, p.id]));
   const members = new Map(
-    (await db.memberProfile.findMany({ where: { memberId: { in: ["MEM-000001", "MEM-000002", "MEM-000003"] }, status: "ACTIVE" }, select: { memberId: true, personId: true } })).map((m) => [m.memberId, m.personId])
+    (await db.memberProfile.findMany({ where: { memberId: { in: ["MM0001", "MM0002", "MM0003"] }, status: "ACTIVE" }, select: { memberId: true, personId: true } })).map((m) => [m.memberId, m.personId])
   );
 
   for (const [i, [unit, name, by, day, outcome]] of SALES.entries()) {

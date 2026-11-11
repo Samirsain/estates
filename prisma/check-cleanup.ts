@@ -202,6 +202,7 @@ export async function purgeScope(db: PrismaClient, scope: PurgeScope) {
   // Pre-sales.
   const preSales = { OR: [{ personId: { in: personIds } }, { plotId: { in: plotIds } }] };
   await db.holdExtensionRequest.deleteMany({ where: { hold: preSales } });
+  await db.holdParty.deleteMany({ where: { OR: [{ hold: preSales }, { personId: { in: personIds } }] } });
   await db.holdRequest.deleteMany({ where: preSales });
   await db.hold.deleteMany({ where: preSales });
   await db.enquiryFollowUp.deleteMany({

@@ -310,7 +310,7 @@ on("2026-09-02", "GEE: every Project field, Rewards programme, restricted kiosks
 }, "10:00");
 
 on("2026-09-02", "Gurpreet (invited by Hemant), Manpreet (invited by Gurpreet) and Rakesh join", async () => {
-  const hemant = await db.memberProfile.findFirstOrThrow({ where: { memberId: "MEM-000001" }, include: { person: true } });
+  const hemant = await db.memberProfile.findFirstOrThrow({ where: { memberId: "MM0001" }, include: { person: true } });
   people.F01 = { id: hemant.personId, name: hemant.person.fullName, mobile: hemant.person.primaryMobile, key: "F01", note: "", profileId: hemant.id };
   await member("G1", "F01", "RAJ/A/2026/HMH0141");
   await member("G2", "G1", "RAJ/A/2026/HMH0152");

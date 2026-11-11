@@ -32,10 +32,10 @@ const A = await import("@/lib/services/acquisition-service");
 const { markCommissionPaid } = await import("@/lib/services/commission-service");
 const { createProject, setProjectStatus } = await import("@/lib/services/project-service");
 
-const MD = { actorRef: "STF-0001", actorRole: "MD" };
-const CRM = { actorRef: "STF-0005", actorRole: "CRM" };
-const ACC = { actorRef: "STF-0003", actorRole: "ACCOUNTS" };
-const ACC2 = { actorRef: "STF-0004", actorRole: "ACCOUNTS" };
+const MD = { actorRef: "MD", actorRole: "MD" };
+const CRM = { actorRef: "CRM-RAHUL", actorRole: "CRM" };
+const ACC = { actorRef: "ACCOUNTS-PRIYA", actorRole: "ACCOUNTS" };
+const ACC2 = { actorRef: "ACCOUNTS-SURESH", actorRole: "ACCOUNTS" };
 const RUN = Date.now().toString(36);
 let seq = 0;
 const key = () => `BBK-${RUN}-${seq++}`;
@@ -64,7 +64,7 @@ const DEALS: Deal[] = [
   {
     tag: "SS-17",
     on: "2026-09-15",
-    by: "MEM-000003",
+    by: "MM0003",
     property: { propertyName: "Shiv Shakti Colony", location: "Suratgarh Road, Hanumangarh Jn.", propertyNumber: "SS-17", areaSqFt: "1350" },
     seller: { fullName: "Baldev Singh Dhillon", primaryMobile: "9414120171", addressLine: "22, Sector 5, Hanumangarh Jn." },
     remark: "Corner Plot in a 90-A approved colony, bought to resell",
@@ -80,7 +80,7 @@ const DEALS: Deal[] = [
   {
     tag: "GV-04",
     on: "2026-09-25",
-    by: "MEM-000001",
+    by: "MM0001",
     property: { propertyName: "Ganesh Vihar", location: "Sangaria Road, Hanumangarh", propertyNumber: "GV-04", areaSqFt: "1500" },
     seller: { fullName: "Mangi Lal Bhambhu", primaryMobile: "9414120172", addressLine: "Ward 11, Sangaria" },
     remark: "Owner selling his second Plot; bought to resell",
@@ -94,7 +94,7 @@ const DEALS: Deal[] = [
   {
     tag: "GEE-12",
     on: "2026-10-02",
-    by: "MEM-000001",
+    by: "MM0001",
     plot: "12",
     remark: "Customer needs money urgently",
     schedule: [["25", "2026-10-02"], ["75", "2026-10-25"]],
@@ -134,7 +134,7 @@ const DEALS: Deal[] = [
   {
     tag: "GEE-24",
     on: "2026-10-15",
-    by: "MEM-000002",
+    by: "MM0002",
     plot: "24",
     remark: "Customer needs money urgently",
     schedule: [["25", "2026-10-15"], ["75", "2026-11-15"]],
@@ -176,7 +176,7 @@ const DEALS: Deal[] = [
 ];
 
 const personOf = async (by: string) =>
-  by.startsWith("MEM-")
+  by.startsWith("MM")
     ? (await db.memberProfile.findFirstOrThrow({ where: { memberId: by, status: "ACTIVE" } })).personId
     : (await db.person.findFirstOrThrow({ where: { primaryMobile: by, customerProfile: { isNot: null } } })).id;
 
@@ -216,7 +216,7 @@ async function main() {
     }
 
     const arranger = deal.by === "CLUB" ? null : await personOf(deal.by);
-    const arrangedByType = deal.by === "CLUB" ? "THREE_PERCENT_CLUB" : deal.by.startsWith("MEM-") ? "MEMBER" : "CUSTOMER";
+    const arrangedByType = deal.by === "CLUB" ? "THREE_PERCENT_CLUB" : deal.by.startsWith("MM") ? "MEMBER" : "CUSTOMER";
     const ref = (i: number) => `BBUTR${String(n + 1).padStart(2, "0")}${i}`;
 
     const acquisitionId = await at(db, deal.on, async () => {

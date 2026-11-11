@@ -206,7 +206,7 @@ async function main() {
     note: "Verified at 0% Payment Received.",
   };
   const approved = await decideBookingRequest(approveArgs);
-  assert.ok(approved.bookingNumber?.startsWith("BKG-"), "permanent Booking Number issued on approval");
+  assert.ok(approved.bookingNumber?.startsWith("BKG"), "permanent Booking Number issued on approval");
   const reapproved = await decideBookingRequest(approveArgs);
   assert.equal(reapproved.bookingNumber, approved.bookingNumber, "double approve yields one Booking Number");
   assert.equal(

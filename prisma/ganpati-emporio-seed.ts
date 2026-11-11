@@ -17,7 +17,7 @@ const db = new PrismaClient();
 const { createProject, setProjectStatus } = await import("@/lib/services/project-service");
 const { prepareInventory } = await import("@/lib/services/inventory-service");
 
-const MD = "STF-0001";
+const MD = "MD";
 const actor = { actorRef: MD, actorRole: "MD" };
 const RUN = Date.now().toString(36);
 let seq = 0;

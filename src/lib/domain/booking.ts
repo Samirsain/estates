@@ -259,7 +259,7 @@ export function validateShares(parties: readonly SharedParty[]): Check {
 
   const missing = parties.filter((p) => p.sharePercent === null || p.sharePercent === undefined);
   if (missing.length > 0) {
-    return fail("Every buyer needs an ownership share when two or more buyers are on the Booking.");
+    return fail("Every buyer needs an ownership share when two or more buyers are listed.");
   }
 
   const total = parties.reduce((sum, p) => sum.add(new D(p.sharePercent!)), new D(0));

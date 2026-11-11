@@ -53,13 +53,13 @@ export default async function LoginPage({
 
           <form action={staffLogin} className="space-y-4">
             <label className="block space-y-1 text-xs font-medium text-muted-foreground">
-              <span>Staff Account ID</span>
+              <span>User ID</span>
               <Input
                 name="loginId"
                 required
                 autoComplete="username"
                 defaultValue={loginId}
-                placeholder="STF-0001"
+                placeholder="MD"
               />
             </label>
 

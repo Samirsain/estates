@@ -21,13 +21,13 @@ const db = new PrismaClient();
 
 
 const STAFF: Array<{ staffAccountId: string; name: string; role: StaffRole; mobile: string }> = [
-  { staffAccountId: "STF-0001", name: "Managing Director", role: "MD", mobile: "9800000001" },
-  { staffAccountId: "STF-0003", name: "Priya Nair", role: "ACCOUNTS", mobile: "9800000003" },
-  { staffAccountId: "STF-0004", name: "Suresh Iyer", role: "ACCOUNTS", mobile: "9800000004" },
-  { staffAccountId: "STF-0005", name: "Rahul Mehta", role: "CRM", mobile: "9800000005" },
-  { staffAccountId: "STF-0006", name: "Anita Rao", role: "CRM", mobile: "9800000006" },
-  { staffAccountId: "STF-0007", name: "Meera Pillai", role: "MIS", mobile: "9800000007" },
-  { staffAccountId: "STF-0008", name: "Arjun Bose", role: "PC", mobile: "9800000008" },
+  { staffAccountId: "MD", name: "Managing Director", role: "MD", mobile: "9800000001" },
+  { staffAccountId: "ACCOUNTS-PRIYA", name: "Priya Nair", role: "ACCOUNTS", mobile: "9800000003" },
+  { staffAccountId: "ACCOUNTS-SURESH", name: "Suresh Iyer", role: "ACCOUNTS", mobile: "9800000004" },
+  { staffAccountId: "CRM-RAHUL", name: "Rahul Mehta", role: "CRM", mobile: "9800000005" },
+  { staffAccountId: "CRM-ANITA", name: "Anita Rao", role: "CRM", mobile: "9800000006" },
+  { staffAccountId: "MIS", name: "Meera Pillai", role: "MIS", mobile: "9800000007" },
+  { staffAccountId: "PC", name: "Arjun Bose", role: "PC", mobile: "9800000008" },
 ];
 
 async function upsertPerson(name: string, mobile: string, sensitive?: { aadhaar?: string; pan?: string }) {
@@ -87,9 +87,9 @@ async function main() {
     pan: "ABCDE1234F",
   });
   const member = await db.memberProfile.upsert({
-    where: { memberId: "MEM-0217" },
+    where: { memberId: "MM0217" },
     create: {
-      memberId: "MEM-0217",
+      memberId: "MM0217",
       personId: memberPerson.id,
       activationDate: new Date("2024-03-11T00:00:00+05:30"),
     },
@@ -98,9 +98,9 @@ async function main() {
 
   const customerPerson = await upsertPerson("Vikram Shah", "9822222222", { pan: "PQRSX6789K" });
   await db.customerProfile.upsert({
-    where: { customerId: "CUS-3390" },
+    where: { customerId: "CUS3390" },
     create: {
-      customerId: "CUS-3390",
+      customerId: "CUS3390",
       personId: customerPerson.id,
       // CR-002 — seeded as a Royalty link that has already gone final, which is
       // what a Customer whose first purchase completed under this Member looks

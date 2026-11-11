@@ -9,7 +9,9 @@
 
 import React from "react";
 import { safely } from "@/lib/safely";
-import { ModalError } from "@/components/ui/modal";
+import { Field, Modal, ModalError } from "@/components/ui/modal";
+import { Input } from "@/components/ui/input";
+import { decidePaymentApprovalAction } from "@/app/bookings/actions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Ban, Check, CheckCircle2, Coins, PencilLine, Wallet } from "lucide-react";
@@ -35,6 +37,7 @@ const CTD = "px-2 py-2.5 text-center align-middle";
 const ROLE_TD = "px-2 py-2.5 text-left align-middle text-muted-foreground";
 
 export default function AcquisitionDetailClient({
+  paymentApprovals,
   role,
   actorName,
   staffAccountId,
@@ -42,6 +45,8 @@ export default function AcquisitionDetailClient({
   row,
   people,
 }: {
+  /** Owner, 10 Nov 2026 — payment steps Accounts entered, waiting for MD. */
+  paymentApprovals: Array<{ id: string; label: string; requestedByRef: string; requestedAt: string }>;
   role: StaffRole;
   actorName: string;
   staffAccountId: string;
@@ -64,6 +69,15 @@ export default function AcquisitionDetailClient({
       router.refresh();
     }
   }
+
+  // MD's decision on a waiting payment step; the dialog stays open on a refusal.
+  const [approval, setApproval] = React.useState<{ id: string; label: string; approve: boolean } | null>(null);
+  const decidePayment = (note: string) =>
+    run(async () => {
+      const r = await decidePaymentApprovalAction({ approvalId: approval!.id, approve: approval!.approve, note }, globalThis.crypto.randomUUID());
+      if (r.ok) setApproval(null);
+      return r.ok ? { ok: true, message: r.message ?? "Done." } : r;
+    });
 
   const live = row.status === "PENDING_APPROVAL" || row.status === "APPROVED";
   // Entries come newest first (row-view orders by recordedAt desc).
@@ -165,6 +179,25 @@ export default function AcquisitionDetailClient({
             {notice.text}
           </Card>
         )}
+
+        {paymentApprovals.map((a) => (
+          <div key={a.id} className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
+            <p className="font-semibold">Payment — Waiting for MD approval</p>
+            <p className="mt-1">
+              {a.label} · entered by {a.requestedByRef} on {formatIst(a.requestedAt)}
+            </p>
+            {role === "MD" && (
+              <div className="mt-2 flex gap-2">
+                <Button size="sm" onClick={() => setApproval({ id: a.id, label: a.label, approve: true })}>
+                  Approve
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setApproval({ id: a.id, label: a.label, approve: false })}>
+                  Reject
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
 
         {/* What this deal is, in one line: kind, reference, property, state. */}
         <Card className="p-4">
@@ -401,6 +434,30 @@ export default function AcquisitionDetailClient({
         run={run}
         onClose={() => setDialog(null)}
       />
+      {approval && (
+        <Modal title={approval.approve ? "Approve payment" : "Reject payment"} onClose={() => setApproval(null)}>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              decidePayment(String(new FormData(e.currentTarget).get("note") ?? ""));
+            }}
+          >
+            <p className="rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-xs">{approval.label}</p>
+            <Field label={approval.approve ? "Remark (optional)" : "Reason — compulsory"}>
+              <Input name="note" required={!approval.approve} />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setApproval(null)}>
+                Back
+              </Button>
+              <Button type="submit" size="sm" disabled={busy}>
+                {approval.approve ? "Approve" : "Reject"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </AppShell>
     </ModalError.Provider>
   );

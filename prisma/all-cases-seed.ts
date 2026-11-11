@@ -65,7 +65,7 @@ async function writeGuide() {
     "",
     `Open two profiles: **${people.TM01.name}** (${ids(people.TM01.id)}) for every Member rule and **${people.HC.name}** (${ids(people.HC.id)}) for every Customer rule. States that cannot be true at once (RERA Expired and Registered, Active and Deactivated, a Recovery owed and repaid) happened one after another and show in their History.`,
     "",
-    "Sign in as MD (STF-0001), Accounts (STF-0003 / STF-0004) or CRM (STF-0005). The demo Projects are untouched.",
+    "Sign in as MD, Accounts (ACCOUNTS-PRIYA / ACCOUNTS-SURESH) or CRM (CRM-RAHUL). The demo Projects are untouched.",
     "",
     ...areas.flatMap((area) => [
       `## ${area}`,

@@ -5,6 +5,7 @@ import type { SoldByType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
 import { CommandError } from "@/lib/services/command";
+import type { PartyInput } from "@/app/bookings/actions";
 import {
   cancelHold,
   createHold,
@@ -74,10 +75,9 @@ export async function setRestrictionAction(
 
 export async function createHoldAction(
   plotId: string,
-  personId: string,
+  /** The Booking form's Customer rows; a blank personId is a buyer typed in. */
+  parties: PartyInput[],
   key: string,
-  /** Set instead of personId when the buyer is typed on the form. */
-  newPerson?: { fullName: string; mobile: string } | null,
   /** Who is credited for the Hold. Defaults to the 3% Club, as a Booking does. */
   sourcedBy?: { type: SoldByType; personId: string | null }
 ): Promise<ActionResult> {
@@ -88,8 +88,8 @@ export async function createHoldAction(
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
       plotId,
-      personId: personId || null,
-      newPerson: personId ? null : newPerson,
+      // A blank share means "sole buyer, treated as 100%", as on a Booking.
+      parties: parties.map((p) => ({ ...p, sharePercent: p.sharePercent.trim() || null })),
       sourcedByType: sourcedBy?.type ?? "THREE_PERCENT_CLUB",
       sourcedByPersonId: sourcedBy?.personId ?? null,
       responsibleStaffId: actor.accountId,

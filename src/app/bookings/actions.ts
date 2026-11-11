@@ -33,6 +33,12 @@ import {
 } from "@/lib/services/booking-service";
 import { db } from "@/lib/db";
 import { decideCancellation } from "@/lib/services/cancellation-service";
+import {
+  decidePaymentApproval,
+  pendingPaymentApprovals,
+  requestPaymentApproval,
+  type PaymentStep,
+} from "@/lib/services/payment-approval-service";
 import { plcSnapshotHistory } from "@/lib/services/project-service";
 import { decideChangePlot, submitChangePlot } from "@/lib/services/change-plot-service";
 import {
@@ -65,6 +71,47 @@ function refresh() {
   revalidatePath("/bookings");
   revalidatePath("/plots");
   revalidatePath("/dashboard");
+}
+
+/**
+ * Owner, 10 Nov 2026 — a payment step by anyone but MD waits for MD's approval
+ * instead of running. Null for MD: the caller runs the step at once. Not
+ * exported: a "use server" export is callable from the browser.
+ */
+async function holdForMd(
+  actor: { staffAccountId: string; role: string },
+  key: string,
+  step: PaymentStep
+): Promise<ActionResult | null> {
+  if (actor.role === "MD") return null;
+  const message = await requestPaymentApproval({ idempotencyKey: key, actorRef: actor.staffAccountId, actorRole: actor.role, step });
+  refresh();
+  revalidatePath("/members");
+  revalidatePath("/customers");
+  return { ok: true, message };
+}
+
+/** MD's decision on a payment step that waits for approval (Booking and Buyback pages). */
+export async function decidePaymentApprovalAction(
+  input: { approvalId: string; approve: boolean; note: string },
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff();
+  try {
+    const message = await decidePaymentApproval({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      ...input,
+    });
+    refresh();
+    revalidatePath("/acquisitions");
+    revalidatePath("/members");
+    revalidatePath("/customers");
+    return { ok: true, message };
+  } catch (error) {
+    return toResult(error);
+  }
 }
 
 export type PartyInput = {
@@ -261,10 +308,7 @@ export async function confirmPaymentReceivedAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("PAYMENT_RECEIVED_CONFIRM");
   try {
-    const result = await confirmPaymentReceived({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
+    const args = {
       bookingId: input.bookingId,
       percent: input.percent,
       paidOn: new Date(input.paidOn),
@@ -272,6 +316,14 @@ export async function confirmPaymentReceivedAction(
       remark: input.remark || undefined,
       payerName: input.payerName,
       payerReference: input.payerReference,
+    };
+    const held = await holdForMd(actor, key, { kind: "PAYMENT_RECEIVED", args });
+    if (held) return held;
+    const result = await confirmPaymentReceived({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      ...args,
     });
     refresh();
     return {
@@ -297,15 +349,20 @@ export async function correctPaymentReceivedAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("PAYMENT_CORRECT");
   try {
-    const result = await correctPaymentReceived({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
+    const args = {
       entryId: input.entryId,
       percent: input.percent,
       paidOn: new Date(input.paidOn),
       reference: input.reference,
       reason: input.reason,
+    };
+    const held = await holdForMd(actor, key, { kind: "PAYMENT_CORRECT", args });
+    if (held) return held;
+    const result = await correctPaymentReceived({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      ...args,
     });
     refresh();
     return {
@@ -506,12 +563,14 @@ export async function closeAdjustmentAction(input: { recordId: string; reason: s
 export async function clearRecoveryAction(input: { recoveryId: string; note: string }, key: string): Promise<ActionResult> {
   const actor = await requireStaff("COMMISSION_PROCESS");
   try {
+    const args = { recoveryId: input.recoveryId, note: input.note };
+    const held = await holdForMd(actor, key, { kind: "RECOVERY_REPAID", args });
+    if (held) return held;
     await clearRecovery({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
-      recoveryId: input.recoveryId,
-      note: input.note,
+      ...args,
     });
     refresh();
     return { ok: true, message: "Recovery cleared as repaid. Held payouts are released if nothing else holds them." };
@@ -526,16 +585,21 @@ export async function setOffRecoveryAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("COMMISSION_PROCESS");
   try {
-    const result = await setOffRecovery({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
+    const args = {
       recoveryId: input.recoveryId,
       recordId: input.recordId,
       reference: input.reference,
       setOffOn: new Date(input.setOffOn),
       note: input.note,
       clearsRecovery: input.clearsRecovery,
+    };
+    const held = await holdForMd(actor, key, { kind: "RECOVERY_SET_OFF", args });
+    if (held) return held;
+    const result = await setOffRecovery({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      ...args,
     });
     refresh();
     return {
@@ -625,15 +689,20 @@ export async function markCommissionPaidAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("COMMISSION_PROCESS");
   try {
-    const result = await markCommissionPaid({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
+    const args = {
       recordId: input.recordId,
       early: input.early,
       paidOn: new Date(input.paidOn),
       reference: input.reference,
       remarks: input.remarks,
+    };
+    const held = await holdForMd(actor, key, { kind: "COMMISSION_PAID", args });
+    if (held) return held;
+    const result = await markCommissionPaid({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      ...args,
     });
     refresh();
     return {
@@ -884,9 +953,17 @@ export async function loadBookingDetail(bookingId: string) {
       if (Number(a.percent) > 0 && (!last || e.paidOn > last)) receivedOnBySeq.set(a.seq, e.paidOn);
     }
   }
+  // Owner, 10 Nov 2026 — payment steps Accounts entered, waiting for MD.
+  const paymentApprovals = await pendingPaymentApprovals({ bookingId });
 
   return {
     id: booking.id,
+    paymentApprovals: paymentApprovals.map((a) => ({
+      id: a.id,
+      label: a.label,
+      requestedByRef: a.requestedByRef,
+      requestedAt: a.requestedAt.toISOString(),
+    })),
     /**
      * PLC spec §15.3 — frozen total, breakdown, version, snapshot date and
      * whether this is the original freeze or a correction. Percentage only:
@@ -1103,16 +1180,25 @@ export async function decideCancellationAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("CANCELLATION_DECIDE");
   try {
-    const result = await decideCancellation({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
+    const args = {
       bookingId: input.bookingId,
       approve: input.approve,
       note: input.note,
       noPaymentReceived: input.noPaymentReceived,
       reference: input.reference || null,
       actionDate: input.actionDate ? new Date(input.actionDate) : null,
+    };
+    // Only an approval that pays a refund is a payment step; a rejection, or
+    // an approval with no payment received, decides at once as before.
+    if (input.approve && input.reference?.trim()) {
+      const held = await holdForMd(actor, key, { kind: "REFUND", args });
+      if (held) return held;
+    }
+    const result = await decideCancellation({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      ...args,
     });
     refresh();
     return {

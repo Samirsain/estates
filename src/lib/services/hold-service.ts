@@ -15,8 +15,9 @@ import {
   MAX_EXTENSION_DAYS,
 } from "@/lib/domain/holds";
 import { canAllocate, plotReturnState } from "@/lib/domain/inventory";
+import { validateShares } from "@/lib/domain/booking";
 import { blocked, lockPlot, runCommand, type Tx } from "./command";
-import { ensureCustomerProfile, linkOrCreatePerson } from "./enquiry-service";
+import { ensureCustomerProfile, linkOrCreatePerson, resolveParties, type PartyInput } from "./enquiry-service";
 import { freezePlcSnapshot, loadPlotForPlc } from "./plc-service";
 import { closeTasksFor } from "./task-service";
 import { closeSellingTasksIfClear } from "./selling-task";
@@ -65,6 +66,12 @@ export type CreateHoldInput = {
    * so a Hold never invents a second Person for an existing name and mobile.
    */
   newPerson?: { fullName: string; mobile: string; city?: string } | null;
+  /**
+   * The Hold form's buyers, as a Booking takes them: one Primary, any
+   * Additional Customers, a share each. When given it replaces personId and
+   * newPerson; the Primary becomes the Hold's personId.
+   */
+  parties?: PartyInput[] | null;
   enquiryId?: string | null;
   sourceMemberId?: string | null;
   /**
@@ -144,6 +151,15 @@ async function placeHold(
 }
 
 export async function createHold(input: CreateHoldInput) {
+  // The Booking's own structural checks, before a first-time buyer's Person
+  // even exists: one Primary, and with two or more buyers shares totalling 100.
+  if (input.parties?.length) {
+    if (input.parties.filter((p) => p.role === "PRIMARY").length !== 1) {
+      blocked("Exactly one Primary Customer is required on a Hold.");
+    }
+    const shares = validateShares(input.parties);
+    if (!shares.ok) blocked(shares.reason);
+  }
   return runCommand(
     {
       idempotencyKey: input.idempotencyKey,
@@ -153,18 +169,33 @@ export async function createHold(input: CreateHoldInput) {
       payload: {
         plotId: input.plotId,
         personId: input.personId ?? input.newPerson?.mobile ?? null,
+        parties: input.parties ?? null,
         sourcedByType: input.sourcedByType ?? "THREE_PERCENT_CLUB",
         sourcedByPersonId: input.sourcedByPersonId ?? null,
       },
     },
     async (tx) => {
-      if (!input.personId && !input.newPerson) {
-        blocked("A Hold must identify the actual Customer/Person.");
-      }
-      const personId = input.personId
-        ? input.personId
-        : (await linkOrCreatePerson(tx, input.newPerson!)).id;
+      const parties = input.parties?.length ? await resolveParties(tx, input.parties) : [];
+      const personId =
+        parties.find((p) => p.role === "PRIMARY")?.personId ||
+        input.personId ||
+        (input.newPerson ? (await linkOrCreatePerson(tx, input.newPerson)).id : "");
+      if (!personId) blocked("A Hold must identify the actual Customer/Person.");
       const hold = await placeHold(tx, { ...input, personId });
+
+      // One buyer is the Hold's personId at 100%, as every Hold before
+      // Additional Customers was — rows only when there is more than one.
+      if (parties.length > 1) {
+        for (const p of parties) await ensureCustomerProfile(tx, p.personId);
+        await tx.holdParty.createMany({
+          data: parties.map((p) => ({
+            holdId: hold.id,
+            personId: p.personId,
+            role: p.role,
+            sharePercent: p.sharePercent ?? null,
+          })),
+        });
+      }
       return {
         result: { holdId: hold.id, expiresAt: hold.expiresAt.toISOString() },
         audit: {
@@ -174,6 +205,7 @@ export async function createHold(input: CreateHoldInput) {
           after: {
             plotId: input.plotId,
             personId,
+            parties: parties.length > 1 ? parties : undefined,
             sourcedByType: hold.sourcedByType,
             sourcedByPersonId: hold.sourcedByPersonId,
             expiresAt: hold.expiresAt,

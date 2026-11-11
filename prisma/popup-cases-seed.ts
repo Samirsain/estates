@@ -3,15 +3,15 @@
 // cleared. One real flow, run through the services the screens call, leaves
 // each of them open:
 //
-//   1. Mahendra (MEM-000003) sells GEE Plot S-11 to Ritu Saxena; 30% received,
+//   1. Mahendra (MM0003) sells GEE Plot S-11 to Ritu Saxena; 30% received,
 //      so his Direct on it reaches its 25% milestone and is Ready.
-//   2. BKG-000023 (GEE Plot 20), his paid sale, gets a Sold By Correction to
-//      Sonal Agarwal (MEM-000004): CRM raises it, MD approves it.
-//   3. Accounts opens a Recovery against Mahendra's paid Direct on BKG-000023.
+//   2. BKG0023 (GEE Plot 20), his paid sale, gets a Sold By Correction to
+//      Sonal Agarwal (MM0004): CRM raises it, MD approves it.
+//   3. Accounts opens a Recovery against Mahendra's paid Direct on BKG0023.
 //
 // After it:
-//   BKG-000023  Recovery repaid (Mark Repaid, Accounts) — the Outstanding Recovery
-//   BKG-000023  Pay before the old Recovery (MD) — Sonal's Direct is held
+//   BKG0023  Recovery repaid (Mark Repaid, Accounts) — the Outstanding Recovery
+//   BKG0023  Pay before the old Recovery (MD) — Sonal's Direct is held
 //               OLD_RECOVERY_PENDING
 //   S-11        Set off against Recovery (Set Off, Accounts) — Mahendra's Ready
 //               Direct is held RECOVERY_OUTSTANDING while he owes
@@ -26,9 +26,9 @@ import { confirmPaymentReceived } from "@/lib/services/payment-service";
 import { openRecovery } from "@/lib/services/recovery-service";
 
 const db = new PrismaClient();
-const MD = "STF-0001";
-const ACC = "STF-0003";
-const CRM = "STF-0005";
+const MD = "MD";
+const ACC = "ACCOUNTS-PRIYA";
+const CRM = "CRM-RAHUL";
 const RUN = Date.now().toString(36);
 let seq = 0;
 const key = () => `POPUP-${RUN}-${seq++}`;
@@ -42,12 +42,12 @@ const step = async <T>(label: string, run: () => Promise<T>) => {
 
 try {
   const person = async (where: object) => (await db.person.findFirstOrThrow({ where, select: { id: true } })).id;
-  const mahendra = await person({ memberProfile: { memberId: "MEM-000003" } });
-  const sonal = await person({ memberProfile: { memberId: "MEM-000004" } });
-  const ritu = await person({ customerProfile: { customerId: "CUS-000006" } });
+  const mahendra = await person({ memberProfile: { memberId: "MM0003" } });
+  const sonal = await person({ memberProfile: { memberId: "MM0004" } });
+  const ritu = await person({ customerProfile: { customerId: "CUS006" } });
   const gee = await db.project.findFirstOrThrow({ where: { projectCode: "GEE" }, select: { id: true } });
   const plot = await db.plot.findFirstOrThrow({ where: { projectId: gee.id, plotNumber: "S-11", status: "AVAILABLE" }, select: { id: true } });
-  const x = await db.booking.findUniqueOrThrow({ where: { bookingNumber: "BKG-000023" }, select: { id: true } });
+  const x = await db.booking.findUniqueOrThrow({ where: { bookingNumber: "BKG0023" }, select: { id: true } });
 
   // 1 — the Ready Direct that Set Off needs.
   const { bookingId } = await step("S-11 Booking Request (CRM)", () =>
@@ -75,8 +75,8 @@ try {
     confirmPaymentReceived({ idempotencyKey: key(), actorRef: ACC, actorRole: "ACCOUNTS", bookingId, percent: "30", paidOn: new Date(), reference: `UTR26${RUN.toUpperCase()}1` })
   );
 
-  // 2 — the paid Direct on BKG-000023 turns into an adjustment.
-  await step("BKG-000023 Sold By Correction raised (CRM)", () =>
+  // 2 — the paid Direct on BKG0023 turns into an adjustment.
+  await step("BKG0023 Sold By Correction raised (CRM)", () =>
     requestSoldByCorrection({
       idempotencyKey: key(),
       actorRef: CRM,
@@ -88,7 +88,7 @@ try {
       supportingNote: "Site visit register shows Sonal brought the buyer",
     })
   );
-  await step("BKG-000023 Sold By Correction approved (MD)", () =>
+  await step("BKG0023 Sold By Correction approved (MD)", () =>
     decideSoldByCorrection({ idempotencyKey: key(), actorRef: MD, actorRole: "MD", bookingId: x.id, approve: true, note: "Approved — buyer confirmed Sonal brought them" })
   );
 
@@ -102,7 +102,7 @@ try {
   );
 
   const s11 = await db.booking.findUniqueOrThrow({ where: { id: bookingId }, select: { bookingNumber: true } });
-  console.log(`Done. New Booking ${s11.bookingNumber} (GEE S-11); BKG-000023 carries the Recovery.`);
+  console.log(`Done. New Booking ${s11.bookingNumber} (GEE S-11); BKG0023 carries the Recovery.`);
 } finally {
   await db.$disconnect();
 }

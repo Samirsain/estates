@@ -177,6 +177,9 @@ ALTER TABLE "PrimaryCustomerChange" ADD CONSTRAINT "customer_change_not_self"
 ALTER TABLE "BookingParty" DROP CONSTRAINT IF EXISTS "share_percent_bounds";
 ALTER TABLE "BookingParty" ADD CONSTRAINT "share_percent_bounds"
   CHECK ("sharePercent" IS NULL OR ("sharePercent" > 0 AND "sharePercent" <= 100));
+ALTER TABLE "HoldParty" DROP CONSTRAINT IF EXISTS "hold_share_percent_bounds";
+ALTER TABLE "HoldParty" ADD CONSTRAINT "hold_share_percent_bounds"
+  CHECK ("sharePercent" IS NULL OR ("sharePercent" > 0 AND "sharePercent" <= 100));
 
 -- PRD §12.1 — a single final buyer may omit the share and is treated as 100%;
 -- with two or more buyers every share is compulsory and the total is exactly
@@ -938,3 +941,9 @@ DROP TRIGGER IF EXISTS "Project_projectCode_immutable" ON "Project";
 CREATE TRIGGER "Project_projectCode_immutable"
   BEFORE UPDATE OF "projectCode" ON "Project"
   FOR EACH ROW EXECUTE FUNCTION "project_code_immutable"();
+
+-- Owner, 10 Nov 2026 — one payment step per kind and target waits for MD at a
+-- time: a second Payment Received on the same Booking, or a second payout of
+-- the same commission, is refused until the first is decided.
+CREATE UNIQUE INDEX IF NOT EXISTS "one_pending_payment_approval"
+  ON "PaymentApproval" ("kind", "targetKey") WHERE "status" = 'PENDING';

@@ -147,6 +147,51 @@ async function main() {
     })
   );
 
+  /* ================================ Hold for several buyers (owner, 11 Nov) */
+
+  // The Booking form's Customer rows: the Primary becomes the Hold's personId,
+  // a typed-in Additional Customer is match-or-created, every share is kept.
+  const sharer = await db.person.create({
+    data: { fullName: `${TAG} Sharer`, primaryMobile: "9500000704" },
+  });
+  const sharedPlot = await makePlot(project.id, "S1");
+  const shared = await createHold({
+    idempotencyKey: key(),
+    actorRef: CRM,
+    actorRole: "CRM",
+    plotId: sharedPlot.id,
+    responsibleStaffId: crmStaff.id,
+    parties: [
+      { personId: sharer.id, role: "PRIMARY", sharePercent: "60" },
+      { personId: "", role: "ADDITIONAL", sharePercent: "40", fullName: `${TAG} Partner`, mobile: "9500000705" },
+    ],
+  });
+  const sharedHold = await db.hold.findUniqueOrThrow({
+    where: { id: shared.holdId },
+    include: { parties: { include: { person: true } } },
+  });
+  assert.equal(sharedHold.personId, sharer.id, "the Primary is the Hold's own buyer");
+  assert.deepEqual(
+    sharedHold.parties.map((p) => `${p.role} ${p.person.fullName} ${p.sharePercent?.toString()}`).sort(),
+    [`ADDITIONAL ${TAG} Partner 40`, `PRIMARY ${TAG} Sharer 60`],
+    "every buyer is kept with their share"
+  );
+
+  const shortPlot = await makePlot(project.id, "S2");
+  await expectBlocked(/total exactly 100%/, () =>
+    createHold({
+      idempotencyKey: key(),
+      actorRef: CRM,
+      actorRole: "CRM",
+      plotId: shortPlot.id,
+      responsibleStaffId: crmStaff.id,
+      parties: [
+        { personId: sharer.id, role: "PRIMARY", sharePercent: "60" },
+        { personId: walkIn.id, role: "ADDITIONAL", sharePercent: "30" },
+      ],
+    })
+  );
+
   /* ================================================== concurrency evidence */
 
   const plotB = await makePlot(project.id, "B");
