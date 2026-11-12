@@ -213,14 +213,14 @@ export async function lockKey(tx: Tx, key: string): Promise<void> {
  * its contention ever becomes visible to users.
  */
 // Owner, 11 Nov 2026 — the four IDs people read aloud carry no dash and a
-// short number: MM0011, CUS046, ENQ005, BKG0023. Every other series keeps
-// PREFIX-000123. A number past the width simply grows (CUS1000).
+// short number: MM0011, CU0046 (12 Nov), ENQ005, BKG0023. Every other series
+// keeps PREFIX-000123. A number past the width simply grows (CU10000).
 const SERIES = {
   Enquiry: { table: "Enquiry", column: "enquiryNo", dash: false, width: 3 },
   Task: { table: "Task", column: "taskNo", sequence: "task_no_seq" },
   BookingRequest: { table: "Booking", column: "requestNo" },
   BookingNumber: { table: "Booking", column: "bookingNumber", dash: false, width: 4 },
-  Customer: { table: "CustomerProfile", column: "customerId", dash: false, width: 3 },
+  Customer: { table: "CustomerProfile", column: "customerId", dash: false, width: 4 },
   Member: { table: "MemberProfile", column: "memberId", dash: false, width: 4 },
   Acquisition: { table: "Acquisition", column: "acquisitionNo" },
   Recovery: { table: "Recovery", column: "recoveryNo" },

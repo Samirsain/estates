@@ -142,7 +142,7 @@ model Person {
 
 model CustomerProfile {
   id         String @id @default(uuid())
-  /// Display identity, e.g. CUS-3390. Never reused.
+  /// Display identity, e.g. CU0046. Never reused.
   customerId String @unique
   personId   String @unique
   person     Person @relation(fields: [personId], references: [id])
@@ -764,6 +764,7 @@ model Plot {
   enquiries      Enquiry[]
   bookings       Booking[]
   acquisitions   Acquisition[]
+  tasks          Task[]
   changePlotFrom ChangePlotRequest[] @relation("ChangePlotFrom")
   changePlotTo   ChangePlotRequest[] @relation("ChangePlotTo")
 
@@ -984,6 +985,10 @@ model Task {
   recordKind String
   recordId   String
   recordName String
+  /// Owner, 11 Nov 2026 — an optional Plot beside whatever the task is linked
+  /// to (Project, Enquiry, Member or Customer): most work is about a Plot.
+  plotId     String?
+  plot       Plot?   @relation(fields: [plotId], references: [id])
   purpose    String
   title      String
 

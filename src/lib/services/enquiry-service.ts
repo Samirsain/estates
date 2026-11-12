@@ -107,7 +107,7 @@ export async function ensureCustomerProfile(tx: Tx, personId: string) {
   // (`syncRoyaltyLink`), so a Customer created by a Hold, a Booking Request or
   // a Primary Customer change starts with no earning relationship at all.
   return tx.customerProfile.create({
-    data: { personId, customerId: await nextReference(tx, "CUS", "Customer") },
+    data: { personId, customerId: await nextReference(tx, "CU", "Customer") },
   });
 }
 

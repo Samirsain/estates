@@ -23,7 +23,10 @@ export default async function DashboardPage() {
   const scope = seesAllWork
     ? {}
     : { OR: [{ assigneeStaffId: actor.accountId }, { assigneeRole: actor.role, assigneeStaffId: null }] };
-  const include = { assigneeStaff: { include: { person: true } } } as const;
+  const include = {
+    assigneeStaff: { include: { person: true } },
+    plot: { select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true } } } },
+  } as const;
 
   // Every pending task, always — a cap here once hid live work behind old
   // completed rows. Completed ones are history: only the most recent.
@@ -42,7 +45,17 @@ export default async function DashboardPage() {
     purpose: row.purpose,
     title: row.title,
     record: { kind: row.recordKind as RecordKind, id: row.recordId, name: shownRecordName(row.recordName) },
-    subject: subjects.get(row.recordId),
+    // A Plot chosen on the task itself (Add Task, 11 Nov 2026) fills the
+    // Project and Plot columns, whatever the task is linked to.
+    subject: row.plot
+      ? {
+          ...(subjects.get(row.recordId) ?? { reference: null, partyRef: null, partyName: null, partyPersonId: null }),
+          project: row.plot.project.name,
+          plot: row.plot.plotNumber,
+          plotType: row.plot.plotType,
+          plotId: row.plot.id,
+        }
+      : subjects.get(row.recordId),
     assigneeRole: row.assigneeRole,
     assigneeName: row.assigneeStaff?.person.fullName ?? "Unassigned",
     dueAt: row.dueAt.toISOString(),

@@ -15,6 +15,7 @@ import {
   completeTaskAction,
   reviseTaskAction,
   taskLinkOptionsAction,
+  taskPlotOptionsAction,
   type ActionResult,
   type TaskLinkKind,
 } from "./actions";
@@ -90,7 +91,7 @@ const VIEWS: { id: TaskView; label: string }[] = [
 // Owner, 11 Nov 2026 — Link to picks a real record from a searchable list, so
 // the task's row shows its Project / Plot / ID / Name and opens it on click.
 const LINK_KINDS: { kind: TaskLinkKind; placeholder: string }[] = [
-  { kind: "Plot", placeholder: "Search by Project or Plot number" },
+  { kind: "Project", placeholder: "Search by Project name" },
   { kind: "Enquiry", placeholder: "Search by Enquiry ID, name or Project" },
   { kind: "Member", placeholder: "Search by Member ID, name or mobile" },
   { kind: "Customer", placeholder: "Search by Customer ID, name or mobile" },
@@ -746,7 +747,8 @@ export function AddTaskDialog({
   >("NONE");
   const [weekday, setWeekday] = React.useState(new Date(`${tomorrow}T00:00:00Z`).getUTCDay());
   const [monthDate, setMonthDate] = React.useState(Number(tomorrow.slice(8, 10)));
-  const [time, setTime] = React.useState("11:00");
+  // Owner, 11 Nov 2026 — no Time on Add Task: every task is due at 11:00 AM IST.
+  const time = "11:00";
   const recurrence =
     repeat === "WEEKLY_DAY" ? `WEEKLY:${weekday}` : repeat === "MONTHLY_DATE" ? `MONTHLY:${monthDate}` : repeat;
   const byRule = repeat === "WEEKLY_DAY" || repeat === "MONTHLY_DATE";
@@ -767,6 +769,16 @@ export function AddTaskDialog({
   const options = lists[linkKind];
   const linked = options?.find((o) => o.id === linkId);
 
+  // Owner, 11 Nov 2026 — an optional Plot, last, whatever the task is linked
+  // to. With a Project chosen it lists only that Project's Plots.
+  const [plotId, setPlotId] = React.useState("");
+  const [plots, setPlots] = React.useState<(PickerOption & { projectId: string })[] | null>(null);
+  React.useEffect(() => {
+    taskPlotOptionsAction().then(setPlots, () => setPlots([]));
+  }, []);
+  const projectFilter = (record ? record.kind === "Project" && record.id : linkKind === "Project" && linkId) || null;
+  const plotOptions = plots && projectFilter ? plots.filter((p) => p.projectId === projectFilter) : plots;
+
   return (
     <Modal
       title="Add Task"
@@ -783,6 +795,8 @@ export function AddTaskDialog({
             recordKind: record?.kind ?? linkKind,
             recordId: record?.id ?? linked?.id ?? "",
             recordName: record?.name ?? linked?.label ?? "",
+            // Only a Plot still in the list: a Project change can leave one behind.
+            plotId: plotOptions?.some((p) => p.id === plotId) ? plotId : undefined,
             assignee: String(f.get("assignee")),
             dueAtIso: ruleFirst ? ruleFirst.toISOString() : istInstant(String(f.get("date")), time),
             urgent: f.get("urgent") === "on",
@@ -848,15 +862,6 @@ export function AddTaskDialog({
               <input name="date" type="date" required defaultValue={tomorrow} className={inputClass} />
             </Field>
           )}
-          <Field label="Time">
-            <input
-              type="time"
-              required
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              className={inputClass}
-            />
-          </Field>
           <Field label="Urgent">
             <span className="flex h-10 items-center gap-2 text-sm text-foreground">
               <input name="urgent" type="checkbox" className="h-4 w-4" /> Yes
@@ -870,12 +875,16 @@ export function AddTaskDialog({
             <span className="font-semibold text-foreground">{formatIst(ruleFirst.toISOString())}</span>
           </p>
         )}
+        {/* Owner, 11 Nov 2026 — one row: Link to, the record, then the Plot. */}
+        <div className="grid gap-3 sm:grid-cols-[7.5rem_minmax(0,1fr)_minmax(0,1fr)]">
         {record ? (
-          <p className="text-xs text-muted-foreground">
-            Linked to <span className="font-semibold text-foreground">{record.name}</span>
-          </p>
+          <div className="sm:col-span-2">
+            <Field label="Link to">
+              <p className="flex h-10 items-center truncate text-sm font-semibold text-foreground">{record.name}</p>
+            </Field>
+          </div>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-3">
+          <>
             <Field label="Link to">
               <select
                 value={linkKind}
@@ -892,23 +901,44 @@ export function AddTaskDialog({
                 ))}
               </select>
             </Field>
-            <div className="sm:col-span-2">
-              <Field label={linkKind}>
-                {/* key: a new kind starts the search box empty. */}
-                <PersonPicker
-                  key={linkKind}
-                  value={linkId}
-                  onChange={setLinkId}
-                  disabled={!options}
-                  placeholder={
-                    options ? LINK_KINDS.find((k) => k.kind === linkKind)!.placeholder : "Loading…"
-                  }
-                  options={options ?? []}
-                />
-              </Field>
-            </div>
-          </div>
+            <Field label={linkKind}>
+              {/* key: a new kind starts the search box empty. */}
+              <PersonPicker
+                key={linkKind}
+                value={linkId}
+                onChange={(id) => {
+                  setLinkId(id);
+                  // Another Project's Plots: the chosen one no longer belongs.
+                  if (linkKind === "Project") setPlotId("");
+                }}
+                disabled={!options}
+                placeholder={
+                  options ? LINK_KINDS.find((k) => k.kind === linkKind)!.placeholder : "Loading…"
+                }
+                options={options ?? []}
+              />
+            </Field>
+          </>
         )}
+          <div className="space-y-1">
+            <Field label="Plot">
+              {/* key: a new Project starts the search box empty. */}
+              <PersonPicker
+                key={projectFilter ?? "all"}
+                value={plotId}
+                onChange={setPlotId}
+                disabled={!plotOptions}
+                placeholder={plotOptions ? "Optional" : "Loading…"}
+                options={plotOptions ?? []}
+              />
+            </Field>
+            {plotId && (
+              <button type="button" onClick={() => setPlotId("")} className="text-[11px] text-primary hover:underline">
+                Clear Plot
+              </button>
+            )}
+          </div>
+        </div>
         <Field label="Remark">
           <RemarkSelect presets="addTask" name="remark" />
         </Field>

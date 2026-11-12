@@ -98,9 +98,9 @@ async function main() {
 
   const customerPerson = await upsertPerson("Vikram Shah", "9822222222", { pan: "PQRSX6789K" });
   await db.customerProfile.upsert({
-    where: { customerId: "CUS3390" },
+    where: { customerId: "CU3390" },
     create: {
-      customerId: "CUS3390",
+      customerId: "CU3390",
       personId: customerPerson.id,
       // CR-002 — seeded as a Royalty link that has already gone final, which is
       // what a Customer whose first purchase completed under this Member looks

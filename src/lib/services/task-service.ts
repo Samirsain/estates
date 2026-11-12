@@ -11,6 +11,8 @@ export type TaskInput = {
   recordKind: string;
   recordId: string;
   recordName: string;
+  /** An optional Plot beside the record (manual tasks, owner 11 Nov 2026). */
+  plotId?: string | null;
   purpose: string;
   title: string;
   assigneeRole: StaffRole;
@@ -51,6 +53,7 @@ export async function ensureTask(tx: Tx, input: TaskInput) {
       recordKind: input.recordKind,
       recordId: input.recordId,
       recordName: input.recordName,
+      plotId: input.plotId ?? null,
       purpose: input.purpose,
       title: input.title,
       assigneeRole: input.assigneeRole,
@@ -181,6 +184,7 @@ export async function taskSubjects(
   const memberIds = idsFor("Member", "MemberProfile");
   const customerIds = idsFor("Customer");
   const plotIds = idsFor("Plot");
+  const projectIds = idsFor("Project");
   const acquisitionIds = idsFor("Acquisition");
   const commissionIds = idsFor("Commission");
   const redemptionIds = idsFor("Token Redemption");
@@ -209,7 +213,7 @@ export async function taskSubjects(
     customerProfile: { select: { customerId: true } },
   } as const;
 
-  const [bookings, enquiries, members, customers, plots, acquisitions, commissions, redemptions, tripOwners, persons, reviews] =
+  const [bookings, enquiries, members, customers, plots, projects, acquisitions, commissions, redemptions, tripOwners, persons, reviews] =
     await Promise.all([
       bookingIds.length
         ? db.booking.findMany({
@@ -251,6 +255,9 @@ export async function taskSubjects(
             where: { id: { in: plotIds } },
             select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true } } },
           })
+        : [],
+      projectIds.length
+        ? db.project.findMany({ where: { id: { in: projectIds } }, select: { id: true, name: true } })
         : [],
       acquisitionIds.length
         ? db.acquisition.findMany({
@@ -378,6 +385,10 @@ export async function taskSubjects(
       partyName: null,
       partyPersonId: null,
     });
+  }
+  for (const p of projects) {
+    // Reads as what it is: the Project column under the Plot already names it.
+    add(p.id, { project: p.name, plot: null, plotId: null, reference: "Project", partyRef: null, partyName: null, partyPersonId: null });
   }
   for (const a of acquisitions) {
     // A Purchase for Resale has no Plot until approval, and carries the

@@ -44,7 +44,7 @@ try {
   const person = async (where: object) => (await db.person.findFirstOrThrow({ where, select: { id: true } })).id;
   const mahendra = await person({ memberProfile: { memberId: "MM0003" } });
   const sonal = await person({ memberProfile: { memberId: "MM0004" } });
-  const ritu = await person({ customerProfile: { customerId: "CUS006" } });
+  const ritu = await person({ customerProfile: { customerId: "CU0006" } });
   const gee = await db.project.findFirstOrThrow({ where: { projectCode: "GEE" }, select: { id: true } });
   const plot = await db.plot.findFirstOrThrow({ where: { projectId: gee.id, plotNumber: "S-11", status: "AVAILABLE" }, select: { id: true } });
   const x = await db.booking.findUniqueOrThrow({ where: { bookingNumber: "BKG0023" }, select: { id: true } });

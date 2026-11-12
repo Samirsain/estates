@@ -113,7 +113,7 @@ export async function assignableStaffAction(): Promise<{ id: string; name: strin
 }
 
 /** The record kinds a manual task can be linked to from the Add Task form. */
-export type TaskLinkKind = "Plot" | "Enquiry" | "Member" | "Customer";
+export type TaskLinkKind = "Project" | "Enquiry" | "Member" | "Customer";
 
 /**
  * Owner, 11 Nov 2026 — Link to is a searchable list, not a typed ID. Each
@@ -123,19 +123,11 @@ export type TaskLinkKind = "Plot" | "Enquiry" | "Member" | "Customer";
  */
 export async function taskLinkOptionsAction(kind: TaskLinkKind): Promise<PickerOption[]> {
   await requireStaff("TASK_CREATE");
-  if (kind === "Plot") {
-    const plots = await db.plot.findMany({
-      select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true } } },
-      orderBy: [{ project: { name: "asc" } }, { plotNumber: "asc" }],
-      take: 2000,
-    });
-    return plots.map((p) => ({
-      id: p.id,
-      // RESIDENTIAL → Residential, INFORMAL_SECTOR → Informal Sector, as the lists read.
-      label: `${p.project.name} · ${p.plotType
-        .toLowerCase()
-        .replace(/(^|_)([a-z])/g, (_, sep: string, c: string) => (sep ? " " : "") + c.toUpperCase())} ${p.plotNumber}`,
-    }));
+  // Owner, 11 Nov 2026 — Link to names a Project; the Plot is its own optional
+  // field under it (taskPlotOptionsAction).
+  if (kind === "Project") {
+    const projects = await db.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
+    return projects.map((p) => ({ id: p.id, label: p.name }));
   }
   if (kind === "Enquiry") {
     const enquiries = await db.enquiry.findMany({
@@ -176,6 +168,24 @@ export async function taskLinkOptionsAction(kind: TaskLinkKind): Promise<PickerO
   }));
 }
 
+/** Every Plot, for Add Task's optional Plot field; projectId narrows it to a chosen Project. */
+export async function taskPlotOptionsAction(): Promise<(PickerOption & { projectId: string })[]> {
+  await requireStaff("TASK_CREATE");
+  const plots = await db.plot.findMany({
+    select: { id: true, projectId: true, plotNumber: true, plotType: true, project: { select: { name: true } } },
+    orderBy: [{ project: { name: "asc" } }, { plotNumber: "asc" }],
+    take: 2000,
+  });
+  return plots.map((p) => ({
+    id: p.id,
+    projectId: p.projectId,
+    // RESIDENTIAL → Residential, INFORMAL_SECTOR → Informal Sector, as the lists read.
+    label: `${p.project.name} · ${p.plotType
+      .toLowerCase()
+      .replace(/(^|_)([a-z])/g, (_, sep: string, c: string) => (sep ? " " : "") + c.toUpperCase())} ${p.plotNumber}`,
+  }));
+}
+
 export async function addTaskAction(
   input: {
     title: string;
@@ -187,6 +197,8 @@ export async function addTaskAction(
     recordKind: string;
     recordId: string;
     recordName: string;
+    /** Optional: the Plot the task is about, beside the linked record. */
+    plotId?: string;
     remark: string;
   },
   key: string
@@ -205,6 +217,13 @@ export async function addTaskAction(
   if (!person) return { ok: false, error: "That staff member is not active. Choose someone else." };
   const assigneeRole = person.role as StaffRole;
   const recordId = input.recordId.trim() || `UNLINKED:${actor.staffAccountId}`;
+  const plotId = input.plotId?.trim() || null;
+  if (plotId) {
+    const plot = await db.plot.findUnique({ where: { id: plotId }, select: { projectId: true } });
+    if (!plot) return { ok: false, error: "That Plot is no longer on file. Choose another." };
+    if (input.recordKind === "Project" && input.recordId && plot.projectId !== input.recordId)
+      return { ok: false, error: "That Plot is not in the chosen Project." };
+  }
 
   try {
     // Record + Purpose duplicate check, reported before the write attempt so
@@ -234,6 +253,7 @@ export async function addTaskAction(
           recordKind: input.recordKind,
           recordId,
           recordName: input.recordName.trim() || "Not linked",
+          plotId,
           purpose,
           title: input.title,
           assigneeRole,
