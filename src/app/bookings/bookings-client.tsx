@@ -807,12 +807,7 @@ export default function BookingsClient({
       ) : (
       <div className="mx-auto max-w-6xl space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Bookings</h1>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {visible.length} of {rows.length} · percentages only, no rupee value · times in Asia/Kolkata
-            </p>
-          </div>
+          <h1 className="text-2xl font-bold tracking-tight">Bookings</h1>
           {permissions.submit && (
             <Button size="sm" variant="gradient" onClick={() => openDialog({ kind: "NEW" })}>
               <Plus className="mr-1 h-4 w-4" /> Start Booking
