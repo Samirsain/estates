@@ -294,10 +294,10 @@ on("2026-10-26", "Hemant spends Royalty points on a Gift", () => spend(4, "Gift"
 /* ------------------------------------------------------------ Investor Leads */
 
 const INVESTORS = [
-  { fullName: "Rajesh Agrawal", mobile: mobile(21), altMobile: mobile(31), city: "Jaipur" },
-  { fullName: "Meenakshi Jain", mobile: mobile(22), altMobile: null, city: "Ajmer" },
-  { fullName: "Vikram Singh Rathore", mobile: mobile(23), altMobile: null, city: "Jodhpur" },
-  { fullName: "Anjali Mathur", mobile: mobile(24), altMobile: mobile(34), city: "Jaipur" },
+  { fullName: "Rajesh Agrawal", mobile: mobile(21), altMobile: mobile(31), city: "Suratgarh" },
+  { fullName: "Meenakshi Jain", mobile: mobile(22), altMobile: null, city: "Nohar" },
+  { fullName: "Vikram Singh Rathore", mobile: mobile(23), altMobile: null, city: "Sardarshahar" },
+  { fullName: "Anjali Mathur", mobile: mobile(24), altMobile: mobile(34), city: "Pilibanga" },
   { fullName: "Suresh Bhatia", mobile: mobile(25), altMobile: null, city: null },
 ];
 const investorNos: string[] = [];
