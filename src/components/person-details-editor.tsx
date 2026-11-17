@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CityInput } from "@/components/city-input";
 import { AADHAAR_INPUT, ACCOUNT_NUMBER_INPUT, IFSC_INPUT, MOBILE_INPUT, PAN_INPUT } from "@/components/ui/field-formats";
 import { Field, Modal } from "@/components/ui/modal";
 import { updatePersonDetailsAction, type PersonDetails } from "@/app/people/actions";
@@ -160,7 +161,7 @@ export function PersonDetailsEditor({
                 />
               </Field>
               <Field label="City">
-                <Input name="city" defaultValue={person.city} />
+                <CityInput name="city" defaultValue={person.city} />
               </Field>
               <Field label="Address">
                 <Input name="addressLine" defaultValue={person.addressLine} />

@@ -303,6 +303,26 @@ model PotentialInvestor {
   @@index([mobile])
 }
 
+/// City Master (owner, 17 Nov 2026). Every City field picks from the active
+/// rows here; the record itself keeps the city's name as text, as it always
+/// has. Administration → Cities adds, edits, imports and exports them. A name
+/// is also unique ignoring case (City_name_lower_key, constraints.sql).
+model City {
+  /// City ID: 1, 2, 3… in the order cities were added.
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  /// Capital letters, unique. Set once; only a manual edit ever changes it.
+  code        String   @unique
+  stateName   String
+  stateCode   String
+  countryName String
+  countryCode String
+  /// Inactive cities drop out of the pickers; records that hold one keep it.
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model StaffAccount {
   id             String @id @default(uuid())
   /// The User ID (owner, 11 Nov 2026): what the person signs in with, what

@@ -35,6 +35,7 @@ export type NewMemberPerson = {
   pan: string | null;
   altMobile: string | null;
   addressLine: string | null;
+  dateOfBirth: Date | null;
 };
 
 /**
@@ -54,6 +55,10 @@ async function addMemberPerson(tx: Tx, input: NewMemberPerson) {
     differs(found.email, input.email) && "Email",
     differs(found.altMobile, altMobile) && "Alternate Mobile",
     differs(found.addressLine, input.addressLine) && "Address",
+    found.dateOfBirth &&
+      input.dateOfBirth &&
+      found.dateOfBirth.getTime() !== input.dateOfBirth.getTime() &&
+      "Date of Birth",
     typedAadhaar &&
       found.aadhaarStatus !== "PENDING" &&
       found.aadhaarBlindIndex !== blindIndex(normaliseAadhaar(typedAadhaar)) &&
@@ -82,6 +87,7 @@ async function addMemberPerson(tx: Tx, input: NewMemberPerson) {
       email: found.email ?? input.email,
       altMobile: found.altMobile ?? altMobile,
       addressLine: found.addressLine ?? input.addressLine,
+      dateOfBirth: found.dateOfBirth ?? input.dateOfBirth,
       firmName: found.firmName ?? input.firmName,
       dealsIn: found.dealsIn.length ? found.dealsIn : input.dealsIn,
       businessExperience: found.businessExperience ?? input.businessExperience,

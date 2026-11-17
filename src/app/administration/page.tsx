@@ -18,7 +18,7 @@ export default async function AdministrationPage() {
   // outside people and stay masked wherever they appear.
   const canSeeStaffContact = can(actor.role, "STAFF_MANAGE", actor.extraPermissions);
 
-  const [staff, queuedTasks, queuedEnquiries, merges, recentAudit] = await Promise.all([
+  const [staff, queuedTasks, queuedEnquiries, merges, recentAudit, cities] = await Promise.all([
     db.staffAccount.findMany({
       include: { person: true, _count: { select: { assignedTasks: { where: { status: "PENDING" } }, assignedEnquiries: { where: { status: "ACTIVE" } } } } },
       orderBy: [{ status: "asc" }, { staffAccountId: "asc" }],
@@ -42,6 +42,7 @@ export default async function AdministrationPage() {
     can(actor.role, "AUDIT_VIEW", actor.extraPermissions)
       ? db.auditEvent.findMany({ orderBy: { at: "desc" }, take: 50 })
       : Promise.resolve([]),
+    db.city.findMany({ orderBy: { name: "asc" } }),
   ]);
 
   return (
@@ -101,6 +102,7 @@ export default async function AdministrationPage() {
         decidedByRef: merge.decidedByRef,
         loyaltyRebuiltTo: merge.loyaltyRebuiltTo,
       }))}
+      cities={cities.map(({ createdAt: _c, updatedAt: _u, ...city }) => city)}
       audit={recentAudit.map((event) => ({
         id: event.id,
         at: event.at.toISOString(),

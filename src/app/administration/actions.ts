@@ -4,6 +4,7 @@
 // Every action re-checks permission on the server; the hidden button is never
 // the control (DESIGN §1).
 
+import { cityFromList } from "@/lib/services/city-service";
 import { actionErrorText } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -345,7 +346,7 @@ export async function createStaffAccountAction(
           person?.id ??
           (
             await tx.person.create({
-              data: { fullName, primaryMobile, city: input.city?.trim() || null },
+              data: { fullName, primaryMobile, city: await cityFromList(input.city, null, tx) },
             })
           ).id;
 
@@ -789,7 +790,7 @@ export async function updateStaffDetailsAction(
             primaryMobile,
             altMobile: altMobile || null,
             email: email || null,
-            city: input.city.trim() || null,
+            city: await cityFromList(input.city, before.city, tx),
           },
         });
 

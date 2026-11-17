@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { IdentityFacts } from "@/components/protected-identity";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { CityInput } from "@/components/city-input";
 import { AADHAAR_INPUT, ACCOUNT_NUMBER_INPUT, IFSC_INPUT, MOBILE_INPUT, PAN_INPUT } from "@/components/ui/field-formats";
 import { Field, Modal, inputClass, ModalError } from "@/components/ui/modal";
 import { formatIst, istDay, type StaffRole, formatIstDate } from "@/lib/tasks";
@@ -874,6 +875,7 @@ function ActivateMemberDialogForm({
             altMobile: String(f.get("altMobile") ?? ""),
             city: String(f.get("city") ?? ""),
             addressLine: String(f.get("addressLine") ?? ""),
+            dateOfBirth: String(f.get("dateOfBirth") ?? ""),
             email: String(f.get("email") ?? ""),
             aadhaar: String(f.get("aadhaar") ?? ""),
             pan: String(f.get("pan") ?? ""),
@@ -903,15 +905,18 @@ function ActivateMemberDialogForm({
               <Input name="altMobile" {...MOBILE_INPUT} placeholder="Optional" />
             </Field>
             <Field label="City">
-              <Input name="city" required placeholder="Jaipur" />
+              <CityInput name="city" required />
             </Field>
             <Field label="Email (optional)">
               <Input name="email" type="email" placeholder="name@example.com" />
             </Field>
+            <Field label="Date of Birth (optional)">
+              <Input name="dateOfBirth" type="date" max={istDay(new Date())} />
+            </Field>
+            <Field label="Address (optional)">
+              <Input name="addressLine" placeholder="House, street, area" />
+            </Field>
           </div>
-          <Field label="Address (optional)">
-            <Input name="addressLine" placeholder="House, street, area" />
-          </Field>
         </section>
 
         <section className="space-y-3 border-t border-border/60 pt-4">

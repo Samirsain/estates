@@ -3,6 +3,7 @@
 // Member and bank server actions — design.md §12.2, §13; prd-corrections.md §13, §14.3.
 // Every action re-checks permission on the server (DESIGN §1).
 
+import { cityFromList } from "@/lib/services/city-service";
 import { actionErrorText } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -50,6 +51,8 @@ export async function createAndActivateMemberAction(
     altMobile: string;
     /** Optional. */
     addressLine: string;
+    /** Optional; yyyy-mm-dd from the date input. */
+    dateOfBirth: string;
     /** "Photo Received" — the office has the Member's photo. */
     photoReceived: boolean;
     invitedByMemberId: string;
@@ -64,7 +67,7 @@ export async function createAndActivateMemberAction(
   try {
     const fullName = input.fullName.trim();
     const primaryMobile = input.mobile.replace(/\s/g, "");
-    const city = input.city.trim();
+    const city = await cityFromList(input.city);
     if (!fullName || !primaryMobile || !city) {
       throw new Error("Enter the member's full name, WhatsApp number and city.");
     }
@@ -72,6 +75,10 @@ export async function createAndActivateMemberAction(
     if (input.email.trim() && !isValidEmail(input.email)) {
       throw new Error("Enter a valid email address, e.g. name@example.com.");
     }
+    // Checked as Edit details checks it (people/actions.ts).
+    const dateOfBirth = input.dateOfBirth.trim() ? new Date(`${input.dateOfBirth.trim()}T00:00:00.000Z`) : null;
+    if (dateOfBirth && Number.isNaN(dateOfBirth.getTime())) throw new Error("That date of birth is not a real date.");
+    if (dateOfBirth && dateOfBirth > new Date()) throw new Error("A date of birth cannot be in the future.");
     // The Person, its Aadhaar and PAN and the activation are one command: a
     // refused Aadhaar, PAN, RERA number or inviter leaves no half-made Person behind.
     const result = await activateMember({
@@ -88,6 +95,7 @@ export async function createAndActivateMemberAction(
         pan: input.pan.trim() || null,
         altMobile: input.altMobile.trim() || null,
         addressLine: input.addressLine.trim() || null,
+        dateOfBirth,
       },
       invitedByMemberId: input.invitedByMemberId || null,
       reraStatus: input.reraStatus,

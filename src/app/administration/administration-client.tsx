@@ -56,6 +56,9 @@ import {
   type PersonOption,
 } from "./actions";
 import { RemarkSelect } from "@/components/ui/remark-select";
+import { CityInput } from "@/components/city-input";
+import { CitiesTab } from "./cities-tab";
+import type { CityRow } from "@/lib/domain/city";
 
 export type StaffRowView = {
   id: string;
@@ -129,6 +132,7 @@ export default function AdministrationClient(props: {
   queuedEnquiries: QueuedEnquiryView[];
   merges: MergeView[];
   audit: AuditView[];
+  cities: CityRow[];
   /** Sections rendered by the page itself, inside the shell's content column. */
   children?: React.ReactNode;
 }) {
@@ -149,7 +153,7 @@ export default function AdministrationClient(props: {
         <div>
           <h1 className="text-xl font-semibold">Administration</h1>
           <p className="text-xs text-muted-foreground">
-            Staff status, the Unassigned Review queue, Person Merge and Activity History.
+            Staff status, the Unassigned Review queue, Person Merge, Cities and Activity History.
           </p>
         </div>
 
@@ -173,6 +177,7 @@ export default function AdministrationClient(props: {
               Person Merge ({props.merges.filter((m) => m.status === "PENDING").length})
             </TabsTrigger>
             <TabsTrigger value="identity">Aadhaar / PAN</TabsTrigger>
+            <TabsTrigger value="cities">Cities ({props.cities.length})</TabsTrigger>
             <TabsTrigger value="audit">Activity History</TabsTrigger>
           </TabsList>
         </Tabs>
@@ -206,6 +211,7 @@ export default function AdministrationClient(props: {
           />
         )}
         {tab === "identity" && <IdentityTab canReveal={props.canRevealIdentity} />}
+        {tab === "cities" && <CitiesTab rows={props.cities} onResult={done} />}
         {tab === "audit" && <AuditTab rows={props.audit} />}
         {props.children}
       </div>
@@ -1023,7 +1029,7 @@ function CreateStaffModal({
             />
           </Field>
           <Field label="City">
-            <Input name="city" placeholder="Indore" />
+            <CityInput name="city" />
           </Field>
           <Field label="User ID">
             <Input name="staffAccountId" required placeholder="CRM-RAHUL" />
@@ -1223,7 +1229,7 @@ function StaffDetailModal({
               <Input name="email" type="email" defaultValue={detail.email ?? ""} />
             </Field>
             <Field label="City">
-              <Input name="city" defaultValue={detail.city ?? ""} />
+              <CityInput name="city" defaultValue={detail.city ?? ""} />
             </Field>
           </div>
           <Field label="Compulsory reason">

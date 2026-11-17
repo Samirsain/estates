@@ -2,6 +2,8 @@
 
 // Project and PLC setup server actions — prd-corrections.md §16.1, §16.3.
 
+import { db } from "@/lib/db";
+import { cityFromList } from "@/lib/services/city-service";
 import { actionErrorText } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -77,7 +79,7 @@ export async function createProjectAction(
       locationUrl: input.locationUrl || null,
       driveUrl: input.driveUrl || null,
       renderUrl: input.renderUrl || null,
-      city: input.city || null,
+      city: await cityFromList(input.city),
       amenities: input.amenities || null,
       reraNumber: input.reraNumber || null,
       isExternalResaleGroup: input.isExternalResaleGroup,
@@ -266,7 +268,7 @@ export async function updateProjectAction(
       locationUrl: input.locationUrl || null,
       driveUrl: input.driveUrl || null,
       renderUrl: input.renderUrl || null,
-      city: input.city || null,
+      city: await cityFromList(input.city, (await db.project.findUnique({ where: { id: projectId }, select: { city: true } }))?.city),
       amenities: input.amenities || null,
       reraNumber: input.reraNumber || null,
       reason,

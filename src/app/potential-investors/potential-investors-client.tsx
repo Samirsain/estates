@@ -10,6 +10,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CityInput } from "@/components/city-input";
 import { MOBILE_INPUT } from "@/components/ui/field-formats";
 import { Field, Modal } from "@/components/ui/modal";
 import { type StaffRole } from "@/lib/tasks";
@@ -229,11 +230,7 @@ export default function PotentialInvestorsClient({
                 )}
               </Field>
               <Field label="City">
-                <Input
-                  name="city"
-                  placeholder="Jaipur"
-                  defaultValue={dialog.kind === "EDIT" ? dialog.row.city : undefined}
-                />
+                <CityInput name="city" defaultValue={dialog.kind === "EDIT" ? dialog.row.city : undefined} />
               </Field>
             </div>
             <div className="flex justify-end gap-2 pt-1">

@@ -2,6 +2,7 @@
 
 // Investor Leads (the PotentialInvestor table) — a name, a mobile (and maybe a second one) and a city, taken down for later.
 
+import { cityFromList } from "@/lib/services/city-service";
 import { actionErrorText } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -95,7 +96,7 @@ export async function addPotentialInvestorAction(input: InvestorInput, key: stri
             fullName,
             mobile,
             altMobile,
-            city: input.city.trim() || null,
+            city: await cityFromList(input.city, null, tx),
             createdByRef: actor.staffAccountId,
           },
         });
@@ -160,7 +161,7 @@ export async function updatePotentialInvestorAction(
             fullName,
             mobile: mobile ?? undefined,
             altMobile: input.removeAltMobile ? null : (altMobile ?? undefined),
-            city: input.city.trim() || null,
+            city: await cityFromList(input.city, before.city, tx),
           },
         });
         return {

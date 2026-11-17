@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { matchPeople, personLabel } from "./person-search.ts";
+import { cityLabel, citiesToCsv, cleanCity, readCityCsv, suggestCityCode } from "./city.ts";
 import { projectSlug, publicPlotStatus } from "./public-portal.ts";
 import { capPercent, capShare, percentRoom, percentSum, shareRoom, shareSum } from "./shares.ts";
 import {
@@ -3087,6 +3088,27 @@ assert.equal(addDays("", 1), "");
   for (const v of ["name", "name@", "@x.com", "name@x", "na me@x.com", "a@b@c.com"]) {
     assert.equal(isValidEmail(v), false, `email ${v}`);
   }
+}
+
+// City Master (owner, 17 Nov 2026) — codes, validation, CSV round trip.
+{
+  assert.equal(suggestCityCode("Jaipur", new Set()), "JAI");
+  assert.equal(suggestCityCode("Jaisalmer", new Set(["JAI"])), "JAS");
+  assert.equal(suggestCityCode("Sri Ganganagar", new Set()), "SRI");
+  assert.equal(suggestCityCode("A", new Set()), null);
+  assert.equal(suggestCityCode("Ab", new Set(["AB"])), null);
+  const c = cleanCity({ name: "  Hanumangarh ", code: "hmh", stateName: "Rajasthan", stateCode: "rj", countryName: "India", countryCode: "in" });
+  assert.ok(c.ok && c.city.code === "HMH" && c.city.stateCode === "RJ" && c.city.name === "Hanumangarh");
+  assert.equal(cleanCity({ name: "Nohar", code: "N1", stateName: "Rajasthan", stateCode: "RJ", countryName: "India", countryCode: "IN" }).ok, false);
+  assert.equal(cleanCity({ name: "", stateName: "Rajasthan", stateCode: "RJ", countryName: "India", countryCode: "IN" }).ok, false);
+  const row = { id: 7, name: "Rawla, Mandi", code: "RWL", stateName: "Rajasthan", stateCode: "RJ", countryName: "India", countryCode: "IN", active: false };
+  assert.equal(cityLabel(row), "Rawla, Mandi (RWL) — Rajasthan, India");
+  const back = readCityCsv(citiesToCsv([row]));
+  assert.ok(Array.isArray(back) && back.length === 1);
+  if (Array.isArray(back)) assert.deepEqual(back[0], { line: 2, city: { name: "Rawla, Mandi", code: "RWL", stateName: "Rajasthan", stateCode: "RJ", countryName: "India", countryCode: "IN", active: false } });
+  const loose = readCityCsv('city name,state name,state code,country name,country code\r\n"Nohar",Rajasthan,RJ,India,IN\n\n');
+  assert.ok(Array.isArray(loose) && loose.length === 1 && loose[0].city.code === undefined && loose[0].city.active === true);
+  assert.ok("error" in readCityCsv("Name,Code\nNohar,NHR"));
 }
 
 console.log("domain.check.ts OK");

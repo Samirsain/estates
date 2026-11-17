@@ -4,6 +4,7 @@
 // Every action re-checks permission on the server. Hiding a button is never the
 // control (DESIGN §1), and the domain services re-check state on top of this.
 
+import { cityFromList } from "@/lib/services/city-service";
 import { actionErrorText } from "@/lib/action-error";
 import {
   adjustmentsWaiting,
@@ -135,15 +136,18 @@ export type ScheduleRowInput = { seq: number; percent: string; dueDate: string }
  * client, was the bug: a retried submission could miss the find and create the
  * buyer twice before the Booking's own guard ever saw the request.
  */
-function toParties(rows: PartyInput[]): BookingPartyInput[] {
-  return rows.map((r) => ({
-    personId: r.personId,
-    role: r.role,
-    sharePercent: r.sharePercent.trim() === "" ? null : r.sharePercent.trim(),
-    fullName: r.fullName,
-    mobile: r.mobile,
-    city: r.city,
-  }));
+async function toParties(rows: PartyInput[]): Promise<BookingPartyInput[]> {
+  return Promise.all(
+    rows.map(async (r) => ({
+      personId: r.personId,
+      role: r.role,
+      sharePercent: r.sharePercent.trim() === "" ? null : r.sharePercent.trim(),
+      fullName: r.fullName,
+      mobile: r.mobile,
+      // Only a buyer typed in for the first time brings a city; one on file keeps theirs.
+      city: r.personId ? r.city : ((await cityFromList(r.city)) ?? undefined),
+    }))
+  );
 }
 
 function toSchedule(rows: ScheduleRowInput[]) {
@@ -174,7 +178,7 @@ export async function submitBookingRequestAction(
       plotId: input.plotId,
       holdId: input.holdId || null,
       enquiryId: input.enquiryId || null,
-      parties: toParties(input.parties),
+      parties: await toParties(input.parties),
       soldByType: input.soldByType,
       soldByPersonId: input.soldByPersonId || null,
       bookingDate: new Date(input.bookingDate),
@@ -215,7 +219,7 @@ export async function reviseBookingRequestAction(
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
       bookingId: input.bookingId,
-      parties: toParties(input.parties),
+      parties: await toParties(input.parties),
       soldByType: input.soldByType,
       soldByPersonId: input.soldByPersonId || null,
       bookingDate: new Date(input.bookingDate),
@@ -436,7 +440,7 @@ export async function changeOwnershipSharesAction(
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
       bookingId: input.bookingId,
-      parties: toParties(input.parties),
+      parties: await toParties(input.parties),
       reason: input.reason,
     });
     refresh();

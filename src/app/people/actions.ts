@@ -11,6 +11,7 @@
 // verification (PRD RD-05). Aadhaar and PAN are accepted only while none is on
 // file, through the same write-once recordAadhaar / recordPan a final buyer uses.
 
+import { cityFromList } from "@/lib/services/city-service";
 import { actionErrorText } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -161,7 +162,7 @@ export async function updatePersonDetailsAction(
             primaryMobile: primaryMobile || before.primaryMobile,
             altMobile: keepMobiles && !altMobile ? undefined : altMobile || null,
             email: email || null,
-            city: input.city.trim() || null,
+            city: await cityFromList(input.city, before.city, tx),
             addressLine: input.addressLine.trim() || null,
             dateOfBirth,
             ...business,

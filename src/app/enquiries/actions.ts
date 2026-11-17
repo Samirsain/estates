@@ -1,5 +1,6 @@
 "use server";
 
+import { cityFromList } from "@/lib/services/city-service";
 import { actionErrorText } from "@/lib/action-error";
 import type { EnquirySource, FollowUpOutcome } from "@prisma/client";
 import { revalidatePath } from "next/cache";
@@ -44,7 +45,7 @@ export async function createEnquiryAction(
       personId: input.personId || null,
       newPerson: input.personId
         ? null
-        : { fullName: input.fullName, mobile: input.mobile, altMobile: input.altMobile, city: input.city },
+        : { fullName: input.fullName, mobile: input.mobile, altMobile: input.altMobile, city: (await cityFromList(input.city)) ?? undefined },
       projectId: input.projectId,
       plotId: input.plotId || null,
       plotRequirement: input.plotRequirement,

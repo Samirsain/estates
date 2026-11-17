@@ -947,3 +947,7 @@ CREATE TRIGGER "Project_projectCode_immutable"
 -- the same commission, is refused until the first is decided.
 CREATE UNIQUE INDEX IF NOT EXISTS "one_pending_payment_approval"
   ON "PaymentApproval" ("kind", "targetKey") WHERE "status" = 'PENDING';
+
+-- City Master (owner, 17 Nov 2026) — no two cities share a name, whatever the
+-- case: "Nohar" and "NOHAR" are one city.
+CREATE UNIQUE INDEX IF NOT EXISTS "City_name_lower_key" ON "City" (lower("name"));

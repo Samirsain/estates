@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { CityInput } from "@/components/city-input";
 import { MOBILE_INPUT } from "@/components/ui/field-formats";
 import { Field, Modal, inputClass, ModalError } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
@@ -786,7 +787,7 @@ function CreateEnquiryDialog({
                 placeholder="Alternate Mobile (optional)"
                 aria-label="Alternate Mobile"
               />
-              <Input className="h-9 text-xs" name="city" placeholder="City" />
+              <CityInput inputClassName="h-9 text-xs" name="city" placeholder="City" />
             </div>
           )}
 

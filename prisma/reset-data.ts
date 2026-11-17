@@ -56,6 +56,8 @@ async function main() {
   await db.changePlotRequest.deleteMany({});
   await db.paymentReceivedEntry.deleteMany({});
   await db.paymentGivenEntry.deleteMany({});
+  // Names its Booking by id, with no foreign key, so nothing else would clear it.
+  await db.paymentApproval.deleteMany({});
   // The schedule version goes first and takes its instalments with it by
   // cascade. Removing the instalments on their own leaves a live schedule
   // totalling 0%, which is exactly what the database trigger exists to refuse.

@@ -36,6 +36,7 @@ import { Section, Stat } from "@/components/record-section";
 import HistoryButton from "@/app/members/[id]/history-button";
 import ShowMore from "@/app/members/[id]/show-more";
 import { Input } from "@/components/ui/input";
+import { CityInput } from "@/components/city-input";
 import { AADHAAR_INPUT, MOBILE_INPUT, PAN_INPUT } from "@/components/ui/field-formats";
 import { Field, Modal, ModalError, inputClass } from "@/components/ui/modal";
 import { PersonPicker, personLabel } from "@/components/person-picker";
@@ -3108,11 +3109,11 @@ export function CustomerParties({
                     value={party.mobile ?? ""}
                     onChange={(e) => patch(index, { mobile: e.target.value })}
                   />
-                  <Input
-                    className="h-9 text-xs"
+                  <CityInput
+                    inputClassName="h-9 text-xs"
                     placeholder="City"
                     value={party.city ?? ""}
-                    onChange={(e) => patch(index, { city: e.target.value })}
+                    onChange={(city) => patch(index, { city })}
                   />
                 </div>
               )}

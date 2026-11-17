@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { CityInput } from "@/components/city-input";
 import { Field, Modal, inputClass, ModalError } from "@/components/ui/modal";
 import { useCommercialRewardsDraft } from "./[id]/commission-settings";
 import { ProjectIdentity, SheetHeading, amenityList, projectWhere } from "./project-identity";
@@ -621,7 +622,7 @@ function ProjectFieldset({ row }: { row?: ProjectRowView }) {
         </select>
       </Field>
       <Field label="City">
-        <Input name="city" defaultValue={row?.city ?? ""} />
+        <CityInput name="city" defaultValue={row?.city ?? ""} />
       </Field>
       <Field label="Location">
         <Input name="location" defaultValue={row?.location ?? ""} />
