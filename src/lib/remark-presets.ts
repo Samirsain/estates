@@ -281,6 +281,7 @@ export const REMARK_PRESETS = {
     "Removed — Recovery settled",
   ],
   reraNotApplicable: [
+    "Approved by MD",
     "Member only refers buyers, does not sell",
     "Member buys only for self",
     "Not required in the Member's area",

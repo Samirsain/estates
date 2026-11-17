@@ -43,7 +43,8 @@ export type MemberBusinessInput = {
 /** The Person columns these fields write. */
 export function cleanMemberBusiness(i: MemberBusinessInput) {
   return {
-    firmName: i.firmName.trim() || null,
+    // Member details are kept in capitals (owner, 17 Nov 2026).
+    firmName: i.firmName.trim().toUpperCase() || null,
     dealsIn: cleanDealsIn(i.dealsIn),
     businessExperience: cleanExperience(i.experienceBand, i.experienceYears),
   };

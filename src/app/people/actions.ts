@@ -88,7 +88,9 @@ export async function updatePersonDetailsAction(
     return { ok: false, error: "A compulsory reason is required to change details." };
   }
 
-  const fullName = input.fullName.trim();
+  // A Member's (business is sent only from the Member page) are kept in capitals (owner, 17 Nov 2026).
+  const caps = (s: string) => (input.business ? s.toUpperCase() : s);
+  const fullName = caps(input.fullName.trim());
   // Stored as ten digits, as every other Person path stores them.
   const primaryMobile = input.mobile.trim() ? normaliseMobile(input.mobile) : "";
   const altMobile = input.altMobile.trim() ? normaliseMobile(input.altMobile) : "";
@@ -163,7 +165,7 @@ export async function updatePersonDetailsAction(
             altMobile: keepMobiles && !altMobile ? undefined : altMobile || null,
             email: email || null,
             city: await cityFromList(input.city, before.city, tx),
-            addressLine: input.addressLine.trim() || null,
+            addressLine: caps(input.addressLine.trim()) || null,
             dateOfBirth,
             ...business,
           },

@@ -6,7 +6,6 @@
 
 import React from "react";
 import { Download, Pencil, Plus, Upload } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -83,7 +82,8 @@ export function CitiesTab({ rows, onResult }: { rows: CityRow[]; onResult: (r: C
         <table className="w-full text-left text-xs">
           <thead className="text-muted-foreground">
             <tr>
-              {["City ID", "City Name", "City Code", "State Name", "State Code", "Country Name", "Country Code", "Status", ""].map(
+              {/* Owner, 17 Nov 2026: no State Code, Country Name, Country Code or Status columns. */}
+              {["City ID", "City Name", "City Code", "State Name", ""].map(
                 (h) => (
                   <th key={h} className="py-1.5 pr-3 font-medium">
                     {h}
@@ -99,12 +99,6 @@ export function CitiesTab({ rows, onResult }: { rows: CityRow[]; onResult: (r: C
                 <td className="py-1.5 pr-3 font-medium text-foreground">{row.name}</td>
                 <td className="py-1.5 pr-3 font-mono">{row.code}</td>
                 <td className="py-1.5 pr-3">{row.stateName}</td>
-                <td className="py-1.5 pr-3 font-mono">{row.stateCode}</td>
-                <td className="py-1.5 pr-3">{row.countryName}</td>
-                <td className="py-1.5 pr-3 font-mono">{row.countryCode}</td>
-                <td className="py-1.5 pr-3">
-                  <Badge variant={row.active ? "secondary" : "destructive"}>{row.active ? "Active" : "Inactive"}</Badge>
-                </td>
                 <td className="whitespace-nowrap py-1.5 text-right">
                   <Button size="sm" variant="ghost" onClick={() => setEditing(row)}>
                     <Pencil className="mr-1 h-3.5 w-3.5" /> Edit
@@ -117,7 +111,7 @@ export function CitiesTab({ rows, onResult }: { rows: CityRow[]; onResult: (r: C
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={9} className="py-3 text-muted-foreground">
+                <td colSpan={5} className="py-3 text-muted-foreground">
                   {rows.length ? "No city matches that filter." : "No cities yet. Add one or import a CSV."}
                 </td>
               </tr>
@@ -191,15 +185,10 @@ function CityModal({
         <Field label="State Name">
           <Input name="stateName" required defaultValue={city?.stateName ?? "Rajasthan"} />
         </Field>
-        <Field label="State Code">
-          <Input name="stateCode" className="uppercase" required maxLength={3} defaultValue={city?.stateCode ?? "RJ"} />
-        </Field>
-        <Field label="Country Name">
-          <Input name="countryName" required defaultValue={city?.countryName ?? "India"} />
-        </Field>
-        <Field label="Country Code">
-          <Input name="countryCode" className="uppercase" required maxLength={3} defaultValue={city?.countryCode ?? "IN"} />
-        </Field>
+        {/* Not asked on screen (owner, 17 Nov 2026); kept as on file, or Rajasthan, India. */}
+        <input type="hidden" name="stateCode" value={city?.stateCode ?? "RJ"} />
+        <input type="hidden" name="countryName" value={city?.countryName ?? "India"} />
+        <input type="hidden" name="countryCode" value={city?.countryCode ?? "IN"} />
         {error && <p className="text-xs text-red-700">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>

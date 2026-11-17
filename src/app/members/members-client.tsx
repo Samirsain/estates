@@ -796,7 +796,8 @@ export type MemberRera = {
 
 /** The RERA block, shared by activation and the standalone update. */
 export function ReraFields({ row }: { row?: MemberRera }) {
-  const [status, setStatus] = React.useState(row?.reraStatus ?? "PENDING");
+  // A new Member starts as Not Applicable, Approved by MD (owner, 17 Nov 2026).
+  const [status, setStatus] = React.useState(row?.reraStatus ?? "NOT_APPLICABLE");
 
   return (
     <>
@@ -834,7 +835,7 @@ export function ReraFields({ row }: { row?: MemberRera }) {
             presets="reraNotApplicable"
             name="reraNotApplicableReason"
             required
-            defaultValue={row?.reraNotApplicableReason ?? ""}
+            defaultValue={row?.reraNotApplicableReason ?? "Approved by MD"}
           />
         </Field>
       )}
@@ -895,7 +896,7 @@ function ActivateMemberDialogForm({
         <section className="space-y-3">
           <h3 className={FORM_SECTION}>Contact</h3>
           <Field label="Full Name">
-            <Input name="fullName" required placeholder="e.g. Samir Sain" />
+            <Input name="fullName" required placeholder="e.g. Samir Sain" className="uppercase" />
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="WhatsApp Number">
@@ -905,7 +906,7 @@ function ActivateMemberDialogForm({
               <Input name="altMobile" {...MOBILE_INPUT} placeholder="Optional" />
             </Field>
             <Field label="City">
-              <CityInput name="city" required />
+              <CityInput name="city" required inputClassName="uppercase" />
             </Field>
             <Field label="Email (optional)">
               <Input name="email" type="email" placeholder="name@example.com" />
@@ -914,7 +915,7 @@ function ActivateMemberDialogForm({
               <Input name="dateOfBirth" type="date" max={istDay(new Date())} />
             </Field>
             <Field label="Address (optional)">
-              <Input name="addressLine" placeholder="House, street, area" />
+              <Input name="addressLine" placeholder="House, street, area" className="uppercase" />
             </Field>
           </div>
         </section>

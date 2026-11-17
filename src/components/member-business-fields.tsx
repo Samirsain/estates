@@ -34,7 +34,7 @@ export function MemberBusinessFields({
   return (
     <>
       <Field label="Company / Firm Name (optional)">
-        <Input name="firmName" defaultValue={firmName} />
+        <Input name="firmName" defaultValue={firmName} className="uppercase" />
       </Field>
 
       {/* A fieldset, not a Field: Field is a <label>, and a label may hold one control. */}

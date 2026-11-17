@@ -69,6 +69,8 @@ export function PersonDetailsEditor({
   const [error, setError] = React.useState<string | null>(null);
   const [bankError, setBankError] = React.useState<string | null>(null);
   const [bankSaved, setBankSaved] = React.useState(false);
+  // Member details are kept in capitals (owner, 17 Nov 2026); `business` marks the Member page.
+  const caps = business ? "uppercase" : undefined;
   // A Payout "Add Bank" button opens this by link.
   useHashOpen("edit-details", () => setOpen(true));
 
@@ -121,7 +123,7 @@ export function PersonDetailsEditor({
             }}
           >
             <Field label="Full Name">
-              <Input name="fullName" required defaultValue={person.fullName} />
+              <Input name="fullName" required defaultValue={person.fullName} className={caps} />
             </Field>
             {person.nickname !== undefined && (
               <Field label="Nickname">
@@ -161,10 +163,10 @@ export function PersonDetailsEditor({
                 />
               </Field>
               <Field label="City">
-                <CityInput name="city" defaultValue={person.city} />
+                <CityInput name="city" defaultValue={person.city} inputClassName={caps} />
               </Field>
               <Field label="Address">
-                <Input name="addressLine" defaultValue={person.addressLine} />
+                <Input name="addressLine" defaultValue={person.addressLine} className={caps} />
               </Field>
               {askAadhaar && (
                 <Field label="Aadhaar Number">

@@ -65,7 +65,8 @@ export async function createAndActivateMemberAction(
 ): Promise<ActionResult & { memberId?: string }> {
   const actor = await requireStaff("MEMBER_ACTIVATE");
   try {
-    const fullName = input.fullName.trim();
+    // Name and Address are kept in capitals, like the Firm Name (owner, 17 Nov 2026).
+    const fullName = input.fullName.trim().toUpperCase();
     const primaryMobile = input.mobile.replace(/\s/g, "");
     const city = await cityFromList(input.city);
     if (!fullName || !primaryMobile || !city) {
@@ -94,7 +95,7 @@ export async function createAndActivateMemberAction(
         aadhaar: input.aadhaar.trim() || null,
         pan: input.pan.trim() || null,
         altMobile: input.altMobile.trim() || null,
-        addressLine: input.addressLine.trim() || null,
+        addressLine: input.addressLine.trim().toUpperCase() || null,
         dateOfBirth,
       },
       invitedByMemberId: input.invitedByMemberId || null,
