@@ -298,6 +298,7 @@ export const REMARK_PRESETS = {
     "Security concern",
     "Account created by mistake",
   ],
+  deleteStaff: ["Left the company", "Account created by mistake", "Duplicate account"],
   resetStaffPassword: [
     "Forgot password, verified by phone",
     "Locked after wrong tries",

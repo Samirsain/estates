@@ -3,6 +3,7 @@
 // Run: npm run db:seed
 import { PrismaClient, type StaffRole } from "@prisma/client";
 import { hashPassword } from "../src/lib/security/auth.ts";
+import { startingPermissions } from "../src/lib/security/permissions.ts";
 import {
   aadhaarLastFour,
   blindIndex,
@@ -69,10 +70,12 @@ async function main() {
         staffAccountId: staff.staffAccountId,
         personId: person.id,
         role: staff.role,
+        extraPermissions: startingPermissions(staff.role),
         passwordHash,
       },
       update: {
         role: staff.role,
+        extraPermissions: startingPermissions(staff.role),
         status: "ACTIVE",
         failedAttempts: 0,
         lockedUntil: null,

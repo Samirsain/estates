@@ -42,6 +42,8 @@ import {
   isAction,
   rolesHolding,
   STAFF_ROLES,
+  startingPermissions,
+  MD_ONLY_ACTIONS,
 } from "./permissions.ts";
 import { legacyRequestHash, requestHash, resolveIdempotency, expiryFrom, type StoredCommand } from "./idempotency.ts";
 import { signSession, verifySession, sessionExpiry, type SessionPayload } from "./session.ts";
@@ -135,28 +137,30 @@ assert.ok(rateLimit("ip:5.6.7.8", now), "limit is per identifier");
 
 /* ------------------------------------------------------------ permissions */
 
-// Deny by default: no role gets an action that was never granted to it.
-assert.ok(can("ACCOUNTS", "BOOKING_DECIDE"));
-assert.ok(!can("CRM", "BOOKING_DECIDE"), "CRM cannot approve its own Booking Request");
-assert.ok(!can("PC", "PAYMENT_RECEIVED_CONFIRM"), "PC has no financial approval");
-assert.ok(!can("MIS", "TASK_COMPLETE"), "MIS is read-only besides manual tasks");
-assert.ok(can("MIS", "TASK_CREATE"));
+// Deny by default: the starting set for each job, and nothing outside it.
+const start = (role: (typeof STAFF_ROLES)[number]) => startingPermissions(role);
+assert.ok(can("ACCOUNTS", "BOOKING_DECIDE", start("ACCOUNTS")));
+assert.ok(!can("CRM", "BOOKING_DECIDE", start("CRM")), "CRM cannot approve its own Booking Request");
+assert.ok(!can("PC", "PAYMENT_RECEIVED_CONFIRM", start("PC")), "PC has no financial approval");
+assert.ok(!can("MIS", "TASK_COMPLETE", start("MIS")), "MIS is read-only besides manual tasks");
+assert.ok(can("MIS", "TASK_CREATE", start("MIS")));
 // MD holds everything, so a new Action is MD's the day it is added.
 for (const action of ALL_ACTIONS) {
-  assert.ok(can("MD", action), `MD holds ${action}`);
+  assert.ok(can("MD", action, []), `MD holds ${action}`);
 }
 assert.ok(!(STAFF_ROLES as string[]).includes("ADMIN"), "there is no Admin role");
-assert.ok(can("CRM", "HOLD_EXTEND_FIRST") && !can("CRM", "HOLD_EXTEND_FURTHER"));
-assert.ok(can("MD", "HOLD_EXTEND_FURTHER"), "further extension needs MD");
-// Owner, 16 Oct 2026 — Project and Plot setup is MD's alone, even as an extra grant.
-for (const action of ["PROJECT_SETUP", "PLOT_SETUP"] as const) {
-  assert.ok(can("MD", action), `MD holds ${action}`);
+assert.ok(can("CRM", "HOLD_EXTEND_FIRST", start("CRM")) && !can("CRM", "HOLD_EXTEND_FURTHER", start("CRM")));
+// MD-only actions stay MD's even when ticked, and never appear in a starting set.
+for (const action of MD_ONLY_ACTIONS) {
   for (const role of STAFF_ROLES.filter((r) => r !== "MD")) {
     assert.ok(!can(role, action, [action]), `${role} cannot hold ${action}`);
+    assert.ok(!start(role).includes(action), `${role} does not start with ${action}`);
   }
 }
-assert.ok(can("MIS", "AUDIT_VIEW", ["AUDIT_VIEW"]), "explicit extra grant is honoured");
-assert.throws(() => assertPermission("MIS", "BOOKING_DECIDE"), PermissionError);
+// Owner, 17 Nov 2026 — the tick list is the whole truth: untick takes away.
+assert.ok(!can("ACCOUNTS", "BOOKING_DECIDE", []), "an unticked job default is refused");
+assert.ok(can("MIS", "AUDIT_VIEW", ["AUDIT_VIEW"]), "a tick outside the job is honoured");
+assert.throws(() => assertPermission("MIS", "BOOKING_DECIDE", start("MIS")), PermissionError);
 
 // Field scope.
 for (const role of STAFF_ROLES) {
@@ -350,13 +354,7 @@ for (const action of ALL_ACTIONS) {
 // there is nothing to assert here — a missing Action fails the build instead.
 assert.ok(!isAction("NOT_A_REAL_ACTION"), "an invented permission string is refused");
 
-// Extra grants add and never subtract — the screen promises exactly this.
-assert.ok(!can("MIS", "AUDIT_VIEW"), "MIS has no audit access from its role");
-assert.ok(can("MIS", "AUDIT_VIEW", ["AUDIT_VIEW"]), "an extra grant adds the action");
-assert.ok(
-  can("ACCOUNTS", "BANK_VERIFY", []),
-  "an empty extra list leaves the role baseline intact"
-);
+assert.ok(!can("MIS", "AUDIT_VIEW", start("MIS")), "MIS does not start with audit access");
 
 // PRD RD-05 — a grant must never open a protected value. canViewField takes no
 // extra permissions at all, and that is the guarantee the modal states.

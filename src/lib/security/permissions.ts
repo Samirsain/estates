@@ -74,8 +74,12 @@ export type Action =
   | "REPORT_EXPORT"
   | "AUDIT_VIEW";
 
-/** Baseline grants per role. Anything not listed is denied. */
-const ROLE_ACTIONS: Record<Role, readonly Action[]> = {
+/**
+ * The ticks a new account starts with, by job (owner, 17 Nov 2026). After that
+ * the account's own list is the whole truth: MD ticks and unticks anything on
+ * the Permissions screen, and a role change starts the list again from here.
+ */
+const STARTING_PERMISSIONS: Record<Role, readonly Action[]> = {
   // MD answers for everything the company does, so it holds every Action
   // rather than a list that has to be remembered each time one is added — see
   // FULL_ACCESS in `can`. There is no Admin role: the owner folded it into MD.
@@ -154,15 +158,32 @@ const FIELD_ACCESS: Record<SensitiveField, readonly Role[]> = {
 const FULL_ACCESS: readonly Role[] = ["MD"];
 
 /**
- * Owner, 16 Oct 2026: only MD creates or changes Projects and Plots. No role
- * grant or extra permission reaches these, so the permission screen hides them.
+ * No tick reaches these, so the permission screen hides them. Projects and
+ * Plots are MD's alone (owner, 16 Oct 2026). Administration is MD's menu, so
+ * staff, permission and merge work stays there — a tick would open nothing and
+ * would let one account hand itself more. The last two are never checked
+ * outside MD's own paths, so a tick for them would do nothing.
  */
-export const MD_ONLY_ACTIONS: readonly Action[] = ["PROJECT_SETUP", "PLOT_SETUP"];
+export const MD_ONLY_ACTIONS: readonly Action[] = [
+  "PROJECT_SETUP",
+  "PLOT_SETUP",
+  "STAFF_MANAGE",
+  "STAFF_EMERGENCY_DISABLE",
+  "ROLE_PERMISSION_MANAGE",
+  "PERSON_MERGE",
+  "HOLD_EXTEND_FURTHER",
+  "PLC_SNAPSHOT_CORRECT",
+];
 
-export function can(role: Role, action: Action, extraPermissions: readonly string[] = []): boolean {
+export function startingPermissions(role: Role): Action[] {
+  return STARTING_PERMISSIONS[role].filter((action) => !MD_ONLY_ACTIONS.includes(action));
+}
+
+/** `granted` is the account's own tick list (StaffAccount.extraPermissions). */
+export function can(role: Role, action: Action, granted: readonly string[]): boolean {
   if (FULL_ACCESS.includes(role)) return true;
   if (MD_ONLY_ACTIONS.includes(action)) return false;
-  return ROLE_ACTIONS[role]?.includes(action) || extraPermissions.includes(action);
+  return granted.includes(action);
 }
 
 export function canViewField(role: Role, field: SensitiveField): boolean {
@@ -181,12 +202,8 @@ export class PermissionError extends Error {
   }
 }
 
-export function assertPermission(
-  role: Role,
-  action: Action,
-  extraPermissions: readonly string[] = []
-): void {
-  if (!can(role, action, extraPermissions)) throw new PermissionError(role, action);
+export function assertPermission(role: Role, action: Action, granted: readonly string[]): void {
+  if (!can(role, action, granted)) throw new PermissionError(role, action);
 }
 
 /**
@@ -243,58 +260,39 @@ export function refuseStaffAccountFor(
 /* ------------------------------------------------- the permission catalogue */
 
 /**
- * The same grouping the `Action` union carries as comments, as data, so the
- * Administration permission screen can render it. Every Action appears exactly
+ * Every Action, grouped the way the Administration permission screen shows
+ * them (owner, 17 Nov 2026: plain words, by area of work). Every Action appears exactly
  * once — `security.check.ts` fails if one is added to the union and forgotten
  * here, which would silently hide it from the screen that grants it.
  */
 export const ACTION_GROUPS = [
   {
-    group: "Administration",
-    actions: [
-      "STAFF_MANAGE",
-      "STAFF_EMERGENCY_DISABLE",
-      "ROLE_PERMISSION_MANAGE",
-      "MEMBER_ACTIVATE",
-      "MEMBER_DEACTIVATE",
-      "PERSON_MERGE",
-      "PERSON_DETAILS_EDIT",
-      "PROJECT_SETUP",
-      "PLC_SNAPSHOT_CORRECT",
-      "PLOT_SETUP",
-      "PLOT_RESTRICTION_MANAGE",
-      "PLOT_MAKE_AVAILABLE",
-    ],
+    group: "Enquiries and land",
+    actions: ["ENQUIRY_MANAGE", "LAND_INQUIRY_MANAGE", "LAND_INQUIRY_REOPEN", "LAND_INQUIRY_ARCHIVE"],
   },
   {
-    group: "Pre-sales",
+    group: "Plots and holds",
     actions: [
-      "ENQUIRY_MANAGE",
       "HOLD_CREATE",
       "HOLD_EXTEND_FIRST",
       "HOLD_EXTEND_FURTHER",
       "HOLD_REQUEST_REVIEW",
-      "LAND_INQUIRY_MANAGE",
-      "LAND_INQUIRY_REOPEN",
-      "LAND_INQUIRY_ARCHIVE",
+      "PLOT_RESTRICTION_MANAGE",
+      "PLOT_MAKE_AVAILABLE",
+      "PROJECT_SETUP",
+      "PLOT_SETUP",
+      "PLC_SNAPSHOT_CORRECT",
     ],
   },
   {
-    group: "Sale",
+    group: "Bookings",
     actions: [
       "BOOKING_REQUEST_SUBMIT",
       "BOOKING_DECIDE",
       "BOOKING_CANCEL_REQUEST",
-      "PAYMENT_RECEIVED_CONFIRM",
-      "PAYMENT_GIVEN_CONFIRM",
-      "ACQUISITION_CREATE",
-      "ACQUISITION_DECIDE",
-      "ACQUISITION_CANCEL",
+      "CANCELLATION_DECIDE",
       "CHANGE_PLOT_RAISE",
       "CHANGE_PLOT_DECIDE",
-      "CANCELLATION_DECIDE",
-      "BUYING_COMMISSION_RECORD",
-      "PAYMENT_CORRECT",
       "SCHEDULE_REVISE",
       "SCHEDULE_DECIDE",
       "OWNERSHIP_SHARE_CHANGE",
@@ -302,25 +300,109 @@ export const ACTION_GROUPS = [
       "PRIMARY_CUSTOMER_CHANGE_APPROVE",
       "SOLD_BY_CORRECTION_RAISE",
       "SOLD_BY_CORRECTION_APPROVE",
-      "COMMISSION_PROCESS",
-    ],
-  },
-  {
-    group: "Completion",
-    actions: [
       "FINAL_BUYER_RECORD",
       "COMPLETION_RECORD",
       "DELIVERY_REOPEN",
-      "WORK_REASSIGN",
+    ],
+  },
+  {
+    group: "Money",
+    actions: [
+      "PAYMENT_RECEIVED_CONFIRM",
+      "PAYMENT_CORRECT",
+      "COMMISSION_PROCESS",
       "BANK_DETAILS_ENTER",
       "BANK_VERIFY",
     ],
   },
   {
-    group: "Work and reporting",
-    actions: ["TASK_CREATE", "TASK_COMPLETE", "REPORT_VIEW", "REPORT_EXPORT", "AUDIT_VIEW"],
+    group: "Buyback / Resale",
+    actions: [
+      "ACQUISITION_CREATE",
+      "ACQUISITION_DECIDE",
+      "ACQUISITION_CANCEL",
+      "PAYMENT_GIVEN_CONFIRM",
+      "BUYING_COMMISSION_RECORD",
+    ],
+  },
+  {
+    group: "Members and customers",
+    actions: ["MEMBER_ACTIVATE", "MEMBER_DEACTIVATE", "PERSON_DETAILS_EDIT", "PERSON_MERGE"],
+  },
+  {
+    group: "Tasks and reports",
+    actions: ["TASK_CREATE", "TASK_COMPLETE", "WORK_REASSIGN", "REPORT_VIEW", "REPORT_EXPORT", "AUDIT_VIEW"],
+  },
+  {
+    group: "Staff",
+    actions: ["STAFF_MANAGE", "STAFF_EMERGENCY_DISABLE", "ROLE_PERMISSION_MANAGE"],
   },
 ] as const satisfies readonly { group: string; actions: readonly Action[] }[];
+
+/** What each tick means, in the words the screen shows. */
+export const ACTION_LABELS: Record<Action, string> = {
+  ENQUIRY_MANAGE: "Add and follow up enquiries",
+  LAND_INQUIRY_MANAGE: "Add and follow up land inquiries",
+  LAND_INQUIRY_REOPEN: "Reopen a closed land inquiry",
+  LAND_INQUIRY_ARCHIVE: "Archive a land inquiry",
+  HOLD_CREATE: "Put a plot on hold for a buyer",
+  HOLD_EXTEND_FIRST: "Extend a hold (first time)",
+  HOLD_EXTEND_FURTHER: "Extend a hold again",
+  HOLD_REQUEST_REVIEW: "Approve or reject hold requests",
+  PLOT_RESTRICTION_MANAGE: "Block a plot from sale, or unblock it",
+  PLOT_MAKE_AVAILABLE: "Put a plot back on sale",
+  PROJECT_SETUP: "Create and edit projects",
+  PLOT_SETUP: "Create and edit plots",
+  PLC_SNAPSHOT_CORRECT: "Correct a locked location charge",
+  BOOKING_REQUEST_SUBMIT: "Send a booking for approval",
+  BOOKING_DECIDE: "Approve or reject a booking",
+  BOOKING_CANCEL_REQUEST: "Ask to cancel a booking",
+  CANCELLATION_DECIDE: "Approve a booking cancellation",
+  CHANGE_PLOT_RAISE: "Ask to move a booking to another plot",
+  CHANGE_PLOT_DECIDE: "Approve moving a booking to another plot",
+  SCHEDULE_REVISE: "Change a booking's payment plan",
+  SCHEDULE_DECIDE: "Approve a payment plan change",
+  OWNERSHIP_SHARE_CHANGE: "Change each buyer's share in a booking",
+  PRIMARY_CUSTOMER_CHANGE_RAISE: "Ask to change the main buyer",
+  PRIMARY_CUSTOMER_CHANGE_APPROVE: "Approve a main buyer change",
+  SOLD_BY_CORRECTION_RAISE: "Ask to correct who made the sale",
+  SOLD_BY_CORRECTION_APPROVE: "Approve a correction of who made the sale",
+  FINAL_BUYER_RECORD: "Fill in the final buyer details",
+  COMPLETION_RECORD: "Mark a plot as handed over",
+  DELIVERY_REOPEN: "Reopen a handed-over booking",
+  PAYMENT_RECEIVED_CONFIRM: "Confirm money received from a buyer",
+  PAYMENT_CORRECT: "Correct a wrong payment entry",
+  COMMISSION_PROCESS: "Pay out commission",
+  BANK_DETAILS_ENTER: "Enter bank details",
+  BANK_VERIFY: "Check and approve bank details",
+  ACQUISITION_CREATE: "Start a buyback",
+  ACQUISITION_DECIDE: "Approve or reject a buyback",
+  ACQUISITION_CANCEL: "Cancel a buyback",
+  PAYMENT_GIVEN_CONFIRM: "Confirm money paid to a seller",
+  BUYING_COMMISSION_RECORD: "Record commission on a buyback",
+  MEMBER_ACTIVATE: "Add Members and edit their details",
+  MEMBER_DEACTIVATE: "Turn a Member off",
+  PERSON_DETAILS_EDIT: "Edit a customer's or member's details",
+  PERSON_MERGE: "Join two records of the same person",
+  TASK_CREATE: "Add tasks",
+  TASK_COMPLETE: "Mark tasks as done",
+  WORK_REASSIGN: "Hand someone's open work to another staff member",
+  REPORT_VIEW: "See reports",
+  REPORT_EXPORT: "Download reports",
+  AUDIT_VIEW: "See the history of who did what",
+  STAFF_MANAGE: "Add staff and reset passwords",
+  STAFF_EMERGENCY_DISABLE: "Block a staff login at once",
+  ROLE_PERMISSION_MANAGE: "Change a staff member's job and permissions",
+};
+
+/** Each job in plain words, for the Role pickers. */
+export const ROLE_LABELS: Record<StaffRole, string> = {
+  MD: "MD — Managing Director, can do everything",
+  ACCOUNTS: "Accounts — approves bookings and handles money",
+  CRM: "CRM — handles customers, enquiries and bookings",
+  MIS: "MIS — sees reports and adds tasks",
+  PC: "PC — project and plot work",
+};
 
 /**
  * `satisfies` above proves every entry IS an Action. This proves the reverse —

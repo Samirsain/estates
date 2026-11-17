@@ -333,7 +333,9 @@ model StaffAccount {
   person         Person @relation(fields: [personId], references: [id])
 
   role             StaffRole
-  /// Extra scoped grants on top of the role baseline. Deny by default.
+  /// Everything this account may do (owner, 17 Nov 2026): the role's starting
+  /// set, then whatever MD ticks or unticks. The role adds nothing on top.
+  /// Deny by default. The old name stays so no migration is needed.
   extraPermissions String[]  @default([])
 
   status       AccountStatus @default(ACTIVE)

@@ -4,7 +4,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Eye, History, KeyRound, Merge, MoreHorizontal, Plus, ShieldCheck, ShieldOff, UserCheck, UserPlus } from "lucide-react";
+import { AlertTriangle, Eye, History, KeyRound, Merge, MoreHorizontal, Plus, ShieldCheck, ShieldOff, Trash2, UserCheck, UserPlus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,18 +24,20 @@ import {
 import { formatIst } from "@/lib/tasks";
 import {
   ACTION_GROUPS,
+  ACTION_LABELS,
   MD_ONLY_ACTIONS,
+  ROLE_LABELS,
   SENSITIVE_FIELDS,
   STAFF_ROLES,
-  can,
   rolesHolding,
-  type Action,
+  startingPermissions,
   type StaffRole,
 } from "@/lib/security/permissions";
 
 type IdentityRow = Awaited<ReturnType<typeof identityDirectoryAction>>[number];
 import {
   decidePersonMergeAction,
+  deleteStaffAccountAction,
   disableStaffAction,
   reassignWorkAction,
   mergePreviewAction,
@@ -246,6 +248,7 @@ function StaffTab({
   const [reroling, setReroling] = React.useState<StaffRowView | null>(null);
   const [permitting, setPermitting] = React.useState<StaffRowView | null>(null);
   const [viewing, setViewing] = React.useState<StaffRowView | null>(null);
+  const [deleting, setDeleting] = React.useState<StaffRowView | null>(null);
   const [creating, setCreating] = React.useState(false);
 
   return (
@@ -307,47 +310,54 @@ function StaffTab({
                   <div className="text-muted-foreground">Added {formatIst(row.createdAt)}</div>
                 </td>
                 <td className="py-1.5 pl-2 text-right">
-                  {row.status === "ACTIVE" && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button size="sm" variant="outline" aria-label={`Actions for ${row.name}`}>
-                          <MoreHorizontal className="h-3.5 w-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => setViewing(row)}>
-                          <Eye className="h-3.5 w-3.5" /> View details
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" aria-label={`Actions for ${row.name}`}>
+                        <MoreHorizontal className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => setViewing(row)}>
+                        <Eye className="h-3.5 w-3.5" /> View details
+                      </DropdownMenuItem>
+                      {/* A disabled login can only be deleted (owner, 17 Nov 2026). */}
+                      {row.status !== "ACTIVE" && row.id !== actorAccountId && (isMd || row.role !== "MD") && (
+                        <DropdownMenuItem
+                          onSelect={() => setDeleting(row)}
+                          className="text-red-700 focus:text-red-700"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Delete account
                         </DropdownMenuItem>
-                        {/* Every one of these ends in a refusal on your own row,
-                            and on an MD row unless you are MD (the server
-                            checks too) — so they are not offered there. */}
-                        {row.id !== actorAccountId && (isMd || row.role !== "MD") && (
-                          <>
-                            <DropdownMenuItem onSelect={() => setResetting(row)}>
-                              <KeyRound className="h-3.5 w-3.5" /> Reset password
-                            </DropdownMenuItem>
-                            {canManagePermissions && (
-                              <>
-                                <DropdownMenuItem onSelect={() => setReroling(row)}>
-                                  <UserCheck className="h-3.5 w-3.5" /> Change role
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => setPermitting(row)}>
-                                  <ShieldCheck className="h-3.5 w-3.5" /> Permissions
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onSelect={() => setTarget(row)}
-                              className="text-red-700 focus:text-red-700"
-                            >
-                              <ShieldOff className="h-3.5 w-3.5" /> Disable account
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
+                      )}
+                      {/* Every one of these ends in a refusal on your own row,
+                          and on an MD row unless you are MD (the server
+                          checks too) — so they are not offered there. */}
+                      {row.status === "ACTIVE" && row.id !== actorAccountId && (isMd || row.role !== "MD") && (
+                        <>
+                          <DropdownMenuItem onSelect={() => setResetting(row)}>
+                            <KeyRound className="h-3.5 w-3.5" /> Reset password
+                          </DropdownMenuItem>
+                          {canManagePermissions && (
+                            <>
+                              <DropdownMenuItem onSelect={() => setReroling(row)}>
+                                <UserCheck className="h-3.5 w-3.5" /> Change role
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => setPermitting(row)}>
+                                <ShieldCheck className="h-3.5 w-3.5" /> Permissions
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onSelect={() => setTarget(row)}
+                            className="text-red-700 focus:text-red-700"
+                          >
+                            <ShieldOff className="h-3.5 w-3.5" /> Disable account
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </td>
               </tr>
             ))}
@@ -362,6 +372,10 @@ function StaffTab({
           onClose={() => setTarget(null)}
           onResult={onResult}
         />
+      )}
+
+      {deleting && (
+        <DeleteStaffModal target={deleting} onClose={() => setDeleting(null)} onResult={onResult} />
       )}
 
       {creating && (
@@ -457,6 +471,49 @@ function DisableModal({
           </Button>
           <Button variant="destructive" onClick={submit} disabled={busy || !reason.trim()}>
             {busy ? "Disabling…" : emergency ? "Emergency Disable" : "Disable account"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function DeleteStaffModal({
+  target,
+  onClose,
+  onResult,
+}: {
+  target: StaffRowView;
+  onClose: () => void;
+  onResult: (result: ActionResult) => void;
+}) {
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  async function submit() {
+    setBusy(true);
+    const outcome = await deleteStaffAccountAction(target.id, reason, newKey());
+    setBusy(false);
+    onResult(outcome);
+    if (outcome.ok) onClose();
+  }
+
+  return (
+    <Modal
+      title={`Delete ${target.name}?`}
+      description={`${target.staffAccountId} will be removed for good and can never sign in again. Their past work and history stay as they are.`}
+      onClose={onClose}
+    >
+      <div className="space-y-3">
+        <Field label="Compulsory reason">
+          <RemarkSelect presets="deleteStaff" value={reason} onChange={setReason} required />
+        </Field>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={submit} disabled={busy || !reason.trim()}>
+            {busy ? "Deleting…" : "Delete account"}
           </Button>
         </div>
       </div>
@@ -1036,13 +1093,17 @@ function CreateStaffModal({
           </Field>
           <Field label="Role">
             <select name="role" className={inputClass} required defaultValue="CRM">
-              {["MD", "ACCOUNTS", "CRM", "MIS", "PC"].map((role) => (
+              {STAFF_ROLES.map((role) => (
                 <option key={role} value={role}>
-                  {role}
+                  {ROLE_LABELS[role]}
                 </option>
               ))}
             </select>
           </Field>
+          <p className="text-[11px] text-muted-foreground">
+            The role gives the usual permissions for that job. You can tick or untick any of them
+            later under ⋯ → Permissions.
+          </p>
 
           {error && <p className="text-xs text-red-700">{error}</p>}
 
@@ -1279,7 +1340,12 @@ function StaffDetailModal({
                         detail.disabledReason ? ` — ${detail.disabledReason}` : ""
                       }`,
                 ],
-                ["Extra permissions", detail.extraPermissions.join(", ") || "None — role baseline only"],
+                [
+                  "Permissions",
+                  detail.role === "MD"
+                    ? "Everything"
+                    : `${detail.extraPermissions.length} of ${GRANTABLE_COUNT} ticked`,
+                ],
                 ["Added", formatIst(detail.createdAt)],
                 ["Last login", detail.lastLoginAt ? formatIst(detail.lastLoginAt) : "Never"],
                 ["Open work", `${detail.openTasks} task(s), ${detail.openEnquiries} enquiry(ies)`],
@@ -1379,7 +1445,7 @@ function ChangeRoleModal({
           <select name="role" className={inputClass} required defaultValue={target.role}>
             {STAFF_ROLES.map((role) => (
               <option key={role} value={role}>
-                {role}
+                {ROLE_LABELS[role]}
               </option>
             ))}
           </select>
@@ -1388,8 +1454,8 @@ function ChangeRoleModal({
           <RemarkSelect presets="changeStaffRole" name="reason" required />
         </Field>
         <p className="rounded-lg border border-border/60 bg-secondary px-3 py-2 text-[11px] text-muted-foreground">
-          Any extra permissions on this account are cleared — they were granted for the job this
-          person is leaving. Grant them again under Permissions if the new role still needs them.
+          Their ticks are reset to the usual set for the new role. You can change them again under
+          Permissions.
         </p>
         {error && <p className="text-xs text-red-700">{error}</p>}
         <div className="flex justify-end gap-2">
@@ -1405,11 +1471,18 @@ function ChangeRoleModal({
   );
 }
 
+/** Every action MD can hand out, in screen order. */
+const GRANTABLE = ACTION_GROUPS.map(({ group, actions }) => ({
+  group,
+  actions: actions.filter((action) => !MD_ONLY_ACTIONS.includes(action)),
+})).filter(({ actions }) => actions.length > 0);
+const GRANTABLE_COUNT = GRANTABLE.reduce((sum, { actions }) => sum + actions.length, 0);
+
 /**
- * DESIGN §17.4 — extra grants on top of the role. Two halves, and the
- * difference between them is the point: actions can be granted here, protected
- * values cannot. `canViewField` never reads this column (PRD RD-05), so Aadhaar,
- * PAN and bank are shown as a locked statement of what the role already gives.
+ * DESIGN §17.4, owner 17 Nov 2026 — the account's whole tick list: ticked is
+ * allowed, unticked is not. Private details are the other half and cannot be
+ * ticked: `canViewField` never reads this list (PRD RD-05), so Aadhaar, PAN
+ * and bank follow the job alone.
  */
 function PermissionsModal({
   target,
@@ -1423,8 +1496,6 @@ function PermissionsModal({
   const [granted, setGranted] = React.useState<Set<string>>(new Set(target.extraPermissions));
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-
-  const fromRole = (action: Action) => can(target.role, action);
 
   function toggle(action: string) {
     setGranted((current) => {
@@ -1453,65 +1524,62 @@ function PermissionsModal({
   return (
     <Modal
       title={`Permissions — ${target.name}`}
-      description={`${target.staffAccountId} · ${target.role}. Changes apply on their next action.`}
+      description={`${target.staffAccountId} · ${target.role}. Ticked means they can do it; unticked means they cannot. Everyone can view; these are the things they can change.`}
       onClose={onClose}
       wide
     >
       <form className="space-y-4" onSubmit={submit}>
-        <section className="space-y-2">
-          <h3 className="text-xs font-semibold">Protected data — set by the role</h3>
-          <ul className="space-y-1 rounded-xl border border-border/60 bg-secondary px-3 py-2.5">
-            {SENSITIVE_FIELDS.map(({ field, label }) => {
-              const holders = rolesHolding(field);
-              const held = holders.includes(target.role);
-              return (
-                <li key={field} className="flex items-baseline justify-between gap-3 text-[11px]">
-                  <span className="text-foreground">🔒 {label}</span>
-                  <span className="text-muted-foreground">
-                    {held ? "In full" : "Masked"} · {holders.join(", ")}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="text-[11px] text-muted-foreground">
-            These cannot be granted here. Only a role change moves them, and every reveal is written
-            to the Activity History.
-          </p>
-        </section>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+          <span>
+            {granted.size} of {GRANTABLE_COUNT} ticked
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setGranted(new Set(startingPermissions(target.role)))}
+          >
+            Reset to the usual {target.role} set
+          </Button>
+        </div>
 
         <section className="space-y-3">
-          <h3 className="text-xs font-semibold">Actions</h3>
-          {ACTION_GROUPS.map(({ group, actions }) => (
+          {GRANTABLE.map(({ group, actions }) => (
             <div key={group} className="space-y-1">
-              <p className="text-[11px] font-medium text-muted-foreground">{group}</p>
+              <h3 className="text-xs font-semibold">{group}</h3>
               <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
-                {actions.filter((action) => !MD_ONLY_ACTIONS.includes(action)).map((action) => {
-                  const base = fromRole(action);
-                  return (
-                    <label
-                      key={action}
-                      className={`flex items-start gap-2 text-[11px] ${
-                        base ? "text-muted-foreground" : "text-foreground"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-0.5 h-3.5 w-3.5 shrink-0"
-                        checked={base || granted.has(action)}
-                        disabled={base}
-                        onChange={() => toggle(action)}
-                      />
-                      <span>
-                        {action}
-                        {base && <span className="block text-[10px]">from role</span>}
-                      </span>
-                    </label>
-                  );
-                })}
+                {actions.map((action) => (
+                  <label key={action} className="flex items-start gap-2 text-[11px] text-foreground">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                      checked={granted.has(action)}
+                      onChange={() => toggle(action)}
+                    />
+                    <span>{ACTION_LABELS[action]}</span>
+                  </label>
+                ))}
               </div>
             </div>
           ))}
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="text-xs font-semibold">Private details — follow the job, not the ticks</h3>
+          <ul className="space-y-1 rounded-xl border border-border/60 bg-secondary px-3 py-2.5">
+            {SENSITIVE_FIELDS.map(({ field, label }) => (
+              <li key={field} className="flex items-baseline justify-between gap-3 text-[11px]">
+                <span className="text-foreground">🔒 {label}</span>
+                <span className="text-muted-foreground">
+                  {rolesHolding(field).includes(target.role) ? "Shown" : "Hidden"}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-muted-foreground">
+            To change these, change the person&apos;s job. Every time one is opened, it is written to
+            the history.
+          </p>
         </section>
 
         <Field label="Compulsory reason">

@@ -10,10 +10,11 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import {
-  can,
+  MD_ONLY_ACTIONS,
   canViewField,
   isAction,
   refuseStaffAccountFor,
+  startingPermissions,
   type Action,
   type StaffRole,
 } from "@/lib/security/permissions";
@@ -22,7 +23,7 @@ import { decryptSensitive, maskAadhaar, maskMobile } from "@/lib/security/identi
 import { isValidEmail, isValidMobile, normaliseMobile } from "@/lib/domain/land-inquiry";
 import { recordAudit } from "@/lib/security/audit";
 import { CommandError, blocked, runCommand } from "@/lib/services/command";
-import { disableStaffAccount, reassignWork, refuseMdTarget } from "@/lib/services/admin-service";
+import { disableStaffAccount, openWorkFor, reassignWork, refuseMdTarget } from "@/lib/services/admin-service";
 import { decidePersonMerge, requestPersonMerge } from "@/lib/services/merge-service";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
@@ -81,6 +82,68 @@ export async function disableStaffAction(
           ? `Account disabled. ${result.queuedForReassignment} item(s) are in the Unassigned Review queue.`
           : "Account disabled. Every session has been signed out.",
     };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/**
+ * Owner, 17 Nov 2026 — a disabled login can be deleted for good. Only the
+ * login goes: the Person stays, because a Booking's "Sold by" and a Hold's
+ * "Sourced by" point at it and would otherwise be wiped (SET NULL). Closed
+ * tasks and enquiries lose their assignee by the same rule; open work must be
+ * handed over first so nothing is left with nobody. History keeps the User ID.
+ */
+export async function deleteStaffAccountAction(
+  staffAccountId: string,
+  reason: string,
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("STAFF_MANAGE");
+  if (!reason.trim()) return { ok: false, error: "A compulsory reason is required to delete an account." };
+
+  try {
+    refuseSelf(actor.accountId, staffAccountId);
+    const result = await runCommand<{ staffAccountId: string }>(
+      {
+        idempotencyKey: key,
+        operation: "STAFF_DELETE",
+        actorRef: actor.staffAccountId,
+        actorRole: actor.role,
+        payload: { staffAccountId, reason },
+      },
+      async (tx) => {
+        const account = await tx.staffAccount.findUniqueOrThrow({ where: { id: staffAccountId } });
+        if (account.status !== "DISABLED") blocked("Disable the account first, then delete it.");
+        refuseMdTarget(actor.role, account.role);
+
+        const work = await openWorkFor(tx, account.id);
+        const open = work.tasks.length + work.enquiries.length + work.landInquiries.length;
+        if (open > 0) {
+          blocked(
+            `${account.staffAccountId} still has ${work.tasks.length} open task(s), ` +
+              `${work.enquiries.length} enquiry(ies) and ${work.landInquiries.length} land inquiry(ies). ` +
+              `Hand them to someone else first.`
+          );
+        }
+
+        await tx.staffAccount.delete({ where: { id: account.id } });
+
+        return {
+          result: { staffAccountId: account.staffAccountId },
+          audit: {
+            entity: "StaffAccount",
+            entityId: account.id,
+            action: "STAFF_DELETED",
+            reason,
+            before: { staffAccountId: account.staffAccountId, role: account.role },
+          },
+        };
+      }
+    );
+
+    refresh();
+    return { ok: true, message: `${result.staffAccountId} deleted. Its history stays.` };
   } catch (error) {
     return toResult(error);
   }
@@ -369,6 +432,7 @@ export async function createStaffAccountAction(
             staffAccountId: id,
             personId,
             role: input.role,
+            extraPermissions: startingPermissions(input.role),
             passwordHash: hashPassword(password),
           },
         });
@@ -448,10 +512,10 @@ export async function changeStaffRoleAction(
           }
         }
 
-        // The old role's extra grants describe a job this person no longer has.
+        // The old ticks describe a job this person no longer has.
         const updated = await tx.staffAccount.update({
           where: { id: account.id },
-          data: { role, extraPermissions: [] },
+          data: { role, extraPermissions: startingPermissions(role) },
         });
 
         return {
@@ -462,7 +526,7 @@ export async function changeStaffRoleAction(
             action: "STAFF_ROLE_CHANGED",
             reason,
             before: { role: account.role, extraPermissions: account.extraPermissions },
-            after: { role: updated.role, extraPermissions: [] },
+            after: { role: updated.role, extraPermissions: updated.extraPermissions },
           },
         };
       }
@@ -472,8 +536,8 @@ export async function changeStaffRoleAction(
     return {
       ok: true,
       message:
-        `${result.staffAccountId} moved from ${result.from} to ${result.to}. Any extra permissions ` +
-        `were cleared, and the change applies on their next action.`,
+        `${result.staffAccountId} moved from ${result.from} to ${result.to}. Their permissions were ` +
+        `reset to the ${result.to} starting set, from their next click.`,
     };
   } catch (error) {
     return toResult(error);
@@ -481,8 +545,8 @@ export async function changeStaffRoleAction(
 }
 
 /**
- * DESIGN §17.4 — extra grants on top of the role baseline. Deny by default:
- * `can()` is the role's list OR this one, so an entry here only ever adds.
+ * DESIGN §17.4, owner 17 Nov 2026 — the account's whole tick list. Deny by
+ * default: `can()` reads this list and nothing else, so an untick takes away.
  *
  * PRD RD-05 — protected values are deliberately out of reach from here.
  * `canViewField` consults the role and nothing else, so Aadhaar, PAN and bank
@@ -523,19 +587,18 @@ export async function setStaffPermissionsAction(
         }
         refuseMdTarget(actor.role, account.role);
 
-        // Anything the role already grants is noise in this column: it would
-        // survive a later role change as a grant nobody chose to give.
-        const extra = (permissions as Action[]).filter(
-          (action) => !can(account.role, action)
+        // A tick no one but MD can hold would sit there matching nothing.
+        const ticked = [...new Set(permissions as Action[])].filter(
+          (action) => !MD_ONLY_ACTIONS.includes(action)
         );
 
         const updated = await tx.staffAccount.update({
           where: { id: account.id },
-          data: { extraPermissions: extra },
+          data: { extraPermissions: ticked },
         });
 
         return {
-          result: { staffAccountId: account.staffAccountId, count: extra.length },
+          result: { staffAccountId: account.staffAccountId, count: ticked.length },
           audit: {
             entity: "StaffAccount",
             entityId: account.id,
@@ -553,8 +616,8 @@ export async function setStaffPermissionsAction(
       ok: true,
       message:
         result.count === 0
-          ? `${result.staffAccountId} now holds the role baseline only.`
-          : `${result.staffAccountId} now holds ${result.count} extra permission(s), effective immediately.`,
+          ? `${result.staffAccountId} can now only view — nothing is ticked.`
+          : `${result.staffAccountId} now has ${result.count} permission(s), from their next click.`,
     };
   } catch (error) {
     return toResult(error);
