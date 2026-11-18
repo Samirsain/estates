@@ -772,9 +772,7 @@ function ProjectDialog({
           <Input
             name="projectCode"
             required
-            maxLength={9}
-            pattern="[A-Za-z0-9]{1,9}"
-            title="1 to 9 letters or digits"
+            maxLength={6}
             className="uppercase"
           />
         </Field>
