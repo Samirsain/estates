@@ -201,25 +201,23 @@ export default async function ProjectDetailPage({
               </Section>
             </Card>
 
-            <Card className="p-3">
-              <Section
-                title={`Plot Location Charge${publishedVersion ? ` · v${publishedVersion.version}` : ""}`}
-              >
-                {charges.length === 0 ? (
-                  <Empty>
-                    {publishedVersion
-                      ? "This version configures no charge."
-                      : "No published PLC version — every Plot here charges zero."}
-                  </Empty>
-                ) : (
-                  <dl>
-                    {charges.map((c, i) => (
-                      <Fact key={i} label={c.label} value={formatPercent(c.percent)} />
-                    ))}
-                  </dl>
-                )}
-              </Section>
-            </Card>
+            {/* No card at all until a PLC version is published — the
+                "No published PLC version" line is gone (owner, 18 Nov 2026). */}
+            {publishedVersion && (
+              <Card className="p-3">
+                <Section title={`Plot Location Charge · v${publishedVersion.version}`}>
+                  {charges.length === 0 ? (
+                    <Empty>This version configures no charge.</Empty>
+                  ) : (
+                    <dl>
+                      {charges.map((c, i) => (
+                        <Fact key={i} label={c.label} value={formatPercent(c.percent)} />
+                      ))}
+                    </dl>
+                  )}
+                </Section>
+              </Card>
+            )}
 
             <div id="commission" className="scroll-mt-28">
             <CommissionSettings
