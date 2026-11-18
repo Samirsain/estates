@@ -308,6 +308,7 @@ export const REMARK_PRESETS = {
   editStaff: ["Mobile number corrected", "Name spelling corrected", "Email changed"],
   changeStaffRole: ["Moved to the Accounts", "Moved to CRM", "Role was set wrongly"],
   changeStaffPermissions: ["Temporary access for an audit", "Access no longer needed"],
+  changeRolePermissions: ["Setting up the jobs", "Job duties changed", "Access no longer needed"],
   raiseMerge: [
     "Same person entered twice",
     "Same mobile and Aadhaar",

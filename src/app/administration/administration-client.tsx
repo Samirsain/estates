@@ -48,6 +48,7 @@ import {
   resetStaffPasswordAction,
   changeStaffRoleAction,
   setStaffPermissionsAction,
+  setRolePermissionsAction,
   staffDetailAction,
   updateStaffDetailsAction,
   type StaffDetail,
@@ -129,6 +130,8 @@ export default function AdministrationClient(props: {
   canMerge: boolean;
   canManagePermissions: boolean;
   canRevealIdentity: boolean;
+  /** Each job's starting ticks: MD's saved set, else the built-in one. */
+  roleStarts: Record<StaffRole, string[]>;
   staff: StaffRowView[];
   queuedTasks: QueuedTaskView[];
   queuedEnquiries: QueuedEnquiryView[];
@@ -155,7 +158,7 @@ export default function AdministrationClient(props: {
         <div>
           <h1 className="text-xl font-semibold">Administration</h1>
           <p className="text-xs text-muted-foreground">
-            Staff status, the Unassigned Review queue, Person Merge, Cities and Activity History.
+            Staff status, Roles, the Unassigned Review queue, Person Merge, Cities and Activity History.
           </p>
         </div>
 
@@ -172,6 +175,7 @@ export default function AdministrationClient(props: {
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="staff">Staff ({props.staff.length})</TabsTrigger>
+            {props.canManagePermissions && <TabsTrigger value="roles">Roles</TabsTrigger>}
             <TabsTrigger value="queue">
               Unassigned Review{queueSize ? ` (${queueSize})` : ""}
             </TabsTrigger>
@@ -192,6 +196,15 @@ export default function AdministrationClient(props: {
             canReveal={props.canRevealIdentity}
             actorAccountId={props.staff.find((s) => s.staffAccountId === props.staffAccountId)?.id ?? ""}
             isMd={props.role === "MD"}
+            roleStarts={props.roleStarts}
+            onResult={done}
+          />
+        )}
+        {tab === "roles" && props.canManagePermissions && (
+          <RolesTab
+            key={JSON.stringify(props.roleStarts)}
+            roleStarts={props.roleStarts}
+            staff={props.staff}
             onResult={done}
           />
         )}
@@ -230,6 +243,7 @@ function StaffTab({
   canReveal,
   actorAccountId,
   isMd,
+  roleStarts,
   onResult,
 }: {
   rows: StaffRowView[];
@@ -240,6 +254,7 @@ function StaffTab({
   actorAccountId: string;
   /** Only MD may act on an MD account (refuseMdTarget). */
   isMd: boolean;
+  roleStarts: Record<StaffRole, string[]>;
   onResult: (result: ActionResult) => void;
 }) {
   const router = useRouter();
@@ -395,7 +410,12 @@ function StaffTab({
       )}
 
       {permitting && (
-        <PermissionsModal target={permitting} onClose={() => setPermitting(null)} onResult={onResult} />
+        <PermissionsModal
+          target={permitting}
+          roleStart={roleStarts[permitting.role]}
+          onClose={() => setPermitting(null)}
+          onResult={onResult}
+        />
       )}
 
       {viewing && (
@@ -956,6 +976,170 @@ function DecideMergeModal({
   );
 }
 
+/* --------------------------------------------------------------- roles */
+
+const EDITABLE_ROLES = STAFF_ROLES.filter((role) => role !== "MD");
+
+/**
+ * Owner, 18 Nov 2026 — every job's permissions on one screen, and MD sets the
+ * ticks each one starts with. MD's column is fixed: it holds everything.
+ * Private details follow the job alone (PRD RD-05), so they are shown, not ticked.
+ */
+function RolesTab({
+  roleStarts,
+  staff,
+  onResult,
+}: {
+  roleStarts: Record<StaffRole, string[]>;
+  staff: StaffRowView[];
+  onResult: (result: ActionResult) => void;
+}) {
+  const [sets, setSets] = React.useState(() =>
+    Object.fromEntries(EDITABLE_ROLES.map((role) => [role, new Set(roleStarts[role])]))
+  );
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const activeIn = (role: StaffRole) => staff.filter((s) => s.role === role && s.status === "ACTIVE").length;
+  const changed = EDITABLE_ROLES.filter(
+    (role) => sets[role].size !== roleStarts[role].length || roleStarts[role].some((a) => !sets[role].has(a))
+  );
+  const affected = changed.reduce((sum, role) => sum + activeIn(role), 0);
+
+  function toggle(role: StaffRole, action: string) {
+    setSets((current) => {
+      const next = new Set(current[role]);
+      if (next.has(action)) next.delete(action);
+      else next.add(action);
+      return { ...current, [role]: next };
+    });
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const reason = String(new FormData(event.currentTarget).get("reason") ?? "");
+    setBusy(true);
+    setError(null);
+    const outcome = await setRolePermissionsAction(
+      Object.fromEntries(changed.map((role) => [role, [...sets[role]]])),
+      reason,
+      newKey()
+    );
+    setBusy(false);
+    if (outcome.ok) onResult(outcome);
+    else setError(outcome.error);
+  }
+
+  const cell = "px-2 py-1 text-center";
+
+  return (
+    <Card className="space-y-3 p-3">
+      <div>
+        <h2 className="text-sm font-semibold">Role permissions</h2>
+        <p className="text-[11px] text-muted-foreground">
+          What each job can do. Saving gives the change to everyone in that job from their next
+          click, and a new account or role change starts with these ticks. One person&apos;s own
+          ticks are under Staff → ⋯ → Permissions.
+        </p>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <thead className="text-muted-foreground">
+            <tr>
+              <th className="py-1.5 pr-3 font-medium">Permission</th>
+              {STAFF_ROLES.map((role) => (
+                <th key={role} className={`${cell} align-top font-medium`} title={ROLE_LABELS[role]}>
+                  <div className="text-foreground">{role}</div>
+                  <div className="text-[11px] font-normal">{activeIn(role)} staff</div>
+                  {role !== "MD" && (
+                    <button
+                      type="button"
+                      className="text-[11px] font-normal underline-offset-2 hover:underline"
+                      onClick={() =>
+                        setSets((current) => ({ ...current, [role]: new Set(startingPermissions(role)) }))
+                      }
+                    >
+                      Built-in
+                    </button>
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ACTION_GROUPS.map(({ group, actions }) => (
+              <React.Fragment key={group}>
+                <tr>
+                  <td colSpan={STAFF_ROLES.length + 1} className="pb-1 pt-3 font-semibold">
+                    {group}
+                  </td>
+                </tr>
+                {actions.map((action) => {
+                  const mdOnly = MD_ONLY_ACTIONS.includes(action);
+                  return (
+                    <tr key={action} className="border-t border-border/40">
+                      <td className="py-1 pr-3">
+                        {ACTION_LABELS[action]}
+                        {mdOnly && <span className="text-[11px] text-muted-foreground"> · MD only</span>}
+                      </td>
+                      {STAFF_ROLES.map((role) => (
+                        <td key={role} className={cell}>
+                          <input
+                            type="checkbox"
+                            aria-label={`${role}: ${ACTION_LABELS[action]}`}
+                            className="h-3.5 w-3.5"
+                            checked={role === "MD" || (!mdOnly && sets[role].has(action))}
+                            disabled={role === "MD" || mdOnly}
+                            onChange={() => toggle(role, action)}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </React.Fragment>
+            ))}
+            <tr>
+              <td colSpan={STAFF_ROLES.length + 1} className="pb-1 pt-3 font-semibold">
+                Private details — follow the job, not the ticks
+              </td>
+            </tr>
+            {SENSITIVE_FIELDS.map(({ field, label }) => (
+              <tr key={field} className="border-t border-border/40">
+                <td className="py-1 pr-3">🔒 {label}</td>
+                {STAFF_ROLES.map((role) => (
+                  <td key={role} className={`${cell} text-[11px] text-muted-foreground`}>
+                    {rolesHolding(field).includes(role) ? "Shown" : "Hidden"}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {changed.length > 0 && (
+        <form className="space-y-3 border-t border-border/60 pt-3" onSubmit={submit}>
+          <p className="text-xs">
+            Changed: {changed.join(", ")} · {affected} current staff get the change. Ticks added are
+            given to them, ticks removed are taken away; ticks set on one person stay.
+          </p>
+          <Field label="Compulsory reason">
+            <RemarkSelect presets="changeRolePermissions" name="reason" required />
+          </Field>
+          {error && <p className="text-xs text-red-700">{error}</p>}
+          <div className="flex justify-end">
+            <Button type="submit" disabled={busy}>
+              {busy ? "Saving…" : "Save role permissions"}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Card>
+  );
+}
+
 /* --------------------------------------------------------------- audit */
 
 function AuditTab({ rows }: { rows: AuditView[] }) {
@@ -1486,10 +1670,13 @@ const GRANTABLE_COUNT = GRANTABLE.reduce((sum, { actions }) => sum + actions.len
  */
 function PermissionsModal({
   target,
+  roleStart,
   onClose,
   onResult,
 }: {
   target: StaffRowView;
+  /** What the "usual set" button puts back: the role's set under Roles. */
+  roleStart: string[];
   onClose: () => void;
   onResult: (result: ActionResult) => void;
 }) {
@@ -1537,7 +1724,7 @@ function PermissionsModal({
             type="button"
             size="sm"
             variant="outline"
-            onClick={() => setGranted(new Set(startingPermissions(target.role)))}
+            onClick={() => setGranted(new Set(roleStart))}
           >
             Reset to the usual {target.role} set
           </Button>

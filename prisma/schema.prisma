@@ -323,6 +323,16 @@ model City {
   updatedAt   DateTime @updatedAt
 }
 
+/// The ticks each job starts with, as MD set them under Administration → Roles
+/// (owner, 18 Nov 2026). No row means the built-in set in permissions.ts. MD
+/// itself holds everything and never has a row.
+model RolePermission {
+  role         StaffRole @id
+  permissions  String[]
+  updatedByRef String
+  updatedAt    DateTime  @updatedAt
+}
+
 model StaffAccount {
   id             String @id @default(uuid())
   /// The User ID (owner, 11 Nov 2026): what the person signs in with, what

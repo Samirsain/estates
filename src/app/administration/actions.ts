@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import {
   MD_ONLY_ACTIONS,
+  applyRoleChange,
   canViewField,
   isAction,
   refuseStaffAccountFor,
@@ -22,7 +23,7 @@ import { hashPassword, oneTimePassword, validatePassword } from "@/lib/security/
 import { decryptSensitive, maskAadhaar, maskMobile } from "@/lib/security/identity";
 import { isValidEmail, isValidMobile, normaliseMobile } from "@/lib/domain/land-inquiry";
 import { recordAudit } from "@/lib/security/audit";
-import { CommandError, blocked, runCommand } from "@/lib/services/command";
+import { CommandError, blocked, runCommand, type Tx } from "@/lib/services/command";
 import { disableStaffAccount, openWorkFor, reassignWork, refuseMdTarget } from "@/lib/services/admin-service";
 import { decidePersonMerge, requestPersonMerge } from "@/lib/services/merge-service";
 
@@ -432,7 +433,7 @@ export async function createStaffAccountAction(
             staffAccountId: id,
             personId,
             role: input.role,
-            extraPermissions: startingPermissions(input.role),
+            extraPermissions: await roleStart(tx, input.role),
             passwordHash: hashPassword(password),
           },
         });
@@ -515,7 +516,7 @@ export async function changeStaffRoleAction(
         // The old ticks describe a job this person no longer has.
         const updated = await tx.staffAccount.update({
           where: { id: account.id },
-          data: { role, extraPermissions: startingPermissions(role) },
+          data: { role, extraPermissions: await roleStart(tx, role) },
         });
 
         return {
@@ -618,6 +619,108 @@ export async function setStaffPermissionsAction(
         result.count === 0
           ? `${result.staffAccountId} can now only view — nothing is ticked.`
           : `${result.staffAccountId} now has ${result.count} permission(s), from their next click.`,
+    };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** The ticks a role starts with: MD's saved set under Roles, else the built-in one. */
+async function roleStart(tx: Tx, role: StaffRole) {
+  const saved = await tx.rolePermission.findUnique({ where: { role } });
+  return startingPermissions(role, saved?.permissions);
+}
+
+/**
+ * Administration → Roles (owner, 18 Nov 2026) — MD sets the ticks each job
+ * starts with, and a tick there must take effect. A new account and a role
+ * change take the whole set; every active holder of a changed role gains what
+ * was added and loses what was taken away (applyRoleChange), from their next
+ * click. Their old ticks go into the audit.
+ *
+ * MD's own row is not editable: MD holds everything, and an untick there
+ * could lock the only administrator out.
+ */
+export async function setRolePermissionsAction(
+  sets: Partial<Record<StaffRole, string[]>>,
+  reason: string,
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("ROLE_PERMISSION_MANAGE");
+  if (!reason.trim()) return { ok: false, error: "A compulsory reason is required to change role permissions." };
+  if ("MD" in sets) return { ok: false, error: "MD always holds every permission; it cannot be changed." };
+
+  const unknown = Object.values(sets).flat().filter((entry) => !isAction(entry));
+  if (unknown.length > 0) return { ok: false, error: `Not a known permission: ${unknown.join(", ")}.` };
+
+  try {
+    const result = await runCommand<{ roles: StaffRole[]; staffUpdated: number }>(
+      {
+        idempotencyKey: key,
+        operation: "ROLE_PERMISSIONS_SET",
+        actorRef: actor.staffAccountId,
+        actorRole: actor.role,
+        payload: { sets, reason },
+      },
+      async (tx) => {
+        const before: Record<string, unknown> = {};
+        const after: Record<string, unknown> = {};
+        const roles: StaffRole[] = [];
+        let staffUpdated = 0;
+
+        for (const [role, list] of Object.entries(sets) as [StaffRole, string[]][]) {
+          const was = await roleStart(tx, role);
+          const now = startingPermissions(role, list);
+          if (was.length === now.length && was.every((action) => now.includes(action))) continue;
+
+          await tx.rolePermission.upsert({
+            where: { role },
+            create: { role, permissions: now, updatedByRef: actor.staffAccountId },
+            update: { permissions: now, updatedByRef: actor.staffAccountId },
+          });
+          roles.push(role);
+          before[role] = was;
+          after[role] = now;
+
+          const holders = await tx.staffAccount.findMany({
+            where: { role, status: "ACTIVE" },
+            select: { id: true, staffAccountId: true, extraPermissions: true },
+          });
+          before[`${role} staff`] = Object.fromEntries(holders.map((h) => [h.staffAccountId, h.extraPermissions]));
+          const given: Record<string, string[]> = {};
+          for (const holder of holders) {
+            given[holder.staffAccountId] = applyRoleChange(holder.extraPermissions, was, now);
+            await tx.staffAccount.update({
+              where: { id: holder.id },
+              data: { extraPermissions: given[holder.staffAccountId] },
+            });
+          }
+          after[`${role} staff`] = given;
+          staffUpdated += holders.length;
+        }
+
+        if (roles.length === 0) blocked("Nothing changed.");
+
+        return {
+          result: { roles, staffUpdated },
+          audit: {
+            entity: "RolePermission",
+            entityId: roles.join(","),
+            action: "ROLE_PERMISSIONS_SET",
+            reason,
+            before,
+            after,
+          },
+        };
+      }
+    );
+
+    refresh();
+    return {
+      ok: true,
+      message:
+        `Saved ${result.roles.join(", ")}. ${result.staffUpdated} current staff account(s) updated, ` +
+        `from their next click.`,
     };
   } catch (error) {
     return toResult(error);

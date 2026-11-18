@@ -43,6 +43,7 @@ import {
   rolesHolding,
   STAFF_ROLES,
   startingPermissions,
+  applyRoleChange,
   MD_ONLY_ACTIONS,
 } from "./permissions.ts";
 import { legacyRequestHash, requestHash, resolveIdempotency, expiryFrom, type StoredCommand } from "./idempotency.ts";
@@ -156,6 +157,24 @@ for (const action of MD_ONLY_ACTIONS) {
     assert.ok(!can(role, action, [action]), `${role} cannot hold ${action}`);
     assert.ok(!start(role).includes(action), `${role} does not start with ${action}`);
   }
+}
+// Owner, 18 Nov 2026 — MD's saved role set replaces the built-in one; an MD-only
+// tick, a repeat or an unknown name is dropped, and MD itself never starts with a list.
+assert.deepEqual(
+  startingPermissions("PC", ["TASK_CREATE", "TASK_CREATE", "PROJECT_SETUP", "NOT_A_THING"]),
+  ["TASK_CREATE"],
+  "saved role set is cleaned"
+);
+assert.deepEqual(startingPermissions("CRM", []), [], "an empty saved set means nothing ticked");
+assert.deepEqual(startingPermissions("CRM", null), start("CRM"), "no saved set means built-in");
+assert.deepEqual(startingPermissions("MD", ["TASK_CREATE"]), [], "MD holds everything without a list");
+// A role change reaches its holders: added is given, removed is taken, one
+// person's own extra (REPORT_EXPORT) and own untick (TASK_COMPLETE) stay.
+{
+  const own = ["REPORT_VIEW", "REPORT_EXPORT"]; // PC holder: unticked TASK_COMPLETE, added REPORT_EXPORT
+  const next = applyRoleChange(own, ["TASK_COMPLETE", "REPORT_VIEW"], ["TASK_COMPLETE", "TASK_CREATE"]);
+  assert.deepEqual(next.sort(), ["REPORT_EXPORT", "TASK_CREATE"], "role change applies as a diff");
+  assert.ok(can("PC", "TASK_CREATE", next) && !can("PC", "REPORT_VIEW", next), "and can() follows it");
 }
 // Owner, 17 Nov 2026 — the tick list is the whole truth: untick takes away.
 assert.ok(!can("ACCOUNTS", "BOOKING_DECIDE", []), "an unticked job default is refused");

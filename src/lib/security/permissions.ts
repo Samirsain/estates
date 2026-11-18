@@ -175,8 +175,27 @@ export const MD_ONLY_ACTIONS: readonly Action[] = [
   "PLC_SNAPSHOT_CORRECT",
 ];
 
-export function startingPermissions(role: Role): Action[] {
-  return STARTING_PERMISSIONS[role].filter((action) => !MD_ONLY_ACTIONS.includes(action));
+/**
+ * `saved` is the role's RolePermission row, as MD set it under Administration →
+ * Roles (owner, 18 Nov 2026); without one, the built-in list above. MD holds
+ * everything through FULL_ACCESS, so its list is always empty.
+ */
+export function startingPermissions(role: Role, saved?: readonly string[] | null): Action[] {
+  if (FULL_ACCESS.includes(role)) return [];
+  return [...new Set(saved ?? STARTING_PERMISSIONS[role])].filter(
+    (action): action is Action => isAction(action) && !MD_ONLY_ACTIONS.includes(action)
+  );
+}
+
+/**
+ * A role's set moved from `was` to `now` under Administration → Roles (owner,
+ * 18 Nov 2026: a tick there must take effect). Each holder gains what was
+ * added and loses what was taken away; a tick set on that one person stays.
+ */
+export function applyRoleChange(own: readonly string[], was: readonly string[], now: readonly string[]): string[] {
+  const added = now.filter((action) => !was.includes(action));
+  const removed = was.filter((action) => !now.includes(action));
+  return [...new Set([...own.filter((action) => !removed.includes(action)), ...added])];
 }
 
 /** `granted` is the account's own tick list (StaffAccount.extraPermissions). */

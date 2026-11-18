@@ -2,7 +2,14 @@
 
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
-import { can, canViewField } from "@/lib/security/permissions";
+import {
+  STAFF_ROLES,
+  can,
+  canViewField,
+  startingPermissions,
+  type Action,
+  type StaffRole,
+} from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
 import { shownRecordName } from "@/lib/tasks";
 import AdministrationClient from "./administration-client";
@@ -18,7 +25,7 @@ export default async function AdministrationPage() {
   // outside people and stay masked wherever they appear.
   const canSeeStaffContact = can(actor.role, "STAFF_MANAGE", actor.extraPermissions);
 
-  const [staff, queuedTasks, queuedEnquiries, merges, recentAudit, cities] = await Promise.all([
+  const [staff, queuedTasks, queuedEnquiries, merges, recentAudit, cities, savedRoles] = await Promise.all([
     db.staffAccount.findMany({
       include: { person: true, _count: { select: { assignedTasks: { where: { status: "PENDING" } }, assignedEnquiries: { where: { status: "ACTIVE" } } } } },
       orderBy: [{ status: "asc" }, { staffAccountId: "asc" }],
@@ -43,7 +50,14 @@ export default async function AdministrationPage() {
       ? db.auditEvent.findMany({ orderBy: { at: "desc" }, take: 50 })
       : Promise.resolve([]),
     db.city.findMany({ orderBy: { name: "asc" } }),
+    db.rolePermission.findMany(),
   ]);
+  const roleStarts = Object.fromEntries(
+    STAFF_ROLES.map((role) => [
+      role,
+      startingPermissions(role, savedRoles.find((row) => row.role === role)?.permissions),
+    ])
+  ) as Record<StaffRole, Action[]>;
 
   return (
     <AdministrationClient
@@ -55,6 +69,7 @@ export default async function AdministrationPage() {
       canMerge={can(actor.role, "PERSON_MERGE", actor.extraPermissions)}
       canManagePermissions={can(actor.role, "ROLE_PERMISSION_MANAGE", actor.extraPermissions)}
       canRevealIdentity={canViewField(actor.role, "AADHAAR_FULL")}
+      roleStarts={roleStarts}
       staff={staff.map((account) => ({
         id: account.id,
         staffAccountId: account.staffAccountId,
