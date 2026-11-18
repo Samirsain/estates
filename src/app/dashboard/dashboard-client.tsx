@@ -156,8 +156,6 @@ export default function DashboardClient({
     return () => clearInterval(id);
   }, []);
 
-  const readOnly = role === "MIS"; // PRD §3 — MIS reads; it may still add a manual task.
-
   const visible = React.useMemo(() => {
     if (!now) return [];
     const scoped = tasks.filter(
@@ -495,8 +493,7 @@ export default function DashboardClient({
                                   size="xs"
                                   variant="outline"
                                   className={taskButton}
-                                  disabled={readOnly || busy}
-                                  title={readOnly ? "MIS is read-only." : undefined}
+                                  disabled={busy}
                                 >
                                   Action
                                   <ChevronDown className="ml-1 h-3 w-3" />

@@ -372,8 +372,8 @@ async function main() {
   assert.ok(rows.length > 0, "the report is live");
 
   const exported = await exportReport({
-    actorRef: `${TAG}-MIS`,
-    actorRole: "MIS",
+    actorRef: `${TAG}-PC`,
+    actorRole: "PC",
     report: "BOOKINGS",
     filters: { projectId: project.id },
   });

@@ -27,7 +27,6 @@ const STAFF: Array<{ staffAccountId: string; name: string; role: StaffRole; mobi
   { staffAccountId: "ACCOUNTS-SURESH", name: "Suresh Iyer", role: "ACCOUNTS", mobile: "9800000004" },
   { staffAccountId: "CRM-RAHUL", name: "Rahul Mehta", role: "CRM", mobile: "9800000005" },
   { staffAccountId: "CRM-ANITA", name: "Anita Rao", role: "CRM", mobile: "9800000006" },
-  { staffAccountId: "MIS", name: "Meera Pillai", role: "MIS", mobile: "9800000007" },
   { staffAccountId: "PC", name: "Arjun Bose", role: "PC", mobile: "9800000008" },
 ];
 

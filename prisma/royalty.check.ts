@@ -646,7 +646,7 @@ async function main() {
   for (const bad of [istDay(day(1)), "2026-02-30", ""]) {
     await assert.rejects(redeem(pool.id, 1, { redeemedOn: bad }), /date/, `refuses ${bad || "an empty date"}`);
   }
-  for (const role of ["ACCOUNTS", "MIS", "MEMBER", "PC"]) {
+  for (const role of ["ACCOUNTS", "MEMBER", "PC"]) {
     await assert.rejects(redeem(pool.id, 1, { actorRole: role, actorRef: `${TAG}-${role}` }), /Only CRM or MD/, role);
   }
   assert.ok(

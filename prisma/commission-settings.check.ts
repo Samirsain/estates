@@ -41,7 +41,7 @@ async function main() {
   const projectId = project.id;
 
   // Only MD creates — Review Focus 4: PC holds PROJECT_SETUP but may not.
-  for (const role of ["PC", "CRM", "ACCOUNTS", "MIS"]) {
+  for (const role of ["PC", "CRM", "ACCOUNTS"]) {
     await assert.rejects(
       createCommissionVersion({ idempotencyKey: key(), actorRef: `${TAG}-${role}`, actorRole: role, projectId, ...terms }),
       /Only MD creates/,

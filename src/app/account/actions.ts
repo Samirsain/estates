@@ -80,7 +80,7 @@ async function reissue(
     context: "STAFF";
     accountId: string;
     loginId: string;
-    role: "MD" | "ACCOUNTS" | "CRM" | "MIS" | "PC";
+    role: "MD" | "ACCOUNTS" | "CRM" | "PC";
     sessionVersion: number;
   }
 ) {

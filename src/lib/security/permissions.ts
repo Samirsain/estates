@@ -1,11 +1,12 @@
 // Role, record and field authorisation — prd-corrections.md §3; architecture.md §9.2.
 // Deny by default. Hiding a button is never the control (design.md §1).
 
-export type StaffRole = "MD" | "ACCOUNTS" | "CRM" | "MIS" | "PC";
+/** No MIS: the owner removed it (18 Nov 2026), and MD holds everything it did. */
+export type StaffRole = "MD" | "ACCOUNTS" | "CRM" | "PC";
 /** Staff only: Members have no sign-in since the portal was removed (owner, 29 Oct 2026). */
 export type Role = StaffRole;
 
-export const STAFF_ROLES: StaffRole[] = ["MD", "ACCOUNTS", "CRM", "MIS", "PC"];
+export const STAFF_ROLES: StaffRole[] = ["MD", "ACCOUNTS", "CRM", "PC"];
 
 export type Action =
   // Administration
@@ -126,8 +127,6 @@ const STARTING_PERMISSIONS: Record<Role, readonly Action[]> = {
     "TASK_COMPLETE",
     "REPORT_VIEW",
   ],
-  // Read-only masked reporting plus authorised manual task creation (PRD §3).
-  MIS: ["REPORT_VIEW", "REPORT_EXPORT", "TASK_CREATE"],
   // No financial approval (PRD §3). Project and Plot setup is MD's alone (owner, 16 Oct 2026).
   PC: ["TASK_COMPLETE", "REPORT_VIEW"],
 };
@@ -419,7 +418,6 @@ export const ROLE_LABELS: Record<StaffRole, string> = {
   MD: "MD — Managing Director, can do everything",
   ACCOUNTS: "Accounts — approves bookings and handles money",
   CRM: "CRM — handles customers, enquiries and bookings",
-  MIS: "MIS — sees reports and adds tasks",
   PC: "PC — project and plot work",
 };
 

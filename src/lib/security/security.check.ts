@@ -143,8 +143,8 @@ const start = (role: (typeof STAFF_ROLES)[number]) => startingPermissions(role);
 assert.ok(can("ACCOUNTS", "BOOKING_DECIDE", start("ACCOUNTS")));
 assert.ok(!can("CRM", "BOOKING_DECIDE", start("CRM")), "CRM cannot approve its own Booking Request");
 assert.ok(!can("PC", "PAYMENT_RECEIVED_CONFIRM", start("PC")), "PC has no financial approval");
-assert.ok(!can("MIS", "TASK_COMPLETE", start("MIS")), "MIS is read-only besides manual tasks");
-assert.ok(can("MIS", "TASK_CREATE", start("MIS")));
+// Owner, 18 Nov 2026 — there is no MIS job any more.
+assert.ok(!(STAFF_ROLES as string[]).includes("MIS"), "MIS is gone");
 // MD holds everything, so a new Action is MD's the day it is added.
 for (const action of ALL_ACTIONS) {
   assert.ok(can("MD", action, []), `MD holds ${action}`);
@@ -178,8 +178,8 @@ assert.deepEqual(startingPermissions("MD", ["TASK_CREATE"]), [], "MD holds every
 }
 // Owner, 17 Nov 2026 — the tick list is the whole truth: untick takes away.
 assert.ok(!can("ACCOUNTS", "BOOKING_DECIDE", []), "an unticked job default is refused");
-assert.ok(can("MIS", "AUDIT_VIEW", ["AUDIT_VIEW"]), "a tick outside the job is honoured");
-assert.throws(() => assertPermission("MIS", "BOOKING_DECIDE", start("MIS")), PermissionError);
+assert.ok(can("PC", "AUDIT_VIEW", ["AUDIT_VIEW"]), "a tick outside the job is honoured");
+assert.throws(() => assertPermission("PC", "BOOKING_DECIDE", start("PC")), PermissionError);
 
 // Field scope.
 for (const role of STAFF_ROLES) {
@@ -373,7 +373,7 @@ for (const action of ALL_ACTIONS) {
 // there is nothing to assert here — a missing Action fails the build instead.
 assert.ok(!isAction("NOT_A_REAL_ACTION"), "an invented permission string is refused");
 
-assert.ok(!can("MIS", "AUDIT_VIEW", start("MIS")), "MIS does not start with audit access");
+assert.ok(!can("PC", "AUDIT_VIEW", start("PC")), "PC does not start with audit access");
 
 // PRD RD-05 — a grant must never open a protected value. canViewField takes no
 // extra permissions at all, and that is the guarantee the modal states.
