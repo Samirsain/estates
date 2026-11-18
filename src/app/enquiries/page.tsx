@@ -1,6 +1,7 @@
 // Enquiries — design.md §8.
 
 import { db } from "@/lib/db";
+import { projectLabel } from "@/lib/utils";
 import { requireStaff } from "@/lib/security/current-actor";
 import { ENQUIRY_FOLLOW_UP_PURPOSE } from "@/lib/services/enquiry-service";
 import { can } from "@/lib/security/permissions";
@@ -96,7 +97,7 @@ export default async function EnquiriesPage({
     // Contact numbers are masked in list views by default (DESIGN §2.6).
     mobileMasked: maskMobile(e.person.primaryMobile),
     city: e.person.city ?? "—",
-    project: e.project.name,
+    project: projectLabel(e.project),
     plot: e.plot ? e.plot.plotNumber : "General",
     plotType: e.plot ? e.plot.plotType : null,
     plotRequirement: e.plotRequirement,
@@ -127,7 +128,7 @@ export default async function EnquiriesPage({
       actorName={actor.name}
       staffAccountId={actor.staffAccountId}
       rows={rows}
-      projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+      projects={projects.map((p) => ({ id: p.id, name: projectLabel(p) }))}
       plots={plots.map((p) => ({
         id: p.id,
         projectId: p.projectId,

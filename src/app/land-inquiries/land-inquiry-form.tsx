@@ -46,7 +46,7 @@ const DOCUMENTS = [
 /** Spec §11 — the metric units, and how many decimals each one reads to. */
 const METRIC_FIELDS = [
   { unit: "HECTARE" as const, label: "Hectare", decimals: 6 },
-  { unit: "SQ_M" as const, label: "Sq. Mtr.", decimals: 6 },
+  { unit: "SQ_M" as const, label: "Sq. Mtr.", decimals: 2 },
   { unit: "SQ_FT" as const, label: "Sq. Ft.", decimals: 2 },
 ];
 

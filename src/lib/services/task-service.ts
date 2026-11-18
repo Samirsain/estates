@@ -4,6 +4,7 @@
 
 import type { StaffRole, TaskStatus } from "@prisma/client";
 import { db } from "@/lib/db";
+import { projectLabel } from "@/lib/utils";
 import { nextDue, type TaskSubject } from "@/lib/tasks";
 import { lockKey, nextReference, type Tx } from "./command";
 
@@ -221,7 +222,7 @@ export async function taskSubjects(
             select: {
               id: true,
               bookingNumber: true,
-              project: { select: { name: true } },
+              project: { select: { name: true, projectCode: true } },
               plot: { select: { id: true, plotNumber: true, plotType: true } },
               primaryPerson: { select: personSelect },
             },
@@ -232,7 +233,7 @@ export async function taskSubjects(
             where: { id: { in: enquiryIds } },
             select: {
               id: true,
-              project: { select: { name: true } },
+              project: { select: { name: true, projectCode: true } },
               plot: { select: { id: true, plotNumber: true, plotType: true } },
               person: { select: personSelect },
             },
@@ -253,11 +254,11 @@ export async function taskSubjects(
       plotIds.length
         ? db.plot.findMany({
             where: { id: { in: plotIds } },
-            select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true } } },
+            select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true, projectCode: true } } },
           })
         : [],
       projectIds.length
-        ? db.project.findMany({ where: { id: { in: projectIds } }, select: { id: true, name: true } })
+        ? db.project.findMany({ where: { id: { in: projectIds } }, select: { id: true, name: true, projectCode: true } })
         : [],
       acquisitionIds.length
         ? db.acquisition.findMany({
@@ -266,7 +267,7 @@ export async function taskSubjects(
               id: true,
               propertyName: true,
               propertyNumber: true,
-              plot: { select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true } } } },
+              plot: { select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true, projectCode: true } } } },
               sellerPerson: { select: personSelect },
             },
           })
@@ -280,7 +281,7 @@ export async function taskSubjects(
                 select: {
                   id: true,
                   bookingNumber: true,
-                  project: { select: { name: true } },
+                  project: { select: { name: true, projectCode: true } },
                   plot: { select: { id: true, plotNumber: true, plotType: true } },
                 },
               },
@@ -289,7 +290,7 @@ export async function taskSubjects(
                   id: true,
                   propertyName: true,
                   propertyNumber: true,
-                  plot: { select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true } } } },
+                  plot: { select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true, projectCode: true } } } },
                 },
               },
               beneficiaryPerson: { select: personSelect },
@@ -332,7 +333,7 @@ export async function taskSubjects(
 
   for (const b of bookings) {
     add(b.id, {
-      project: b.project.name,
+      project: projectLabel(b.project),
       plot: b.plot.plotNumber,
       plotType: b.plot.plotType,
       plotId: b.plot.id,
@@ -344,7 +345,7 @@ export async function taskSubjects(
   }
   for (const e of enquiries) {
     add(e.id, {
-      project: e.project.name,
+      project: projectLabel(e.project),
       plot: e.plot?.plotNumber ?? null,
       plotType: e.plot?.plotType ?? null,
       plotId: e.plot?.id ?? null,
@@ -376,7 +377,7 @@ export async function taskSubjects(
   }
   for (const p of plots) {
     add(p.id, {
-      project: p.project.name,
+      project: projectLabel(p.project),
       plot: p.plotNumber,
       plotType: p.plotType,
       plotId: p.id,
@@ -388,13 +389,13 @@ export async function taskSubjects(
   }
   for (const p of projects) {
     // Reads as what it is: the Project column under the Plot already names it.
-    add(p.id, { project: p.name, plot: null, plotId: null, reference: "Project", partyRef: null, partyName: null, partyPersonId: null });
+    add(p.id, { project: projectLabel(p), plot: null, plotId: null, reference: "Project", partyRef: null, partyName: null, partyPersonId: null });
   }
   for (const a of acquisitions) {
     // A Purchase for Resale has no Plot until approval, and carries the
     // external property's own name and number instead (prd-complete §17.4).
     add(a.id, {
-      project: a.plot?.project.name ?? a.propertyName,
+      project: a.plot ? projectLabel(a.plot.project) : a.propertyName,
       plot: a.plot?.plotNumber ?? a.propertyNumber,
       plotType: a.plot?.plotType ?? null,
       plotId: a.plot?.id ?? null,
@@ -406,7 +407,11 @@ export async function taskSubjects(
     // A Buying Commission has no Booking: it sits on its Buyback / Resale deal.
     const deal = r.acquisition;
     add(r.id, {
-      project: r.booking?.project.name ?? deal?.plot?.project.name ?? deal?.propertyName ?? null,
+      project: r.booking
+        ? projectLabel(r.booking.project)
+        : deal?.plot
+          ? projectLabel(deal.plot.project)
+          : (deal?.propertyName ?? null),
       plot: r.booking?.plot.plotNumber ?? deal?.plot?.plotNumber ?? deal?.propertyNumber ?? null,
       plotType: r.booking?.plot.plotType ?? deal?.plot?.plotType ?? null,
       plotId: r.booking?.plot.id ?? deal?.plot?.id ?? null,

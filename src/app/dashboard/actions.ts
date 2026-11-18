@@ -3,6 +3,7 @@
 import { actionErrorText } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { projectLabel } from "@/lib/utils";
 import { requireStaff } from "@/lib/security/current-actor";
 import { blocked, CommandError, runCommand } from "@/lib/services/command";
 import { completeTask, ensureTask, reviseTask } from "@/lib/services/task-service";
@@ -126,8 +127,8 @@ export async function taskLinkOptionsAction(kind: TaskLinkKind): Promise<PickerO
   // Owner, 11 Nov 2026 — Link to names a Project; the Plot is its own optional
   // field under it (taskPlotOptionsAction).
   if (kind === "Project") {
-    const projects = await db.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
-    return projects.map((p) => ({ id: p.id, label: p.name }));
+    const projects = await db.project.findMany({ select: { id: true, name: true, projectCode: true }, orderBy: { name: "asc" } });
+    return projects.map((p) => ({ id: p.id, label: projectLabel(p) }));
   }
   if (kind === "Enquiry") {
     const enquiries = await db.enquiry.findMany({
@@ -135,7 +136,7 @@ export async function taskLinkOptionsAction(kind: TaskLinkKind): Promise<PickerO
         id: true,
         enquiryNo: true,
         person: { select: { fullName: true } },
-        project: { select: { name: true } },
+        project: { select: { name: true, projectCode: true } },
         plot: { select: { plotNumber: true } },
       },
       // Open ones first, newest first: a task is nearly always for a live lead.
@@ -144,7 +145,7 @@ export async function taskLinkOptionsAction(kind: TaskLinkKind): Promise<PickerO
     });
     return enquiries.map((e) => ({
       id: e.id,
-      label: [e.enquiryNo, e.person.fullName, [e.project.name, e.plot?.plotNumber].filter(Boolean).join(" ")].join(" · "),
+      label: [e.enquiryNo, e.person.fullName, [projectLabel(e.project), e.plot?.plotNumber].filter(Boolean).join(" ")].join(" · "),
     }));
   }
   const person = { select: { fullName: true, primaryMobile: true } } as const;
@@ -172,7 +173,7 @@ export async function taskLinkOptionsAction(kind: TaskLinkKind): Promise<PickerO
 export async function taskPlotOptionsAction(): Promise<(PickerOption & { projectId: string })[]> {
   await requireStaff("TASK_CREATE");
   const plots = await db.plot.findMany({
-    select: { id: true, projectId: true, plotNumber: true, plotType: true, project: { select: { name: true } } },
+    select: { id: true, projectId: true, plotNumber: true, plotType: true, project: { select: { name: true, projectCode: true } } },
     orderBy: [{ project: { name: "asc" } }, { plotNumber: "asc" }],
     take: 2000,
   });
@@ -180,7 +181,7 @@ export async function taskPlotOptionsAction(): Promise<(PickerOption & { project
     id: p.id,
     projectId: p.projectId,
     // RESIDENTIAL → Residential, INFORMAL_SECTOR → Informal Sector, as the lists read.
-    label: `${p.project.name} · ${p.plotType
+    label: `${projectLabel(p.project)} · ${p.plotType
       .toLowerCase()
       .replace(/(^|_)([a-z])/g, (_, sep: string, c: string) => (sep ? " " : "") + c.toUpperCase())} ${p.plotNumber}`,
   }));

@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
+import { projectLabel } from "@/lib/utils";
 import { requireStaff } from "@/lib/security/current-actor";
 import { plcRules } from "@/lib/services/plc-service";
 import { AppShell } from "@/components/app-shell";
@@ -43,7 +44,7 @@ export default async function PrepareInventoryPage() {
         <PrepareInventoryClient
           projects={projects.map((p) => ({
             id: p.id,
-            name: p.name,
+            name: projectLabel(p),
             city: p.city,
             location: p.location,
             status: p.status,

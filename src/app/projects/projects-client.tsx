@@ -608,7 +608,7 @@ function ProjectFieldset({ row }: { row?: ProjectRowView }) {
   return (
     <div className="grid gap-3 md:grid-cols-2">
       <Field label="Project Name">
-        <Input name="name" required defaultValue={row?.name ?? ""} />
+        <Input name="name" required defaultValue={row?.name ?? ""} className="uppercase" />
       </Field>
       <Field label="Type">
         <select name="type" className={inputClass} defaultValue={row?.type ?? "RESIDENTIAL"}>
@@ -622,10 +622,10 @@ function ProjectFieldset({ row }: { row?: ProjectRowView }) {
         </select>
       </Field>
       <Field label="City">
-        <CityInput name="city" defaultValue={row?.city ?? ""} />
+        <CityInput name="city" defaultValue={row?.city ?? ""} inputClassName="uppercase" />
       </Field>
       <Field label="Location">
-        <Input name="location" defaultValue={row?.location ?? ""} />
+        <Input name="location" defaultValue={row?.location ?? ""} className="uppercase" />
       </Field>
       <Field label="Location link">
         <Input
@@ -636,7 +636,7 @@ function ProjectFieldset({ row }: { row?: ProjectRowView }) {
           defaultValue={row?.locationUrl ?? ""}
         />
       </Field>
-      <Field label="Structure & Layout (Drive link)">
+      <Field label="Layout Plan">
         <Input
           name="driveUrl"
           type="url"
@@ -655,13 +655,14 @@ function ProjectFieldset({ row }: { row?: ProjectRowView }) {
         />
       </Field>
       <Field label="Developer / Company">
-        <Input name="developer" defaultValue={row?.developer ?? ""} />
+        <Input name="developer" defaultValue={row?.developer ?? ""} className="uppercase" />
       </Field>
       <Field label="RERA Number">
         <Input
           name="reraNumber"
           placeholder="Can be added later via Edit"
           defaultValue={row?.reraNumber ?? ""}
+          className="uppercase"
         />
       </Field>
       <div className="md:col-span-2">
@@ -688,7 +689,7 @@ function AmenitiesField({ defaultValue }: { defaultValue: string }) {
       <textarea
         name="amenities"
         rows={4}
-        className={`${inputClass} h-auto py-2 leading-relaxed`}
+        className={`${inputClass} h-auto py-2 leading-relaxed uppercase`}
         value={text}
         placeholder={`${BULLET} Clubhouse`}
         onChange={(e) => {

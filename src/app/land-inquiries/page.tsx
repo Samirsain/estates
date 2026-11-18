@@ -96,7 +96,7 @@ function areaLabel(row: {
   areaBigha: { toFixed(n: number): string } | null;
   areaBiswa: { toFixed(n: number): string } | null;
 }) {
-  if (row.areaSqM) return `${Number(row.areaSqM.toFixed(6))} Sq. Mtr.`;
+  if (row.areaSqM) return `${Number(row.areaSqM.toFixed(2))} Sq. Mtr.`;
   const local = [
     row.areaBigha ? `${Number(row.areaBigha.toFixed(6))} Bigha` : null,
     row.areaBiswa ? `${Number(row.areaBiswa.toFixed(6))} Biswa` : null,

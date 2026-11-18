@@ -242,7 +242,7 @@ export default async function CalculatorPage({
   const plotRows: CalcPlotView[] = plots.map((plot) => {
     const version = published.get(plot.projectId) ?? null;
     let plcPercent: string | null = frozenPlc.get(plot.id) ?? null;
-    let plcIssue: string | null = plcPercent || version ? null : "No published PLC version for this Project";
+    let plcIssue: string | null = null;
 
     if (version && plcPercent === null) {
       try {

@@ -14,7 +14,6 @@ import {
   validatePlcComponents,
   type PlcCategory,
 } from "@/lib/domain/inventory";
-import { projectSlug } from "@/lib/domain/public-portal";
 import { blocked, runCommand, type Tx } from "./command";
 import { plcRules } from "./plc-service";
 import { checkPreparable, insertVersion, type CommissionVersionInput } from "./commission-settings-service";
@@ -33,6 +32,9 @@ export type PlcComponentInput = {
   remark?: string | null;
 };
 
+/** A Project's typed details are kept in capitals, like a Member's (owner, 18 Nov 2026); links are not. */
+const caps = (s?: string | null) => s?.trim().toUpperCase() || null;
+
 /**
  * A Project could not be changed at all until now: the service offered
  * createProject and setProjectStatus and nothing else, so a name typed
@@ -45,20 +47,6 @@ export type PlcComponentInput = {
  * already attached to it. Status keeps its own command: moving a Project to
  * Active is a release decision, not an edit.
  */
-/**
- * The portal finds a Project by the link its name makes, so two names making
- * one link ("Govind Vatika", "Govind-Vatika") left the second unreachable.
- */
-async function refuseSlugClash(tx: Tx, name: string, projectCode: string, exceptId?: string) {
-  const slug = projectSlug(name, projectCode);
-  const others = await tx.project.findMany({
-    where: { isExternalResaleGroup: false, ...(exceptId ? { id: { not: exceptId } } : {}) },
-    select: { name: true, projectCode: true },
-  });
-  const clash = others.find((p) => projectSlug(p.name, p.projectCode) === slug);
-  if (clash) blocked(`${clash.name} already makes the portal link /p/${slug}. Choose a different name.`);
-}
-
 export async function updateProject(args: {
   idempotencyKey: string;
   actorRef: string;
@@ -115,7 +103,6 @@ export async function updateProject(args: {
       });
 
       const before = await tx.project.findUniqueOrThrow({ where: { id: args.projectId } });
-      await refuseSlugClash(tx, args.name, before.projectCode, before.id);
       // PRD §8.1, as Prepare Inventory applies it: a Commercial Project holds
       // no Residential Plot, so the type cannot change under ones it has.
       if (args.type === "COMMERCIAL" && before.type !== "COMMERCIAL") {
@@ -127,16 +114,16 @@ export async function updateProject(args: {
       const after = await tx.project.update({
         where: { id: args.projectId },
         data: {
-          name: args.name.trim(),
+          name: args.name.trim().toUpperCase(),
           type: args.type,
-          developer: args.developer?.trim() || null,
-          location: args.location?.trim() || null,
+          developer: caps(args.developer),
+          location: caps(args.location),
           locationUrl: normaliseLink(args.locationUrl, "Location link"),
-          driveUrl: normaliseLink(args.driveUrl, "Structure and layout link"),
+          driveUrl: normaliseLink(args.driveUrl, "Layout Plan link"),
           renderUrl: normaliseLink(args.renderUrl, "3D Visuals link"),
           city: args.city?.trim() || null,
-          amenities: args.amenities?.trim() || null,
-          reraNumber: args.reraNumber?.trim() || null,
+          amenities: caps(args.amenities),
+          reraNumber: caps(args.reraNumber),
         },
       });
 
@@ -218,21 +205,20 @@ export async function createProject(args: {
     },
     async (tx) => {
       const code = await checkProjectCode(tx, args.projectCode);
-      await refuseSlugClash(tx, args.name, code);
 
       const project = await tx.project.create({
         data: {
           projectCode: code,
-          name: args.name.trim(),
+          name: args.name.trim().toUpperCase(),
           type: args.type,
-          developer: args.developer?.trim() || null,
-          location: args.location?.trim() || null,
+          developer: caps(args.developer),
+          location: caps(args.location),
           locationUrl: normaliseLink(args.locationUrl, "Location link"),
-          driveUrl: normaliseLink(args.driveUrl, "Structure and layout link"),
+          driveUrl: normaliseLink(args.driveUrl, "Layout Plan link"),
           renderUrl: normaliseLink(args.renderUrl, "3D Visuals link"),
           city: args.city?.trim() || null,
-          amenities: args.amenities?.trim() || null,
-          reraNumber: args.reraNumber?.trim() || null,
+          amenities: caps(args.amenities),
+          reraNumber: caps(args.reraNumber),
           isExternalResaleGroup: args.isExternalResaleGroup ?? false,
           status: "SETUP_NOT_ACTIVE",
         },

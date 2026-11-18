@@ -24,6 +24,8 @@ export type AcquisitionRowView = {
   status: string;
   property: string;
   project: string;
+  /** Null for an outside purchase, which has no Project in inventory. */
+  projectCode: string | null;
   plotNumber: string;
   /** The Plot behind that number, so it opens; null for an outside property. */
   plotId: string | null;

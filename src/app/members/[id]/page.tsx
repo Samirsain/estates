@@ -12,6 +12,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { projectLabel } from "@/lib/utils";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can, canViewField } from "@/lib/security/permissions";
 import { maskAadhaar, maskMobile, maskPan } from "@/lib/security/identity";
@@ -286,7 +287,7 @@ export default async function MemberDetailPage({
       include: {
         person: true,
         // CP §68 — the first purchase that made the relationship.
-        royaltyLinkFirstBooking: { select: { id: true, plot: { select: { plotNumber: true } }, project: { select: { name: true } } } },
+        royaltyLinkFirstBooking: { select: { id: true, plot: { select: { plotNumber: true } }, project: { select: { name: true, projectCode: true } } } },
         // The points this Member earned through the Customer, for Royalty Customers.
         royaltyAwards: { where: { memberProfileId: member.id, state: { not: "REVERSED" } }, select: { tokens: true, state: true } },
       },
@@ -376,7 +377,7 @@ export default async function MemberDetailPage({
           },
         ],
       },
-      select: { id: true, soldByPersonId: true, plot: { select: { plotNumber: true } }, project: { select: { name: true } } },
+      select: { id: true, soldByPersonId: true, plot: { select: { plotNumber: true } }, project: { select: { name: true, projectCode: true } } },
       orderBy: { bookingDate: "asc" },
     }),
     db.recovery.findMany({ where: { personId, status: "OUTSTANDING" }, orderBy: { dueOn: "asc" } }),
@@ -482,7 +483,7 @@ export default async function MemberDetailPage({
       kind: "Booking Request",
       plot: b.plot.plotNumber,
       plotId: b.plot.id as string | null,
-      project: b.project.name,
+      project: projectLabel(b.project),
       buyer: b.primaryPerson.customerProfile?.customerId ?? b.primaryPerson.fullName,
       buyerId: b.primaryPerson.id,
       condition: REQUEST_WORDS[b.status] ?? words(b.status),
@@ -495,7 +496,7 @@ export default async function MemberDetailPage({
       kind: "Hold Request",
       plot: r.plot.plotNumber,
       plotId: r.plot.id,
-      project: r.plot.project.name,
+      project: projectLabel(r.plot.project),
       buyer: r.person.fullName,
       buyerId: r.person.id,
       condition: r.status === "WITHDRAWN" ? "Cancelled" : words(r.status),
@@ -507,7 +508,7 @@ export default async function MemberDetailPage({
       kind: "Enquiry",
       plot: e.plot?.plotNumber ?? "General",
       plotId: e.plot?.id ?? null,
-      project: e.project.name,
+      project: projectLabel(e.project),
       buyer: e.person.fullName,
       buyerId: e.person.id,
       condition: words(e.status),
@@ -616,7 +617,7 @@ export default async function MemberDetailPage({
       href: `/bookings/${b.id}`,
       ref: b.bookingNumber ?? "Booking Request",
       at: b.submittedAt,
-      project: b.project.name,
+      project: projectLabel(b.project),
       plotId: b.plot.id as string | null,
       plotNumber: b.plot.plotNumber,
       plotType: b.plot.plotType as string | null,
@@ -633,7 +634,7 @@ export default async function MemberDetailPage({
         href: `/acquisitions/${a.id}`,
         ref: TYPE_LABEL[a.type] ?? "Buyback / Resale",
         at: a.submittedAt,
-        project: a.plot?.project.name ?? a.propertyName ?? "—",
+        project: a.plot ? projectLabel(a.plot.project) : (a.propertyName ?? "—"),
         plotId: a.plot?.id ?? null,
         plotNumber: a.plot?.plotNumber ?? a.propertyNumber ?? "—",
         plotType: a.plot?.plotType ?? null,
@@ -757,7 +758,7 @@ export default async function MemberDetailPage({
                 </Link>
                 <span className={SUB}>{formatIst(d.at)}</span>
               </td>
-              {/* Owner 2 Nov — Plot No. · Type, the Project under it. */}
+              {/* Owner 2 Nov — Plot No. · Type, the Project under it (its code first, 18 Nov). */}
               <td className={TD}>
                 <span className="block">
                   {d.plotId ? (
@@ -1261,7 +1262,7 @@ export default async function MemberDetailPage({
                         href: `/members/${m.id}`,
                         code: m.memberId,
                         name: m.person.fullName,
-                        sale: sale ? { id: sale.id, plot: sale.plot.plotNumber, project: sale.project.name } : null,
+                        sale: sale ? { id: sale.id, plot: sale.plot.plotNumber, project: projectLabel(sale.project) } : null,
                         status: m.referenceOpportunityConsumedAt ? "Reference Used" : "",
                       };
                     })}
@@ -1298,7 +1299,7 @@ export default async function MemberDetailPage({
                         ? {
                             id: c.royaltyLinkFirstBooking.id,
                             plot: c.royaltyLinkFirstBooking.plot.plotNumber,
-                            project: c.royaltyLinkFirstBooking.project.name,
+                            project: projectLabel(c.royaltyLinkFirstBooking.project),
                           }
                         : null,
                       status: pointsFrom(c.royaltyAwards),

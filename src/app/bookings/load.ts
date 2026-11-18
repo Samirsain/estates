@@ -3,6 +3,7 @@
 // may not export anything but a page, hence this module.
 
 import { db } from "@/lib/db";
+import { projectLabel } from "@/lib/utils";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
@@ -68,13 +69,13 @@ export async function loadBookingFormData() {
   const bookablePlots: BookableView[] = bookable.map((p) => ({
     id: p.id,
     projectId: p.projectId,
-    projectName: p.project.name,
+    projectName: projectLabel(p.project),
     plotNumber: p.plotNumber,
     plotType: p.plotType.replaceAll("_", " "),
     status: p.status,
     widthFt: p.widthFt?.toString() ?? null,
     lengthFt: p.lengthFt?.toString() ?? null,
-    areaSqFt: p.areaSqFt.toString(),
+    areaSqFt: p.areaSqFt.toDecimalPlaces(2).toString(),
     areaSqYd: p.areaSqYd.toDecimalPlaces(2).toString(),
     locationCharge: locationChargeLabel(p.boundaries),
     commissionTerms: p.project.commissionVersions[0]
@@ -121,12 +122,13 @@ export const bookingRow = (b: Awaited<ReturnType<typeof listBookings>>[number]):
     requestNo: b.requestNo,
     bookingNumber: b.bookingNumber,
     project: b.project.name,
+    projectCode: b.project.projectCode,
     plotId: b.plot.id,
     plotNumber: b.plot.plotNumber,
     plotType: b.plot.plotType,
     plotWidthFt: b.plot.widthFt?.toString() ?? null,
     plotLengthFt: b.plot.lengthFt?.toString() ?? null,
-    plotAreaSqFt: b.plot.areaSqFt.toString(),
+    plotAreaSqFt: b.plot.areaSqFt.toDecimalPlaces(2).toString(),
     primaryCustomer: b.primaryPerson.fullName,
     primaryCustomerId: b.primaryPerson.customerProfile?.customerId ?? null,
     primaryCustomerPersonId: b.primaryPersonId,

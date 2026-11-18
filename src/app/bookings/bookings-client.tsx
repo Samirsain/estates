@@ -105,6 +105,7 @@ export type BookingRowView = {
   requestNo: string;
   bookingNumber: string | null;
   project: string;
+  projectCode: string;
   /** The Booking page links back to its Plot's page. */
   plotId: string;
   plotNumber: string;
@@ -426,7 +427,8 @@ export default function BookingsClient({
   const [projectFilter, setProjectFilter] = React.useState("ALL");
   const [search, setSearch] = React.useState("");
   const projects = React.useMemo(
-    () => Array.from(new Set(rows.map((r) => r.project))).sort(),
+    // With the code: two Projects may share a name (owner, 18 Nov 2026).
+    () => Array.from(new Set(rows.map((r) => `${r.projectCode} · ${r.project}`))).sort(),
     [rows]
   );
   // The Cancel Booking remark is compulsory only when the reason is Other.
@@ -477,7 +479,7 @@ export default function BookingsClient({
   const visible = rows.filter(
     (r) =>
       (statusFilter === "ALL" || r.status === statusFilter) &&
-      (projectFilter === "ALL" || r.project === projectFilter) &&
+      (projectFilter === "ALL" || `${r.projectCode} · ${r.project}` === projectFilter) &&
       (search.trim() === "" ||
         `${r.bookingNumber ?? ""} ${r.requestNo} ${r.project} ${r.plotType} ${r.plotNumber} ${r.primaryCustomer}`
           .toLowerCase()
@@ -890,7 +892,7 @@ export default function BookingsClient({
                       {row.bookingNumber ?? row.requestNo}
                     </Link>
                   </td>
-                  {/* Owner 2 Nov — Plot No. · Type, the Project under it. */}
+                  {/* Owner 2 Nov — Plot No. · Type, the Project under it (its code first, 18 Nov). */}
                   <td>
                     <span className="block">
                       <Link href={`/plots/${row.plotId}`} className="font-semibold text-primary hover:underline">
@@ -901,7 +903,9 @@ export default function BookingsClient({
                         {humanise(row.plotType)}
                       </span>
                     </span>
-                    <span className="block text-[11px] font-medium text-foreground">{row.project}</span>
+                    <span className="block text-[11px] font-medium text-foreground">
+                      {row.projectCode} · {row.project}
+                    </span>
                   </td>
                   {/* An irregular Plot has no width and length to print, only
                       the area somebody measured — so it prints that instead of

@@ -550,7 +550,7 @@ function MemberDetailPanel({
                           </span>
                         )}
                       </td>
-                      {/* Owner 2 Nov — Plot No. · Type, the Project under it. */}
+                      {/* Owner 2 Nov — Plot No. · Type, the Project under it (its code first, 18 Nov). */}
                       <td className="py-1">
                         <span className="block whitespace-nowrap">
                           <span className="font-semibold">{c.plot}</span>

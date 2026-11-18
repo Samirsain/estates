@@ -5,7 +5,7 @@
 
 import { cache } from "react";
 import { db } from "@/lib/db";
-import { projectSlug, publicPlotStatus, type PublicPlotStatus } from "@/lib/domain/public-portal";
+import { projectSlugs, publicPlotStatus, type PublicPlotStatus } from "@/lib/domain/public-portal";
 import { projectWhere } from "@/app/projects/project-identity";
 
 export type Tally = Record<PublicPlotStatus, number>;
@@ -62,10 +62,11 @@ async function loadPortalProjects(): Promise<PortalProject[]> {
     tallies.set(row.projectId, tally);
   }
 
+  const slugs = projectSlugs(projects);
   return projects.map((p) => ({
     id: p.id,
     name: p.name,
-    slug: projectSlug(p.name, p.projectCode),
+    slug: slugs.get(p.id)!,
     type: p.type,
     status: p.status,
     developer: p.developer,

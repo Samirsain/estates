@@ -203,7 +203,7 @@ export default async function LandInquiryDetailPage({
               <Row label="Biswa" value={dash(inquiry.areaBiswa && Number(inquiry.areaBiswa))} />
               <Row
                 label="Metric Area"
-                value={metric ? `${metric.sqM.toFixed(6)} Sq. Mtr.` : "—"}
+                value={metric ? `${metric.sqM.toFixed(2)} Sq. Mtr.` : "—"}
                 hint={
                   metric &&
                   `${metric.hectare.toFixed(6)} Hectare · ${metric.sqFt.toFixed(2)} Sq. Ft.`

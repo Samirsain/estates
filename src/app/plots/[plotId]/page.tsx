@@ -460,7 +460,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
     total: string;
     components: { label: string; percent: string; evidence: string }[];
   } | null = null;
-  let plcIssue: string | null = version ? null : "No published PLC version";
+  let plcIssue: string | null = null;
   if (version) {
     try {
       const snapshot = buildPlcSnapshot(boundaries, plcRules(version.components));
@@ -477,7 +477,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
     }
   }
 
-  // Stored precision — area is stored to four decimals and a Plot is sold on it.
+  // Areas read to two decimals (owner, 18 Nov 2026); num is for road widths.
   const num = (value: { toString(): string }) => formatQuantity(value.toString());
   const conv = (value: { toDecimalPlaces(n: number): { toString(): string } }) =>
     formatQuantity(value.toDecimalPlaces(2).toString());
@@ -935,7 +935,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                     {plot.widthFt && plot.lengthFt && (
                       <span>{formatPlotSize(plot.widthFt.toString(), plot.lengthFt.toString())}</span>
                     )}
-                    <span>{num(plot.areaSqFt)} sq ft</span>
+                    <span>{conv(plot.areaSqFt)} sq ft</span>
                     <span>{conv(plot.areaSqYd)} sq yd</span>
                     <span>
                       {conv(plot.areaSqM)} sq m{plot.exactAreaSqFt ? " · exact" : ""}
@@ -1007,7 +1007,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 {plot.exactAreaSqFt && plot.widthFt && plot.lengthFt && (
                   <Row
                     label="Width × Length area"
-                    value={<span className="tabular-nums">{num(plot.widthFt.mul(plot.lengthFt))} sq ft</span>}
+                    value={<span className="tabular-nums">{conv(plot.widthFt.mul(plot.lengthFt))} sq ft</span>}
                   />
                 )}
                 {plot.exactAreaReason && <Row label="Override reason" value={plot.exactAreaReason} />}

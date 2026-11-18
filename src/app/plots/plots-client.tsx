@@ -52,11 +52,14 @@ import {
   formatIst,
   formatIstDateTime,
   formatPercent,
+  dimensionText,
   formatDimension,
   formatPlotSize,
   formatQuantity,
   istDay,
+  parseDimension,
   remainingPercent,
+  typeDimension,
   type StaffRole,
 } from "@/lib/tasks";
 // The grid computes Area and Location Charge live from the same domain rules
@@ -89,6 +92,7 @@ import {
 export type PlotRowView = {
   id: string;
   project: string;
+  projectCode: string;
   projectId: string;
   plotType: string;
   plotNumber: string;
@@ -374,58 +378,17 @@ type Preview = {
   issue: string | null;
 };
 
-export function parseDimension(input: string): string {
-  const clean = input.trim();
-  if (!clean) return "";
-
-  // 1. If it's a standard integer or decimal (e.g. "25", "25.6", "25.5"), keep it as is.
-  if (/^\d+(\.\d+)?$/.test(clean)) {
-    return clean;
-  }
-
-  // 2. Handle format like 25'6" or 25' 6" or 25ft 6in or 25'6
-  const ftInRegex = /^(?:(\d+)\s*['’]|(\d+)\s*ft)?\s*(?:(\d+)\s*["”]|(\d+)\s*in|(\d+))?$/i;
-  const match = clean.match(ftInRegex);
-  if (match) {
-    const feetStr = match[1] || match[2] || "0";
-    const inchesStr = match[3] || match[4] || match[5] || "0";
-    const feet = parseInt(feetStr, 10);
-    const inches = parseInt(inchesStr, 10);
-    // 12 inches is a foot: "25'18" read as 26.5 ft without a word. Left as
-    // typed, the server refuses it as not a number of feet.
-    if (inches >= 12) return clean;
-    if (!isNaN(feet) || !isNaN(inches)) {
-      const decimalValue = feet + (inches / 12);
-      return String(Number(decimalValue.toFixed(4)));
-    }
-  }
-
-  // 3. Handle format like 25-6 (feet-inches with hyphen)
-  const hyphenRegex = /^(\d+)-(\d+)$/;
-  const hyphenMatch = clean.match(hyphenRegex);
-  if (hyphenMatch) {
-    const feet = parseInt(hyphenMatch[1], 10);
-    const inches = parseInt(hyphenMatch[2], 10);
-    if (!isNaN(feet) && !isNaN(inches)) {
-      const decimalValue = feet + (inches / 12);
-      return String(Number(decimalValue.toFixed(4)));
-    }
-  }
-
-  // 4. Handle space-separated like 25 6
-  const spaceRegex = /^(\d+)\s+(\d+)$/;
-  const spaceMatch = clean.match(spaceRegex);
-  if (spaceMatch) {
-    const feet = parseInt(spaceMatch[1], 10);
-    const inches = parseInt(spaceMatch[2], 10);
-    if (!isNaN(feet) && !isNaN(inches)) {
-      const decimalValue = feet + (inches / 12);
-      return String(Number(decimalValue.toFixed(4)));
-    }
-  }
-
-  return clean;
-}
+/**
+ * A Plot side's box (owner, 18 Nov 2026): 40 shows 40', ' steps to the inches,
+ * " after the mark makes it inches only. typeDimension decides; this puts the
+ * caret back where it said, since React would otherwise leave it at the end.
+ */
+const sizeChange = (value: string, set: (value: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const el = e.currentTarget;
+  const next = typeDimension(value, el.value, el.selectionStart ?? el.value.length);
+  set(next.value);
+  requestAnimationFrame(() => el.setSelectionRange(next.caret, next.caret));
+};
 
 function derivePreview(
   row: { widthFt: string; lengthFt: string; exactAreaSqFt: string; exactAreaReason: string },
@@ -434,9 +397,7 @@ function derivePreview(
 ): Preview {
   const blank: Preview = { areaSqFt: "—", areaSqYd: "—", areaSqM: "—", plc: "—", issue: null };
 
-  // Square feet is the number that gets saved, so the preview shows all of it.
-  // The conversions under it are rounded to two — they are read, not entered.
-  const show = (d: { toString(): string }) => formatQuantity(d.toString());
+  // Every area reads to two decimals (owner, 18 Nov 2026); the saved figure keeps four.
   const conv = (d: { toDecimalPlaces(n: number): { toString(): string } }) =>
     formatQuantity(d.toDecimalPlaces(2).toString());
 
@@ -458,11 +419,11 @@ function derivePreview(
   }
 
   const measured = areas
-    ? { areaSqFt: show(areas.areaSqFt), areaSqYd: conv(areas.areaSqYd), areaSqM: conv(areas.areaSqM) }
+    ? { areaSqFt: conv(areas.areaSqFt), areaSqYd: conv(areas.areaSqYd), areaSqM: conv(areas.areaSqM) }
     : { areaSqFt: "—", areaSqYd: "—", areaSqM: "—" };
 
   if (components.length === 0) {
-    return { ...measured, plc: "—", issue: "No published PLC version" };
+    return { ...measured, plc: "—", issue: null };
   }
 
   // A Road whose width has not been typed yet is unfinished, not wrong. The
@@ -479,7 +440,7 @@ function derivePreview(
       boundaries.map((b) => ({
         side: b.side,
         kind: b.kind,
-        roadWidthFt: b.roadWidthFt || null,
+        roadWidthFt: parseDimension(b.roadWidthFt ?? "") || null,
       })) as Boundary[],
       components as PlcComponentRule[]
     );
@@ -541,7 +502,7 @@ function SideControl({
   const selectedRoad = roads.find(
     (r) =>
       r.threshold &&
-      Number(r.threshold) === Number(boundary.roadWidthFt) &&
+      Number(r.threshold) === Number(parseDimension(boundary.roadWidthFt ?? "")) &&
       (r.remark || "") === (boundary.reference || "")
   );
 
@@ -586,8 +547,10 @@ function SideControl({
           : `${boundary.side.toLowerCase()} side reference`
       }
       value={isRoad ? (boundary.roadWidthFt ?? "") : (boundary.reference ?? "")}
-      onChange={(e) =>
-        onChange(isRoad ? { roadWidthFt: e.target.value } : { reference: e.target.value })
+      onChange={
+        isRoad
+          ? sizeChange(boundary.roadWidthFt ?? "", (v) => onChange({ roadWidthFt: v }))
+          : (e) => onChange({ reference: e.target.value.toUpperCase() })
       }
     />
   );
@@ -685,7 +648,7 @@ function SideControl({
                   placeholder="ft"
                   aria-label={`${boundary.side.toLowerCase()} road width in feet`}
                   value={boundary.roadWidthFt ?? ""}
-                  onChange={(e) => onChange({ roadWidthFt: e.target.value })}
+                  onChange={sizeChange(boundary.roadWidthFt ?? "", (v) => onChange({ roadWidthFt: v }))}
                 />
               )}
             </div>
@@ -695,8 +658,10 @@ function SideControl({
               inputMode={isRoad ? "decimal" : undefined}
               placeholder={isRoad ? "Width ft" : detailLabel}
               value={isRoad ? (boundary.roadWidthFt ?? "") : (boundary.reference ?? "")}
-              onChange={(e) =>
-                onChange(isRoad ? { roadWidthFt: e.target.value } : { reference: e.target.value })
+              onChange={
+                isRoad
+                  ? sizeChange(boundary.roadWidthFt ?? "", (v) => onChange({ roadWidthFt: v }))
+                  : (e) => onChange({ reference: e.target.value.toUpperCase() })
               }
             />
           )}
@@ -1252,7 +1217,7 @@ export default function PlotsClient({
                     className="h-14 border-b border-border/60 align-middle transition-colors hover:bg-secondary/50"
                   >
                     {/* Owner 2 Nov — as on Buyback and Enquiries: Plot No. ·
-                        Type, the Project under it. */}
+                        Type, the Project under it (its code first, 18 Nov). */}
                     <td className="px-3 py-2">
                       <Link
                         href={`/plots/${plot.id}`}
@@ -1264,7 +1229,9 @@ export default function PlotsClient({
                         {" · "}
                         {PLOT_TYPE_LABEL[plot.plotType] ?? plot.plotType}
                       </span>
-                      <span className="block text-[11px] font-medium text-foreground">{plot.project}</span>
+                      <span className="block text-[11px] font-medium text-foreground">
+                        {plot.projectCode} · {plot.project}
+                      </span>
                     </td>
                     {/* The sides the Plot is measured by. An irregular Plot has
                         none — it carries an exact area instead, which the next
@@ -1958,21 +1925,18 @@ export function EditPlotDetailsDialog({
   ) => void;
 }) {
   const [form, setForm] = React.useState({
-    widthFt: plot.widthFt,
-    lengthFt: plot.lengthFt,
+    widthFt: dimensionText(plot.widthFt),
+    lengthFt: dimensionText(plot.lengthFt),
     exactAreaSqFt: plot.exactAreaSqFt,
     exactAreaReason: plot.exactAreaReason,
   });
   const [boundaries, setBoundaries] = React.useState<BoundaryRow[]>(() =>
-    SIDES.map(
-      (side) =>
-        plot.boundaries.find((b) => b.side === side) ?? {
-          side,
-          kind: "PLOT",
-          roadWidthFt: "",
-          reference: "",
-        }
-    )
+    SIDES.map((side) => {
+      const b = plot.boundaries.find((x) => x.side === side);
+      return b
+        ? { ...b, roadWidthFt: dimensionText(b.roadWidthFt ?? "") }
+        : { side, kind: "PLOT", roadWidthFt: "", reference: "" };
+    })
   );
   const [reason, setReason] = React.useState("");
 
@@ -1998,8 +1962,8 @@ export function EditPlotDetailsDialog({
           <Input
             className="h-8"
             value={form.widthFt}
-            placeholder="25'6&quot; or 25-6"
-            onChange={(e) => setForm({ ...form, widthFt: e.target.value })}
+            placeholder="40'6&quot;"
+            onChange={sizeChange(form.widthFt, (v) => setForm({ ...form, widthFt: v }))}
           />
         </Field>
         <Field label="Length ft">
@@ -2007,7 +1971,7 @@ export function EditPlotDetailsDialog({
             className="h-8"
             value={form.lengthFt}
             placeholder="50'"
-            onChange={(e) => setForm({ ...form, lengthFt: e.target.value })}
+            onChange={sizeChange(form.lengthFt, (v) => setForm({ ...form, lengthFt: v }))}
           />
         </Field>
       </div>
@@ -2094,7 +2058,7 @@ export function EditPlotDetailsDialog({
                 boundaries: boundaries.map((b) => ({
                   side: b.side as "NORTH",
                   kind: b.kind as "ROAD",
-                  roadWidthFt: b.roadWidthFt || undefined,
+                  roadWidthFt: parseDimension(b.roadWidthFt ?? "") || undefined,
                   reference: b.reference || undefined,
                 })),
               },
@@ -2190,23 +2154,20 @@ export function PrepareInventoryForm({
           </select>
         </div>
 
-        {/* PLC rate strip */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-border bg-muted px-3 py-2">
-          {bands.length === 0 ? (
-            <span className="text-[11px] text-amber-700 font-medium">
-              No published PLC version — publish one in Project setup first.
-            </span>
-          ) : (
-            bands.map((band, i) => (
+        {/* PLC rate strip — nothing at all when the Project has no published
+            version (owner, 18 Nov 2026: no warning line). */}
+        {bands.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-border bg-muted px-3 py-2">
+            {bands.map((band, i) => (
               <span key={i} className="text-[11px] text-muted-foreground">
                 {band.label}{" "}
                 <span className="font-semibold tabular-nums text-foreground">
                   {formatPercent(band.percent)}
                 </span>
               </span>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Column header ──
@@ -2259,7 +2220,7 @@ export function PrepareInventoryForm({
                   className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
                   placeholder="Plot no."
                   value={row.plotNumber}
-                  onChange={(e) => update(i, { plotNumber: e.target.value })}
+                  onChange={(e) => update(i, { plotNumber: e.target.value.toUpperCase() })}
                 />
 
                 {/* Type */}
@@ -2273,48 +2234,30 @@ export function PrepareInventoryForm({
                   ))}
                 </select>
 
-                {/* Dimensions */}
-                {row.irregular ? (
-                  <div className="flex flex-col gap-1">
-                    <input
-                      className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
-                      placeholder="Area sq ft"
-                      inputMode="decimal"
-                      value={row.exactAreaSqFt}
-                      onChange={(e) => update(i, { exactAreaSqFt: e.target.value })}
-                    />
-                    {/* The server asks a reason for every exact area, and the
-                        grid had no field for one: no irregular Plot could be saved. */}
-                    <input
-                      className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
-                      placeholder="Reason for exact area"
-                      aria-label="Reason for exact area"
-                      value={row.exactAreaReason}
-                      onChange={(e) => update(i, { exactAreaReason: e.target.value })}
-                      required
-                    />
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <input
-                      className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
-                      placeholder="Width"
-                      value={row.widthFt}
-                      onChange={(e) => update(i, { widthFt: e.target.value })}
-                    />
-                    <span className="text-muted-foreground font-bold select-none">×</span>
-                    <input
-                      className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
-                      placeholder="Length"
-                      value={row.lengthFt}
-                      onChange={(e) => update(i, { lengthFt: e.target.value })}
-                    />
-                  </div>
-                )}
+                {/* Dimensions — the same two boxes for every Plot. An irregular
+                    one keeps its sides too; its area is typed in the Area
+                    column instead (owner, 18 Nov 2026). */}
+                <div className="flex items-center gap-2">
+                  <input
+                    className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
+                    placeholder="Width"
+                    value={row.widthFt}
+                    onChange={sizeChange(row.widthFt, (v) => update(i, { widthFt: v }))}
+                  />
+                  <span className="text-muted-foreground font-bold select-none">×</span>
+                  <input
+                    className="h-8 w-full rounded-lg border border-border bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
+                    placeholder="Length"
+                    value={row.lengthFt}
+                    onChange={sizeChange(row.lengthFt, (v) => update(i, { lengthFt: v }))}
+                  />
+                </div>
 
                 {/* Area — plain figures, no box: these are read, not pressed.
                     The number carries the weight, the unit stays quiet beside
-                    it, and an unfilled row says nothing rather than 0.00. */}
+                    it, and an unfilled row says nothing rather than 0.00.
+                    Irregular turns sq ft into a box: what is typed there is the
+                    Plot's area, over Width × Length (owner, 18 Nov 2026). */}
                 <div className="flex items-baseline gap-2 tabular-nums">
                   {[
                     { value: preview.areaSqFt, unit: "sq ft", title: "Area in Square Feet" },
@@ -2328,13 +2271,24 @@ export function PrepareInventoryForm({
                       // in two columns instead of drifting.
                       className="flex flex-1 items-baseline justify-end gap-1"
                     >
-                      <span
-                        className={`text-xs font-semibold ${
-                          area.value === "—" ? "text-muted-foreground/60" : "text-foreground"
-                        }`}
-                      >
-                        {area.value}
-                      </span>
+                      {row.irregular && area.unit === "sq ft" ? (
+                        <input
+                          className="h-7 w-full min-w-0 rounded-md border border-border bg-muted px-1.5 text-right text-xs font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-card transition-colors"
+                          inputMode="decimal"
+                          aria-label="Area in square feet"
+                          placeholder={area.value === "—" ? "sq ft" : area.value}
+                          value={row.exactAreaSqFt}
+                          onChange={(e) => update(i, { exactAreaSqFt: e.target.value })}
+                        />
+                      ) : (
+                        <span
+                          className={`text-xs font-semibold ${
+                            area.value === "—" ? "text-muted-foreground/60" : "text-foreground"
+                          }`}
+                        >
+                          {area.value}
+                        </span>
+                      )}
                       <span className="w-8 shrink-0 text-[10px] text-muted-foreground">{area.unit}</span>
                     </span>
                   ))}
@@ -2347,7 +2301,7 @@ export function PrepareInventoryForm({
 
                 {/* Irregular */}
                 <label
-                  title="Irregular plot — type the area instead of width × length"
+                  title="Irregular plot — type its sq ft; that area is used instead of width × length"
                   className="flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground has-[:checked]:border-primary/50 has-[:checked]:text-foreground"
                 >
                   <input
@@ -2357,9 +2311,8 @@ export function PrepareInventoryForm({
                     onChange={(e) =>
                       update(i, {
                         irregular: e.target.checked,
-                        ...(e.target.checked
-                          ? { widthFt: "", lengthFt: "" }
-                          : { exactAreaSqFt: "", exactAreaReason: "" }),
+                        // Width and Length stay; unticking drops the typed area.
+                        ...(e.target.checked ? {} : { exactAreaSqFt: "", exactAreaReason: "" }),
                       })
                     }
                   />
@@ -2467,14 +2420,15 @@ export function PrepareInventoryForm({
                     .map((r) => ({
                       plotNumber: r.plotNumber,
                       plotType: r.plotType as "RESIDENTIAL",
-                      widthFt: r.irregular ? undefined : parseDimension(r.widthFt) || undefined,
-                      lengthFt: r.irregular ? undefined : parseDimension(r.lengthFt) || undefined,
+                      widthFt: parseDimension(r.widthFt) || undefined,
+                      lengthFt: parseDimension(r.lengthFt) || undefined,
                       exactAreaSqFt: r.irregular ? r.exactAreaSqFt || undefined : undefined,
-                      exactAreaReason: r.irregular ? r.exactAreaReason || undefined : undefined,
+                      // The grid has no reason box (owner, 18 Nov 2026): the tick is the reason.
+                      exactAreaReason: r.irregular && r.exactAreaSqFt ? r.exactAreaReason || "IRREGULAR PLOT" : undefined,
                       boundaries: r.boundaries.map((b) => ({
                         side: b.side as "NORTH",
                         kind: b.kind as "ROAD",
-                        roadWidthFt: b.roadWidthFt || undefined,
+                        roadWidthFt: parseDimension(b.roadWidthFt ?? "") || undefined,
                         reference: b.reference || undefined,
                       })),
                     }))

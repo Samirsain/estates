@@ -1,6 +1,7 @@
 // Plot Inventory — design.md §7.1 columns and §7.3 state actions.
 
 import { db } from "@/lib/db";
+import { projectLabel } from "@/lib/utils";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
 import { buildPlcSnapshot, shortSides } from "@/lib/domain/inventory";
@@ -88,7 +89,7 @@ export default async function PlotsPage({
     const version = publishedPlc.get(plot.projectId) ?? null;
 
     let plc: PlotRowView["plc"] = null;
-    let plcIssue: string | null = version ? null : "No published PLC version for this Project";
+    let plcIssue: string | null = null;
     if (version) {
       try {
         const effective = buildPlcSnapshot(
@@ -123,14 +124,14 @@ export default async function PlotsPage({
       plcIssue,
       id: plot.id,
       project: plot.project.name,
+      projectCode: plot.project.projectCode,
       projectId: plot.projectId,
       plotType: plot.plotType,
       plotNumber: plot.plotNumber,
-      // Square feet at stored precision — it is the figure a Plot is sold by.
-      // The two conversions are rounded; nobody quotes a Plot to four decimals
-      // of a square metre.
+      // Every area reads to two decimals (owner, 18 Nov 2026); the stored
+      // figure keeps four, and prices are worked out from that.
       areaSqYd: plot.areaSqYd.toDecimalPlaces(2).toString(),
-      areaSqFt: plot.areaSqFt.toString(),
+      areaSqFt: plot.areaSqFt.toDecimalPlaces(2).toString(),
       areaSqM: plot.areaSqM.toDecimalPlaces(2).toString(),
       status: plot.status,
       pastHolds: plot.events.map((e) => ({
@@ -229,7 +230,7 @@ export default async function PlotsPage({
       }
       projects={projects.map((p) => ({
         id: p.id,
-        name: p.name,
+        name: projectLabel(p),
         city: p.city,
         location: p.location,
         status: p.status,

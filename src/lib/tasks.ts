@@ -280,15 +280,72 @@ export function formatQuantity(value: string | number): string {
  * it is the absence of one, and a column of plots that are mostly whole feet
  * should not carry a column of noughts.
  *
- * Rounding happens on the total inches rather than on the fraction alone, so
- * a side that rounds up to twelve inches becomes the next foot instead of
- * 24' 12".
+ * Inches read to a tenth, as they are typed (2234' 2.5", owner 18 Nov 2026).
+ * Rounding happens on the total rather than on the fraction alone, so a side
+ * that rounds up to twelve inches becomes the next foot instead of 24' 12".
  */
 export function formatDimension(value: string | number): string {
-  const totalInches = Math.round(Number(value) * 12);
-  const ft = Math.floor(totalInches / 12);
-  const inches = totalInches - ft * 12;
+  const tenths = Math.round(Number(value) * 120);
+  const ft = Math.floor(tenths / 120);
+  const inches = (tenths - ft * 120) / 10;
   return inches ? `${formatQuantity(ft)}' ${inches}"` : `${formatQuantity(ft)}'`;
+}
+
+/**
+ * What a size box reads (owner, 18 Nov 2026): 40'6" is 40 ft 6 in, 40' is
+ * 40 ft, and 12" alone is twelve inches. Plain 25 or 25.5 is feet, as before,
+ * and so are 25.5', 25-6, 25 6 and 25ft 6in. Inches are two digits and one
+ * decimal at most (2.5", 11.5") and, after feet, under twelve: 25'18" is
+ * refused, not read as 26' 6". Returned as
+ * decimal feet to four places; what it cannot read comes back as typed, so the
+ * preview says "Check Width and Length" and the server refuses it by name.
+ */
+export function parseDimension(input: string): string {
+  const clean = input.trim();
+  if (!clean) return "";
+  if (/^\d+(\.\d+)?$/.test(clean)) return clean;
+  const feet = (ft: number, inches: number) => String(Number((ft + inches / 12).toFixed(4)));
+  const decimal = clean.match(/^(\d+\.\d+)\s*(?:['’]|ft)$/i);
+  if (decimal) return decimal[1];
+  const inchesOnly = clean.match(/^(\d{1,2}(?:\.\d)?)\s*(?:["”]|in)$/i);
+  if (inchesOnly) return feet(0, Number(inchesOnly[1]));
+  const ftIn = clean.match(/^(\d+)\s*(?:['’]|ft|-|\s)\s*(?:(\d{1,2}(?:\.\d)?)\s*(?:["”]|in)?)?$/i);
+  if (ftIn && Number(ftIn[2] ?? 0) < 12) return feet(Number(ftIn[1]), Number(ftIn[2] ?? 0));
+  return clean;
+}
+
+/**
+ * The size box's typing (owner, 18 Nov 2026). A number typed into an empty box
+ * gets its foot mark at once — 40 shows 40', the caret kept before the mark so
+ * 45 still types as 45'. Typing ' (or a space or -) at the mark steps over it to
+ * the inches, which take two digits and one decimal (2.5") and, after feet,
+ * stay under twelve. " typed
+ * straight after the mark makes it inches only (12' → 12"); that one is never
+ * done for you. Deleting, pasting and decimals are left exactly as typed.
+ */
+export function typeDimension(before: string, after: string, caret: number): { value: string; caret: number } {
+  const keep = { value: after, caret };
+  if (after.length !== before.length + 1) return keep;
+  const pos = caret - 1;
+  const ch = after[pos] ?? "";
+  const mark = before.search(/['’]/);
+  const inchesOnly = /["”]/.test(before) && mark < 0;
+  if (/[\d.]/.test(ch) && (inchesOnly || (mark >= 0 && pos > mark))) {
+    const inches = (inchesOnly ? after : after.slice(mark + 1)).replace(/["”]/g, "").trim();
+    const fits = /^\d{0,2}(\.\d?)?$/.test(inches) && (inchesOnly || !(Number(inches) >= 12));
+    return fits ? keep : { value: before, caret: pos };
+  }
+  if (/\d/.test(ch) && mark < 0 && !inchesOnly && /^\d+$/.test(after)) return { value: `${after}'`, caret };
+  if (/['’\s-]/.test(ch) && /['’]/.test(before[pos] ?? "")) return { value: before, caret: pos + 1 };
+  if (/["”]/.test(ch) && /^\d+['’]$/.test(before)) return { value: `${before.slice(0, mark)}"`, caret: mark + 1 };
+  return keep;
+}
+
+/** A stored side back in its box as feet and inches (25'5"), when that reads back to the same figure; otherwise as stored. */
+export function dimensionText(value: string): string {
+  if (!value || !Number.isFinite(Number(value))) return value;
+  const text = formatDimension(value).replace("' ", "'");
+  return Number(parseDimension(text)) === Number(value) ? text : value;
 }
 
 /**

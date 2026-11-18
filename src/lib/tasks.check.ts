@@ -10,6 +10,9 @@ import {
   filterTasks,
   findPendingDuplicate,
   formatDimension,
+  parseDimension,
+  typeDimension,
+  dimensionText,
   remainingPercent,
   formatDue,
   formatPlotSize,
@@ -194,6 +197,67 @@ assert.equal(formatDimension("24.999"), "25'");
 // Thousands stay grouped the way every other quantity here is grouped.
 assert.equal(formatDimension("1200.5"), `1,200' 6"`);
 assert.equal(formatDimension("1200"), "1,200'");
+
+// Owner 18 Nov 2026 — the size box: 40 → 40', then inches; 12" alone is inches.
+assert.equal(parseDimension("40'"), "40");
+assert.equal(parseDimension(`40'6"`), "40.5");
+assert.equal(parseDimension(`40' 6"`), "40.5");
+assert.equal(parseDimension("40'6"), "40.5");
+assert.equal(parseDimension(`12"`), "1");
+assert.equal(parseDimension(`6"`), "0.5");
+assert.equal(parseDimension("25.5'"), "25.5");
+assert.equal(parseDimension("25.5"), "25.5");
+assert.equal(parseDimension("25-6"), "25.5");
+assert.equal(parseDimension("25 6"), "25.5");
+assert.equal(parseDimension("25ft 6in"), "25.5");
+assert.equal(parseDimension(`25'5"`), "25.4167");
+// Inches take one decimal (owner, 18 Nov 2026).
+assert.equal(parseDimension(`2234'2.5"`), "2234.2083");
+assert.equal(parseDimension(`40'11.5"`), "40.9583");
+assert.equal(parseDimension(`6.5"`), "0.5417");
+assert.equal(parseDimension(`40'2.55"`), `40'2.55"`);
+assert.equal(formatDimension("2234.2083"), `2,234' 2.5"`);
+assert.equal(formatDimension("40.9583"), `40' 11.5"`);
+// After feet, twelve inches is a foot: refused as typed, never read as 26' 6".
+assert.equal(parseDimension(`25'18"`), `25'18"`);
+assert.equal(parseDimension(`67'23"`), `67'23"`);
+assert.equal(parseDimension(`25'123"`), `25'123"`);
+assert.equal(parseDimension(`123"`), `123"`);
+{
+  // Typing one key at a time, the caret where the browser leaves it.
+  const type = (keys: string) => {
+    let box = { value: "", caret: 0 };
+    for (const key of keys) {
+      const after = box.value.slice(0, box.caret) + key + box.value.slice(box.caret);
+      box = typeDimension(box.value, after, box.caret + 1);
+    }
+    return box.value;
+  };
+  assert.equal(type("4"), "4'");
+  assert.equal(type("40"), "40'");
+  assert.equal(type("40'6"), "40'6");
+  assert.equal(type(`40'6"`), `40'6"`);
+  assert.equal(type("40 6"), "40'6");
+  assert.equal(type("40'11"), "40'11");
+  assert.equal(type("40'12"), "40'1", "inches after feet stay under twelve");
+  assert.equal(type("67'23"), "67'2");
+  assert.equal(type(`50'6"`), `50'6"`);
+  assert.equal(type("40'105"), "40'10", "two inch digits at most");
+  assert.equal(type(`12"`), `12"`, "inches only, when \" is typed");
+  assert.equal(type(`12"3`), `12"`, "inches only, two digits");
+  assert.equal(type("25.5"), "25.5'");
+  assert.equal(type(`2234'2.5"`), `2234'2.5"`);
+  assert.equal(type("40'11.5"), "40'11.5");
+  assert.equal(type("40'2.55"), "40'2.5", "one decimal in inches");
+  assert.equal(type("40'2..5"), "40'2.5");
+  // Deleting the mark is allowed; it is not put back while deleting.
+  assert.deepEqual(typeDimension("40'", "40", 2), { value: "40", caret: 2 });
+}
+assert.equal(dimensionText("25.4167"), `25'5"`);
+assert.equal(dimensionText("40"), "40'");
+assert.equal(dimensionText("25.6"), `25'7.2"`);
+assert.equal(dimensionText("25.61"), "25.61", "a side that is not a tenth of an inch stays as stored");
+assert.equal(dimensionText(""), "");
 
 // One size, one shape, wherever a Plot size is printed. Width first — which is
 // which is said in the column heading, not in every row.

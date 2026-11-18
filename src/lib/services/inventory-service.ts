@@ -66,11 +66,16 @@ function boundaryRows(boundaries: readonly BoundaryInput[] | undefined) {
     side: b.side,
     kind: b.kind,
     roadWidthFt: b.kind === "ROAD" ? b.roadWidthFt ?? null : null,
-    reference: b.kind === "ROAD" ? null : b.reference?.trim() || null,
+    reference: b.kind === "ROAD" ? null : b.reference?.trim().toUpperCase() || null,
   }));
 }
 
 function areaInput(row: PlotRow): AreaInput {
+  // An irregular Plot keeps its sides beside the typed area (owner, 18 Nov
+  // 2026), so they are checked here rather than only by the area sum.
+  for (const [name, side] of [["Width", row.widthFt], ["Length", row.lengthFt]] as const) {
+    if (side && !(Number(side) > 0)) blocked(`Plot ${row.plotNumber}: ${name} must be a number of feet, such as 40'6".`);
+  }
   if (row.exactAreaSqFt) {
     return {
       kind: "EXACT",
@@ -96,6 +101,12 @@ export async function prepareInventory(args: {
   rows: PlotRow[];
 }) {
   if (args.rows.length === 0) blocked("Add at least one Plot row before saving.");
+  // Plot numbers and reasons are kept in capitals, like a Member's details (owner, 18 Nov 2026).
+  const rows = args.rows.map((row) => ({
+    ...row,
+    plotNumber: row.plotNumber.trim().toUpperCase(),
+    exactAreaReason: row.exactAreaReason?.trim().toUpperCase(),
+  }));
 
   return runCommand(
     {
@@ -110,8 +121,8 @@ export async function prepareInventory(args: {
 
       // Fail the whole grid rather than saving half of it.
       const seen = new Set<string>();
-      for (const row of args.rows) {
-        const key = `${row.plotType}|${row.plotNumber.trim()}`;
+      for (const row of rows) {
+        const key = `${row.plotType}|${row.plotNumber}`;
         if (seen.has(key)) {
           blocked(`Plot ${row.plotNumber} (${row.plotType}) appears twice in this grid.`);
         }
@@ -129,7 +140,7 @@ export async function prepareInventory(args: {
       const taken = await tx.plot.findMany({
         where: {
           projectId: args.projectId,
-          OR: args.rows.map((row) => ({ plotType: row.plotType, plotNumber: row.plotNumber.trim() })),
+          OR: rows.map((row) => ({ plotType: row.plotType, plotNumber: row.plotNumber })),
         },
         select: { plotType: true, plotNumber: true },
       });
@@ -149,12 +160,12 @@ export async function prepareInventory(args: {
       const startRestriction = releasedOnArrival ? ("NONE" as const) : ("NOT_YET_RELEASED" as const);
 
       const created: string[] = [];
-      for (const row of args.rows) {
+      for (const row of rows) {
         const areas = calculateAreas(areaInput(row));
         const plot = await tx.plot.create({
           data: {
             projectId: args.projectId,
-            plotNumber: row.plotNumber.trim(),
+            plotNumber: row.plotNumber,
             plotType: row.plotType,
             widthFt: row.widthFt ?? null,
             lengthFt: row.lengthFt ?? null,

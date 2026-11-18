@@ -201,7 +201,7 @@ export default function AcquisitionsClient({
                 {visible.map((row) => (
                   <React.Fragment key={row.id}>
                     <tr className="h-14 border-b border-border/60 align-middle transition-colors hover:bg-secondary/50 [&>td]:px-3 [&>td]:py-2">
-                      {/* Owner 2 Nov — Plot No. · Type, the Project under it.
+                      {/* Owner 2 Nov — Plot No. · Type, the Project under it (its code first, 18 Nov).
                           No Deal column; the deal filter above still narrows
                           the list. The Plot opens the deal's own page. */}
                       <td>
@@ -217,7 +217,10 @@ export default function AcquisitionsClient({
                             {row.plotType.charAt(0) + row.plotType.slice(1).toLowerCase().replaceAll("_", " ")}
                           </span>
                         )}
-                        <span className="block text-[11px] font-medium text-foreground">{row.project}</span>
+                        <span className="block text-[11px] font-medium text-foreground">
+                          {row.projectCode ? `${row.projectCode} · ` : ""}
+                          {row.project}
+                        </span>
                       </td>
                       <td>
                         <PersonLink personId={row.sellerPersonId} name={row.seller} />

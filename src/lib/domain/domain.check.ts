@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { matchPeople, personLabel } from "./person-search.ts";
 import { cityLabel, citiesToCsv, cleanCity, readCityCsv, suggestCityCode } from "./city.ts";
-import { projectSlug, publicPlotStatus } from "./public-portal.ts";
+import { projectSlug, projectSlugs, publicPlotStatus } from "./public-portal.ts";
 import { capPercent, capShare, percentRoom, percentSum, shareRoom, shareSum } from "./shares.ts";
 import {
   addDays,
@@ -2977,6 +2977,17 @@ assert.equal(projectSlug("  Test Nagar (All Cases) "), "test-nagar-all-cases");
 // A name with no Latin letters made an empty link; the Project Code stands in.
 assert.equal(projectSlug("गोविंद वाटिका", "GV01"), "gv01");
 assert.equal(projectSlug("Govind Vatika", "GV01"), "govind-vatika", "a Latin name keeps its link");
+// Owner 18 Nov 2026 — names may repeat, codes may not; a shared name adds the code.
+{
+  const links = projectSlugs([
+    { id: "a", name: "GOVIND VATIKA", projectCode: "GV1" },
+    { id: "b", name: "Govind Vatika", projectCode: "GV2" },
+    { id: "c", name: "Shyam Nagar", projectCode: "SN1" },
+  ]);
+  assert.equal(links.get("a"), "govind-vatika-gv1");
+  assert.equal(links.get("b"), "govind-vatika-gv2");
+  assert.equal(links.get("c"), "shyam-nagar", "a name nobody shares keeps its plain link");
+}
 
 // Eight Plot statuses become three; a Plot not on sale is left out, not coloured.
 assert.equal(publicPlotStatus("AVAILABLE", "NONE"), "AVAILABLE");

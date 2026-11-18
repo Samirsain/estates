@@ -112,10 +112,11 @@ export async function tripProgrammes(
   ];
   const projects = await db.project.findMany({
     where: { id: { in: keys.map((k) => k.split("|")[0]) } },
-    select: { id: true, name: true },
+    select: { id: true, name: true, projectCode: true },
   });
   return keys.map((key) => {
     const [projectId, code] = key.split("|");
+    const project = projects.find((p) => p.id === projectId);
     const mine = credits.filter((c) => c.projectId === projectId && c.programmeCode === code);
     const own = (state: string) => mine.filter((c) => c.creditType === "OWN_SALE" && c.state === state && !c.bucketId).length;
     const open = buckets.find((b) => b.projectId === projectId && b.programmeCode === code && b.state === "OPEN");
@@ -126,7 +127,8 @@ export async function tripProgrammes(
     const set = mine.find((c) => QUALIFYING.has(c.state) && c.settingsVersion?.tripTotalTarget != null)?.settingsVersion;
     return {
       key,
-      project: projects.find((p) => p.id === projectId)?.name ?? "—",
+      // With its code: two Projects may share a name (owner, 18 Nov 2026).
+      project: project ? `${project.projectCode} · ${project.name}` : "—",
       code,
       open: open
         ? {

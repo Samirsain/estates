@@ -51,7 +51,7 @@ import {
   type DiscountMode,
   type RateType,
 } from "@/lib/domain/rate-calculator";
-import { formatQuantity, type StaffRole } from "@/lib/tasks";
+import { formatPlotSize, formatQuantity, type StaffRole } from "@/lib/tasks";
 
 export type CalcProjectView = {
   id: string;
@@ -166,11 +166,6 @@ const titleWords = (value: string) =>
     )
     .join(" ");
 
-/** A stored side is "25.0000" and is read as 25. */
-// Trailing zeros are trimmed only after a decimal point: "30.50" → "30.5",
-// "30.00" → "30", and a whole "30" stays 30 rather than losing its zero.
-const sides = (value: string) => formatQuantity(value.includes(".") ? value.replace(/\.?0+$/, "") : value);
-
 /**
  * One fact about the chosen Plot: the label asks, the value answers, and what
  * qualifies the answer sits under it in the same column — the evidence behind
@@ -217,9 +212,9 @@ function WorkRow({
   );
 }
 
-/** Areas carry four decimals and usually need none of them. */
+/** Areas carry four decimals; the screen reads two at most (owner, 18 Nov 2026). */
 const trim = (value: { toFixed(dp: number): string }) =>
-  formatQuantity(value.toFixed(4).replace(/\.?0+$/, ""));
+  formatQuantity(value.toFixed(2).replace(/\.?0+$/, ""));
 
 const SOLD_BY_LABEL: Record<SoldByType, string> = {
   THREE_PERCENT_CLUB: "3% Club — direct",
@@ -618,7 +613,7 @@ export default function CalculatorClient({
               <option value="">Select a Project…</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.projectCode} · {p.name}
                   {p.city ? ` — ${p.city}` : ""}
                 </option>
               ))}
@@ -740,7 +735,7 @@ export default function CalculatorClient({
                   <CalcRow
                     label="Size (W × L)"
                     value={
-                      irregular ? "Irregular" : `${sides(plot.widthFt)} × ${sides(plot.lengthFt)} ft`
+                      irregular ? "Irregular" : (formatPlotSize(plot.widthFt, plot.lengthFt) ?? "—")
                     }
                     // An irregular Plot is priced on the exact area its own
                     // page set under a reason; the Area row shows that figure.

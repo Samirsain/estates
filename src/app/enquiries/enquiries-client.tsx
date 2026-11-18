@@ -331,7 +331,7 @@ export default function EnquiriesClient({
                     <td>{e.city || "—"}</td>
                     <td>
                       {/* Owner 2 Nov — as on Buyback: Plot No. · Type, the
-                          Project under it. No Plot → what was asked for, or
+                          Project (code first, 18 Nov) under it. No Plot → what was asked for, or
                           General. */}
                       {e.plot !== "General" ? (
                         <span className="block">

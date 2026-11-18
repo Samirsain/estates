@@ -114,7 +114,7 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
           status,
           size: formatPlotSize(plot.widthFt?.toString(), plot.lengthFt?.toString()),
           area: [
-            `${formatQuantity(plot.areaSqFt.toString())} sq ft`,
+            `${formatQuantity(plot.areaSqFt.toDecimalPlaces(2).toString())} sq ft`,
             `${formatQuantity(plot.areaSqYd.toDecimalPlaces(2).toString())} sq yd`,
             `${formatQuantity(plot.areaSqM.toDecimalPlaces(2).toString())} sq m`,
           ],

@@ -35,6 +35,7 @@ export type CustomerRowView = {
   mobileMasked: string;
   city: string;
   project: string | null;
+  projectCode: string | null;
   plotNumber: string | null;
   plotType: string | null;
   plotId: string | null;
@@ -170,7 +171,7 @@ export default function CustomersClient({
                   </td>
                   <td role="cell" className={`${LIST_TD} tabular-nums`}>{row.mobileMasked}</td>
                   <td role="cell" className={LIST_TD}>{row.city}</td>
-                  {/* Owner 2 Nov — Plot No. · Type, the Project under it. */}
+                  {/* Owner 2 Nov — Plot No. · Type, the Project under it (its code first, 18 Nov). */}
                   <td role="cell" className={LIST_TD}>
                     <span
                       className="block truncate text-foreground"
@@ -186,8 +187,11 @@ export default function CustomersClient({
                       {row.plotType && <span className="text-muted-foreground"> · {typeWord(row.plotType)}</span>}
                     </span>
                     {row.project && (
-                      <span className="block truncate text-[11px] font-medium text-foreground" title={row.project}>
-                        {row.project}
+                      <span
+                        className="block truncate text-[11px] font-medium text-foreground"
+                        title={`${row.projectCode} · ${row.project}`}
+                      >
+                        {row.projectCode} · {row.project}
                       </span>
                     )}
                   </td>

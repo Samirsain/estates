@@ -61,6 +61,7 @@ export function toAcquisitionRow(a: AcquisitionWithRelations): AcquisitionRowVie
     // An outside purchase has no Plot in inventory, so its own two names
     // stand in the same two columns.
     project: a.plot ? a.plot.project.name : (a.propertyName ?? "—"),
+    projectCode: a.plot?.project.projectCode ?? null,
     plotNumber: a.plot ? a.plot.plotNumber : (a.propertyNumber ?? "—"),
     plotId: a.plot?.id ?? null,
     plotType: a.plot ? a.plot.plotType : null,

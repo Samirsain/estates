@@ -619,7 +619,7 @@ export default async function CustomerDetailPage({
                             {b.bookingNumber}
                           </Link>
                         </td>
-                        {/* Owner 2 Nov — Plot No. · Type, the Project under it. */}
+                        {/* Owner 2 Nov — Plot No. · Type, the Project under it (its code first, 18 Nov). */}
                         <td className={CTD}>
                           <span className="block">
                             <Link
@@ -630,7 +630,9 @@ export default async function CustomerDetailPage({
                             </Link>
                             <span className="text-muted-foreground"> · {titleWords(b.plot.plotType)}</span>
                           </span>
-                          <span className="block text-[11px] font-medium text-foreground">{b.project.name}</span>
+                          <span className="block text-[11px] font-medium text-foreground">
+                            {b.project.projectCode} · {b.project.name}
+                          </span>
                         </td>
                         <td className={CTD}>
                           <span className="font-medium">{words(b.status)}</span>

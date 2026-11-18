@@ -14,6 +14,7 @@ import { CommandError } from "@/lib/services/command";
 import { decideBankDetails, enterBankDetails, listBankDetails } from "@/lib/services/bank-service";
 import { applyMemberCommissionHold } from "@/lib/services/commission-service";
 import { db } from "@/lib/db";
+import { projectLabel } from "@/lib/utils";
 import { cleanMemberBusiness, type MemberBusinessInput } from "@/lib/domain/member-business";
 import { isValidEmail } from "@/lib/domain/land-inquiry";
 import {
@@ -374,7 +375,11 @@ export async function loadMemberDetail(memberProfileId: string) {
       id: c.id,
       bookingNumber:
         c.booking ? (c.booking.bookingNumber ?? "Booking Request") : c.acquisition ? "Buyback / Resale" : "—",
-      project: c.booking?.project.name ?? c.acquisition?.plot?.project.name ?? c.acquisition?.propertyName ?? "—",
+      project: c.booking
+        ? projectLabel(c.booking.project)
+        : c.acquisition?.plot
+          ? projectLabel(c.acquisition.plot.project)
+          : (c.acquisition?.propertyName ?? "—"),
       plot: c.booking?.plot.plotNumber ?? c.acquisition?.plot?.plotNumber ?? c.acquisition?.propertyNumber ?? "—",
       plotType: c.booking?.plot.plotType ?? c.acquisition?.plot?.plotType ?? null,
       type: c.type,

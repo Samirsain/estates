@@ -2,6 +2,7 @@
 // without an active session whose version still matches the account.
 
 import { db } from "@/lib/db";
+import { projectLabel } from "@/lib/utils";
 import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
 import { taskSubjects } from "@/lib/services/task-service";
@@ -25,7 +26,7 @@ export default async function DashboardPage() {
     : { OR: [{ assigneeStaffId: actor.accountId }, { assigneeRole: actor.role, assigneeStaffId: null }] };
   const include = {
     assigneeStaff: { include: { person: true } },
-    plot: { select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true } } } },
+    plot: { select: { id: true, plotNumber: true, plotType: true, project: { select: { name: true, projectCode: true } } } },
   } as const;
 
   // Every pending task, always — a cap here once hid live work behind old
@@ -50,7 +51,7 @@ export default async function DashboardPage() {
     subject: row.plot
       ? {
           ...(subjects.get(row.recordId) ?? { reference: null, partyRef: null, partyName: null, partyPersonId: null }),
-          project: row.plot.project.name,
+          project: projectLabel(row.plot.project),
           plot: row.plot.plotNumber,
           plotType: row.plot.plotType,
           plotId: row.plot.id,

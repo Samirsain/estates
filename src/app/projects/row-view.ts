@@ -2,15 +2,25 @@
 // the shape the Edit, PLC versions and Change status dialogs are built on.
 
 import type { listProjects } from "@/lib/services/project-service";
-import { projectSlug } from "@/lib/domain/public-portal";
+import { projectSlugs } from "@/lib/domain/public-portal";
 import { siteLayout } from "@/lib/project-layouts";
 import type { ProjectRowView } from "./projects-client";
 
-export function projectRowView(project: Awaited<ReturnType<typeof listProjects>>[number]): ProjectRowView {
-  // Owner 2 Nov — Layout opens the Public Portal page when it draws this
-  // Project's site plan. Same visibility rule as portalProjects(), so the
-  // link never leads to a 404.
-  const onPortal = project.publicPortal && !project.isExternalResaleGroup && project.status !== "SETUP_NOT_ACTIVE";
+type ProjectRow = Awaited<ReturnType<typeof listProjects>>[number];
+
+/**
+ * Owner 2 Nov — Layout opens the Public Portal page when it draws a Project's
+ * site plan. Same visibility rule and same links as portalProjects(), so the
+ * link never leads to a 404, even when two Projects share a name.
+ */
+export function portalLinks(projects: readonly ProjectRow[]) {
+  return projectSlugs(
+    projects.filter((p) => p.publicPortal && !p.isExternalResaleGroup && p.status !== "SETUP_NOT_ACTIVE")
+  );
+}
+
+export function projectRowView(project: ProjectRow, links: Map<string, string>): ProjectRowView {
+  const slug = links.get(project.id);
   return {
     id: project.id,
     projectCode: project.projectCode,
@@ -22,7 +32,7 @@ export function projectRowView(project: Awaited<ReturnType<typeof listProjects>>
     locationUrl: project.locationUrl,
     driveUrl: project.driveUrl,
     layoutUrl:
-      onPortal && siteLayout(project.projectCode) ? `/p/${projectSlug(project.name, project.projectCode)}` : project.driveUrl,
+      slug && siteLayout(project.projectCode) ? `/p/${slug}` : project.driveUrl,
     renderUrl: project.renderUrl,
     city: project.city,
     amenities: project.amenities,

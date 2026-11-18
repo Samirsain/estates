@@ -53,7 +53,7 @@ export default async function CustomersPage() {
             // tie and the Project column names one deal, not whichever row the
             // database happened to return first.
             submittedAt: true,
-            project: { select: { name: true } },
+            project: { select: { name: true, projectCode: true } },
             plot: {
               select: { id: true, plotNumber: true, plotType: true },
             },
@@ -95,6 +95,7 @@ export default async function CustomersPage() {
       : maskMobile(c.person.primaryMobile),
     city: c.person.city ?? "—",
     project: latest.get(c.personId)?.project.name ?? null,
+    projectCode: latest.get(c.personId)?.project.projectCode ?? null,
     plotNumber: latest.get(c.personId)?.plot.plotNumber ?? null,
     plotType: latest.get(c.personId)?.plot.plotType.replaceAll("_", " ") ?? null,
     plotId: latest.get(c.personId)?.plot.id ?? null,

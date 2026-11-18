@@ -16,7 +16,7 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { listProjects } from "@/lib/services/project-service";
 import CommissionSettings from "./commission-settings";
 import ProjectActions from "./project-actions";
-import { projectRowView } from "../row-view";
+import { portalLinks, projectRowView } from "../row-view";
 import { ProjectIdentity } from "../project-identity";
 import { can } from "@/lib/security/permissions";
 import { db } from "@/lib/db";
@@ -118,6 +118,7 @@ export default async function ProjectDetailPage({
   ]);
   const project = projects.find((p) => p.id === id);
   if (!project) notFound();
+  const links = portalLinks(projects);
 
   const countOf = (states: readonly string[]) =>
     byStatus.filter((r) => states.includes(r.status)).reduce((n, r) => n + r._count._all, 0);
@@ -146,13 +147,13 @@ export default async function ProjectDetailPage({
             Back to Projects
           </Link>
           {can(actor.role, "PROJECT_SETUP", actor.extraPermissions) && (
-            <ProjectActions project={projectRowView(project)} canEditCommission={actor.role === "MD"} />
+            <ProjectActions project={projectRowView(project, links)} canEditCommission={actor.role === "MD"} />
           )}
         </div>
 
         <header>
           <Card className="p-4">
-            <ProjectIdentity project={projectRowView(project)} />
+            <ProjectIdentity project={projectRowView(project, links)} />
           </Card>
         </header>
 

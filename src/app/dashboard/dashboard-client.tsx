@@ -353,7 +353,7 @@ export default function DashboardClient({
                       key={task.id}
                       className="border-b border-border/60 align-top last:border-b-0 hover:bg-secondary/50"
                     >
-                      {/* Owner 2 Nov — Plot No. · Type, the Project under it.
+                      {/* Owner 2 Nov — Plot No. · Type, the Project (code first, 18 Nov) under it.
                           The number is the way into the Plot, as everywhere
                           else it is printed. */}
                       <td className={`py-2 pl-3 pr-2 ${state.row}`}>

@@ -6,7 +6,8 @@
  * Worked out each time rather than stored, so renaming the Project renames the
  * link — the Project page always shows the current one. A name with no Latin
  * letters ("गोविंद वाटिका") made an empty link; the Project Code stands in.
- * Two names making one link are refused when the Project is saved.
+ * Two Projects may share a name (owner, 18 Nov 2026), so the portal reads its
+ * links through projectSlugs, which tells them apart.
  */
 export function projectSlug(name: string, projectCode = ""): string {
   const slug = (text: string) =>
@@ -15,6 +16,23 @@ export function projectSlug(name: string, projectCode = ""): string {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
   return slug(name) || slug(projectCode);
+}
+
+/**
+ * Every portal Project's link at once. A name two Projects share adds each
+ * one's Project Code ("govind-vatika-gv1", "govind-vatika-gv2"), so both stay
+ * reachable; a name nobody else has keeps its plain link.
+ */
+export function projectSlugs(projects: readonly { id: string; name: string; projectCode: string }[]) {
+  const base = new Map(projects.map((p) => [p.id, projectSlug(p.name, p.projectCode)]));
+  const uses = new Map<string, number>();
+  for (const slug of base.values()) uses.set(slug, (uses.get(slug) ?? 0) + 1);
+  return new Map(
+    projects.map((p) => {
+      const slug = base.get(p.id)!;
+      return [p.id, uses.get(slug)! > 1 ? `${slug}-${projectSlug(p.projectCode) || p.id.slice(0, 8)}` : slug];
+    })
+  );
 }
 
 /** The three, and only three, things a visitor is told about a Plot. */
