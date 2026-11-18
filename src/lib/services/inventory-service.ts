@@ -1,5 +1,6 @@
 // Project and Plot setup — prd-corrections.md §15, §16; design.md §7.
 
+import { randomUUID } from "node:crypto";
 import type { BoundaryKind, BoundarySide, PlotType } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
@@ -159,39 +160,44 @@ export async function prepareInventory(args: {
       const startStatus = releasedOnArrival ? ("AVAILABLE" as const) : ("NOT_AVAILABLE" as const);
       const startRestriction = releasedOnArrival ? ("NONE" as const) : ("NOT_YET_RELEASED" as const);
 
-      const created: string[] = [];
-      for (const row of rows) {
+      // Three inserts for the whole grid, not three per Plot: the database is a
+      // continent away from the app (Render Singapore, Supabase Mumbai), and a
+      // fifty-Plot grid spent ten seconds on round trips (owner, 18 Nov 2026).
+      // The ids are made here so the sides and events can point at their Plot.
+      const plots = rows.map((row) => {
         const areas = calculateAreas(areaInput(row));
-        const plot = await tx.plot.create({
-          data: {
-            projectId: args.projectId,
-            plotNumber: row.plotNumber,
-            plotType: row.plotType,
-            widthFt: row.widthFt ?? null,
-            lengthFt: row.lengthFt ?? null,
-            exactAreaSqFt: row.exactAreaSqFt ?? null,
-            exactAreaReason: row.exactAreaReason ?? null,
-            areaSqFt: areas.areaSqFt.toFixed(4),
-            areaSqYd: areas.areaSqYd.toFixed(4),
-            areaSqM: areas.areaSqM.toFixed(4),
-            // Unreleased until the Project is activated (PRD §16.1) — and
-            // already released when it activated before this Plot existed.
-            status: startStatus,
-            restriction: startRestriction,
-            boundaries: { create: boundaryRows(row.boundaries) },
-          },
-        });
-        await tx.plotEvent.create({
-          data: {
-            plotId: plot.id,
-            actorRef: args.actorRef,
-            action: "PLOT_PREPARED",
-            toStatus: startStatus,
-            toRestriction: startRestriction,
-          },
-        });
-        created.push(plot.id);
-      }
+        return {
+          id: randomUUID(),
+          projectId: args.projectId,
+          plotNumber: row.plotNumber,
+          plotType: row.plotType,
+          widthFt: row.widthFt ?? null,
+          lengthFt: row.lengthFt ?? null,
+          exactAreaSqFt: row.exactAreaSqFt ?? null,
+          exactAreaReason: row.exactAreaReason ?? null,
+          areaSqFt: areas.areaSqFt.toFixed(4),
+          areaSqYd: areas.areaSqYd.toFixed(4),
+          areaSqM: areas.areaSqM.toFixed(4),
+          // Unreleased until the Project is activated (PRD §16.1) — and
+          // already released when it activated before this Plot existed.
+          status: startStatus,
+          restriction: startRestriction,
+        };
+      });
+      await tx.plot.createMany({ data: plots });
+      await tx.plotBoundary.createMany({
+        data: rows.flatMap((row, i) => boundaryRows(row.boundaries).map((b) => ({ ...b, plotId: plots[i].id }))),
+      });
+      await tx.plotEvent.createMany({
+        data: plots.map((plot) => ({
+          plotId: plot.id,
+          actorRef: args.actorRef,
+          action: "PLOT_PREPARED",
+          toStatus: startStatus,
+          toRestriction: startRestriction,
+        })),
+      });
+      const created = plots.map((plot) => plot.id);
 
       return {
         result: { createdPlotIds: created, count: created.length, released: releasedOnArrival },
