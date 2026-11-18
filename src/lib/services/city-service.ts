@@ -16,7 +16,14 @@ import type { CityOption } from "@/lib/domain/city";
  */
 export async function searchCities(text: string, take = 50): Promise<CityOption[]> {
   const q = text.trim().replace(/\s+/g, " ").slice(0, 60);
-  if (!q) return [];
+  // Nothing typed: the whole list, A to Z, for the City dropdown (owner, 18 Nov 2026).
+  // ponytail: unbounded; the list is the owner's own cities, add paging if it reaches the thousands.
+  if (!q)
+    return db.city.findMany({
+      where: { active: true },
+      select: { id: true, name: true, code: true, stateName: true, stateCode: true, countryName: true, countryCode: true },
+      orderBy: { name: "asc" },
+    });
   const like = q.replace(/[\\%_]/g, (c) => `\\${c}`);
   return db.$queryRaw<CityOption[]>`
     SELECT "id", "name", "code", "stateName", "stateCode", "countryName", "countryCode"

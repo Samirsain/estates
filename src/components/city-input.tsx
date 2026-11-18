@@ -8,7 +8,7 @@
 // text these records have always kept.
 
 import React from "react";
-import { X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { cityLabel, type CityOption } from "@/lib/domain/city";
@@ -20,7 +20,7 @@ export function CityInput({
   defaultValue,
   onChange,
   required,
-  placeholder = "Search city, code or state",
+  placeholder = "Select or search city",
   className,
   inputClassName,
   disabled,
@@ -60,9 +60,10 @@ export function CityInput({
     };
   }, [picked, chosen?.name]);
 
-  // The list shows only once something is typed (owner, 17 Nov 2026), asked a
-  // beat after the last key; a late answer to an older query is dropped.
-  const typing = open && query.trim() !== "";
+  // A dropdown: a click opens the whole list A to Z, typing narrows it (owner,
+  // 18 Nov 2026), asked a beat after the last key; a late answer to an older
+  // query is dropped.
+  const typing = open;
   React.useEffect(() => {
     if (!typing) return setRows(null);
     let live = true;
@@ -105,7 +106,7 @@ export function CityInput({
       <Input
         // Closed, the field shows the chosen city in full; blur throws away
         // anything typed and not picked, so `required` passes only on a city.
-        className={cn(inputClassName, picked && !required && "pr-8")}
+        className={cn(inputClassName, "pr-8")}
         value={open ? query : shown}
         placeholder={open && shown ? shown : placeholder}
         required={required}
@@ -124,7 +125,10 @@ export function CityInput({
           setQuery("");
         }}
         onKeyDown={(e) => {
-          if ((e.key === "ArrowDown" || e.key === "ArrowUp") && typing) {
+          if (e.key === "ArrowDown" && !open) {
+            e.preventDefault();
+            setOpen(true);
+          } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && typing) {
             e.preventDefault();
             setActive((i) => Math.min(list.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1))));
           } else if (e.key === "Enter" && typing) {
@@ -140,7 +144,7 @@ export function CityInput({
           }
         }}
       />
-      {picked && !required && !disabled && !open && (
+      {picked && !required && !disabled && !open ? (
         <button
           type="button"
           aria-label="Clear city"
@@ -149,6 +153,8 @@ export function CityInput({
         >
           <X className="h-3.5 w-3.5" />
         </button>
+      ) : (
+        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       )}
 
       {typing && (

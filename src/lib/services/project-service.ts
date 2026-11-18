@@ -148,13 +148,13 @@ export async function updateProject(args: {
  */
 /**
  * The Project Code is typed by the person creating the Project: any characters,
- * at most 6, stored in capitals. It stays unique and remains the key that ties
+ * 4 to 20 of them, stored in capitals. It stays unique and remains the key that ties
  * a report or an export back to a Project.
  */
 async function checkProjectCode(tx: Tx, raw: string): Promise<string> {
   const code = raw.trim().toUpperCase();
   if (!code) blocked("Enter the Project Code.");
-  if (code.length > 6) blocked("The Project Code can be at most 6 characters.");
+  if (code.length < 4 || code.length > 20) blocked("The Project Code must be 4 to 20 characters.");
   const taken = await tx.project.findUnique({ where: { projectCode: code }, select: { id: true } });
   if (taken) blocked(`The Project Code ${code} is already in use.`);
   return code;

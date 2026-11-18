@@ -773,7 +773,8 @@ function ProjectDialog({
           <Input
             name="projectCode"
             required
-            maxLength={6}
+            minLength={4}
+            maxLength={20}
             className="uppercase"
           />
         </Field>
