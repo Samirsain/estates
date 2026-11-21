@@ -6,7 +6,6 @@
 import { cache } from "react";
 import { db } from "@/lib/db";
 import { projectSlugs, publicPlotStatus, type PublicPlotStatus } from "@/lib/domain/public-portal";
-import { projectWhere } from "@/app/projects/project-identity";
 
 export type Tally = Record<PublicPlotStatus, number>;
 
@@ -16,8 +15,7 @@ export type PortalProject = {
   slug: string;
   type: string;
   status: string;
-  developer: string | null;
-  where: string | null;
+  city: string | null;
   tally: Tally;
 };
 
@@ -43,7 +41,7 @@ export const portalProjects = cache(() => shared("projects", loadPortalProjects)
 async function loadPortalProjects(): Promise<PortalProject[]> {
   const projects = await db.project.findMany({
     where: { publicPortal: true, isExternalResaleGroup: false, status: { not: "SETUP_NOT_ACTIVE" } },
-    select: { id: true, name: true, projectCode: true, type: true, status: true, developer: true, location: true, city: true },
+    select: { id: true, name: true, projectCode: true, type: true, status: true, city: true },
     orderBy: { name: "asc" },
   });
   // Grouped in the database, so a Project with hundreds of Plots costs a few rows.
@@ -69,8 +67,7 @@ async function loadPortalProjects(): Promise<PortalProject[]> {
     slug: slugs.get(p.id)!,
     type: p.type,
     status: p.status,
-    developer: p.developer,
-    where: projectWhere(p),
+    city: p.city,
     tally: tallies.get(p.id) ?? { AVAILABLE: 0, HOLD: 0, SOLD: 0 },
   }));
 }

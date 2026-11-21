@@ -25,7 +25,6 @@ import { publicPlotStatus } from "@/lib/domain/public-portal";
 import { plcRules } from "@/lib/services/plc-service";
 import { siteLayout } from "@/lib/project-layouts";
 import { isWebAddress, sentenceCase, type ProjectSheet } from "@/lib/pdf/project-sheet";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { STATUS_LABEL, TYPE_LABEL, amenityList, projectWhere } from "@/app/projects/project-identity";
 import DownloadPdfButton from "@/app/projects/download-pdf-button";
@@ -33,7 +32,7 @@ import PublicPortalClient, { type PublicPlot } from "./portal-client";
 import LiveRefresh from "../live-refresh";
 import ProjectStrip from "../project-strip";
 import { portalProjects, shared } from "../portal-projects";
-import { noPlotsLine } from "../availability";
+import { ProjectHeading, noPlotsLine } from "../availability";
 
 export const dynamic = "force-dynamic";
 
@@ -172,35 +171,9 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
       <ProjectStrip projects={projects} active={slug} />
 
       <main className="mx-auto w-full max-w-5xl space-y-5 px-4 pb-10 pt-4 md:pt-6">
-        {/* Who and what, in three short lines; the rest folds below the Plots. */}
-        <header className="space-y-1">
-          <div className="flex items-start justify-between gap-3">
-            <h1 className="text-[1.375rem] font-bold leading-tight tracking-tight text-foreground md:text-2xl">
-              {project.name}
-            </h1>
-            <span className="mt-1 flex shrink-0 items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Live
-            </span>
-          </div>
-          {/* A div, not a p: the Badge renders a div. */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            {project.status !== "ACTIVE" && (
-              <Badge variant="outline">{STATUS_LABEL[project.status] ?? project.status}</Badge>
-            )}
-            <span className="font-semibold text-foreground">{TYPE_LABEL[project.type] ?? project.type}</span>
-            {project.developer && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span>By {project.developer}</span>
-              </>
-            )}
-          </div>
-          {project.reraNumber && (
-            <p className="text-xs text-muted-foreground">
-              RERA <span className="font-semibold tabular-nums text-foreground">{project.reraNumber}</span>
-            </p>
-          )}
+        {/* Name, city, type — nothing more (owner, 21 Nov 2026). The rest folds below the Plots. */}
+        <header>
+          <ProjectHeading as="h1" name={project.name} city={project.city} type={TYPE_LABEL[project.type] ?? project.type} />
         </header>
 
         <PublicPortalClient

@@ -3,9 +3,28 @@
 // under each Project in the strip, full width over the counts on its page.
 // No hooks, so the server pages and the client half both render it.
 
+import { MapPin } from "lucide-react";
 import { PUBLIC_STATUS_LABEL, type PublicPlotStatus } from "@/lib/domain/public-portal";
 
 export const STATUSES: PublicPlotStatus[] = ["AVAILABLE", "HOLD", "SOLD"];
+
+/** Name, then "City · Type" — the same on the list and on the Project page (owner, 21 Nov 2026). */
+export function ProjectHeading({ name, city, type, as: H = "h2" }: {
+  name: string;
+  city: string | null;
+  type: string;
+  as?: "h1" | "h2";
+}) {
+  return (
+    <div className="space-y-1">
+      <H className="text-[1.375rem] font-bold leading-tight tracking-tight text-foreground md:text-2xl">{name}</H>
+      <p className="flex items-center gap-1 text-sm text-muted-foreground">
+        {city && <MapPin className="h-3.5 w-3.5 shrink-0" />}
+        {[city, type].filter(Boolean).join(" · ")}
+      </p>
+    </div>
+  );
+}
 
 /**
  * Green, amber, red, and nothing else. A Plot's number is printed in dark ink

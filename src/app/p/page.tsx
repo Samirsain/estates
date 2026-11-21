@@ -8,12 +8,12 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ChevronRight, MapPin } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { PUBLIC_STATUS_LABEL } from "@/lib/domain/public-portal";
 import { TYPE_LABEL } from "@/app/projects/project-identity";
 import LiveRefresh from "./live-refresh";
 import { portalProjects } from "./portal-projects";
-import { AvailabilityBar, STATUSES, TONE, noPlotsLine, plotTotal } from "./availability";
+import { AvailabilityBar, ProjectHeading, STATUSES, TONE, noPlotsLine, plotTotal } from "./availability";
 
 export const dynamic = "force-dynamic";
 
@@ -40,24 +40,7 @@ export default async function PublicProjectsPage() {
                 className="group flex items-center gap-3 px-4 py-4 transition-colors hover:bg-secondary/60 focus-visible:bg-secondary/60 focus-visible:outline-none sm:px-5 sm:py-5"
               >
                 <div className="min-w-0 flex-1 space-y-2.5">
-                  <div>
-                    <div className="flex items-baseline justify-between gap-3">
-                      <h2 className="truncate text-base font-bold tracking-tight text-foreground sm:text-lg">
-                        {project.name}
-                      </h2>
-                      <span className="shrink-0 text-xs font-medium text-muted-foreground">
-                        {TYPE_LABEL[project.type] ?? project.type}
-                      </span>
-                    </div>
-                    {(project.developer || project.where) && (
-                      <p className="mt-0.5 flex items-start gap-1 text-xs text-muted-foreground">
-                        {project.where && <MapPin className="mt-px h-3 w-3 shrink-0" />}
-                        <span className="line-clamp-2">
-                          {[project.where, project.developer && `By ${project.developer}`].filter(Boolean).join(" · ")}
-                        </span>
-                      </p>
-                    )}
-                  </div>
+                  <ProjectHeading name={project.name} city={project.city} type={TYPE_LABEL[project.type] ?? project.type} />
                   {plotTotal(project.tally) === 0 ? (
                     <p className="text-xs font-medium text-muted-foreground">{noPlotsLine(project.status)}</p>
                   ) : (
