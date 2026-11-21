@@ -10,7 +10,7 @@ import type { NextConfig } from "next";
  */
 const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "X-Frame-Options", value: "DENY" },
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
   {
@@ -31,7 +31,8 @@ const SECURITY_HEADERS = [
       // The CRM talks to its own origin only. No third-party analytics exists,
       // and Aadhaar/PAN must never leave it (PRD RD-05).
       "connect-src 'self'",
-      "frame-ancestors 'none'",
+      "frame-src 'self'",
+      "frame-ancestors 'self'",
       "base-uri 'self'",
       "form-action 'self'",
     ].join("; "),

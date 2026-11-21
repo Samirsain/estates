@@ -24,6 +24,7 @@ import { locationChargeLabel, plcDisplayComponents } from "@/lib/domain/inventor
 import { publicPlotStatus } from "@/lib/domain/public-portal";
 import { plcRules } from "@/lib/services/plc-service";
 import { siteLayout } from "@/lib/project-layouts";
+import { getProjectLayoutDocument } from "@/lib/project-documents";
 import { isWebAddress, sentenceCase, type ProjectSheet } from "@/lib/pdf/project-sheet";
 import { Button } from "@/components/ui/button";
 import { STATUS_LABEL, TYPE_LABEL, amenityList, projectWhere } from "@/app/projects/project-identity";
@@ -124,10 +125,13 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
     // P-2 before P-10: plot numbers are read as people count them.
     .sort((a, b) => a.number.localeCompare(b.number, "en", { numeric: true }));
 
+  const layoutDocument = getProjectLayoutDocument(project.projectCode);
+  const layoutTarget = layoutDocument?.url ?? project.driveUrl;
+
   const where = projectWhere(project);
   const amenities = amenityList(project.amenities);
   const links = [
-    { label: "Layout", url: project.driveUrl, Icon: Layers },
+    { label: "Layout", url: layoutTarget, Icon: Layers },
     { label: "Location", url: project.locationUrl, Icon: MapIcon },
     { label: "3D Visuals", url: project.renderUrl, Icon: Box },
   ].filter((link): link is typeof link & { url: string } => isWebAddress(link.url));
@@ -146,7 +150,7 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
     locationUrl: project.locationUrl,
     // Owner 2 Nov — a Project whose site plan is drawn here points Layout at
     // this page, so the PDF's Layout pill opens the live plan.
-    layoutUrl: siteLayout(project.projectCode) ? `/p/${slug}` : project.driveUrl,
+    layoutUrl: siteLayout(project.projectCode) ? `/p/${slug}` : layoutTarget,
     renderUrl: project.renderUrl,
     amenities,
     inventory: [
@@ -180,6 +184,7 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
           plots={shown}
           layout={siteLayout(project.projectCode)}
           layoutUrl={links.find((l) => l.label === "Layout")?.url ?? null}
+          layoutDocument={layoutDocument}
           noPlots={noPlotsLine(project.status)}
         />
 

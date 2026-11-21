@@ -4,6 +4,7 @@
 import type { listProjects } from "@/lib/services/project-service";
 import { projectSlugs } from "@/lib/domain/public-portal";
 import { siteLayout } from "@/lib/project-layouts";
+import { getProjectLayoutDocument } from "@/lib/project-documents";
 import type { ProjectRowView } from "./projects-client";
 
 type ProjectRow = Awaited<ReturnType<typeof listProjects>>[number];
@@ -32,7 +33,8 @@ export function projectRowView(project: ProjectRow, links: Map<string, string>):
     locationUrl: project.locationUrl,
     driveUrl: project.driveUrl,
     layoutUrl:
-      slug && siteLayout(project.projectCode) ? `/p/${slug}` : project.driveUrl,
+      getProjectLayoutDocument(project.projectCode)?.url ??
+      (slug && siteLayout(project.projectCode) ? `/p/${slug}` : project.driveUrl),
     renderUrl: project.renderUrl,
     city: project.city,
     amenities: project.amenities,

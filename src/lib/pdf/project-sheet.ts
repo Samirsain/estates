@@ -326,7 +326,12 @@ export function headline(text: string): string {
 /** Only a web address is a link worth printing; a blank or a stray word is not. */
 /** A link worth printing: a web address, or a Public Portal page on this site ("/p/<slug>", owner 2 Nov). */
 export function isWebAddress(url: string | null): url is string {
-  return Boolean(url && (/^https?:\/\/\S+$/i.test(url.trim()) || /^\/p\/[a-z0-9-]+$/.test(url)));
+  return Boolean(
+    url && (
+      /^https?:\/\/\S+$/i.test(url.trim()) ||
+      /^\/(p|projects)\/[a-zA-Z0-9_\-\.\/]+$/.test(url.trim())
+    )
+  );
 }
 
 /** A file name a file manager will accept on every platform. */

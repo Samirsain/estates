@@ -19,8 +19,10 @@ import { ExternalLink, LayoutList, Map as MapIcon, MapPinned, Search, X } from "
 import { Badge } from "@/components/ui/badge";
 import { PUBLIC_STATUS_LABEL, type PublicPlotStatus } from "@/lib/domain/public-portal";
 import type { SiteLayout } from "@/lib/project-layouts";
+import type { ProjectLayoutDocument } from "@/lib/project-documents";
 import { AvailabilityBar, STATUSES, TONE } from "../availability";
 import SiteMap from "./site-map";
+import LayoutDocumentPreview from "./layout-document-preview";
 
 export type PublicPlot = {
   id: string;
@@ -42,18 +44,21 @@ export default function PublicPortalClient({
   plots,
   layout,
   layoutUrl,
+  layoutDocument,
   noPlots,
 }: {
   plots: PublicPlot[];
   layout: SiteLayout | null;
   /** The Project's own Layout link, offered under the tiles when no plan is traced. */
   layoutUrl: string | null;
+  layoutDocument?: ProjectLayoutDocument | null;
   /** What to say when no Plot of this Project is on the portal. */
   noPlots: string;
 }) {
   const [filter, setFilter] = React.useState<PublicPlotStatus | null>(null);
-  const [view, setView] = React.useState<"PLAN" | "LIST">(layout ? "PLAN" : "LIST");
-  const onPlan = layout !== null && view === "PLAN";
+  const hasPlan = layout !== null || Boolean(layoutDocument);
+  const [view, setView] = React.useState<"PLAN" | "LIST">(hasPlan ? "PLAN" : "LIST");
+  const onPlan = hasPlan && view === "PLAN";
   const [query, setQuery] = React.useState("");
   // Held by id, not by value: when the page refreshes itself the open Plot
   // shows its new status rather than the one it had when it was opened.
@@ -186,7 +191,7 @@ export default function PublicPortalClient({
             className="block h-11 w-full rounded-xl border border-input bg-card pl-10 pr-3 text-base text-foreground transition-shadow placeholder:text-[hsl(var(--placeholder))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-sm"
           />
         </label>
-        {layout && (
+        {hasPlan && (
           <div role="group" aria-label="View" className="flex shrink-0 rounded-xl border border-border bg-secondary p-1">
             {(["PLAN", "LIST"] as const).map((value) => {
               const Icon = value === "PLAN" ? MapIcon : LayoutList;
@@ -209,16 +214,20 @@ export default function PublicPortalClient({
         )}
       </div>
 
-      {/* The site plan, or the Plots as tiles, a section per type */}
+      {/* The site plan, document layout preview, or the Plots as tiles, a section per type */}
       {onPlan ? (
-        <SiteMap
-          layout={layout}
-          plots={plots}
-          isDimmed={(plot) => (filter !== null && plot.status !== filter) || !matches(plot)}
-          ringedId={ringedId ?? selectedId}
-          changed={changed}
-          onSelect={setSelectedId}
-        />
+        layout ? (
+          <SiteMap
+            layout={layout}
+            plots={plots}
+            isDimmed={(plot) => (filter !== null && plot.status !== filter) || !matches(plot)}
+            ringedId={ringedId ?? selectedId}
+            changed={changed}
+            onSelect={setSelectedId}
+          />
+        ) : layoutDocument ? (
+          <LayoutDocumentPreview document={layoutDocument} />
+        ) : null
       ) : visible.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
           {plots.length === 0 ? noPlots : "No Plot has this status right now."}
@@ -255,7 +264,43 @@ export default function PublicPortalClient({
               </section>
             );
           })}
-          {!layout && layoutUrl && (
+          {layoutDocument && (
+            <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-border/70 bg-card p-3.5 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <MapIcon className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-xs font-bold text-foreground">
+                    {layoutDocument.type === "pdf" ? "Official Layout Blueprint (PDF)" : "High-Resolution Layout Map"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Preview the drawn layout for this project
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setView("PLAN")}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-secondary px-3 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <MapIcon className="h-3.5 w-3.5" />
+                  View Layout
+                </button>
+                <a
+                  href={layoutDocument.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open
+                </a>
+              </div>
+            </div>
+          )}
+          {!layout && !layoutDocument && layoutUrl && (
             <a
               href={layoutUrl}
               target="_blank"
@@ -273,10 +318,10 @@ export default function PublicPortalClient({
           plot={selected}
           onClose={() => setSelectedId(null)}
           onShowOnPlan={
-            layout && !onPlan
+            hasPlan && !onPlan
               ? () => {
                   setView("PLAN");
-                  setPinnedId(selected.id);
+                  if (layout) setPinnedId(selected.id);
                   setSelectedId(null);
                 }
               : null
