@@ -30,7 +30,7 @@ export default function ProjectStrip({ projects, active }: { projects: PortalPro
         className="relative mx-auto flex max-w-5xl gap-2 overflow-x-auto px-4 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         <Link
-          href="/p"
+          href="/public"
           className="flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <LayoutGrid className="h-3.5 w-3.5" />
@@ -42,7 +42,7 @@ export default function ProjectStrip({ projects, active }: { projects: PortalPro
             <Link
               key={project.id}
               ref={on ? current : undefined}
-              href={`/p/${project.slug}`}
+              href={`/public/${project.slug}`}
               aria-current={on ? "page" : undefined}
               className={`flex w-40 shrink-0 flex-col justify-center gap-1.5 rounded-xl border px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 on

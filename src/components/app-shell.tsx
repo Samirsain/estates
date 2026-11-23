@@ -79,7 +79,7 @@ const isOn = (pathname: string, href: string) => pathname === href || pathname.s
 
 /**
  * The Public Project Portal's one link, at the right end of the tab bar under
- * Sign out (owner, 3 Nov 2026; was left of Calculator from 29 Oct): /p lists every Project not turned off on its own page, so this is the
+ * Sign out (owner, 3 Nov 2026; was left of Calculator from 29 Oct): /public lists every Project not turned off on its own page, so this is the
  * address to share. Copy for WhatsApp; Open in a new tab, since it is the
  * public site and not a CRM page.
  */
@@ -87,7 +87,7 @@ function PublicPortalMenu() {
   const [origin, setOrigin] = React.useState("");
   const [copy, setCopy] = React.useState<"idle" | "copied" | "failed">("idle");
   React.useEffect(() => setOrigin(window.location.origin), []);
-  const link = `${origin}/p`;
+  const link = `${origin}/public`;
 
   return (
     <DropdownMenu>
@@ -118,7 +118,7 @@ function PublicPortalMenu() {
           {copy === "copied" ? "Copied" : copy === "failed" ? "Could not copy — use Open Link" : "Copy Link"}
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <a href="/p" target="_blank" rel="noreferrer">
+          <a href="/public" target="_blank" rel="noreferrer">
             <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Open Link
           </a>
         </DropdownMenuItem>

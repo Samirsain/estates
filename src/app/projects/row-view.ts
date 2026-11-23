@@ -34,7 +34,7 @@ export function projectRowView(project: ProjectRow, links: Map<string, string>):
     driveUrl: project.driveUrl,
     layoutUrl:
       getProjectLayoutDocument(project.projectCode)?.url ??
-      (slug && siteLayout(project.projectCode) ? `/p/${slug}` : project.driveUrl),
+      (slug && siteLayout(project.projectCode) ? `/public/${slug}` : project.driveUrl),
     renderUrl: project.renderUrl,
     city: project.city,
     amenities: project.amenities,

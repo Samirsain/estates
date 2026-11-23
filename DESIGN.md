@@ -153,7 +153,7 @@ The system is Apple's museum-gallery language turned to operational records: whi
 
 It is dense by intent. Body copy sits at 15px rather than the reference's 17px marketing size, tables a step below, so a Plot row stays on one line. Hierarchy is carried by size and weight, not by grey: labels and helper text are set in the body ink because the owner found a mid-grey too faint.
 
-The Public Project Portal (`/p`, `/p/[slug]`) is a surface inside this world, not a new one (owner, 31 Oct 2026: same colours and type, better layout). It adds a status vocabulary (green, amber, red) and one signature device, the availability bar.
+The Public Project Portal (`/public`, `/public/[slug]`) is a surface inside this world, not a new one (owner, 31 Oct 2026: same colours and type, better layout). It adds a status vocabulary (green, amber, red) and one signature device, the availability bar.
 
 **Key Characteristics:**
 - One interactive colour; everything pressable is orange or sits in a neutral pill.

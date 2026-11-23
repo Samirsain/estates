@@ -231,6 +231,8 @@ export async function updatePlotDetails(args: {
   actorRef: string;
   actorRole: string;
   plotId: string;
+  /** Owner, 23 Nov 2026 — the number is correctable too. Kept in capitals. */
+  plotNumber?: string;
   widthFt?: string;
   lengthFt?: string;
   exactAreaSqFt?: string;
@@ -239,6 +241,7 @@ export async function updatePlotDetails(args: {
   reason: string;
 }) {
   if (!args.reason.trim()) blocked("A compulsory reason is required to edit Plot details.");
+  if (args.plotNumber !== undefined && !args.plotNumber.trim()) blocked("Plot No. cannot be blank.");
 
   return runCommand(
     {
@@ -273,10 +276,20 @@ export async function updatePlotDetails(args: {
         );
       }
 
-      validateBoundaries(plot.plotNumber, args.boundaries);
+      const plotNumber = args.plotNumber?.trim().toUpperCase() || plot.plotNumber;
+      // The unique key would refuse a clash with a raw error; name it instead.
+      if (plotNumber !== plot.plotNumber) {
+        const taken = await tx.plot.findFirst({
+          where: { projectId: plot.projectId, plotType: plot.plotType, plotNumber },
+          select: { id: true },
+        });
+        if (taken) blocked(`Plot ${plotNumber} (${plot.plotType}) already exists in this Project. Use a new number.`);
+      }
+
+      validateBoundaries(plotNumber, args.boundaries);
       const areas = calculateAreas(
         areaInput({
-          plotNumber: plot.plotNumber,
+          plotNumber,
           plotType: plot.plotType,
           widthFt: args.widthFt,
           lengthFt: args.lengthFt,
@@ -286,6 +299,7 @@ export async function updatePlotDetails(args: {
       );
 
       const before = {
+        plotNumber: plot.plotNumber,
         widthFt: plot.widthFt?.toString() ?? null,
         lengthFt: plot.lengthFt?.toString() ?? null,
         areaSqFt: plot.areaSqFt.toFixed(4),
@@ -307,6 +321,7 @@ export async function updatePlotDetails(args: {
       await tx.plot.update({
         where: { id: args.plotId },
         data: {
+          plotNumber,
           widthFt: args.widthFt ?? null,
           lengthFt: args.lengthFt ?? null,
           exactAreaSqFt: args.exactAreaSqFt ?? null,
@@ -337,6 +352,7 @@ export async function updatePlotDetails(args: {
       }
 
       const after = {
+        plotNumber,
         widthFt: args.widthFt ?? null,
         lengthFt: args.lengthFt ?? null,
         areaSqFt: areas.areaSqFt.toFixed(4),
@@ -363,6 +379,89 @@ export async function updatePlotDetails(args: {
           before,
           after,
           reason: args.reason,
+        },
+      };
+    }
+  );
+}
+
+/** Everything that points at a Plot and outlives it, named for the refusal. */
+const PLOT_LINKS = {
+  holds: "Hold",
+  holdRequests: "Hold Request",
+  bookings: "Booking",
+  acquisitions: "Acquisition",
+  changePlotFrom: "Change Plot request",
+  changePlotTo: "Change Plot request",
+  plcSnapshots: "Location Charge snapshot",
+  enquiries: "Enquiry",
+  tasks: "Task",
+} as const;
+
+/**
+ * Why this Plot cannot be deleted, or null when it can. Only a Plot nothing
+ * else uses may go — one prepared by mistake. A Plot that was ever held,
+ * booked, bought back or named on an Enquiry or Task is part of that record.
+ */
+export async function plotDeleteBlocker(client: Tx, plotId: string): Promise<string | null> {
+  const plot = await client.plot.findUnique({
+    where: { id: plotId },
+    select: { _count: { select: Object.fromEntries(Object.keys(PLOT_LINKS).map((k) => [k, true])) } },
+  });
+  if (!plot) return null;
+  const used = Object.entries(plot._count as Record<keyof typeof PLOT_LINKS, number>)
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `${n} ${PLOT_LINKS[k as keyof typeof PLOT_LINKS]}${n > 1 ? "s" : ""}`);
+  return used.length ? `Cannot delete: this Plot has ${used.join(", ")} linked to it.` : null;
+}
+
+/**
+ * Owner, 23 Nov 2026 — delete a Plot for good. Its sides and its own History
+ * go with it; the audit row keeps what it was and why it was deleted.
+ */
+export async function deletePlot(args: {
+  idempotencyKey: string;
+  actorRef: string;
+  actorRole: string;
+  plotId: string;
+  reason: string;
+}) {
+  if (!args.reason.trim()) blocked("A compulsory reason is required to delete a Plot.");
+
+  return runCommand(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "PLOT_DELETE",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { plotId: args.plotId, reason: args.reason },
+    },
+    async (tx) => {
+      await lockPlot(tx, args.plotId);
+      const plot = await tx.plot.findUniqueOrThrow({
+        where: { id: args.plotId },
+        include: { project: { select: { projectCode: true } } },
+      });
+      const blocker = await plotDeleteBlocker(tx, plot.id);
+      if (blocker) blocked(blocker);
+
+      await tx.plotEvent.deleteMany({ where: { plotId: plot.id } });
+      await tx.plot.delete({ where: { id: plot.id } }); // sides cascade
+
+      return {
+        result: { plotNumber: plot.plotNumber },
+        audit: {
+          entity: "Plot",
+          entityId: plot.id,
+          action: "PLOT_DELETED",
+          reason: args.reason,
+          before: {
+            projectCode: plot.project.projectCode,
+            plotNumber: plot.plotNumber,
+            plotType: plot.plotType,
+            status: plot.status,
+            areaSqFt: plot.areaSqFt.toFixed(4),
+          },
         },
       };
     }

@@ -1,7 +1,7 @@
-// Public Project Portal, all Projects — /p (owner, 29 Oct 2026).
+// Public Project Portal, all Projects — /public (owner, 29 Oct 2026).
 //
 // The link staff share once, from the top bar: every Project not turned off on
-// its own page, each opening to its own Plots at /p/<name>. Like that page it
+// its own page, each opening to its own Plots at /public/<name>. Like that page it
 // needs no sign-in, reads live data and nothing private — the Project's public
 // identity and how many of its Plots are Available, on Hold or Sold / Booked.
 // No logo and no page heading above the list (owner, 31 Oct 2026).
@@ -36,7 +36,7 @@ export default async function PublicProjectsPage() {
           {projects.map((project) => (
             <li key={project.id}>
               <Link
-                href={`/p/${project.slug}`}
+                href={`/public/${project.slug}`}
                 className="group flex items-center gap-3 px-4 py-4 transition-colors hover:bg-secondary/60 focus-visible:bg-secondary/60 focus-visible:outline-none sm:px-5 sm:py-5"
               >
                 <div className="min-w-0 flex-1 space-y-2.5">

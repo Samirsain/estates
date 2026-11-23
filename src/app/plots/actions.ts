@@ -14,6 +14,7 @@ import {
   requestHoldExtension,
 } from "@/lib/services/hold-service";
 import {
+  deletePlot,
   makeAvailable,
   prepareInventory,
   setRestriction,
@@ -214,6 +215,7 @@ export async function prepareInventoryAction(
 export async function updatePlotDetailsAction(
   plotId: string,
   details: {
+    plotNumber?: string;
     widthFt?: string;
     lengthFt?: string;
     exactAreaSqFt?: string;
@@ -240,6 +242,24 @@ export async function updatePlotDetailsAction(
         ? "Plot details corrected. The frozen Location Charge snapshot no longer matches — correct it separately."
         : "Plot details corrected.",
     };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** Owner, 23 Nov 2026 — MD deletes a Plot nothing else uses, for good. */
+export async function deletePlotAction(plotId: string, reason: string, key: string): Promise<ActionResult> {
+  const actor = await requireStaff("PLOT_SETUP");
+  try {
+    const result = await deletePlot({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      plotId,
+      reason,
+    });
+    revalidatePath("/plots");
+    return { ok: true, message: `Plot ${result.plotNumber} deleted.` };
   } catch (error) {
     return toResult(error);
   }

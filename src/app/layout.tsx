@@ -3,7 +3,7 @@ import "./globals.css";
 
 
 export const metadata: Metadata = {
-  title: "3% Club CRM — Real Estate Operating System",
+  title: "3% Club CRM",
   description: "Enterprise Plotted Real Estate CRM with Role-Based Access, Holds, Bookings, & Financial Governance",
   // Internal system. Nothing here should ever reach a search index, and the
   // referrer must not carry a record URL to any site a user navigates to.

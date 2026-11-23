@@ -20,7 +20,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Field, Modal, ModalError } from "@/components/ui/modal";
 import { RemarkSelect } from "@/components/ui/remark-select";
-import { setRestrictionAction, updatePlotDetailsAction } from "../actions";
+import { useHashOpen } from "@/lib/hash-open";
+import { deletePlotAction, setRestrictionAction, updatePlotDetailsAction } from "../actions";
 import { EditPlotDetailsDialog, type EditablePlot } from "../plots-client";
 
 type Restriction = "NONE" | "NOT_FOR_SALE" | "PLEDGE";
@@ -34,6 +35,7 @@ export default function PlotActions({
   canSetup,
   canEdit,
   canRestrict,
+  deleteBlocker,
 }: {
   plot: EditablePlot;
   components: Array<{ category: string; threshold: string | null; percent: string }>;
@@ -45,9 +47,19 @@ export default function PlotActions({
   canEdit: boolean;
   /** The role may restrict, and the Plot is Available or Not Available. */
   canRestrict: boolean;
+  /** Why Delete is refused (something links to the Plot), or null when it may go. */
+  deleteBlocker: string | null;
 }) {
   const router = useRouter();
   const [editing, setEditing] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+  // Delete Plot sits under the page's More menu as a #delete-plot link.
+  useHashOpen("delete-plot", () => {
+    if (!canSetup) return;
+    setNotice(null);
+    setReason("");
+    setDeleting(true);
+  });
   const [target, setTarget] = React.useState<Restriction | null>(null);
   const [reason, setReason] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -68,6 +80,16 @@ export default function PlotActions({
     const result = await setRestrictionAction(plot.id, target, reason, crypto.randomUUID());
     setBusy(false);
     if (result.ok) done(result.message ?? "Restriction updated.");
+    else setNotice({ ok: false, text: result.error });
+  }
+
+  async function confirmDelete() {
+    setBusy(true);
+    setNotice(null);
+    const result = await deletePlotAction(plot.id, reason, crypto.randomUUID());
+    setBusy(false);
+    // The page is gone with the Plot, so back to the inventory list.
+    if (result.ok) router.replace("/plots");
     else setNotice({ ok: false, text: result.error });
   }
 
@@ -136,6 +158,35 @@ export default function PlotActions({
             else setNotice({ ok: false, text: result.error });
           }}
         />
+      )}
+
+      {deleting && (
+        <Modal
+          title={`Delete Plot ${plot.plotNumber}?`}
+          onClose={() => setDeleting(false)}
+        >
+          <div className="space-y-3">
+            {deleteBlocker ? (
+              <p className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-700">
+                {deleteBlocker}
+              </p>
+            ) : (
+              <Field label="Compulsory reason">
+                <RemarkSelect presets="deletePlot" className="h-8" value={reason} onChange={setReason} required />
+              </Field>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setDeleting(false)}>
+                Cancel
+              </Button>
+              {!deleteBlocker && (
+                <Button variant="destructive" size="sm" onClick={confirmDelete} disabled={busy || !reason.trim()}>
+                  {busy ? "Deleting…" : "Delete Plot"}
+                </Button>
+              )}
+            </div>
+          </div>
+        </Modal>
       )}
 
       {target && (

@@ -1,4 +1,4 @@
-// Public Project Portal — /p/<name> (owner, 29 Oct 2026).
+// Public Project Portal — /public/<name> (owner, 29 Oct 2026).
 //
 // The one page anyone may open without signing in, from a link staff share on
 // WhatsApp. It reads the live Project and Plots on every request — no copy of
@@ -19,16 +19,15 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Box, ChevronDown, Layers, Map as MapIcon, MapPin } from "lucide-react";
 import { db } from "@/lib/db";
-import { formatPercent, formatPlotSize, formatQuantity } from "@/lib/tasks";
-import { locationChargeLabel, plcDisplayComponents } from "@/lib/domain/inventory";
+import { formatPlotSize, formatQuantity } from "@/lib/tasks";
+import { isOpenSide, locationChargeLabel } from "@/lib/domain/inventory";
+import { plotSides } from "@/components/plot-shape";
 import { publicPlotStatus } from "@/lib/domain/public-portal";
-import { plcRules } from "@/lib/services/plc-service";
 import { siteLayout } from "@/lib/project-layouts";
 import { getProjectLayoutDocument } from "@/lib/project-documents";
-import { isWebAddress, sentenceCase, type ProjectSheet } from "@/lib/pdf/project-sheet";
+import { isWebAddress, sentenceCase } from "@/lib/pdf/project-sheet";
 import { Button } from "@/components/ui/button";
-import { STATUS_LABEL, TYPE_LABEL, amenityList, projectWhere } from "@/app/projects/project-identity";
-import DownloadPdfButton from "@/app/projects/download-pdf-button";
+import { TYPE_LABEL, amenityList, projectWhere } from "@/app/projects/project-identity";
 import PublicPortalClient, { type PublicPlot } from "./portal-client";
 import LiveRefresh from "../live-refresh";
 import ProjectStrip from "../project-strip";
@@ -62,7 +61,7 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
   const entry = projects.find((p) => p.slug === slug);
   if (!entry) notFound();
 
-  const [project, plots, published] = await shared(`project:${entry.id}`, () => Promise.all([
+  const [project, plots] = await shared(`project:${entry.id}`, () => Promise.all([
     db.project.findUniqueOrThrow({
       where: { id: entry.id },
       select: {
@@ -70,8 +69,6 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
         projectCode: true,
         type: true,
         status: true,
-        developer: true,
-        reraNumber: true,
         location: true,
         city: true,
         amenities: true,
@@ -93,12 +90,8 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
         areaSqFt: true,
         areaSqYd: true,
         areaSqM: true,
-        boundaries: { select: { side: true, kind: true } },
+        boundaries: { select: { side: true, kind: true, roadWidthFt: true, reference: true } },
       },
-    }),
-    db.plcRuleVersion.findFirst({
-      where: { projectId: entry.id, status: "PUBLISHED" },
-      include: { components: { orderBy: [{ category: "asc" }, { threshold: "desc" }] } },
     }),
   ]));
 
@@ -119,6 +112,15 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
             `${formatQuantity(plot.areaSqM.toDecimalPlaces(2).toString())} sq m`,
           ],
           facing: facingLines(locationChargeLabel(plot.boundaries)),
+          // The drawing the CRM Plot page shows (owner, 23 Nov 2026); none for an irregular Plot.
+          shape:
+            plot.widthFt && plot.lengthFt
+              ? {
+                  widthFt: plot.widthFt.toString(),
+                  lengthFt: plot.lengthFt.toString(),
+                  sides: plotSides(plot.boundaries.map((b) => ({ ...b, open: isOpenSide(b.kind) }))),
+                }
+              : null,
         },
       ];
     })
@@ -126,7 +128,8 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
     .sort((a, b) => a.number.localeCompare(b.number, "en", { numeric: true }));
 
   const layoutDocument = getProjectLayoutDocument(project.projectCode);
-  const layoutTarget = layoutDocument?.url ?? project.driveUrl;
+  // The picture, not the PDF: it opens on every phone (owner, 23 Nov 2026).
+  const layoutTarget = layoutDocument?.imageUrl ?? project.driveUrl;
 
   const where = projectWhere(project);
   const amenities = amenityList(project.amenities);
@@ -135,39 +138,6 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
     { label: "Location", url: project.locationUrl, Icon: MapIcon },
     { label: "3D Visuals", url: project.renderUrl, Icon: Box },
   ].filter((link): link is typeof link & { url: string } => isWebAddress(link.url));
-
-  // The sheet Download PDF writes — the same one More info hands out, with the
-  // counts of the Plots shown here rather than of every Plot on the books.
-  const count = (type: string) => shown.filter((p) => p.type === type).length;
-  const sheet: ProjectSheet = {
-    name: project.name,
-    projectCode: project.projectCode,
-    type: TYPE_LABEL[project.type] ?? project.type,
-    status: STATUS_LABEL[project.status] ?? project.status,
-    developer: project.developer,
-    reraNumber: project.reraNumber,
-    where,
-    locationUrl: project.locationUrl,
-    // Owner 2 Nov — a Project whose site plan is drawn here points Layout at
-    // this page, so the PDF's Layout pill opens the live plan.
-    layoutUrl: siteLayout(project.projectCode) ? `/p/${slug}` : layoutTarget,
-    renderUrl: project.renderUrl,
-    amenities,
-    inventory: [
-      { label: "Total Plots", value: String(shown.length) },
-      { label: "Residential Plots", value: String(count("Residential")) },
-      { label: "Commercial Plots", value: String(count("Commercial")) },
-      ...(count("Informal Sector") > 0
-        ? [{ label: "Informal Sector Plots", value: String(count("Informal Sector")) }]
-        : []),
-    ],
-    plcRates: published
-      ? plcDisplayComponents(plcRules(published.components)).map((c) => ({
-          label: c.label,
-          value: formatPercent(c.percent),
-        }))
-      : null,
-  };
 
   return (
     <>
@@ -181,6 +151,7 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
         </header>
 
         <PublicPortalClient
+          projectName={project.name}
           plots={shown}
           layout={siteLayout(project.projectCode)}
           layoutUrl={links.find((l) => l.label === "Layout")?.url ?? null}
@@ -188,13 +159,14 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
           noPlots={noPlotsLine(project.status)}
         />
 
-        {/* About this project: closed by default, one tap away. */}
+        {/* About this project: closed by default, one tap away. Nothing to say, no card. */}
+        {(where || amenities.length > 0 || links.length > 0) && (
         <details className="group rounded-2xl border border-border/70 bg-card">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 py-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
             <span>
               <span className="block text-sm font-semibold text-foreground">About this project</span>
               <span className="block text-xs text-muted-foreground">
-                {[where && "Location", amenities.length > 0 && "Amenities", links.length > 0 && "Layout", "PDF"]
+                {[where && "Location", amenities.length > 0 && "Amenities", links.length > 0 && "Layout"]
                   .filter(Boolean)
                   .join(" · ")}
               </span>
@@ -222,18 +194,20 @@ export default async function PublicProjectPage({ params }: { params: Promise<{ 
               </div>
             )}
             {/* noreferrer carries noopener: the opened tab cannot reach back through window.opener. */}
-            <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-4">
-              {links.map(({ label, url, Icon }) => (
-                <Button key={label} size="xs" variant="outline" className="h-9 rounded-full px-3.5 text-xs" asChild>
-                  <a href={url} target="_blank" rel="noreferrer">
-                    <Icon className="mr-1.5 h-3.5 w-3.5" /> {label}
-                  </a>
-                </Button>
-              ))}
-              <DownloadPdfButton sheet={sheet} className="h-9 rounded-full px-3.5 text-xs" />
-            </div>
+            {links.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-4">
+                {links.map(({ label, url, Icon }) => (
+                  <Button key={label} size="xs" variant="outline" className="h-9 rounded-full px-3.5 text-xs" asChild>
+                    <a href={url} target="_blank" rel="noreferrer">
+                      <Icon className="mr-1.5 h-3.5 w-3.5" /> {label}
+                    </a>
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         </details>
+        )}
       </main>
     </>
   );

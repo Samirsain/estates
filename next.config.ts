@@ -55,6 +55,14 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },
+  // The Public Portal moved from /p to /public (owner, 23 Nov 2026). Links
+  // already sent on WhatsApp still open.
+  async redirects() {
+    return [
+      { source: "/p", destination: "/public", permanent: true },
+      { source: "/p/:slug", destination: "/public/:slug", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

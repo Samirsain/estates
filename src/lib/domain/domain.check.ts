@@ -296,6 +296,19 @@ const withFacility = buildPlcSnapshot(
 );
 // Road 30-39 = 2, and Road + Facilities = two open sides = 2.
 assert.equal(withFacility.totalPercent.toFixed(4), "4.0000");
+
+// Parking (owner, 23 Nov 2026) opens its side like a facility, and is no park.
+const withParking = buildPlcSnapshot(
+  [
+    { side: "NORTH", kind: "ROAD", roadWidthFt: "30" },
+    { side: "EAST", kind: "PLOT" },
+    { side: "SOUTH", kind: "PLOT" },
+    { side: "WEST", kind: "PARKING" },
+  ],
+  rules
+);
+assert.equal(withParking.totalPercent.toFixed(4), "4.0000");
+assert.ok(!withParking.components.some((c) => c.category === "PARK_FACING"), "Parking is not a green area");
 assert.match(
   withFacility.components.find((c) => c.category === "OPEN_SIDES")!.evidence,
   /North, West open/

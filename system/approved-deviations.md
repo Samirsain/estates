@@ -496,7 +496,7 @@ opens without signing in. No change request has been raised for it yet.
 
 ### What exists (D-09)
 
-- `/p` lists every Project not turned off on its own page; `/p/<name>` shows one
+- `/public` lists every Project not turned off on its own page; `/public/<name>` shows one
   Project's identity and its Plots as Available, Hold or Sold / Booked — the
   only three states, worked out in `src/lib/domain/public-portal.ts`. A Plot
   not on sale (Not Available, Not Yet Released, Not for Sale, Pledge) is left
@@ -504,7 +504,7 @@ opens without signing in. No change request has been raised for it yet.
 - `Project.publicPortal` is on for every Project by default (owner: all
   Projects show). MD removes one, or adds it back, from the Project page's
   Update menu; audited. There is no card on the Project page for it.
-- A "Public Portal" menu left of Calculator in the top bar gives the `/p` link
+- A "Public Portal" menu left of Calculator in the top bar gives the `/public` link
   to copy or open. That link carries no token and never expires; a Project's
   own link follows its name.
 - An open portal page refreshes itself every two seconds while it is visible,

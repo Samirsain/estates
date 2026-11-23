@@ -28,7 +28,7 @@ export type ProjectSheet = {
   /** The address line as the screen prints it (projectWhere). */
   where: string | null;
   locationUrl: string | null;
-  /** Layout: a Drive link, or the Project's Public Portal page ("/p/<slug>"). */
+  /** Layout: a Drive link, or the Project's Public Portal page ("/public/<slug>"). */
   layoutUrl: string | null;
   renderUrl: string | null;
   amenities: string[];
@@ -178,7 +178,7 @@ function draw(doc: Doc, sheet: ProjectSheet, amenitiesShown: number): number {
     let at = LEFT;
     for (const link of links) {
       const width = pill(doc, at, y, link.label, { size: 9, text: ACCENT, fill: [255, 255, 255], border: ACCENT_SOFT, tall: true });
-      // A portal path ("/p/<slug>") becomes this site's full address, so the
+      // A portal path ("/public/<slug>") becomes this site's full address, so the
       // pill opens from the saved file too. The sheet is drawn in the browser.
       doc.link(at, y - 5, width, 7.4, { url: new URL(link.url.trim(), window.location.origin).href });
       at += width + 4;
@@ -324,12 +324,12 @@ export function headline(text: string): string {
 }
 
 /** Only a web address is a link worth printing; a blank or a stray word is not. */
-/** A link worth printing: a web address, or a Public Portal page on this site ("/p/<slug>", owner 2 Nov). */
+/** A link worth printing: a web address, or a Public Portal page on this site ("/public/<slug>", owner 2 Nov). */
 export function isWebAddress(url: string | null): url is string {
   return Boolean(
     url && (
       /^https?:\/\/\S+$/i.test(url.trim()) ||
-      /^\/(p|projects)\/[a-zA-Z0-9_\-\.\/]+$/.test(url.trim())
+      /^\/(public|projects)\/[a-zA-Z0-9_\-\.\/]+$/.test(url.trim())
     )
   );
 }

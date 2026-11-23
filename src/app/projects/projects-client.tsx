@@ -41,7 +41,7 @@ export type ProjectRowView = {
   driveUrl: string | null;
   /**
    * Owner 2 Nov — where Layout opens: the Project's Public Portal page
-   * ("/p/<slug>") when the portal draws its site plan, else the Drive link.
+   * ("/public/<slug>") when the portal draws its site plan, else the Drive link.
    */
   layoutUrl: string | null;
   renderUrl: string | null;
@@ -49,7 +49,7 @@ export type ProjectRowView = {
   amenities: string | null;
   reraNumber: string | null;
   isExternalResaleGroup: boolean;
-  /** Listed on the Public Project Portal (/p) — on unless turned off from Update. */
+  /** Listed on the Public Project Portal (/public) — on unless turned off from Update. */
   publicPortal: boolean;
   plotCount: number;
   plotTypeCounts: Array<{ plotType: string; count: number }>;

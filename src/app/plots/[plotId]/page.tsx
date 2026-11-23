@@ -16,6 +16,7 @@ import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { BOUNDARY_KIND_LABEL, PlotShape, SIDES, plotSides } from "@/components/plot-shape";
 import { Row } from "@/components/fact-row";
 import { Section, Stat } from "@/components/record-section";
 import { PersonLink } from "@/components/person-link";
@@ -31,7 +32,7 @@ import {
   shortSides,
 } from "@/lib/domain/inventory";
 import { DEAL_CANCELLED_MESSAGE } from "@/lib/domain/acquisition";
-import { getPlot } from "@/lib/services/inventory-service";
+import { getPlot, plotDeleteBlocker } from "@/lib/services/inventory-service";
 import { listPendingHoldRequests } from "@/lib/services/hold-service";
 import { plcRules } from "@/lib/services/plc-service";
 import { requireStaff } from "@/lib/security/current-actor";
@@ -63,18 +64,6 @@ const PLOT_TYPE_LABEL: Record<string, string> = {
   INFORMAL_SECTOR: "Informal Sector",
 };
 
-const BOUNDARY_KIND_LABEL: Record<string, string> = {
-  ROAD: "Road",
-  PLOT: "Plot",
-  COMMERCIAL: "Commercial",
-  INFORMAL_SECTOR: "Informal Sector",
-  PARK: "Park / Playground",
-  PLAYGROUND: "Park / Playground",
-  FACILITIES: "Facilities",
-  PUBLIC_UTILITY: "Public Utility",
-  OTHER: "Other Land",
-};
-
 /** Where a Booking stands, in the words the Booking screens use. */
 const OUTCOME_LABEL: Record<string, string> = {
   REQUEST_PENDING: "Waiting Approval",
@@ -96,8 +85,6 @@ const LIVE_BOOKING = new Set([
   "REFUND_PENDING",
   "DELIVERED",
 ]);
-
-const SIDES = ["NORTH", "EAST", "SOUTH", "WEST"] as const;
 
 /** Make Available is green, as on Plot Inventory's rows (owner, 28 Oct 2026).
  *  Its own copy: a server page cannot read a value out of a "use client" file. */
@@ -138,173 +125,6 @@ function MaybeMore({ count, children }: { count: number; children: React.ReactNo
   return count > 0 ? <ShowMore count={count}>{children}</ShowMore> : <>{children}</>;
 }
 
-/**
- * The Plot at its own proportions, with what each side abuts. An open side is
- * the single emphasis, by weight rather than by a second colour.
- */
-function PlotShape({
-  plotNumber,
-  widthFt,
-  lengthFt,
-  sides,
-}: {
-  plotNumber: string;
-  widthFt: string;
-  lengthFt: string;
-  sides: Partial<Record<(typeof SIDES)[number], { label: string; open: boolean }>>;
-}) {
-  const w = Number(widthFt);
-  const l = Number(lengthFt);
-  if (!(w > 0) || !(l > 0)) return null;
-
-  // East and West labels sit beside the shape, where the margin is all the room
-  // they have. A long one ("Park / Playground · Central Park P-1") breaks at its
-  // " · " and the margin widens to its longest line, so it stays in the card.
-  // ponytail: ~7 units a character at 12px is an estimate, not a measurement.
-  const CHAR = 7;
-  const rows = (side: (typeof SIDES)[number]) => {
-    const label = sides[side]?.label;
-    if (!label) return [];
-    const beside = side === "EAST" || side === "WEST";
-    return beside && label.length * CHAR > 108 ? label.split(" · ") : [label];
-  };
-  const widest = Math.max(0, ...[...rows("EAST"), ...rows("WEST")].map((row) => row.length));
-
-  // The Plot drawn 30% smaller than it was (owner, 28 Oct 2026). Only the
-  // shape shrinks: the side labels keep their size, so they stay readable.
-  const scale = 147 / Math.max(w, l);
-  // A narrow Plot is drawn just wide enough for its number to clear the two
-  // length labels standing inside its east and west edges (~22 units in each),
-  // so "AH-05" never sits on "60 ft"; a shallow one just tall enough for it to
-  // clear the width labels above and below.
-  // ponytail: ~9.5 units a character at 15px bold is an estimate, not a measurement.
-  const bw = Math.max(62, w * scale, plotNumber.length * 9.5 + 44);
-  const bh = Math.max(64, l * scale);
-  // North and south labels are centred over the shape; a long one widens the
-  // margins rather than running out of the card.
-  const across = Math.max(0, ...[...rows("NORTH"), ...rows("SOUTH")].map((row) => row.length * CHAR));
-  const padX = Math.max(150, 42 + widest * CHAR, (across - bw) / 2 + 8);
-  const padY = 52;
-  const x = padX;
-  const y = padY;
-  const x2 = x + bw;
-  const y2 = y + bh;
-  const cx = x + bw / 2;
-  const cy = y + bh / 2;
-
-  const edge = {
-    NORTH: { x1: x, y1: y, x2, y2: y },
-    SOUTH: { x1: x, y1: y2, x2, y2 },
-    WEST: { x1: x, y1: y, x2: x, y2 },
-    EAST: { x1: x2, y1: y, x2, y2 },
-  } as const;
-
-  const marks = {
-    NORTH: { letter: [cx, y - 14], label: [cx, y - 34], anchor: "middle" },
-    SOUTH: { letter: [cx, y2 + 16], label: [cx, y2 + 36], anchor: "middle" },
-    WEST: { letter: [x - 14, cy], label: [x - 30, cy], anchor: "end" },
-    EAST: { letter: [x2 + 14, cy], label: [x2 + 30, cy], anchor: "start" },
-  } as const;
-
-  const spoken = SIDES.filter((side) => sides[side])
-    .map((side) => `${side.toLowerCase()} ${sides[side]!.label}`)
-    .join(", ");
-
-  return (
-    <figure className="m-0 w-full">
-      <svg
-        viewBox={`0 0 ${bw + padX * 2} ${bh + padY * 2}`}
-        // Never drawn wider than its own units, so a wide card does not
-        // enlarge it back to the size it was cut down from.
-        style={{ maxWidth: `${bw + padX * 2}px` }}
-        className="mx-auto block h-auto w-full overflow-visible text-foreground"
-        role="img"
-        aria-label={`Plot ${plotNumber}, ${widthFt} by ${lengthFt} feet${spoken ? `, bounded by ${spoken}` : ""}`}
-      >
-        {SIDES.map((side) => (
-          <line
-            key={side}
-            {...edge[side]}
-            strokeWidth={sides[side]?.open ? 3 : 1.5}
-            className={sides[side]?.open ? "stroke-current" : "stroke-border"}
-          />
-        ))}
-        <text
-          x={cx}
-          y={cy}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          className="fill-current text-[15px] font-bold"
-        >
-          {plotNumber}
-        </text>
-        {/* Width along the north and south edges, length along east and west,
-            just inside the lines they measure. */}
-        {(
-          [
-            [cx, y + 14, 0, widthFt],
-            [cx, y2 - 14, 0, widthFt],
-            [x + 14, cy, -90, lengthFt],
-            [x2 - 14, cy, 90, lengthFt],
-          ] as const
-        ).map(([tx, ty, rotate, ft], i) => (
-          <text
-            key={i}
-            x={tx}
-            y={ty}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            transform={rotate ? `rotate(${rotate} ${tx} ${ty})` : undefined}
-            className="text-[11px] font-medium tabular-nums text-foreground/75"
-            fill="currentColor"
-          >
-            {formatQuantity(ft)} ft
-          </text>
-        ))}
-        {/* The compass letter on each side, and what that side abuts just
-            beyond it. The drawing now has the card's full width, so the
-            viewBox is scaled up rather than down and this text renders larger
-            than its nominal size instead of smaller. */}
-        {SIDES.map((side) => {
-          const mark = marks[side];
-          return (
-            <g key={side}>
-              <text
-                x={mark.letter[0]}
-                y={mark.letter[1]}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                className="fill-current text-[13px] font-bold"
-              >
-                {side.charAt(0)}
-              </text>
-              {sides[side] && (
-                <text
-                  x={mark.label[0]}
-                  y={mark.label[1] - (rows(side).length - 1) * 7}
-                  textAnchor={mark.anchor}
-                  dominantBaseline="middle"
-                  className="text-[12px] font-medium text-foreground/75"
-                  fill="currentColor"
-                >
-                  {rows(side).map((row, i) => (
-                    <tspan key={i} x={mark.label[0]} dy={i ? 14 : 0}>
-                      {row}
-                    </tspan>
-                  ))}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
-      <figcaption className="sr-only">
-        Plot {plotNumber} at its own proportions, with what each side abuts.
-      </figcaption>
-    </figure>
-  );
-}
-
 type SideRow = { side?: unknown; kind?: unknown; roadWidthFt?: unknown; reference?: unknown };
 
 /** One side as a sentence: "Road · 30 ft", "Park / Playground · P-2". */
@@ -320,6 +140,7 @@ function sideText(b: SideRow | undefined): string {
 function correctionDetail(before: Record<string, unknown>, after: Record<string, unknown>): string {
   const changes: string[] = [];
   for (const [key, label, numeric] of [
+    ["plotNumber", "Plot No.", false],
     ["widthFt", "Width", true],
     ["lengthFt", "Length", true],
     ["areaSqFt", "Area sq ft", true],
@@ -349,7 +170,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   const { plotId } = await params;
   // The Plot and everything about it load in one wave: each query needs only
   // the id from the URL, not the Plot row.
-  const [plot, bookings, movedAway, acquisitions, enquiries, corrections, requests, plcCorrections] =
+  const [plot, bookings, movedAway, acquisitions, enquiries, corrections, requests, plcCorrections, deleteBlocker] =
     await Promise.all([
     getPlot(plotId),
     db.booking.findMany({
@@ -431,6 +252,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
       orderBy: { frozenAt: "desc" },
       take: 50,
     }),
+    // Only MD sees Delete Plot, so only MD pays for the count.
+    can(actor.role, "PLOT_SETUP", actor.extraPermissions) ? plotDeleteBlocker(db, plotId) : null,
   ]);
   if (!plot) notFound();
 
@@ -444,7 +267,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   const completion = current?.completions[0] ?? null;
   const version = plot.project.plcRuleVersions[0] ?? null;
 
-  const bySide = new Map(plot.boundaries.map((b) => [b.side, b]));
   const boundaries = plot.boundaries.map((b) => ({
     side: b.side,
     kind: b.kind,
@@ -665,6 +487,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   // 28 Oct 2026); Hold is done from Plot Inventory.
   const primary = actions.find((a) => !a.danger) ?? null;
   const canSetup = can(actor.role, "PLOT_SETUP", actor.extraPermissions);
+  // Last under More (owner, 23 Nov 2026); #delete-plot opens PlotActions' dialog.
+  if (canSetup) actions.push({ label: "Delete Plot", href: "#delete-plot", danger: true });
   const canRestrict = can(actor.role, "PLOT_RESTRICTION_MANAGE", actor.extraPermissions) && canSetRestriction(plot.status);
 
   /* Whose name the Plot is in: the Booking's Primary Customer, else the seller
@@ -855,7 +679,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                     .filter((a) => a !== primary)
                     .map((a) => (
                       <DropdownMenuItem key={a.label} asChild className={a.danger ? "text-red-700 focus:text-red-700" : undefined}>
-                        <Link href={a.href}>{a.label}</Link>
+                        {/* A #name opens this page's own dialog (useHashOpen); Link would not fire it. */}
+                        {a.href.startsWith("#") ? <a href={a.href}>{a.label}</a> : <Link href={a.href}>{a.label}</Link>}
                       </DropdownMenuItem>
                     ))}
                 </DropdownMenuContent>
@@ -894,6 +719,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               canSetup={canSetup}
               canEdit={canEditPlotDetails(plot.status)}
               canRestrict={canRestrict}
+              deleteBlocker={deleteBlocker}
             />
             )}
           </div>
@@ -981,20 +807,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 plotNumber={plot.plotNumber}
                 widthFt={plot.widthFt.toString()}
                 lengthFt={plot.lengthFt.toString()}
-                sides={Object.fromEntries(
-                  SIDES.map((side) => {
-                    const b = bySide.get(side);
-                    if (!b) return [side, undefined];
-                    const kind = BOUNDARY_KIND_LABEL[b.kind] ?? b.kind;
-                    const label =
-                      b.kind === "ROAD" && b.roadWidthFt
-                        ? `${kind} · ${num(b.roadWidthFt)} ft`
-                        : b.reference
-                          ? `${kind} · ${b.reference}`
-                          : kind;
-                    return [side, { label, open: isOpenSide(b.kind) }];
-                  })
-                )}
+                sides={plotSides(plot.boundaries.map((b) => ({ ...b, open: isOpenSide(b.kind) })))}
               />
             ) : (
               <p className="py-2 text-center text-xs text-muted-foreground">An irregular Plot has no sides to draw.</p>

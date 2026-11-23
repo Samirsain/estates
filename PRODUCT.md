@@ -9,7 +9,7 @@ web
 ## Users
 
 - **Staff** of the 3% Real Estate Club run the CRM: Projects, Plots, Enquiries, Holds, Bookings, Members, Customers, commission.
-- **Public Project Portal visitors** (no sign-in): dealers (Members), buyers and new customers who receive the `/p` link on WhatsApp. They open it on a phone to see which Plot is Available, on Hold or Sold / Booked, and its size and facing. They look; they do not act on the page.
+- **Public Project Portal visitors** (no sign-in): dealers (Members), buyers and new customers who receive the `/public` link on WhatsApp. They open it on a phone to see which Plot is Available, on Hold or Sold / Booked, and its size and facing. They look; they do not act on the page.
 
 ## Product Purpose
 

@@ -1,67 +1,35 @@
 // Public Portal & Project Layout Documents mapping (owner, 21 Nov 2026).
 //
-// Maps project codes to their respective layout maps and architectural documents
-// (PDF blueprints and high-resolution layout images) placed in /public/projects.
+// Maps project codes to their layout plans in /public/projects. A phone will
+// not draw a PDF inside a page, so each PDF also has a JPG of its one page that
+// the portal shows (owner, 23 Nov 2026); the PDF stays the download.
 
 export type ProjectLayoutDocument = {
+  /** The original file, PDF or picture: what Download hands over. */
   url: string;
-  type: "pdf" | "image";
+  /** The picture the page draws. */
+  imageUrl: string;
   filename: string;
   title: string;
 };
 
+const pdf = (file: string, title: string): ProjectLayoutDocument => ({
+  url: `/projects/${file}.pdf`,
+  imageUrl: `/projects/${file}.jpg`,
+  filename: `${file}.pdf`,
+  title,
+});
+
 const CODE_DOCUMENTS: Record<string, ProjectLayoutDocument> = {
-  CINEMA: {
-    url: "/projects/CINEMA.pdf",
-    type: "pdf",
-    filename: "CINEMA.pdf",
-    title: "Riddhi Siddhi Complex Layout Plan",
-  },
-  GETOWN: {
-    url: "/projects/GTOWN.pdf",
-    type: "pdf",
-    filename: "GTOWN.pdf",
-    title: "Ganpati Estate Town Layout Plan",
-  },
-  GTOWN: {
-    url: "/projects/GTOWN.pdf",
-    type: "pdf",
-    filename: "GTOWN.pdf",
-    title: "Ganpati Estate Town Layout Plan",
-  },
-  PTSBNR: {
-    url: "/projects/PTSBNR.pdf",
-    type: "pdf",
-    filename: "PTSBNR.pdf",
-    title: "Pritam Town Layout Plan",
-  },
-  RSMSBNR: {
-    url: "/projects/RSMSBNR.pdf",
-    type: "pdf",
-    filename: "RSMSBNR.pdf",
-    title: "Riddhi Siddhi Market Layout Plan",
-  },
-  "7 & 13": {
-    url: "/projects/7-13.jpeg",
-    type: "image",
-    filename: "7-13.jpeg",
-    title: "Sector 7 & 13 Layout Map",
-  },
+  CINEMA: pdf("CINEMA", "Riddhi Siddhi Complex Layout Plan"),
+  GETOWN: pdf("GTOWN", "Ganpati Estate Town Layout Plan"),
+  GTOWN: pdf("GTOWN", "Ganpati Estate Town Layout Plan"),
+  PTSBNR: pdf("PTSBNR", "Pritam Town Layout Plan"),
+  RSMSBNR: pdf("RSMSBNR", "Riddhi Siddhi Market Layout Plan"),
+  // "7 & 13", "7_13" and "713" all normalise to this one.
   "7-13": {
     url: "/projects/7-13.jpeg",
-    type: "image",
-    filename: "7-13.jpeg",
-    title: "Sector 7 & 13 Layout Map",
-  },
-  "7_13": {
-    url: "/projects/7-13.jpeg",
-    type: "image",
-    filename: "7-13.jpeg",
-    title: "Sector 7 & 13 Layout Map",
-  },
-  "713": {
-    url: "/projects/7-13.jpeg",
-    type: "image",
+    imageUrl: "/projects/7-13.jpeg",
     filename: "7-13.jpeg",
     title: "Sector 7 & 13 Layout Map",
   },
@@ -90,4 +58,3 @@ export function getProjectLayoutDocument(projectCode: string | null | undefined)
   }
   return null;
 }
-

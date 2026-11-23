@@ -344,6 +344,7 @@ const BOUNDARY_KINDS = [
   "COMMERCIAL",
   "INFORMAL_SECTOR",
   "PARK",
+  "PARKING",
   "FACILITIES",
   "PUBLIC_UTILITY",
   "OTHER",
@@ -356,6 +357,7 @@ const BOUNDARY_KIND_LABEL: Record<string, string> = {
   INFORMAL_SECTOR: "Informal Sector",
   PARK: "Park / Playground",
   PLAYGROUND: "Park / Playground",
+  PARKING: "Parking",
   FACILITIES: "Facilities",
   PUBLIC_UTILITY: "Public Utility",
   OTHER: "Other Land",
@@ -462,6 +464,7 @@ const REFERENCE_LABEL: Record<string, string> = {
   INFORMAL_SECTOR: "Sector no.",
   PARK: "Park no.",
   PLAYGROUND: "Ground no.",
+  PARKING: "Parking no.",
   FACILITIES: "Facility no.",
   PUBLIC_UTILITY: "Utility no.",
   OTHER: "Reference",
@@ -1910,6 +1913,7 @@ export function EditPlotDetailsDialog({
   onClose: () => void;
   onSubmit: (
     details: {
+      plotNumber?: string;
       widthFt?: string;
       lengthFt?: string;
       exactAreaSqFt?: string;
@@ -1925,6 +1929,7 @@ export function EditPlotDetailsDialog({
   ) => void;
 }) {
   const [form, setForm] = React.useState({
+    plotNumber: plot.plotNumber,
     widthFt: dimensionText(plot.widthFt),
     lengthFt: dimensionText(plot.lengthFt),
     exactAreaSqFt: plot.exactAreaSqFt,
@@ -1957,7 +1962,14 @@ export function EditPlotDetailsDialog({
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="Plot No.">
+          <Input
+            className="h-8"
+            value={form.plotNumber}
+            onChange={(e) => setForm({ ...form, plotNumber: e.target.value.toUpperCase() })}
+          />
+        </Field>
         <Field label="Width ft">
           <Input
             className="h-8"
@@ -2047,10 +2059,11 @@ export function EditPlotDetailsDialog({
         <Button
           type="button"
           size="sm"
-          disabled={busy || reason.trim().length < 3}
+          disabled={busy || reason.trim().length < 3 || !form.plotNumber.trim()}
           onClick={() =>
             onSubmit(
               {
+                plotNumber: form.plotNumber.trim(),
                 widthFt: parseDimension(form.widthFt) || undefined,
                 lengthFt: parseDimension(form.lengthFt) || undefined,
                 exactAreaSqFt: form.exactAreaSqFt || undefined,

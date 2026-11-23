@@ -470,6 +470,8 @@ enum BoundaryKind {
   INFORMAL_SECTOR
   PARK
   PLAYGROUND
+  /// Owner, 23 Nov 2026. Open land, so it opens its side; not a green area.
+  PARKING
   FACILITIES
   PUBLIC_UTILITY
   OTHER

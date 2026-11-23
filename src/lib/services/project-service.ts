@@ -397,7 +397,7 @@ export async function setProjectStatus(args: {
 }
 
 /**
- * Public Project Portal (owner, 29 Oct 2026) — turns /p/<name> on or off for
+ * Public Project Portal (owner, 29 Oct 2026) — turns /public/<name> on or off for
  * one Project. Audited like every Project change; the link itself is not
  * stored, so there is nothing else to keep in step.
  */

@@ -2,7 +2,7 @@
 
 // The Public Project Portal's working half (owner, 29 Oct 2026; laid out for a
 // phone 31 Oct 2026): the availability bar over three counts that are also the
-// filter, Search Plot with the Plan | List switch, every Plot in its status
+// filter, Search Plot, every Plot in its status
 // colour, and the picked Plot's details in a sheet from the bottom edge.
 //
 // A Project with a traced site plan (lib/project-layouts) opens on that plan;
@@ -15,8 +15,9 @@
 // a refresh turns over once, so the change is seen rather than missed.
 
 import React from "react";
-import { ExternalLink, LayoutList, Map as MapIcon, MapPinned, Search, X } from "lucide-react";
+import { ExternalLink, MapPinned, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { PlotShape, type PlotSides } from "@/components/plot-shape";
 import { PUBLIC_STATUS_LABEL, type PublicPlotStatus } from "@/lib/domain/public-portal";
 import type { SiteLayout } from "@/lib/project-layouts";
 import type { ProjectLayoutDocument } from "@/lib/project-documents";
@@ -32,6 +33,8 @@ export type PublicPlot = {
   size: string | null;
   area: string[];
   facing: string[];
+  /** Sides and what each abuts, for the drawing; null for an irregular Plot. */
+  shape: { widthFt: string; lengthFt: string; sides: PlotSides } | null;
 };
 
 const TYPE_ORDER = ["Residential", "Commercial", "Informal Sector"];
@@ -41,12 +44,14 @@ const typeRank = (type: string) => (TYPE_ORDER.includes(type) ? TYPE_ORDER.index
 const plain = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 export default function PublicPortalClient({
+  projectName,
   plots,
   layout,
   layoutUrl,
   layoutDocument,
   noPlots,
 }: {
+  projectName: string;
   plots: PublicPlot[];
   layout: SiteLayout | null;
   /** The Project's own Layout link, offered under the tiles when no plan is traced. */
@@ -56,9 +61,6 @@ export default function PublicPortalClient({
   noPlots: string;
 }) {
   const [filter, setFilter] = React.useState<PublicPlotStatus | null>(null);
-  const hasPlan = layout !== null || Boolean(layoutDocument);
-  const [view, setView] = React.useState<"PLAN" | "LIST">(hasPlan ? "PLAN" : "LIST");
-  const onPlan = hasPlan && view === "PLAN";
   const [query, setQuery] = React.useState("");
   // Held by id, not by value: when the page refreshes itself the open Plot
   // shows its new status rather than the one it had when it was opened.
@@ -76,22 +78,15 @@ export default function PublicPortalClient({
   const exact = wanted ? plots.find((p) => plain(p.number) === wanted) ?? null : null;
   const ringedId = exact?.id ?? pinnedId;
 
+  // The list is on top and the plan under it (owner, 23 Nov 2026: no toggle).
+  // A number typed finds its tile; "Show on plan" goes down to it on the plan.
+  const exactId = exact?.id ?? null;
   React.useEffect(() => {
-    if (!ringedId) return;
-    const id = onPlan ? `plan-${ringedId}` : `plot-${ringedId}`;
-    document.getElementById(id)?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
-  }, [ringedId, onPlan]);
-
-  // A count pressed on the plan brings the first of its Plots into view: at a
-  // phone's zoom most of the plan is off to the sides. Only on the press —
-  // not on each two-second refresh, which hands a new plots array.
-  const latest = React.useRef(plots);
-  latest.current = plots;
+    if (exactId) document.getElementById(`plot-${exactId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [exactId]);
   React.useEffect(() => {
-    if (!filter || !onPlan) return;
-    const first = latest.current.find((p) => p.status === filter);
-    if (first) document.getElementById(`plan-${first.id}`)?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-  }, [filter, onPlan]);
+    if (pinnedId) document.getElementById(`plan-${pinnedId}`)?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  }, [pinnedId]);
 
   // Which Plots changed status since the last refresh; they turn over once.
   const seen = React.useRef(new Map<string, PublicPlotStatus>());
@@ -116,7 +111,7 @@ export default function PublicPortalClient({
   const types = [...new Set(visible.map((p) => p.type))].sort((a, b) => typeRank(a) - typeRank(b));
 
   return (
-    <div className={`space-y-4 ${selected ? "pb-72" : ""}`}>
+    <div className={`space-y-4 ${selected ? "pb-[22rem]" : ""}`}>
       {/* The bar and the counts are one control: how much is free, and the
           filter. A count pressed shows only its Plots; pressed again, all. */}
       {plots.length > 0 && (
@@ -166,7 +161,7 @@ export default function PublicPortalClient({
         </section>
       )}
 
-      {/* Search Plot, and Plan | List — only when there is a Plot to find. */}
+      {/* Search Plot — only when there is a Plot to find. */}
       <div className={`flex gap-2 ${plots.length === 0 ? "hidden" : ""}`}>
         <label className="relative min-w-0 flex-1">
           <span className="sr-only">Search plot number</span>
@@ -184,6 +179,7 @@ export default function PublicPortalClient({
               if (first) setSelectedId(first.id);
             }}
             placeholder="Plot number"
+            name="plot"
             inputMode="search"
             enterKeyHint="search"
             autoComplete="off"
@@ -191,44 +187,10 @@ export default function PublicPortalClient({
             className="block h-11 w-full rounded-xl border border-input bg-card pl-10 pr-3 text-base text-foreground transition-shadow placeholder:text-[hsl(var(--placeholder))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-sm"
           />
         </label>
-        {hasPlan && (
-          <div role="group" aria-label="View" className="flex shrink-0 rounded-xl border border-border bg-secondary p-1">
-            {(["PLAN", "LIST"] as const).map((value) => {
-              const Icon = value === "PLAN" ? MapIcon : LayoutList;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={view === value}
-                  onClick={() => setView(value)}
-                  className={`flex items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                    view === value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {value === "PLAN" ? "Plan" : "List"}
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
 
-      {/* The site plan, document layout preview, or the Plots as tiles, a section per type */}
-      {onPlan ? (
-        layout ? (
-          <SiteMap
-            layout={layout}
-            plots={plots}
-            isDimmed={(plot) => (filter !== null && plot.status !== filter) || !matches(plot)}
-            ringedId={ringedId ?? selectedId}
-            changed={changed}
-            onSelect={setSelectedId}
-          />
-        ) : layoutDocument ? (
-          <LayoutDocumentPreview document={layoutDocument} />
-        ) : null
-      ) : visible.length === 0 ? (
+      {/* The Plots as tiles, a section per type; the plan follows below. */}
+      {visible.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
           {plots.length === 0 ? noPlots : "No Plot has this status right now."}
         </p>
@@ -264,42 +226,6 @@ export default function PublicPortalClient({
               </section>
             );
           })}
-          {layoutDocument && (
-            <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-border/70 bg-card p-3.5 shadow-sm">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <MapIcon className="h-4 w-4" />
-                </span>
-                <div>
-                  <p className="text-xs font-bold text-foreground">
-                    {layoutDocument.type === "pdf" ? "Official Layout Blueprint (PDF)" : "High-Resolution Layout Map"}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Preview the drawn layout for this project
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setView("PLAN")}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-secondary px-3 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <MapIcon className="h-3.5 w-3.5" />
-                  View Layout
-                </button>
-                <a
-                  href={layoutDocument.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Open
-                </a>
-              </div>
-            </div>
-          )}
           {!layout && !layoutDocument && layoutUrl && (
             <a
               href={layoutUrl}
@@ -313,15 +239,30 @@ export default function PublicPortalClient({
         </div>
       )}
 
+      {/* The plan, under the list: the drawn site plan, else the layout picture. */}
+      {layout ? (
+        <SiteMap
+          layout={layout}
+          plots={plots}
+          isDimmed={(plot) => (filter !== null && plot.status !== filter) || !matches(plot)}
+          ringedId={ringedId ?? selectedId}
+          changed={changed}
+          onSelect={setSelectedId}
+        />
+      ) : layoutDocument ? (
+        <LayoutDocumentPreview document={layoutDocument} />
+      ) : null}
+
       {selected && (
         <PlotSheet
           plot={selected}
+          projectName={projectName}
           onClose={() => setSelectedId(null)}
+          // Only a drawn plan knows where a Plot sits; a picture does not.
           onShowOnPlan={
-            hasPlan && !onPlan
+            layout
               ? () => {
-                  setView("PLAN");
-                  if (layout) setPinnedId(selected.id);
+                  setPinnedId(selected.id);
                   setSelectedId(null);
                 }
               : null
@@ -339,10 +280,12 @@ export default function PublicPortalClient({
  */
 function PlotSheet({
   plot,
+  projectName,
   onClose,
   onShowOnPlan,
 }: {
   plot: PublicPlot;
+  projectName: string;
   onClose: () => void;
   onShowOnPlan: (() => void) | null;
 }) {
@@ -365,8 +308,6 @@ function PlotSheet({
     };
   }, []);
 
-  const [primaryArea, ...otherAreas] = plot.area;
-
   return (
     <div
       ref={sheet}
@@ -377,63 +318,84 @@ function PlotSheet({
       className="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-lg overflow-hidden rounded-t-[22px] border border-b-0 border-border/80 bg-card shadow-[0_-12px_40px_-12px_rgba(0,0,0,0.25)] outline-none motion-safe:animate-sheet-up"
     >
       {/* The sheet's edge carries the Plot's own colour. */}
-      <div className={`h-1.5 ${TONE[plot.status].bar}`} aria-hidden="true" />
-      <div className="space-y-4 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
-        <div className="flex items-start justify-between gap-3">
-          <h2 id="plot-sheet-title" className="min-w-0 text-3xl font-bold leading-tight tracking-tight tabular-nums text-foreground">
-            <span className="sr-only">Plot </span>
-            {plot.number}
-          </h2>
-          <div className="flex shrink-0 items-center gap-2">
-            <Badge variant={TONE[plot.status].badge} className="gap-1.5 px-2.5 py-1 text-xs">
-              <span className={`h-2 w-2 rounded-full ${TONE[plot.status].dot}`} />
+      <div className={`h-1 ${TONE[plot.status].bar}`} aria-hidden="true" />
+      <div className="space-y-3 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+        {/* Number and where it is; status and Close on the same line. */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 id="plot-sheet-title" className="text-2xl font-bold leading-none tracking-tight tabular-nums text-foreground">
+              <span className="sr-only">Plot </span>
+              {plot.number}
+            </h2>
+            <p className="mt-1.5 truncate text-xs font-medium text-foreground">
+              {projectName} · {plot.type}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <Badge variant={TONE[plot.status].badge} className="gap-1.5 px-2 py-0.5 text-[11px]">
+              <span className={`h-1.5 w-1.5 rounded-full ${TONE[plot.status].dot}`} />
               {PUBLIC_STATUS_LABEL[plot.status]}
             </Badge>
             <button
               type="button"
               aria-label="Close"
               onClick={onClose}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border/60 pt-4">
-          <div className="col-span-2">
-            <dt className="text-xs text-muted-foreground">Plot type</dt>
-            <dd className="mt-0.5 text-base font-semibold text-foreground">{plot.type}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Size (W × L)</dt>
-            <dd className="mt-0.5 text-base font-semibold tabular-nums text-foreground">{plot.size ?? "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Area</dt>
-            <dd className="mt-0.5 text-base font-semibold tabular-nums text-foreground">{primaryArea}</dd>
-            {otherAreas.length > 0 && (
-              <dd className="text-xs tabular-nums text-muted-foreground">{otherAreas.join(" · ")}</dd>
+        {/* Size and Area on the left, sized to their figures; the Plot's
+            drawing takes the rest of the row (owner, 23 Nov 2026). */}
+        <div
+          className={`grid items-center gap-x-5 border-t border-border/60 pt-3 ${
+            plot.shape ? "grid-cols-[auto_minmax(0,1fr)]" : ""
+          }`}
+        >
+          <dl className="min-w-0 space-y-3 whitespace-nowrap tabular-nums">
+            <div>
+              <dt className="text-[11px] font-medium text-foreground/70">Size</dt>
+              <dd className="mt-0.5 text-sm font-semibold text-foreground">{plot.size ?? "Irregular"}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-medium text-foreground/70">Area</dt>
+              <dd className="mt-0.5 text-sm font-semibold text-foreground">{plot.area[0]}</dd>
+              {plot.area.slice(1).map((line) => (
+                <dd key={line} className="text-xs text-foreground/80">
+                  {line}
+                </dd>
+              ))}
+            </div>
+            {/* "East Facing", "Park Facing": each says what it is, so no label. */}
+            {plot.facing.length > 0 && (
+              <div>
+                <dt className="sr-only">Facing</dt>
+                {plot.facing.map((line) => (
+                  <dd key={line} className="text-xs font-semibold text-foreground">
+                    {line}
+                  </dd>
+                ))}
+              </div>
             )}
-          </div>
-        </dl>
-
-        {/* "South Facing", "Park Facing": each says what it is, so no label above them. */}
-        {plot.facing.length > 0 && (
-          <ul aria-label="Facing" className="flex flex-wrap gap-1.5">
-            {plot.facing.map((line) => (
-              <li key={line} className="rounded-full border border-border bg-secondary px-3 py-1 text-xs font-semibold text-foreground">
-                {line}
-              </li>
-            ))}
-          </ul>
-        )}
+          </dl>
+          {plot.shape && (
+            <PlotShape
+              narrow
+              plotNumber={plot.number}
+              widthFt={plot.shape.widthFt}
+              lengthFt={plot.shape.lengthFt}
+              sides={plot.shape.sides}
+            />
+          )}
+        </div>
 
         {onShowOnPlan && (
           <button
             type="button"
             onClick={onShowOnPlan}
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-border bg-secondary text-sm font-semibold text-foreground transition-colors hover:bg-secondary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-border text-sm font-semibold text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <MapPinned className="h-4 w-4" />
             Show on site plan

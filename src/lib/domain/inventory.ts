@@ -77,6 +77,7 @@ export type BoundaryKind =
   | "INFORMAL_SECTOR"
   | "PARK"
   | "PLAYGROUND"
+  | "PARKING"
   | "FACILITIES"
   | "PUBLIC_UTILITY"
   | "OTHER";
