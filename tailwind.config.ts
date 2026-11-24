@@ -61,6 +61,10 @@ const config: Config = {
           to: { transform: "translateY(0)" },
         },
       },
+      // The house curve (DESIGN.md): every CRM transition decelerates on it.
+      transitionTimingFunction: {
+        house: "cubic-bezier(0.22, 1, 0.36, 1)",
+      },
       animation: {
         "plot-flip": "plot-flip 0.7s cubic-bezier(0.22, 1, 0.36, 1)",
         "sheet-up": "sheet-up 0.32s cubic-bezier(0.22, 1, 0.36, 1)",

@@ -8,7 +8,10 @@ const buttonVariants = cva(
   // apple-design-reference.md — the pill is the action shape, and chrome carries no shadow.
   // text-center because a Button rendered asChild is an <a>, and only <button>
   // gets centred text from the browser. Same box, same label, same alignment.
-  "inline-flex items-center justify-center whitespace-nowrap rounded-full text-center text-sm font-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-40",
+  // A press gives a little under the finger (owner, 24 Nov 2026): 0.97 in 75ms,
+  // back on the house curve. Only the press moves — a hover lift would slide
+  // the button out from under the pointer — and reduced motion keeps the colour.
+  "inline-flex items-center justify-center whitespace-nowrap rounded-full text-center text-sm font-normal transition-[color,background-color,border-color,opacity,transform] duration-150 ease-house motion-safe:active:scale-[0.97] motion-safe:active:duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-40",
   {
     variants: {
       variant: {
@@ -21,7 +24,8 @@ const buttonVariants = cva(
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/70",
         ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+        // Text, not a pill: it does not give under a press.
+        link: "text-primary underline-offset-4 hover:underline motion-safe:active:scale-100",
         gradient: "bg-primary text-primary-foreground hover:bg-ring",
       },
       size: {

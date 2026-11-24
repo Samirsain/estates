@@ -72,6 +72,22 @@ const NAV = [
  * scrollbar it drew was a grey bar across the header, so it is hidden; the
  * right edge fades instead, which says there is more to swipe to.
  */
+/**
+ * A rail label arrives once the rail has made room for it, a beat after the
+ * label above; leaving, it goes at once (owner, 24 Nov 2026: smooth menu).
+ * Only the 4px slide is spatial, so reduced motion keeps the fade alone.
+ */
+const railLabel = (open: boolean) =>
+  `transition-[opacity,transform] ease-house ${
+    // Reduced motion: a closing label goes with the width snap, or its first
+    // letters linger at the rail's edge while it fades.
+    open
+      ? "duration-200 md:opacity-100"
+      : "duration-100 md:opacity-0 md:motion-safe:-translate-x-1 md:motion-reduce:transition-none"
+  }`;
+const railDelay = (open: boolean, step: number) =>
+  open ? { transitionDelay: `${40 + step * 12}ms` } : undefined;
+
 const SWIPE =
   "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_85%,transparent)]";
 
@@ -151,6 +167,25 @@ export function AppShell({
   // Following a link has answered the question the menu was open for.
   React.useEffect(() => setMenuOpen(false), [pathname]);
 
+  // A menu link is followed from the open rail, but the next page's rail is
+  // closed: the moving outline went 215px to 40px and hung over the tab bar on
+  // the way. Just before the old page is captured, close its rail so the
+  // outline slides 40px to 40px inside it (globals.css, [data-nav-swap]).
+  // A page restored by Back gets its rail back.
+  React.useEffect(() => {
+    const root = document.documentElement;
+    const swap = (e: Event) => {
+      if ((e as Event & { viewTransition?: unknown }).viewTransition) root.dataset.navSwap = "";
+    };
+    const restore = () => delete root.dataset.navSwap;
+    window.addEventListener("pageswap", swap);
+    window.addEventListener("pageshow", restore);
+    return () => {
+      window.removeEventListener("pageswap", swap);
+      window.removeEventListener("pageshow", restore);
+    };
+  }, []);
+
   return (
     <div className="min-h-screen md:grid md:grid-cols-[3.5rem_1fr]">
       {/*
@@ -179,19 +214,16 @@ export function AppShell({
           if (event.key === "Escape") setMenuOpen(false);
         }}
         // Below md the rail is one row: the logo, then the links beside it.
-        className={`chrome-surface z-50 flex items-center border-b border-border/50 md:block md:sticky md:top-0 md:h-screen md:overflow-hidden md:border-b-0 md:border-r md:transition-[width] md:duration-200 ${
-          menuOpen ? "md:w-60" : "md:w-14"
+        className={`chrome-surface z-50 flex items-center border-b border-border/50 md:block md:sticky md:top-0 md:h-screen md:overflow-hidden md:border-b-0 md:border-r md:transition-[width] md:ease-house md:motion-reduce:transition-none ${
+          // Opening takes the longer beat; closing is quicker, as exits are.
+          menuOpen ? "md:w-60 md:duration-[280ms]" : "md:w-14 md:duration-200"
         }`}
       >
         <div className="flex shrink-0 items-center gap-3 px-4 py-3 md:py-4">
           <a href="/" aria-label="Home" className="shrink-0">
             <img src="/logo.svg" alt="" className="h-6 w-6" />
           </a>
-          <div
-            className={`hidden whitespace-nowrap transition-opacity md:block ${
-              menuOpen ? "md:opacity-100" : "md:opacity-0"
-            }`}
-          >
+          <div className={`hidden whitespace-nowrap md:block ${railLabel(menuOpen)}`} style={railDelay(menuOpen, 0)}>
             <p className="text-sm font-bold tracking-tight gradient-text">
               3% REAL ESTATE CLUB
             </p>
@@ -200,7 +232,7 @@ export function AppShell({
 
         <nav className={`flex min-w-0 flex-1 gap-1 overflow-x-auto py-2 pr-3 md:flex-col md:overflow-y-auto md:overflow-x-hidden md:px-3 md:pb-3 md:pt-0 md:[mask-image:none] ${SWIPE}`}>
           {NAV.filter((item) => !("admin" in item && item.admin) || canAdminister).map(
-            (item) => {
+            (item, i) => {
               const active = isOn(pathname, item.href);
               return (
                 <div key={item.label} className="min-w-max md:min-w-0">
@@ -220,26 +252,38 @@ export function AppShell({
                         setMenuOpen(true);
                       }
                     }}
-                    className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors ${
-                      // Closed, the label is gone, so the icon and its pill
-                      // centre on the rail instead of sitting where the text
-                      // used to start.
-                      menuOpen
-                        ? ""
-                        : "md:h-10 md:w-10 md:mx-auto md:justify-center md:gap-0 md:px-0"
-                    } ${
+                    // One geometry open and closed: the row fills the rail and
+                    // the rail's own width transition carries it. Closed, the
+                    // rail is 32px inside, so min-w-10 keeps a 40px pill with
+                    // the icon where it sits open (x 24). Swapping to centred
+                    // classes made icons lurch 88px as the rail closed, and
+                    // 36px rows open vs 40px closed made them jump vertically.
+                    // A press gives, as a Button does.
+                    className={`relative flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-[color,background-color,transform] duration-150 ease-house motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 md:h-10 md:w-full md:min-w-10 ${
                       active
-                        ? "bg-primary/15 font-semibold text-primary"
+                        ? "font-semibold text-primary"
                         : item.href
                           ? "text-muted-foreground hover:bg-accent"
                           : "cursor-default text-foreground/70"
                     }`}
                   >
-                    <item.icon className="h-4 w-4 shrink-0" />
+                    {/* The chosen item's outline (owner, 24 Nov 2026). One
+                        view-transition name, so opening another page moves
+                        this pill to its new row instead of blinking — see
+                        @view-transition in globals.css. */}
+                    {active && (
+                      <span
+                        aria-hidden
+                        className="absolute inset-0 rounded-xl border border-primary/50 bg-primary/10"
+                        style={{ viewTransitionName: "nav-active" }}
+                      />
+                    )}
+                    <item.icon className="relative h-4 w-4 shrink-0" />
                     <span
-                      className={`whitespace-nowrap transition-opacity ${
-                        menuOpen ? "md:opacity-100" : "md:w-0 md:overflow-hidden md:opacity-0"
-                      }`}
+                      // No width collapse: the rail's overflow clips a closed
+                      // label, so its fade-out paints instead of vanishing.
+                      className={`relative whitespace-nowrap ${railLabel(menuOpen)}`}
+                      style={railDelay(menuOpen, i + 1)}
                     >
                       {item.label}
                     </span>

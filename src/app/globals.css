@@ -237,3 +237,50 @@
 .pill {
   border-radius: 9999px;
 }
+
+/*
+ * Moving between pages, the chosen menu item's outline travels from its old
+ * row to the new one (owner, 24 Nov 2026) — every menu link is a page load,
+ * so only a cross-document view transition can carry it. The page itself
+ * swaps at once; only the outline moves, on the house curve. Reduced motion
+ * keeps the plain page load. A browser without the feature just loads.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+/* The leaving page's rail closes as it is captured (AppShell's pageswap). */
+@media (min-width: 768px) {
+  :root[data-nav-swap] aside {
+    width: 3.5rem;
+    transition: none;
+  }
+}
+
+/*
+ * The outline goes from a wide row on the open rail to a 40px pill on the
+ * closed one. A snapshot scaled across that change bends its border and
+ * corners, so the moving box paints the pill itself and the two snapshots
+ * stay hidden; at the end the real pill, drawn the same, takes over.
+ */
+::view-transition-group(nav-active) {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  box-sizing: border-box;
+  border: 1px solid hsl(var(--primary) / 0.5);
+  border-radius: 0.75rem;
+  background: hsl(var(--primary) / 0.1);
+}
+
+::view-transition-old(nav-active),
+::view-transition-new(nav-active) {
+  animation: none;
+  opacity: 0;
+}
