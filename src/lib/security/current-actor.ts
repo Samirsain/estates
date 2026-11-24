@@ -2,7 +2,7 @@
 // and session version — a valid-looking cookie is never trusted on its own
 // (architecture.md §9.2, delivery-phases.md Phase 1 "direct URL cannot bypass").
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { recordAudit } from "./audit";
@@ -46,7 +46,14 @@ export async function currentStaff(): Promise<StaffActor | null> {
   };
 }
 
-/** Guards a page or server action. Redirects when signed out, throws when denied. */
+/**
+ * Guards a page or server action. Redirects when signed out. When denied, a
+ * page goes to /no-access, which names the missing tick — a throw there showed
+ * "Something went wrong" and a digest (owner, 24 Nov 2026: CRM opening a
+ * Project without "See reports"). A server action still throws, so its caller
+ * shows "You do not have permission to do this."; Next marks an action call
+ * with the next-action header.
+ */
 export async function requireStaff(action?: Action): Promise<StaffActor> {
   const actor = await currentStaff();
   if (!actor) redirect("/login");
@@ -60,6 +67,7 @@ export async function requireStaff(action?: Action): Promise<StaffActor> {
       action: "PERMISSION_DENIED",
       reason: `${actor.role} attempted ${action}`,
     });
+    if (!(await headers()).has("next-action")) redirect(`/no-access?need=${action}`);
     throw new PermissionError(actor.role, action);
   }
   return actor;

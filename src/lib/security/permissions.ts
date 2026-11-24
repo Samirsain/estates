@@ -412,7 +412,9 @@ export const ACTION_LABELS: Record<Action, string> = {
   TASK_CREATE: "Add tasks",
   TASK_COMPLETE: "Mark tasks as done",
   WORK_REASSIGN: "Hand someone's open work to another staff member",
-  REPORT_VIEW: "See reports",
+  // Every page this opens is named, so unticking it is never a surprise
+  // (owner, 24 Nov 2026: "See reports" alone hid that it opens Projects).
+  REPORT_VIEW: "See Projects, Buyback / Resale, Calculator and Reports",
   REPORT_EXPORT: "Download reports",
   AUDIT_VIEW: "See the history of who did what",
   STAFF_MANAGE: "Add staff and reset passwords",
