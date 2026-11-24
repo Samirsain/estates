@@ -33,6 +33,7 @@ export default function PlotActions({
   components,
   restriction,
   canSetup,
+  canDelete,
   canEdit,
   canRestrict,
   deleteBlocker,
@@ -43,6 +44,8 @@ export default function PlotActions({
   restriction: string;
   /** The role may edit Plot details at all. */
   canSetup: boolean;
+  /** MD alone deletes a Plot (owner, 23 Nov 2026), whoever else may edit it. */
+  canDelete: boolean;
   /** False while a Hold or a Booking locks the Plot's details. */
   canEdit: boolean;
   /** The role may restrict, and the Plot is Available or Not Available. */
@@ -55,7 +58,7 @@ export default function PlotActions({
   const [deleting, setDeleting] = React.useState(false);
   // Delete Plot sits under the page's More menu as a #delete-plot link.
   useHashOpen("delete-plot", () => {
-    if (!canSetup) return;
+    if (!canDelete) return;
     setNotice(null);
     setReason("");
     setDeleting(true);

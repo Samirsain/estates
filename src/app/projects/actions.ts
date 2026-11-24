@@ -90,7 +90,7 @@ export async function createProjectAction(
     return {
       ok: true,
       message:
-        `${input.name} created as Unreleased (code ${result.projectCode}). Prepare inventory, then make it Active before anything is sold.` +
+        `${input.name} created as Unreleased (code ${result.projectCode}). Prepare inventory; MD makes it Active before anything is sold.` +
         (input.commission
           ? " Its Rewards settings are saved and approved as version 1."
           : ""),
@@ -106,7 +106,7 @@ export async function setProjectStatusAction(
   reason: string,
   key: string
 ): Promise<ActionResult> {
-  const actor = await requireStaff("PROJECT_SETUP");
+  const actor = await requireStaff("PROJECT_RELEASE");
   try {
     const result = await setProjectStatus({
       idempotencyKey: key,
@@ -144,9 +144,9 @@ export async function setProjectStatusAction(
   }
 }
 
-/** Public Project Portal on or off — MD, as every other Project setting. */
+/** Public Project Portal on or off — MD's, as releasing is (owner, 24 Nov 2026). */
 export async function setPublicPortalAction(projectId: string, on: boolean, key: string): Promise<ActionResult> {
-  const actor = await requireStaff("PROJECT_SETUP");
+  const actor = await requireStaff("PROJECT_RELEASE");
   try {
     await setProjectPublicPortal({
       idempotencyKey: key,

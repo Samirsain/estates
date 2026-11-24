@@ -24,7 +24,7 @@ export default async function AcquisitionDetailPage({
   const { id } = await params;
   const actor = await requireStaff("REPORT_VIEW");
   // MD and Admin read a contact number whole; everyone else gets the mask.
-  const fullMobile = canViewField(actor.role, "MOBILE_FULL");
+  const fullMobile = canViewField(actor.role, "MOBILE_FULL", actor.extraPermissions);
 
   const [acquisition, paymentApprovals, people] = await Promise.all([
     db.acquisition.findUnique({ where: { id }, include: acquisitionInclude }),

@@ -44,7 +44,7 @@ export async function runReportAction(
 ): Promise<ReportResult> {
   const actor = await requireStaff("REPORT_VIEW");
   try {
-    const rows = await runReport(report, toFilters(input), { fullMobile: canViewField(actor.role, "MOBILE_FULL") });
+    const rows = await runReport(report, toFilters(input), { fullMobile: canViewField(actor.role, "MOBILE_FULL", actor.extraPermissions) });
     return { ok: true, rows, columns: columnsOf(rows) };
   } catch (error) {
     return toResult(error);

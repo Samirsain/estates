@@ -222,7 +222,7 @@ export default async function MemberDetailPage({
   // The same masking rule as every other screen: MD and Admin read a mobile
   // whole, everyone else sees it masked.
   const contact = (value: string) =>
-    canViewField(actor.role, "MOBILE_FULL") ? value : maskMobile(value);
+    canViewField(actor.role, "MOBILE_FULL", actor.extraPermissions) ? value : maskMobile(value);
 
   const member = await db.memberProfile.findUnique({
     where: { id },
@@ -925,7 +925,7 @@ export default async function MemberDetailPage({
                   fullName: member.person.fullName,
                   nickname: member.person.nickname ?? "",
                   // Whole only for MOBILE_FULL; otherwise blank, the mask as a hint.
-                  ...(canViewField(actor.role, "MOBILE_FULL")
+                  ...(canViewField(actor.role, "MOBILE_FULL", actor.extraPermissions)
                     ? { mobile: member.person.primaryMobile, altMobile: member.person.altMobile ?? "" }
                     : {
                         mobile: "",

@@ -17,7 +17,7 @@ export default async function PotentialInvestorsPage() {
     take: 300,
   });
   // Masked like the Customers list: only MD reads the number whole.
-  const fullMobile = canViewField(actor.role, "MOBILE_FULL");
+  const fullMobile = canViewField(actor.role, "MOBILE_FULL", actor.extraPermissions);
 
   return (
     <PotentialInvestorsClient

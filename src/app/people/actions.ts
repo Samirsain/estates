@@ -97,7 +97,7 @@ export async function updatePersonDetailsAction(
   const email = input.email.trim();
   // Roles that read mobiles masked are sent them blank, never in full; for
   // them a blank mobile keeps the number on file.
-  const keepMobiles = !canViewField(actor.role, "MOBILE_FULL");
+  const keepMobiles = !canViewField(actor.role, "MOBILE_FULL", actor.extraPermissions);
   if (!fullName || (!primaryMobile && !keepMobiles)) {
     return { ok: false, error: "Full name and mobile are both required." };
   }

@@ -253,7 +253,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
       take: 50,
     }),
     // Only MD sees Delete Plot, so only MD pays for the count.
-    can(actor.role, "PLOT_SETUP", actor.extraPermissions) ? plotDeleteBlocker(db, plotId) : null,
+    can(actor.role, "PLOT_DELETE", actor.extraPermissions) ? plotDeleteBlocker(db, plotId) : null,
   ]);
   if (!plot) notFound();
 
@@ -494,7 +494,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   const primary = actions.find((a) => !a.danger) ?? null;
   const canSetup = can(actor.role, "PLOT_SETUP", actor.extraPermissions);
   // Last under More (owner, 23 Nov 2026); #delete-plot opens PlotActions' dialog.
-  if (canSetup) actions.push({ label: "Delete Plot", href: "#delete-plot", danger: true });
+  const canDelete = can(actor.role, "PLOT_DELETE", actor.extraPermissions);
+  if (canDelete) actions.push({ label: "Delete Plot", href: "#delete-plot", danger: true });
   const canRestrict = can(actor.role, "PLOT_RESTRICTION_MANAGE", actor.extraPermissions) && canSetRestriction(plot.status);
 
   /* Whose name the Plot is in: the Booking's Primary Customer, else the seller
@@ -725,6 +726,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               // The same rules the services enforce, so no button is live when
               // the server is going to refuse it.
               canSetup={canSetup}
+              canDelete={canDelete}
               canEdit={canEditPlotDetails(plot.status)}
               canRestrict={canRestrict}
               deleteBlocker={deleteBlocker}

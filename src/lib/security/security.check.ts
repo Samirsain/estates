@@ -162,7 +162,7 @@ for (const action of MD_ONLY_ACTIONS) {
 // Owner, 18 Nov 2026 — MD's saved role set replaces the built-in one; an MD-only
 // tick, a repeat or an unknown name is dropped, and MD itself never starts with a list.
 assert.deepEqual(
-  startingPermissions("PC", ["TASK_CREATE", "TASK_CREATE", "PROJECT_SETUP", "NOT_A_THING"]),
+  startingPermissions("PC", ["TASK_CREATE", "TASK_CREATE", "PROJECT_RELEASE", "NOT_A_THING"]),
   ["TASK_CREATE"],
   "saved role set is cleaned"
 );
@@ -191,6 +191,14 @@ assert.ok(canViewField("ACCOUNTS", "BANK_FULL"));
 assert.ok(!canViewField("CRM", "BANK_FULL"));
 assert.ok(canViewField("MD", "MOBILE_FULL"));
 assert.ok(!canViewField("CRM", "MOBILE_FULL"), "a contact number stays masked below MD");
+// Owner, 24 Nov 2026 — the mobile number is a tick; Aadhaar, PAN and bank are not.
+assert.ok(canViewField("CRM", "MOBILE_FULL", ["MOBILE_FULL_VIEW"]), "a ticked account sees the mobile in full");
+assert.ok(!canViewField("CRM", "PAN_FULL", ["MOBILE_FULL_VIEW"]), "the mobile tick opens nothing else");
+assert.ok(!canViewField("CRM", "AADHAAR_FULL", ["AADHAAR_FULL"]), "no tick opens Aadhaar");
+// Projects and Plots are ticks; releasing a Project and deleting a Plot are not.
+assert.ok(can("CRM", "PROJECT_SETUP", ["PROJECT_SETUP"]) && can("CRM", "PLOT_SETUP", ["PLOT_SETUP"]), "setup is tickable");
+assert.ok(!can("CRM", "PROJECT_RELEASE", ["PROJECT_RELEASE"]) && !can("CRM", "PLOT_DELETE", ["PLOT_DELETE"]), "release and delete stay MD");
+assert.ok(can("MD", "PROJECT_RELEASE", []) && can("MD", "PLOT_DELETE", []), "MD releases and deletes");
 
 assert.throws(() => assertDifferentActor("STF-1", "STF-1"), /different staff accounts/);
 assert.doesNotThrow(() => assertDifferentActor("STF-1", "STF-2"));

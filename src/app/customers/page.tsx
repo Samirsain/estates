@@ -90,7 +90,7 @@ export default async function CustomersPage() {
     name: c.person.fullName,
     // The list is masked for everyone whose work does not need the number;
     // MD and Admin read it whole (prd-complete §6.1).
-    mobileMasked: canViewField(actor.role, "MOBILE_FULL")
+    mobileMasked: canViewField(actor.role, "MOBILE_FULL", actor.extraPermissions)
       ? c.person.primaryMobile
       : maskMobile(c.person.primaryMobile),
     city: c.person.city ?? "—",

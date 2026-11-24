@@ -308,7 +308,7 @@ export async function mergePreviewAction(personIds: string[]): Promise<MergePrev
       return {
         id: person.id,
         fullName: person.fullName,
-        mobile: canViewField(actor.role, "MOBILE_FULL")
+        mobile: canViewField(actor.role, "MOBILE_FULL", actor.extraPermissions)
           ? person.primaryMobile
           : maskMobile(person.primaryMobile),
         city: person.city,
@@ -1105,7 +1105,7 @@ export async function identityDirectoryAction(query: string) {
 
   // Aadhaar and PAN stay masked here — revealing those is a separate, logged
   // action. The contact number is not one of those and follows the role.
-  const fullMobile = canViewField(actor.role, "MOBILE_FULL");
+  const fullMobile = canViewField(actor.role, "MOBILE_FULL", actor.extraPermissions);
   return persons.map((person) => ({
     id: person.id,
     fullName: person.fullName,

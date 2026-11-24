@@ -20,11 +20,20 @@ export type Action =
   // nothing else. Filling the rest in later is ordinary desk work, so CRM
   // holds it — with a compulsory reason and a before/after audit either way.
   | "PERSON_DETAILS_EDIT"
+  // A tick since 24 Nov 2026: a mobile number is a contact, not an identity
+  // value, so MD may share it in full; Aadhaar, PAN and bank stay by role.
+  | "MOBILE_FULL_VIEW"
+  // Projects and Plots are ticks since 24 Nov 2026 (owner). A Project made or
+  // edited by anyone stays Unreleased until MD releases it — PROJECT_RELEASE
+  // and PLOT_DELETE are MD's alone.
+  | "PROJECT_VIEW"
   | "PROJECT_SETUP"
+  | "PROJECT_RELEASE"
   // PLC spec §12.1 — a frozen snapshot is a critical correction, so it sits
   // with Admin/MD and not with the Project setup permission PC also holds.
   | "PLC_SNAPSHOT_CORRECT"
   | "PLOT_SETUP"
+  | "PLOT_DELETE"
   | "PLOT_RESTRICTION_MANAGE"
   | "PLOT_MAKE_AVAILABLE"
   // Pre-sales
@@ -103,6 +112,7 @@ const STARTING_PERMISSIONS: Record<Role, readonly Action[]> = {
     "TASK_CREATE",
     "TASK_COMPLETE",
     "REPORT_VIEW",
+    "PROJECT_VIEW",
   ],
   CRM: [
     "ENQUIRY_MANAGE",
@@ -126,9 +136,10 @@ const STARTING_PERMISSIONS: Record<Role, readonly Action[]> = {
     "TASK_CREATE",
     "TASK_COMPLETE",
     "REPORT_VIEW",
+    "PROJECT_VIEW",
   ],
   // No financial approval (PRD §3). Project and Plot setup is MD's alone (owner, 16 Oct 2026).
-  PC: ["TASK_COMPLETE", "REPORT_VIEW"],
+  PC: ["TASK_COMPLETE", "REPORT_VIEW", "PROJECT_VIEW"],
 };
 
 /** Sensitive values are masked unless the role holds explicit field permission. */
@@ -157,15 +168,16 @@ const FIELD_ACCESS: Record<SensitiveField, readonly Role[]> = {
 const FULL_ACCESS: readonly Role[] = ["MD"];
 
 /**
- * No tick reaches these, so the permission screen hides them. Projects and
- * Plots are MD's alone (owner, 16 Oct 2026). Administration is MD's menu, so
- * staff, permission and merge work stays there — a tick would open nothing and
- * would let one account hand itself more. The last two are never checked
- * outside MD's own paths, so a tick for them would do nothing.
+ * No tick reaches these, so the permission screen hides them. Making and
+ * editing Projects and Plots are ticks (owner, 24 Nov 2026; MD's alone since
+ * 16 Oct), but releasing a Project and deleting a Plot stay MD's. Administration
+ * is MD's menu, so staff, permission and merge work stays there — a tick would
+ * open nothing and would let one account hand itself more. The last two are
+ * never checked outside MD's own paths, so a tick for them would do nothing.
  */
 export const MD_ONLY_ACTIONS: readonly Action[] = [
-  "PROJECT_SETUP",
-  "PLOT_SETUP",
+  "PROJECT_RELEASE",
+  "PLOT_DELETE",
   "STAFF_MANAGE",
   "STAFF_EMERGENCY_DISABLE",
   "ROLE_PERMISSION_MANAGE",
@@ -204,7 +216,9 @@ export function can(role: Role, action: Action, granted: readonly string[]): boo
   return granted.includes(action);
 }
 
-export function canViewField(role: Role, field: SensitiveField): boolean {
+/** `granted` matters only for the mobile number, the one field MD may tick open. */
+export function canViewField(role: Role, field: SensitiveField, granted: readonly string[] = []): boolean {
+  if (field === "MOBILE_FULL" && granted.includes("MOBILE_FULL_VIEW")) return true;
   return FIELD_ACCESS[field].includes(role);
 }
 
@@ -304,8 +318,11 @@ export const ACTION_GROUPS = [
       "HOLD_REQUEST_REVIEW",
       "PLOT_RESTRICTION_MANAGE",
       "PLOT_MAKE_AVAILABLE",
+      "PROJECT_VIEW",
       "PROJECT_SETUP",
+      "PROJECT_RELEASE",
       "PLOT_SETUP",
+      "PLOT_DELETE",
       "PLC_SNAPSHOT_CORRECT",
     ],
   },
@@ -352,7 +369,7 @@ export const ACTION_GROUPS = [
   },
   {
     group: "Members and customers",
-    actions: ["MEMBER_ACTIVATE", "MEMBER_DEACTIVATE", "PERSON_DETAILS_EDIT", "PERSON_MERGE"],
+    actions: ["MEMBER_ACTIVATE", "MEMBER_DEACTIVATE", "PERSON_DETAILS_EDIT", "MOBILE_FULL_VIEW", "PERSON_MERGE"],
   },
   {
     group: "Tasks and reports",
@@ -376,8 +393,11 @@ export const ACTION_LABELS: Record<Action, string> = {
   HOLD_REQUEST_REVIEW: "Approve or reject hold requests",
   PLOT_RESTRICTION_MANAGE: "Block a plot from sale, or unblock it",
   PLOT_MAKE_AVAILABLE: "Put a plot back on sale",
-  PROJECT_SETUP: "Create and edit projects",
-  PLOT_SETUP: "Create and edit plots",
+  PROJECT_VIEW: "See Projects",
+  PROJECT_SETUP: "Create and edit projects (a new one stays Unreleased until MD releases it)",
+  PROJECT_RELEASE: "Release a project, change its status, or put it on the Public Portal",
+  PLOT_SETUP: "Create and edit plots, and Prepare Inventory",
+  PLOT_DELETE: "Delete a plot",
   PLC_SNAPSHOT_CORRECT: "Correct a locked location charge",
   BOOKING_REQUEST_SUBMIT: "Send a booking for approval",
   BOOKING_DECIDE: "Approve or reject a booking",
@@ -408,13 +428,14 @@ export const ACTION_LABELS: Record<Action, string> = {
   MEMBER_ACTIVATE: "Add Members and edit their details",
   MEMBER_DEACTIVATE: "Turn a Member off",
   PERSON_DETAILS_EDIT: "Edit a customer's or member's details",
+  MOBILE_FULL_VIEW: "See full mobile numbers",
   PERSON_MERGE: "Join two records of the same person",
   TASK_CREATE: "Add tasks",
   TASK_COMPLETE: "Mark tasks as done",
   WORK_REASSIGN: "Hand someone's open work to another staff member",
   // Every page this opens is named, so unticking it is never a surprise
-  // (owner, 24 Nov 2026: "See reports" alone hid that it opens Projects).
-  REPORT_VIEW: "See Projects, Buyback / Resale, Calculator and Reports",
+  // (owner, 24 Nov 2026: "See reports" alone hid that it opened Projects).
+  REPORT_VIEW: "See Buyback / Resale, Calculator and Reports",
   REPORT_EXPORT: "Download reports",
   AUDIT_VIEW: "See the history of who did what",
   STAFF_MANAGE: "Add staff and reset passwords",
@@ -449,15 +470,15 @@ export function isAction(value: string): value is Action {
 
 /**
  * What the Administration screen shows about protected data. Deliberately
- * read-only: an extra grant names an Action, and `canViewField` never consults
- * extra grants, so Aadhaar, PAN and bank move only when the role moves. One
- * mistaken checkbox must not be able to open a protected value (PRD RD-05).
+ * read-only: `canViewField` consults no tick for these, so Aadhaar, PAN and
+ * bank move only when the role moves. One mistaken checkbox must not be able
+ * to open a protected value (PRD RD-05). The mobile number is not listed: it is
+ * the "See full mobile numbers" tick (owner, 24 Nov 2026).
  */
 export const SENSITIVE_FIELDS: readonly { field: SensitiveField; label: string }[] = [
   { field: "AADHAAR_FULL", label: "Aadhaar in full" },
   { field: "PAN_FULL", label: "PAN in full" },
   { field: "BANK_FULL", label: "Bank account in full" },
-  { field: "MOBILE_FULL", label: "Mobile number in full" },
   { field: "BUYER_IDENTITY", label: "Buyer identity" },
 ];
 

@@ -9,7 +9,7 @@ import { portalLinks, projectRowView } from "./row-view";
 export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
-  const actor = await requireStaff("REPORT_VIEW");
+  const actor = await requireStaff("PROJECT_VIEW");
   const projects = await listProjects();
   const links = portalLinks(projects);
 

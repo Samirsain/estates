@@ -102,7 +102,7 @@ export default async function ProjectDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const actor = await requireStaff("REPORT_VIEW");
+  const actor = await requireStaff("PROJECT_VIEW");
   const { id } = await params;
 
   const [projects, byStatus, commissionVersions, plotOptions] = await Promise.all([
@@ -147,7 +147,11 @@ export default async function ProjectDetailPage({
             Back to Projects
           </Link>
           {can(actor.role, "PROJECT_SETUP", actor.extraPermissions) && (
-            <ProjectActions project={projectRowView(project, links)} canEditCommission={actor.role === "MD"} />
+            <ProjectActions
+              project={projectRowView(project, links)}
+              canEditCommission={actor.role === "MD"}
+              canRelease={can(actor.role, "PROJECT_RELEASE", actor.extraPermissions)}
+            />
           )}
         </div>
 

@@ -107,7 +107,7 @@ export default async function CustomerDetailPage({
   // business off it, so they read it whole (PRD RD-05 covers the encrypted
   // values only — this one is a mask, not a protection).
   const contact = (value: string) =>
-    canViewField(actor.role, "MOBILE_FULL") ? value : maskMobile(value);
+    canViewField(actor.role, "MOBILE_FULL", actor.extraPermissions) ? value : maskMobile(value);
 
   const customer = await db.customerProfile.findUnique({
     where: { id },
@@ -393,7 +393,7 @@ export default async function CustomerDetailPage({
                 person={{
                   fullName: customer.person.fullName,
                   // Whole only for MOBILE_FULL; otherwise blank, the mask as a hint.
-                  ...(canViewField(actor.role, "MOBILE_FULL")
+                  ...(canViewField(actor.role, "MOBILE_FULL", actor.extraPermissions)
                     ? { mobile: customer.person.primaryMobile, altMobile: customer.person.altMobile ?? "" }
                     : {
                         mobile: "",

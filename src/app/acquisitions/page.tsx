@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function AcquisitionsPage() {
   const actor = await requireStaff("REPORT_VIEW");
   // MD and Admin read a contact number whole; everyone else gets the mask.
-  const fullMobile = canViewField(actor.role, "MOBILE_FULL");
+  const fullMobile = canViewField(actor.role, "MOBILE_FULL", actor.extraPermissions);
 
   const [acquisitions, buybackable, people, resaleGroups] = await Promise.all([
     db.acquisition.findMany({

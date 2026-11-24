@@ -249,7 +249,7 @@ export async function updatePlotDetailsAction(
 
 /** Owner, 23 Nov 2026 — MD deletes a Plot nothing else uses, for good. */
 export async function deletePlotAction(plotId: string, reason: string, key: string): Promise<ActionResult> {
-  const actor = await requireStaff("PLOT_SETUP");
+  const actor = await requireStaff("PLOT_DELETE");
   try {
     const result = await deletePlot({
       idempotencyKey: key,

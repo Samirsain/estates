@@ -31,10 +31,13 @@ import { OPEN_COMMISSION_FORM } from "./commission-settings";
 export default function ProjectActions({
   project,
   canEditCommission,
+  canRelease,
 }: {
   project: ProjectRowView;
   /** MD prepares commission versions; the item opens that form on this page. */
   canEditCommission: boolean;
+  /** MD: Change status (release) and the Public Portal (owner, 24 Nov 2026). */
+  canRelease: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = React.useState<"EDIT" | "PLC" | "STATUS" | null>(null);
@@ -74,12 +77,14 @@ export default function ProjectActions({
                   <Layers className="mr-2 h-3.5 w-3.5" /> PLC versions
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onSelect={() => setOpen("STATUS")}>Change status</DropdownMenuItem>
+              {canRelease && (
+                <DropdownMenuItem onSelect={() => setOpen("STATUS")}>Change status</DropdownMenuItem>
+              )}
               {/* Every Project is on the Public Project Portal unless removed
                   here (owner, 29 Oct 2026); a resale group has no Plots to show.
                   No confirmation line: the item's own wording flipping between
                   Add and Remove says it worked. Only a failure is shown. */}
-              {!project.isExternalResaleGroup && (
+              {canRelease && !project.isExternalResaleGroup && (
                 <DropdownMenuItem
                   disabled={busy}
                   onSelect={async () => {
