@@ -156,7 +156,11 @@ export async function prepareInventory(args: {
       // Active is refused, so every Plot needed its own Make Available click.
       // Not Yet Released is not a restriction anybody chose; it is the absence
       // of a release this Project already granted.
-      const releasedOnArrival = project.status === "ACTIVE";
+      //
+      // MD's Plots only: anyone else's wait Not Yet Released for MD, even in an
+      // Active Project — a tick to add Plots is not a tick to put them on sale
+      // (owner, 24 Nov 2026). They are released with Make Available.
+      const releasedOnArrival = project.status === "ACTIVE" && args.actorRole === "MD";
       const startStatus = releasedOnArrival ? ("AVAILABLE" as const) : ("NOT_AVAILABLE" as const);
       const startRestriction = releasedOnArrival ? ("NONE" as const) : ("NOT_YET_RELEASED" as const);
 

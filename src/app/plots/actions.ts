@@ -199,7 +199,7 @@ export async function prepareInventoryAction(
       ok: true,
       message: result.released
         ? `${result.count} Plot(s) prepared and Available — the Project is already Active.`
-        : `${result.count} Plot(s) prepared as Not Available — Not Yet Released.`,
+        : `${result.count} Plot(s) prepared as Not Available — Not Yet Released until MD releases them.`,
     };
   } catch (error) {
     return toResult(error);
