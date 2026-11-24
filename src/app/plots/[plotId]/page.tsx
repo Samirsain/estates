@@ -297,6 +297,11 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
     } catch (error) {
       plcIssue = error instanceof Error ? error.message : "PLC could not be worked out";
     }
+  } else {
+    // No published PLC version charges nothing, and says so as 0, not a blank:
+    // the card and the Plot's position (East Facing, Corner…) still show
+    // (owner, 24 Nov 2026; CR-028 had hidden both).
+    plc = { total: "0.00", components: [] };
   }
 
   // Areas read to two decimals (owner, 18 Nov 2026); num is for road widths.
@@ -486,7 +491,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
      rules have not moved says nothing. */
   const frozen = current?.plcSnapshot ?? hold?.plcSnapshot ?? null;
   const frozenPercent = frozen ? frozen.totalPercent.toFixed(2) : null;
-  const frozenDiffers = Boolean(plc && frozenPercent && frozenPercent !== plc.total);
+  const frozenDiffers = Boolean(version && plc && frozenPercent && frozenPercent !== plc.total);
 
   // The first action this status allows is the one button. Beside it, only a
   // Restriction menu (Not for Sale, Pledge) and Edit Plot Details (owner,
@@ -843,8 +848,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-1 lg:grid-rows-[auto_1fr]">
             {/* What the sides earn, and the sentence they add up to. */}
-            {/* CR-028 — PLC is optional: a Project without a published version shows no PLC card. */}
-            {version && (
             <Section title={plc ? `PLC · ${plc.total}%` : "PLC"} icon={<Percent className="h-3.5 w-3.5" />}>
               {plc ? (
                 plc.components.length === 0 ? (
@@ -877,7 +880,6 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 </p>
               )}
             </Section>
-            )}
 
             <Section title="Completion" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
               {completion ? (

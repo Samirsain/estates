@@ -424,8 +424,9 @@ function derivePreview(
     ? { areaSqFt: conv(areas.areaSqFt), areaSqYd: conv(areas.areaSqYd), areaSqM: conv(areas.areaSqM) }
     : { areaSqFt: "—", areaSqYd: "—", areaSqM: "—" };
 
+  // No PLC configured charges nothing (owner, 24 Nov 2026).
   if (components.length === 0) {
-    return { ...measured, plc: "—", issue: null };
+    return { ...measured, plc: formatPercent("0"), issue: null };
   }
 
   // A Road whose width has not been typed yet is unfinished, not wrong. The
@@ -1339,25 +1340,27 @@ export default function PlotsClient({
                         action buttons were leaving empty.
 
                         plcIssue stays: that is not a detail, it is the reason
-                        there is no charge at all. */}
+                        there is no charge at all.
+
+                        The position comes from the sides alone, so it shows
+                        with or without a PLC version (owner, 24 Nov 2026). */}
                     <td className="px-3 py-2 text-center text-xs">
-                      {plot.plc ? (
-                        // One of the thirty names a position can have, not a
-                        // phrase assembled per row: the column is read down.
-                        // Every line is a name from the same catalogue — PARK
-                        // FACING is not a footnote to NORTH-WEST CORNER, so it
-                        // is not set smaller than it.
-                        locationChargeLabel(plot.boundaries as Boundary[]).map((line) => (
-                          <span key={line} className="block font-semibold text-foreground">
-                            {line}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-[11px] text-amber-800">{plot.plcIssue}</span>
-                      )}
+                      {/* One of the thirty names a position can have, not a
+                          phrase assembled per row: the column is read down.
+                          Every line is a name from the same catalogue — PARK
+                          FACING is not a footnote to NORTH-WEST CORNER, so it
+                          is not set smaller than it. */}
+                      {locationChargeLabel(plot.boundaries as Boundary[]).map((line) => (
+                        <span key={line} className="block font-semibold text-foreground">
+                          {line}
+                        </span>
+                      ))}
+                      {plot.plcIssue && <span className="block text-[11px] text-amber-800">{plot.plcIssue}</span>}
                     </td>
                     <td className="px-3 py-2 text-center text-sm font-semibold tabular-nums">
-                      {plot.plc ? `${Number(plot.plc.totalPercent).toFixed(2)}%` : "—"}
+                      {/* No PLC version charges nothing: 0, not a dash. A dash
+                          is left for a charge that could not be worked out. */}
+                      {plot.plc ? `${Number(plot.plc.totalPercent).toFixed(2)}%` : plot.plcIssue ? "—" : "0.00%"}
                     </td>
                     <td className="w-px whitespace-nowrap py-2 pl-3 pr-2">
                       {/* Three calls to action only (owner, 28 Oct 2026): Make
