@@ -317,8 +317,8 @@ export type Component = {
 export type CommissionInput = {
   soldByType: "THREE_PERCENT_CLUB" | "MEMBER" | "CUSTOMER";
   soldByPersonId: string | null;
-  /** The Primary Customer — the commercial buyer of this Booking. */
-  buyerPersonId: string;
+  /** The Primary Customer — the commercial buyer of this Booking; null until one is added (owner, 24 Nov 2026). */
+  buyerPersonId: string | null;
   /**
    * v2.1 §20 — the Primary Customer is an Active Member, frozen with the
    * Booking Request. A Customer who later activates keeps their earlier
@@ -421,7 +421,7 @@ export function generateCommission(input: CommissionInput): CommissionOutcome {
   };
 
   /* v2.1 §20 — the Primary Customer is an Active Member: Direct at 100%, nothing else. */
-  if (input.buyerIsActiveMember) {
+  if (input.buyerIsActiveMember && input.buyerPersonId) {
     if (input.soldByType !== "MEMBER" || input.soldByPersonId !== input.buyerPersonId) {
       return {
         ok: false,
@@ -452,7 +452,9 @@ export function generateCommission(input: CommissionInput): CommissionOutcome {
   }
 
   /* v2.1 §23 — 3% Club: a repeat purchase earns Loyalty for the buyer; a first earns nothing. */
-  return settled(input.buyerHasPriorPurchase ? loyalty(input.buyerPersonId, "REPEAT_PURCHASE_CUSTOMER") : []);
+  return settled(
+    input.buyerHasPriorPurchase && input.buyerPersonId ? loyalty(input.buyerPersonId, "REPEAT_PURCHASE_CUSTOMER") : []
+  );
 }
 
 export function totalOf(components: readonly { percent: Numeric }[]): Decimal {

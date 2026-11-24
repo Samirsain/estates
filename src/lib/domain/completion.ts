@@ -192,8 +192,6 @@ export function validateMergeRequest(survivor: MergeSide, merged: MergeSide): Ch
 }
 
 /**
- * PRD §22 — open positions may temporarily exceed three after a merge. Nothing
- * is cancelled; the existing three-position rule in `holds.ts` already refuses
- * the next Hold or Request until the Person is back within the limit, so no
- * second limit lives here.
+ * PRD §22 — a merge cancels nothing. There is no per-Customer position limit
+ * to exceed (CR-032, 24 Nov 2026).
  */

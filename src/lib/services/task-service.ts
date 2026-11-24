@@ -200,7 +200,7 @@ export async function taskSubjects(
     fullName: string;
     memberProfile: { memberId: string } | null;
     customerProfile: { customerId: string } | null;
-  }) => ({
+  } | null) => !person ? { partyRef: null, partyName: null, partyPersonId: null } : ({
     partyRef: person.memberProfile?.memberId ?? person.customerProfile?.customerId ?? null,
     partyName: person.fullName,
     // An id on the row, so the Member or Customer ID printed in it opens the

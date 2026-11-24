@@ -365,6 +365,10 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
           ? "View Delivery"
           : "Open Booking";
     actions.push({ label, href: booking });
+    // CR-029 — a Plot booked before its buyer is known takes the Customer here.
+    if (!current.primaryPersonId && allowed("BOOKING_REQUEST_SUBMIT") && current.status !== "DELIVERED") {
+      actions.push({ label: "Add Customer", href: `${booking}?open=ADD_CUSTOMER` });
+    }
 
     // Each of these opens the Booking page's own form on this Booking, under
     // the same rule its button there follows. Delivered offers none of them.
@@ -382,6 +386,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
     // Final buyers and the route, in the one form Plot Inventory already has.
     if (
       current.status === "PAYMENT_COMPLETED" &&
+      // Allotment and Registry wait for the buyer (CR-029).
+      current.primaryPersonId &&
       allowed("FINAL_BUYER_RECORD") &&
       allowed("COMPLETION_RECORD")
     ) {
@@ -516,7 +522,9 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   // Everything that has held, asked for or bought this Plot, in one table: the
   // live deal first, then what is waiting on it, then the past, newest first.
   type DealRow = { key: string; what: React.ReactNode; who: React.ReactNode; outcome: React.ReactNode; at: Date };
-  const who = (person: { id: string; fullName: string; customerProfile?: { customerId: string } | null; memberProfile?: { memberId: string } | null }) => {
+  const who = (person: { id: string; fullName: string; customerProfile?: { customerId: string } | null; memberProfile?: { memberId: string } | null } | null) => {
+    // CR-029 — booked before the buyer is known.
+    if (!person) return <Badge variant="warning">Customer Pending</Badge>;
     const code = person.customerProfile?.customerId ?? person.memberProfile?.memberId;
     return (
       <span className="block">
@@ -544,7 +552,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
         </Link>
       ),
       // ID and name only (owner, 28 Oct 2026); shares and mobiles are the Booking page's.
-      who: current.parties.map((p) => <span key={p.id}>{who(p.person)}</span>),
+      who: current.parties.length ? current.parties.map((p) => <span key={p.id}>{who(p.person)}</span>) : who(null),
       // The status, and the payment received under it.
       outcome: (
         <>
@@ -772,7 +780,9 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
               <Stat
                 label="In the name of"
                 value={
-                  holder ? (
+                  holder && !holder.person ? (
+                    <Badge variant="warning">Customer Pending</Badge>
+                  ) : holder?.person ? (
                     <>
                       <PersonLink
                         personId={holder.person.id}
@@ -830,6 +840,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-1 lg:grid-rows-[auto_1fr]">
             {/* What the sides earn, and the sentence they add up to. */}
+            {/* CR-028 — PLC is optional: a Project without a published version shows no PLC card. */}
+            {version && (
             <Section title={plc ? `PLC · ${plc.total}%` : "PLC"} icon={<Percent className="h-3.5 w-3.5" />}>
               {plc ? (
                 plc.components.length === 0 ? (
@@ -862,6 +874,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
                 </p>
               )}
             </Section>
+            )}
 
             <Section title="Completion" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
               {completion ? (

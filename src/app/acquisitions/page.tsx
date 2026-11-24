@@ -66,11 +66,16 @@ export default async function AcquisitionsPage() {
         payCommission: can(actor.role, "COMMISSION_PROCESS", actor.extraPermissions),
       }}
       rows={acquisitions.map(toAcquisitionRow)}
-      buybackable={buybackable.map((b) => ({
-        id: b.id,
-        label: `${b.bookingNumber ?? "Booking Request"} · ${b.project.name} ${b.plot.plotNumber} · ${b.primaryPerson.fullName}`,
-        primaryPersonId: b.primaryPersonId,
-      }))}
+      // A Booking with no Customer yet has no seller to buy back from (CR-029).
+      buybackable={buybackable.flatMap((b) =>
+        b.primaryPerson && b.primaryPersonId
+          ? [{
+              id: b.id,
+              label: `${b.bookingNumber ?? "Booking Request"} · ${b.project.name} ${b.plot.plotNumber} · ${b.primaryPerson.fullName}`,
+              primaryPersonId: b.primaryPersonId,
+            }]
+          : []
+      )}
       people={people.map((p) => ({
         id: p.id,
         fullName: p.fullName,

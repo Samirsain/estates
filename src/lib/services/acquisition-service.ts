@@ -4,6 +4,7 @@
 // but stays a separate dataset throughout: Payment Given entries never mix with
 // Payment Received, and no rupee value is stored anywhere here.
 
+import { selfReviewRefused } from "@/lib/security/permissions";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
@@ -192,6 +193,8 @@ export async function createAcquisition(args: {
         if (!["BOOKED", "PAYMENT_COMPLETED", "DELIVERED"].includes(booking.status)) {
           blocked("A Buyback applies to an approved Booking.");
         }
+        // CR-029 — the seller of a Buyback is the Booking's buyer.
+        if (!booking.primaryPersonId) blocked("Add the Customer to this Booking before a Buyback.");
 
         await lockPlot(tx, booking.plotId);
         plotId = booking.plotId;
@@ -514,7 +517,7 @@ export async function correctPaymentGiven(args: {
       });
       if (original.status !== "CONFIRMED") blocked("This entry has already been superseded.");
       // PRD §11.2 — maker and checker must differ on a money correction.
-      if (original.confirmedByRef === args.actorRef) {
+      if (selfReviewRefused(original.confirmedByRef, args.actorRef, args.actorRole)) {
         blocked("A Payment Given correction must be made by a different staff account.");
       }
 
@@ -797,7 +800,7 @@ export async function decideAcquisition(args: {
         blocked(`This acquisition is ${acquisition.status.replaceAll("_", " ").toLowerCase()}.`);
       }
       // PRD §3.3 — the account that raised it may not decide it.
-      if (acquisition.submittedByRef === args.actorRef) {
+      if (selfReviewRefused(acquisition.submittedByRef, args.actorRef, args.actorRole)) {
         blocked("An acquisition must be decided by a different staff account.");
       }
 

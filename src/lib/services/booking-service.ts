@@ -2,6 +2,7 @@
 // Primary Customer change.
 // prd-corrections.md §9, §11, §12, §13; design.md §10; architecture.md §6.2, §7.
 
+import { selfReviewRefused } from "@/lib/security/permissions";
 import type { Prisma, SoldByType } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
@@ -15,11 +16,9 @@ import {
   validateShares,
   type BookingRejectReason,
 } from "@/lib/domain/booking";
-import { checkOpenPositions } from "@/lib/domain/holds";
 import { canAllocate, plotReturnState, type PlotRestriction } from "@/lib/domain/inventory";
 import { CommandError, blocked, lockBooking, lockPlot, nextReference, runCommand, type Tx } from "./command";
 import { freezePlcSnapshot, loadPlotForPlc, type PlotForPlc } from "./plc-service";
-import { countOpenPositions } from "./hold-service";
 import { relinkAfterSoldByCorrection, syncRoyaltyLink } from "./network-service";
 import {
   freezeAtSubmission,
@@ -83,6 +82,31 @@ function primaryOf(parties: readonly BookingPartyInput[]): BookingPartyInput {
   const primaries = parties.filter((p) => p.role === "PRIMARY");
   if (primaries.length !== 1) blocked("Exactly one Primary Customer is required on a Booking.");
   return primaries[0];
+}
+
+/**
+ * Owner, 24 Nov 2026 (CR-029) — a Plot may be booked before its buyer is known,
+ * as long as a Member is booking it: no Customer row, no placeholder Person.
+ * With buyers, the usual rules: one Primary, shares totalling 100.
+ */
+function checkBuyers(parties: readonly BookingPartyInput[], soldByType: SoldByType) {
+  if (parties.length === 0) {
+    if (soldByType !== "MEMBER") {
+      blocked("Add the Customer, or set Sold By to the Member booking this Plot. Only a Member may book without a Customer.");
+    }
+    return;
+  }
+  primaryOf(parties);
+  const shares = validateShares(parties.map((p) => ({ personId: p.personId, sharePercent: p.sharePercent })));
+  if (!shares.ok) blocked(shares.reason);
+}
+
+/** The refusal for a step that needs the buyer, on a Booking still waiting for one. */
+function needsCustomer<T extends { primaryPersonId: string | null }>(
+  booking: T,
+  step: string
+): asserts booking is T & { primaryPersonId: string } {
+  if (!booking.primaryPersonId) blocked(`Add the Customer to this Booking before ${step}.`);
 }
 
 /** Reuses the Hold's frozen snapshot, or freezes the current PLC version. */
@@ -180,9 +204,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
   // Exactly one Primary, shares total 100 — structural checks that never
   // depend on a personId, so they run before a first-time buyer's Person even
   // exists. The resolved list is looked up again inside the transaction below.
-  primaryOf(input.parties);
-  const shares = validateShares(input.parties.map((p) => ({ personId: p.personId, sharePercent: p.sharePercent })));
-  if (!shares.ok) blocked(shares.reason);
+  checkBuyers(input.parties, input.soldByType);
 
   const dated = validateBookingDate(input.bookingDate, input.bookingDateReason);
   if (!dated.ok) blocked(dated.reason);
@@ -208,7 +230,8 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
       const plot = await loadPlotForPlc(tx, input.plotId);
 
       const parties = await resolveParties(tx, input.parties);
-      const primary = parties.find((p) => p.role === "PRIMARY")!;
+      // Undefined while the Plot is booked with no Customer yet (CR-029).
+      const primary = parties.find((p) => p.role === "PRIMARY");
 
       // A Booking Request starts from an Available Plot or from this buyer's own
       // live Hold. Anything else means the Plot is already committed.
@@ -217,7 +240,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
         hold = await tx.hold.findUniqueOrThrow({ where: { id: input.holdId } });
         if (hold.status !== "ACTIVE") blocked("This Hold is no longer active. Create a new Hold first.");
         if (hold.plotId !== input.plotId) blocked("The Hold is on a different Plot.");
-        if (hold.personId !== primary.personId) {
+        if (hold.personId !== primary?.personId) {
           blocked("The Hold is held for a different Customer. Cancel it or book for the Customer on the Hold.");
         }
         if (hold.expiresAt.getTime() <= Date.now()) {
@@ -236,16 +259,8 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
         projectId: plot.projectId,
         soldByType: input.soldByType,
         soldByPersonId: input.soldByPersonId ?? null,
-        buyerPersonId: primary.personId,
+        buyerPersonId: primary?.personId ?? null,
       });
-
-      // PRD §8.2 — the three-position limit is checked before the Plot moves.
-      // The Hold being converted is already counted, so it is not counted twice.
-      const positions = await countOpenPositions(tx, primary.personId);
-      const room = checkOpenPositions(
-        hold ? { ...positions, activeHolds: Math.max(0, positions.activeHolds - 1) } : positions
-      );
-      if (!room.ok) blocked(room.reason);
 
       for (const party of parties) await ensureCustomerProfile(tx, party.personId);
 
@@ -257,7 +272,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
           requestNo,
           projectId: plot.projectId,
           plotId: input.plotId,
-          primaryPersonId: primary.personId,
+          primaryPersonId: primary?.personId ?? null,
           soldByType: input.soldByType,
           soldByPersonId: input.soldByPersonId ?? null,
           bookingDate: input.bookingDate,
@@ -265,7 +280,8 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
           remark: input.remark ?? null,
           enquiryId: input.enquiryId ?? null,
           holdId: hold?.id ?? null,
-          plcSnapshotId: snapshot.id,
+          // PLC is optional (CR-028): a Project without a published version freezes none.
+          plcSnapshotId: snapshot?.id ?? null,
           commissionVersionId: frozen.commissionVersionId,
           royaltyTokensPerAward: frozen.royaltyTokensPerAward,
           originalClassification: frozen.originalClassification,
@@ -309,7 +325,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
             projectId: plot.projectId,
             plotId: input.plotId,
             parties,
-            plc: { totalPercent: snapshot.totalPercent.toFixed(4), components: snapshot.components },
+            plc: { totalPercent: snapshot?.totalPercent.toFixed(4) ?? null, components: snapshot?.components ?? null },
             soldByType: input.soldByType,
             soldByPersonId: input.soldByPersonId ?? null,
             bookingDate: input.bookingDate,
@@ -364,7 +380,7 @@ export async function submitBookingRequest(input: SubmitBookingInput) {
           entity: "Booking",
           entityId: booking.id,
           action: "BOOKING_REQUEST_SUBMITTED",
-          after: { requestNo, plotId: input.plotId, primaryPersonId: primary.personId },
+          after: { requestNo, plotId: input.plotId, primaryPersonId: primary?.personId ?? null },
           reason: input.remark,
         },
       };
@@ -395,9 +411,7 @@ export async function reviseBookingRequest(args: {
   if (!args.reason.trim()) blocked("A compulsory reason is required to send a corrected Booking Request.");
   // Exactly one Primary, shares total 100 — checked on the unresolved list; a
   // first-time buyer's personId is resolved inside the transaction below.
-  primaryOf(args.parties);
-  const shares = validateShares(args.parties.map((p) => ({ personId: p.personId, sharePercent: p.sharePercent })));
-  if (!shares.ok) blocked(shares.reason);
+  checkBuyers(args.parties, args.soldByType);
   const dated = validateBookingDate(args.bookingDate, args.bookingDateReason);
   if (!dated.ok) blocked(dated.reason);
 
@@ -420,20 +434,14 @@ export async function reviseBookingRequest(args: {
       }
 
       const parties = await resolveParties(tx, args.parties);
-      const primary = parties.find((p) => p.role === "PRIMARY")!;
+      const primary = parties.find((p) => p.role === "PRIMARY");
 
       // A corrected request that names another Primary is checked as a new
-      // submission would be: the Hold it converts must be that buyer's, and
-      // the buyer's three-position limit applies (PRD §8.2).
-      if (primary.personId !== booking.primaryPersonId) {
-        if (booking.holdId) {
-          const hold = await tx.hold.findUniqueOrThrow({ where: { id: booking.holdId } });
-          if (hold.personId !== primary.personId) {
-            blocked("The Hold is held for a different Customer. Cancel it or book for the Customer on the Hold.");
-          }
-        } else {
-          const room = checkOpenPositions(await countOpenPositions(tx, primary.personId));
-          if (!room.ok) blocked(room.reason);
+      // submission would be: the Hold it converts must be that buyer's.
+      if (booking.holdId) {
+        const hold = await tx.hold.findUniqueOrThrow({ where: { id: booking.holdId } });
+        if (hold.personId !== primary?.personId) {
+          blocked("The Hold is held for a different Customer. Cancel it or book for the Customer on the Hold.");
         }
       }
 
@@ -450,7 +458,7 @@ export async function reviseBookingRequest(args: {
         projectId: booking.projectId,
         soldByType: args.soldByType,
         soldByPersonId: args.soldByPersonId ?? null,
-        buyerPersonId: primary.personId,
+        buyerPersonId: primary?.personId ?? null,
       });
 
       // The superseded version stays in History exactly as submitted (PRD §9.1).
@@ -488,7 +496,7 @@ export async function reviseBookingRequest(args: {
       await tx.booking.update({
         where: { id: args.bookingId },
         data: {
-          primaryPersonId: primary.personId,
+          primaryPersonId: primary?.personId ?? null,
           soldByType: args.soldByType,
           soldByPersonId: args.soldByPersonId ?? null,
           bookingDate: args.bookingDate,
@@ -636,7 +644,10 @@ function decideInTransaction(args: Parameters<typeof decideBookingRequest>[0]) {
       // PRD §3.3 — the account that submitted may not be the account that
       // decides. Whoever sent the corrected version submitted it too: checked
       // against the first submitter only, the reviser approved their own work.
-      if (booking.submittedByRef === args.actorRef || review.submittedByRef === args.actorRef) {
+      if (
+        selfReviewRefused(booking.submittedByRef, args.actorRef, args.actorRole) ||
+        selfReviewRefused(review.submittedByRef, args.actorRef, args.actorRole)
+      ) {
         blocked("A Booking Request must be decided by a different staff account.");
       }
       const decision = { decidedByRef: args.actorRef, decidedAt: new Date(), decisionNote: args.note };
@@ -1045,6 +1056,7 @@ export async function changeOwnershipShares(args: {
     async (tx) => {
       await lockBooking(tx, args.bookingId);
       const booking = await tx.booking.findUniqueOrThrow({ where: { id: args.bookingId } });
+      needsCustomer(booking, "changing ownership shares — Add Customer sets the first buyers and their shares");
 
       if (booking.status === "DELIVERED") {
         blocked("Ownership shares cannot be changed after Delivered. Use an exceptional audited correction.");
@@ -1106,6 +1118,119 @@ export async function changeOwnershipShares(args: {
   );
 }
 
+/* ------------------------------------------------- Add Customer (CR-029) */
+
+/** The Bookings a Customer may still be added to: live, and not yet handed over. */
+const CUSTOMER_ADDABLE = ["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED"];
+
+/**
+ * Owner, 24 Nov 2026 (CR-029) — the buyers of a Plot booked before they were
+ * known. They go on the same Booking: its number, date, Plot, Member, payments,
+ * history and commission records all stay, and nothing is created twice. What
+ * waited for a buyer runs now: the classification freezes from the buyer's
+ * standing today, and on an approved Booking the Royalty link, the Trip credits
+ * and the commission engine run again — generateForBooking keeps a record that
+ * has not changed, so a Member's Direct commission is never written twice.
+ */
+export async function addBookingCustomer(args: {
+  idempotencyKey: string;
+  actorRef: string;
+  actorRole: string;
+  bookingId: string;
+  parties: BookingPartyInput[];
+}) {
+  if (args.parties.length === 0) blocked("Choose the Customer to add.");
+  primaryOf(args.parties);
+  const shares = validateShares(args.parties.map((p) => ({ personId: p.personId, sharePercent: p.sharePercent })));
+  if (!shares.ok) blocked(shares.reason);
+
+  return runCommand(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "BOOKING_CUSTOMER_ADD",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { bookingId: args.bookingId, parties: args.parties },
+    },
+    async (tx) => {
+      await lockBooking(tx, args.bookingId);
+      const booking = await tx.booking.findUniqueOrThrow({ where: { id: args.bookingId } });
+      if (booking.primaryPersonId) {
+        blocked("This Booking already has its Customer. Use Change Primary Customer or Change ownership shares.");
+      }
+      if (!CUSTOMER_ADDABLE.includes(booking.status)) {
+        blocked("A Customer is added only to a live Booking that is not yet Delivered.");
+      }
+      const free = assertProcessFree(booking.activeProcess, "Add Customer");
+      if (!free.ok) blocked(free.reason);
+
+      const parties = await resolveParties(tx, args.parties);
+      const primary = parties.find((p) => p.role === "PRIMARY")!;
+
+      for (const party of parties) await ensureCustomerProfile(tx, party.personId);
+      const buyer = await tx.memberProfile.findUnique({
+        where: { personId: primary.personId },
+        select: { status: true },
+      });
+      await tx.booking.update({
+        where: { id: args.bookingId },
+        data: {
+          primaryPersonId: primary.personId,
+          // AC-01 — frozen from the buyer's standing when they are first known.
+          originalClassification: buyer?.status === "ACTIVE" ? "MEMBER" : "CUSTOMER",
+          loyaltySubjectDeactivated: await loyaltySubjectDeactivated(tx, {
+            soldByType: booking.soldByType,
+            soldByPersonId: booking.soldByPersonId,
+            buyerPersonId: primary.personId,
+          }),
+          parties: {
+            create: parties.map((p) => ({
+              personId: p.personId,
+              role: p.role,
+              sharePercent: p.sharePercent ?? null,
+              changeReason: "Customer added to the Booking",
+              actorRef: args.actorRef,
+            })),
+          },
+        },
+      });
+
+      // A buyer who contradicts the Sold By (an Active Member booked under
+      // another Member) is refused here, and everything above rolls back.
+      const commission = await previewCommission(tx, args.bookingId);
+      if (!commission.ok) blocked(commission.conflict);
+
+      if (booking.bookingNumber) {
+        await syncRoyaltyLink(tx, primary.personId, args.actorRef);
+        await syncTripForBooking(tx, args.bookingId, args.actorRef);
+        await generateForBooking(tx, args.bookingId, args.actorRef);
+        await reassessCommission(tx, args.bookingId, args.actorRef);
+      }
+
+      const added = parties.map((p) => ({ personId: p.personId, role: p.role, sharePercent: p.sharePercent ?? null }));
+      await tx.bookingEvent.create({
+        data: {
+          bookingId: args.bookingId,
+          actorRef: args.actorRef,
+          action: "BOOKING_CUSTOMER_ADDED",
+          detail: { parties: added },
+        },
+      });
+
+      return {
+        result: { bookingId: args.bookingId, primaryPersonId: primary.personId },
+        audit: {
+          entity: "Booking",
+          entityId: args.bookingId,
+          action: "BOOKING_CUSTOMER_ADDED",
+          before: { primaryPersonId: null },
+          after: { primaryPersonId: primary.personId, parties: added },
+        },
+      };
+    }
+  );
+}
+
 /* -------------------------------------------------- Primary Customer change */
 
 /** PRD §12.3 — the old Customer stays official until Accounts approves. */
@@ -1136,6 +1261,7 @@ export async function requestPrimaryCustomerChange(args: {
       if (!["BOOKED", "PAYMENT_COMPLETED"].includes(booking.status)) {
         blocked("Change Primary Customer applies to an approved Booking.");
       }
+      needsCustomer(booking, "changing it — use Add Customer");
       const free = assertProcessFree(booking.activeProcess, "Change Primary Customer");
       if (!free.ok) blocked(free.reason);
       if (args.toPersonId === booking.primaryPersonId) {
@@ -1232,7 +1358,7 @@ export async function decidePrimaryCustomerChange(args: {
         where: { bookingId: args.bookingId, status: "PENDING" },
       });
       if (!request) blocked("There is no Primary Customer change waiting for a decision.");
-      if (request.requestedByRef === args.actorRef) {
+      if (selfReviewRefused(request.requestedByRef, args.actorRef, args.actorRole)) {
         blocked("A Primary Customer change must be approved by a different staff account.");
       }
 
@@ -1365,6 +1491,10 @@ export async function requestSoldByCorrection(args: {
         booking.soldByType === args.toSoldByType &&
         (booking.soldByPersonId ?? null) === (args.toSoldByPersonId ?? null);
       if (unchanged) blocked("The proposed attribution is the same as the current one.");
+      // CR-029 — a Booking with no Customer yet stands on its Member.
+      if (!booking.primaryPersonId && args.toSoldByType !== "MEMBER") {
+        blocked("This Booking has no Customer yet, so Sold By stays a Member. Add the Customer first.");
+      }
 
       // The same closer rules the Booking itself enforces (PRD §6.7, §11.3).
       await validateSoldBy(tx, args.toSoldByType, args.toSoldByPersonId ?? null, { sale: true });

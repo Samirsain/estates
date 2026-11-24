@@ -4,6 +4,7 @@
 // Person stays as a searchable historical reference and its old IDs move to the
 // survivor's legacy list.
 
+import { selfReviewRefused } from "@/lib/security/permissions";
 import { validateMergeRequest } from "@/lib/domain/completion";
 import { CREDIT_REASON } from "@/lib/domain/trip";
 import type { CustomerProfile, MemberProfile, TripCredit } from "@prisma/client";
@@ -200,7 +201,7 @@ export async function decidePersonMerge(args: {
         where: { id: args.requestId },
       });
       if (request.status !== "PENDING") blocked("This merge has already been decided.");
-      if (request.requestedByRef === args.actorRef) {
+      if (selfReviewRefused(request.requestedByRef, args.actorRef, args.actorRole)) {
         blocked("A merge must be decided by a different account from the one that raised it.");
       }
 

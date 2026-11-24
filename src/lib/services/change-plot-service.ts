@@ -5,6 +5,7 @@
 // frozen at submission; on rejection that snapshot is discarded and both Plots
 // go back exactly as they were.
 
+import { selfReviewRefused } from "@/lib/security/permissions";
 import { Prisma } from "@prisma/client";
 import type { PlotStatus } from "@prisma/client";
 import {
@@ -37,13 +38,15 @@ type RestoreSnapshot = {
 };
 
 /** Freezes the replacement Plot's current PLC, or reuses this buyer's Hold snapshot. */
-async function freezeReplacementPlc(tx: Tx, plotId: string, personId: string) {
+async function freezeReplacementPlc(tx: Tx, plotId: string, personId: string | null) {
   // PRD §5.3 — if the same Customer already held that Plot, the Hold PLC
-  // snapshot is the one that carries.
-  const hold = await tx.hold.findFirst({
-    where: { plotId, personId, status: { in: ["ACTIVE", "FROZEN"] }, plcSnapshotId: { not: null } },
-    orderBy: { createdAt: "desc" },
-  });
+  // snapshot is the one that carries. A Booking with no Customer yet has no Hold.
+  const hold = personId
+    ? await tx.hold.findFirst({
+        where: { plotId, personId, status: { in: ["ACTIVE", "FROZEN"] }, plcSnapshotId: { not: null } },
+        orderBy: { createdAt: "desc" },
+      })
+    : null;
   if (hold?.plcSnapshotId) {
     return tx.plcSnapshot.findUniqueOrThrow({ where: { id: hold.plcSnapshotId } });
   }
@@ -81,11 +84,14 @@ export async function submitChangePlot(args: {
       if (!free.ok) blocked(free.reason);
 
       const toPlot = await tx.plot.findUniqueOrThrow({ where: { id: args.toPlotId } });
+      // A Booking with no Customer yet (owner, 24 Nov 2026) has no Hold of its own.
+      const buyer = booking.primaryPersonId;
       const heldBySameCustomer =
+        !!buyer &&
         (await tx.hold.count({
           where: {
             plotId: args.toPlotId,
-            personId: booking.primaryPersonId,
+            personId: buyer,
             status: { in: ["ACTIVE", "FROZEN"] },
           },
         })) > 0;
@@ -111,7 +117,7 @@ export async function submitChangePlot(args: {
           toPlotId: args.toPlotId,
           remark: args.remark,
           requestedByRef: args.actorRef,
-          replacementPlcSnapshotId: snapshot.id,
+          replacementPlcSnapshotId: snapshot?.id ?? null,
           restoreSnapshot: {
             bookingStatus: booking.status,
             fromPlotStatus: booking.plot.status,
@@ -133,9 +139,9 @@ export async function submitChangePlot(args: {
       // The buyer's own Hold on the replacement is frozen, as a Booking Request
       // freezes one. Left Active, it expired mid-review and released the Plot
       // as Available: sold to someone else, then booked to this buyer as well.
-      const ownHold = await tx.hold.findFirst({
-        where: { plotId: args.toPlotId, personId: booking.primaryPersonId, status: "ACTIVE" },
-      });
+      const ownHold = buyer
+        ? await tx.hold.findFirst({ where: { plotId: args.toPlotId, personId: buyer, status: "ACTIVE" } })
+        : null;
       if (ownHold) {
         await tx.hold.update({
           where: { id: ownHold.id },
@@ -186,7 +192,7 @@ export async function submitChangePlot(args: {
       });
 
       return {
-        result: { requestId: request.id, plcSnapshotId: snapshot.id },
+        result: { requestId: request.id, plcSnapshotId: snapshot?.id ?? null },
         audit: {
           entity: "Booking",
           entityId: args.bookingId,
@@ -240,7 +246,7 @@ export async function decideChangePlot(args: {
         where: { bookingId: args.bookingId, status: "PENDING" },
       });
       if (!request) blocked("There is no Change Plot waiting for the Accounts decision.");
-      if (request.requestedByRef === args.actorRef) {
+      if (selfReviewRefused(request.requestedByRef, args.actorRef, args.actorRole)) {
         blocked("A Change Plot must be decided by a different staff account.");
       }
 
@@ -297,9 +303,11 @@ export async function decideChangePlot(args: {
           data: { status: snapshot.fromPlotStatus },
         });
         // The buyer's Hold frozen at submission runs again with the time it had.
-        const frozen = await tx.hold.findFirst({
-          where: { plotId: request.toPlotId, personId: booking.primaryPersonId, status: "FROZEN" },
-        });
+        const frozen = booking.primaryPersonId
+          ? await tx.hold.findFirst({
+              where: { plotId: request.toPlotId, personId: booking.primaryPersonId, status: "FROZEN" },
+            })
+          : null;
         if (frozen) {
           await tx.hold.update({
             where: { id: frozen.id },
@@ -446,7 +454,7 @@ export async function decideChangePlot(args: {
       });
 
       // Any Hold this buyer had on the replacement is now consumed by the move.
-      await tx.hold.updateMany({
+      if (booking.primaryPersonId) await tx.hold.updateMany({
         where: {
           plotId: request.toPlotId,
           personId: booking.primaryPersonId,

@@ -198,7 +198,9 @@ export async function syncTripForBooking(tx: Tx, bookingId: string, actorRef: st
   });
   const introduced = owner;
   const qualified = live && ["QUALIFIED", "ALLOCATED", "USED"].includes(live.state);
-  const thirdParty = booking.primaryPersonId !== booking.soldByPersonId;
+  // No Customer yet (owner, 24 Nov 2026): whether it is a third-party sale is
+  // not known, so the Reference Credit waits for the Customer to be added.
+  const thirdParty = booking.primaryPersonId !== null && booking.primaryPersonId !== booking.soldByPersonId;
   const refEligible = !!(live && qualified && thirdParty && introduced?.invitedByMemberId);
   // A Sold By Correction to another Member moves the sale: the credit earned
   // through the old seller (their inviter's, their opportunity) is reversed so

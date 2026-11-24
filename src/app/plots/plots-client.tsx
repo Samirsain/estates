@@ -1551,6 +1551,7 @@ export default function PlotsClient({
           row={dialog.row}
           detail={bookingDetail}
           selfRef={staffRef}
+          selfIsMd={role === "MD"}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(input) =>
@@ -1770,7 +1771,7 @@ export default function PlotsClient({
             </p>
             <p className="mt-1 text-muted-foreground">
               {dialog.approve
-                ? "Approval creates a 72-hour Hold for the named buyer and freezes the Plot's PLC snapshot. The buyer's three open Plot positions are re-checked now."
+                ? "Approval creates a 72-hour Hold for the named buyer and freezes the Plot's PLC snapshot."
                 : "The remark is shown to the Member. The Plot stays as it is."}
             </p>
           </div>

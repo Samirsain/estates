@@ -71,7 +71,7 @@ export function runHoldExpiry(now: Date = new Date()): Promise<JobResult> {
 
 /**
  * PRD §8.4, §18 — a Pending Member Hold Request expires on the working-day
- * cut-off calendar. Expired requests stop counting toward the three-position limit.
+ * cut-off calendar.
  */
 export function runHoldRequestExpiry(now: Date = new Date()): Promise<JobResult> {
   return withRun("MEMBER_HOLD_REQUEST_EXPIRY", async () => {

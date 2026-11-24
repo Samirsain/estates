@@ -61,7 +61,8 @@ export async function runReport(
         where: {
           ...(filters.projectId ? { projectId: filters.projectId } : {}),
           ...(at ? { bookingDate: at } : {}),
-          primaryPerson: NOT_MERGED_AWAY,
+          // A Booking with no Customer yet (CR-029) is still a Booking.
+          OR: [{ primaryPersonId: null }, { primaryPerson: NOT_MERGED_AWAY }],
         },
         include: { project: true, plot: true, primaryPerson: true },
         orderBy: { bookingDate: "desc" },
@@ -71,8 +72,12 @@ export async function runReport(
         status: b.status,
         project: b.project.name,
         plotNumber: b.plot.plotNumber,
-        customer: b.primaryPerson.fullName,
-        primaryMobile: options.fullMobile ? b.primaryPerson.primaryMobile : maskMobile(b.primaryPerson.primaryMobile),
+        customer: b.primaryPerson?.fullName ?? "Customer Pending",
+        primaryMobile: !b.primaryPerson
+          ? ""
+          : options.fullMobile
+            ? b.primaryPerson.primaryMobile
+            : maskMobile(b.primaryPerson.primaryMobile),
         bookingDate: b.bookingDate,
         paymentReceivedPercent: b.paymentReceivedPercent.toFixed(2),
       }));

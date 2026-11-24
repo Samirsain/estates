@@ -19,7 +19,7 @@ import { maskAadhaar, maskMobile, maskPan } from "@/lib/security/identity";
 import { eligibilityLabel, experienceSince, payoutStep, recoveryStep, type PayoutFix } from "@/lib/domain/commission";
 import { dealsInLabel, experienceLabel } from "@/lib/domain/member-business";
 import { adjustmentsWaiting } from "@/lib/services/recovery-service";
-import { formatIst, formatIstDateTime, istDay } from "@/lib/tasks";
+import { formatIst, formatIstDateTime, formatPlotSize, istDay } from "@/lib/tasks";
 import { auditHistory, mergeHistory, newestFirst } from "@/lib/profile-history";
 import { TYPE_LABEL } from "@/app/acquisitions/types";
 import { AppShell } from "@/components/app-shell";
@@ -400,6 +400,7 @@ export default async function MemberDetailPage({
 
   const experience = experienceSince(member.activationDate);
   const canPayCommission = can(actor.role, "COMMISSION_PROCESS", actor.extraPermissions);
+  const canAddCustomer = can(actor.role, "BOOKING_REQUEST_SUBMIT", actor.extraPermissions);
   const adjusting = await adjustmentsWaiting(commissions.map((c) => c.id));
   const canDeactivate = can(actor.role, "MEMBER_DEACTIVATE", actor.extraPermissions);
   const may = (p: Parameters<typeof can>[1]) => can(actor.role, p, actor.extraPermissions);
@@ -484,8 +485,9 @@ export default async function MemberDetailPage({
       plot: b.plot.plotNumber,
       plotId: b.plot.id as string | null,
       project: projectLabel(b.project),
-      buyer: b.primaryPerson.customerProfile?.customerId ?? b.primaryPerson.fullName,
-      buyerId: b.primaryPerson.id,
+      // CR-029 — booked before the buyer is known: no buyer to link yet.
+      buyer: b.primaryPerson?.customerProfile?.customerId ?? b.primaryPerson?.fullName ?? "Customer Pending",
+      buyerId: (b.primaryPerson?.id ?? null) as string | null,
       condition: REQUEST_WORDS[b.status] ?? words(b.status),
       // The REQ number is off the screens (ID Guide §5): Plot, buyer and date say which.
       ref: null as string | null,
@@ -603,8 +605,11 @@ export default async function MemberDetailPage({
     plotId: string | null;
     plotNumber: string;
     plotType: string | null;
-    person: { id: string; fullName: string; customerProfile: { customerId: string } | null };
+    /** Null on a Booking whose Customer is not known yet (CR-029): shown as Customer Pending. */
+    person: { id: string; fullName: string; customerProfile: { customerId: string } | null } | null;
     personRole: string | null;
+    /** Plot size, on a Booking this Member sold. */
+    plotSize?: string | null;
     status: string;
     /** A Buyback or Resale's own status ("Approved"), on the line under it. */
     statusSub?: string;
@@ -623,6 +628,7 @@ export default async function MemberDetailPage({
       plotType: b.plot.plotType as string | null,
       person: b.primaryPerson,
       personRole: null,
+      plotSize: formatPlotSize(b.plot.widthFt?.toString() ?? null, b.plot.lengthFt?.toString() ?? null),
       status: statusWords(b.status),
       payment: `${b.paymentReceivedPercent.toString()}% received`,
       lines: linesOn(b.id),
@@ -771,16 +777,32 @@ export default async function MemberDetailPage({
                   {d.plotType && <span className="text-muted-foreground"> · {titleWords(d.plotType)}</span>}
                 </span>
                 <span className="block text-[11px] font-medium text-foreground">{d.project}</span>
+                {d.plotSize && <span className={SUB}>{d.plotSize}</span>}
               </td>
               <td className={TD}>
-                <PersonLink
-                  personId={d.person.id}
-                  name={d.person.customerProfile?.customerId ?? d.person.fullName}
-                  className="font-semibold"
-                />
-                <span className={SUB}>
-                  {[d.person.customerProfile ? d.person.fullName : null, d.personRole].filter(Boolean).join(" · ")}
-                </span>
+                {d.person ? (
+                  <>
+                    <PersonLink
+                      personId={d.person.id}
+                      name={d.person.customerProfile?.customerId ?? d.person.fullName}
+                      className="font-semibold"
+                    />
+                    <span className={SUB}>
+                      {[d.person.customerProfile ? d.person.fullName : null, d.personRole].filter(Boolean).join(" · ")}
+                    </span>
+                  </>
+                ) : (
+                  // CR-029 — the Customer is not known yet. This is who it is
+                  // for, not where the Booking stands: Status says that.
+                  <>
+                    <Badge variant="warning">Customer Pending</Badge>
+                    {canAddCustomer && (
+                      <Link href={`${d.href}?open=ADD_CUSTOMER`} className="mt-1 block font-semibold text-primary hover:underline">
+                        Add Customer
+                      </Link>
+                    )}
+                  </>
+                )}
               </td>
               <td className={`${TD} font-medium`}>
                 {d.status}
@@ -1221,7 +1243,7 @@ export default async function MemberDetailPage({
                         {" · "}
                         {r.project} · for{" "}
                       </span>
-                      <PersonLink personId={r.buyerId} name={r.buyer} />
+                      {r.buyerId ? <PersonLink personId={r.buyerId} name={r.buyer} /> : <Badge variant="warning">{r.buyer}</Badge>}
                     </span>
                     <span className="text-[11px] text-muted-foreground sm:text-right">
                       {r.ref && `${r.ref} · `}

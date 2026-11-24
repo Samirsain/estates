@@ -34,6 +34,7 @@ import {
   PermissionError,
   assertDifferentActor,
   assertPermission,
+  selfReviewRefused,
   can,
   canViewField,
   refuseStaffAccountFor,
@@ -193,6 +194,14 @@ assert.ok(!canViewField("CRM", "MOBILE_FULL"), "a contact number stays masked be
 
 assert.throws(() => assertDifferentActor("STF-1", "STF-1"), /different staff accounts/);
 assert.doesNotThrow(() => assertDifferentActor("STF-1", "STF-2"));
+
+// CR-030 (24 Nov 2026) — MD decides its own requests; every other role still needs a second account.
+for (const role of ["ACCOUNTS", "CRM", "PC"]) assert.ok(selfReviewRefused("CRM-1", "CRM-1", role), `${role} cannot approve itself`);
+assert.ok(!selfReviewRefused("MD", "MD", "MD"), "MD approves its own request");
+assert.ok(!selfReviewRefused("CRM-1", "MD", "MD"), "MD approves another role's request");
+assert.ok(!selfReviewRefused("CRM-1", "ACC-1", "ACCOUNTS"), "a different account may decide");
+assert.ok(selfReviewRefused("MD", "MD", "md"), "the exemption is the exact session role, not a look-alike");
+assert.doesNotThrow(() => assertDifferentActor("MD", "MD", "MD"));
 
 /* ----------------------------------------------------------- idempotency */
 

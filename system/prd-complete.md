@@ -924,19 +924,9 @@ Dashboard task remains Pending until Hold is booked or cancelled.
 - A direct Available-Plot request returns to Available on rejection.
 - Expired Hold cannot be submitted for Booking.
 
-## 10.6 Maximum open Plot positions
+## 10.6 Maximum open Plot positions — removed
 
-Maximum **three open Plot positions per actual Customer** across all Projects.
-
-Count together:
-
-- Active Holds
-- Waiting for Booking Approval
-- Pending Member Hold Requests linked to that Customer
-
-A Member may request Holds for many different genuine Customers.
-
-An authorised Admin/MD exception for a genuine multi-Plot buyer requires a reason and audit.
+> **Superseded by [CR-032](./change-requests/CR-028-to-CR-032-owner-rulings-24-nov-2026.md) (owner, 24 Nov 2026).** There is **no limit** on how many Plots one Customer may hold, request or book, in one Project or across Projects, and no MD exception for it. Each Plot stays protected on its own: one live Booking per Plot, and only an Available Plot (or the buyer's own Hold) can be committed.
 
 ## 10.7 Member Hold Requests
 
@@ -2970,17 +2960,11 @@ When Payment Received correction reduces progress below a commission milestone:
 - Every Hold and Member Hold Request must identify the actual Customer/Person at creation.
 - Anonymous Member Holds are not allowed.
 - If the Member is personally buying, use the Member's linked Customer capability.
-- The three-open-position rule is checked before Hold/Request creation.
+- ~~The three-open-position rule is checked before Hold/Request creation.~~ Removed by [CR-032](./change-requests/CR-028-to-CR-032-owner-rulings-24-nov-2026.md).
 
-### 8.2 Maximum open Plot positions
+### 8.2 Maximum open Plot positions — removed
 
-Maximum three per actual Person/Customer across all Projects, counting:
-
-- Active Holds
-- Waiting for Booking Approval
-- Pending Member Hold Requests
-
-Admin/MD exception requires reason and audit.
+> **Superseded by [CR-032](./change-requests/CR-028-to-CR-032-owner-rulings-24-nov-2026.md) (owner, 24 Nov 2026).** No per-Customer limit and no MD exception.
 
 ### 8.3 Duplicate Hold Requests
 
@@ -3346,7 +3330,7 @@ The combined **Make Available & Hold** action is removed because it was not sepa
 Use two authorised actions:
 
 1. Make Available, with compulsory reason and History.
-2. Hold, with Customer selection and three-position validation.
+2. Hold, with Customer selection (no position limit — [CR-032](./change-requests/CR-028-to-CR-032-owner-rulings-24-nov-2026.md)).
 
 ---
 
@@ -3599,7 +3583,7 @@ In addition to the Version 3.0 tests, the vendor must prove:
 5. Active Member cannot be selected as Customer closer.
 6. Sold By correction supersedes old commission and creates adjustment work when paid.
 7. Payment correction below milestone changes Paid/Paid Early to Accounts Adjustment Required.
-8. Member Hold requires actual Customer and cannot bypass three-position limit.
+8. Member Hold requires actual Customer. (The three-position limit is removed — [CR-032](./change-requests/CR-028-to-CR-032-owner-rulings-24-nov-2026.md).)
 9. Member Hold Request expires using the working-day cut-off.
 10. Hold extension approval after expiry cannot revive the old Hold.
 11. Change Plot freezes replacement PLC and applies manual Accounts percentage.
@@ -3665,6 +3649,25 @@ Real transactions must not go live until:
 12. Company controls hosting, repository, domain, backups and production credentials.
 
 ---
+
+## 27A. Change Requests of 24 November 2026
+
+Implemented on the owner's written instruction; the formal fields are in
+[CR-028 to CR-032](./change-requests/CR-028-to-CR-032-owner-rulings-24-nov-2026.md).
+Each supersedes only the rule it names.
+
+- **CR-028 — PLC Version is optional.** A Project with no published PLC version
+  holds, books and changes Plots with no PLC snapshot. A Project with PLC is unchanged.
+- **CR-029 — Booking without a Customer.** A Plot may be booked under a Member
+  (Sold By Member) before its Customer is known; no placeholder Customer is
+  created. Add Customer later puts the buyer on the same Booking. Royalty,
+  repeat-purchase Loyalty and the buyer's classification wait for the Customer;
+  Allotment and Registry need one.
+- **CR-030 — MD authority.** MD's own requests are approved at once as MD, and
+  maker-checker is lifted for MD only. Every other role keeps it.
+- **CR-031 — + Add City** on the booking and other Customer/Member forms, with
+  case-insensitive duplicate protection.
+- **CR-032 — No limit on Plots per Customer.** Sections 10.6 and Part B 8.2 are removed.
 
 ## 28. Final Implementation Instruction
 

@@ -45,12 +45,15 @@ export type PlotForPlc = Awaited<ReturnType<typeof loadPlotForPlc>>;
  * keeps the deduplicated breakdown and, for each charged category, the sides
  * that qualified it — the side evidence §7.1 requires, so a later boundary
  * correction can never change how a frozen record reads.
+ *
+ * PLC is optional (owner, 24 Nov 2026): a Project with no published version
+ * freezes nothing and the Hold, Booking or Change Plot carries no snapshot.
  */
 export async function freezePlcSnapshot(tx: Tx, plotOrId: string | PlotForPlc) {
   const plot = typeof plotOrId === "string" ? await loadPlotForPlc(tx, plotOrId) : plotOrId;
   const plotId = plot.id;
   const version = plot.project.plcRuleVersions[0];
-  if (!version) blocked("The Project has no current PLC rule version. Complete Project setup first.");
+  if (!version) return null;
 
   let snapshot: ReturnType<typeof buildPlcSnapshot>;
   try {

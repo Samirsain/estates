@@ -1,4 +1,4 @@
-// Holds, Member Hold Requests and the three-open-position limit.
+// Holds and Member Hold Requests.
 // prd-corrections.md §8; design.md §9. All times are Asia/Kolkata.
 
 import { istDay, istInstant } from "../tasks.ts";
@@ -14,39 +14,10 @@ export function isHoldExpired(expiresAt: Date, now: Date = new Date()): boolean 
   return expiresAt.getTime() <= now.getTime();
 }
 
-/* ------------------------------------------------- three open positions */
-
-export const MAX_OPEN_POSITIONS = 3;
-
-export type OpenPositions = {
-  activeHolds: number;
-  waitingBookingApproval: number;
-  pendingHoldRequests: number;
-};
-
-/**
- * PRD §8.2 — maximum three open Plot positions per actual Person across all
- * Projects. Expired requests stop counting (PRD §8.4).
- */
-export function openPositionCount(positions: OpenPositions): number {
-  return positions.activeHolds + positions.waitingBookingApproval + positions.pendingHoldRequests;
-}
-
-export type PositionCheck = { ok: true } | { ok: false; reason: string };
-
-export function checkOpenPositions(positions: OpenPositions): PositionCheck {
-  const count = openPositionCount(positions);
-  if (count < MAX_OPEN_POSITIONS) return { ok: true };
-  return {
-    ok: false,
-    // DESIGN §5.4 — say what is blocked, why, and who can resolve it.
-    reason:
-      `Booking cannot proceed because the Customer already has ${count} open Plot positions ` +
-      `(${positions.activeHolds} Hold, ${positions.waitingBookingApproval} Waiting for Booking Approval, ` +
-      `${positions.pendingHoldRequests} Pending Hold Request). Review existing Holds/Requests or ` +
-      `request an MD exception.`,
-  };
-}
+/* No limit on how many Plots one Customer holds, asks for or books: the
+   three-open-position rule and its MD exception are gone (owner, 24 Nov 2026,
+   CR-032). Each Plot is still protected on its own — canAllocate, the Plot
+   lock and one_active_booking_per_plot. */
 
 /* ---------------------------------------------------------- extensions */
 

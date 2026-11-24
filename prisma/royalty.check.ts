@@ -369,7 +369,7 @@ async function main() {
     actorRef: CRM,
     actorRole: "CRM",
     bookingId: fresh,
-    parties: [{ personId: (await db.booking.findUniqueOrThrow({ where: { id: fresh } })).primaryPersonId, role: "PRIMARY" }],
+    parties: [{ personId: (await db.booking.findUniqueOrThrow({ where: { id: fresh } })).primaryPersonId!, role: "PRIMARY" }],
     soldByType: "THREE_PERCENT_CLUB",
     bookingDate: today,
     schedule: [

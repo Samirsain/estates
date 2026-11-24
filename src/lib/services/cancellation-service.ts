@@ -5,6 +5,7 @@
 // restriction-aware rule, adding no RESALE tag. Rejection restores the exact
 // previous Booking, Plot, payment, commission and task state.
 
+import { selfReviewRefused } from "@/lib/security/permissions";
 import type { BookingStatus, PlotStatus } from "@prisma/client";
 import { canTransition } from "@/lib/domain/booking";
 import { plotReturnState } from "@/lib/domain/inventory";
@@ -61,7 +62,7 @@ export async function decideCancellation(args: {
       });
       if (!request) blocked("There is no cancellation waiting for the Accounts decision.");
       // PRD §3.3 — the account that raised it may not decide it.
-      if (request.requestedByRef === args.actorRef) {
+      if (selfReviewRefused(request.requestedByRef, args.actorRef, args.actorRole)) {
         blocked("A cancellation must be decided by a different staff account.");
       }
 

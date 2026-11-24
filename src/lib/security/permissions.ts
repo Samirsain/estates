@@ -226,10 +226,17 @@ export function assertPermission(role: Role, action: Action, granted: readonly s
 
 /**
  * Maker-checker separation (PRD §11.2, ARCHITECTURE §3.3): the account that
- * submitted a protected change may not be the account that approves it.
+ * submitted a protected change may not be the account that approves it — for
+ * every role except MD. MD is the highest authority and decides its own
+ * requests (owner, 24 Nov 2026, CR-030). The role is the signed-in session's,
+ * never a tick, so no other account can pick this up.
  */
-export function assertDifferentActor(makerRef: string, checkerRef: string): void {
-  if (makerRef === checkerRef) {
+export function selfReviewRefused(makerRef: string | null | undefined, checkerRef: string, checkerRole: string): boolean {
+  return makerRef === checkerRef && !FULL_ACCESS.includes(checkerRole as Role);
+}
+
+export function assertDifferentActor(makerRef: string, checkerRef: string, checkerRole = ""): void {
+  if (selfReviewRefused(makerRef, checkerRef, checkerRole)) {
     throw new Error("Maker and checker must be different staff accounts.");
   }
 }

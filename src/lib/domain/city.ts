@@ -65,6 +65,28 @@ export function cleanCity(input: Partial<CityFields>): { ok: true; city: CityFie
   return { ok: true, city };
 }
 
+/** Where a city sits: the part of a City row that is not the city itself. */
+export type CityState = Pick<CityOption, "stateName" | "stateCode" | "countryName" | "countryCode">;
+
+/**
+ * The state a city added from a form goes under (owner, 24 Nov 2026, CR-031):
+ * the one chosen, matched by name in any case, else the state most cities on
+ * the list are in. Null when nothing matches — an unknown state, or a list
+ * with no city yet — so the caller says what to do instead of guessing a code.
+ */
+export function pickCityState(
+  onList: readonly (CityState & { cities: number })[],
+  wanted?: string | null
+): CityState | null {
+  const name = tidy(wanted).toLowerCase();
+  const pick = name
+    ? onList.find((s) => s.stateName.toLowerCase() === name)
+    : [...onList].sort((a, b) => b.cities - a.cities || a.stateName.localeCompare(b.stateName))[0];
+  return pick
+    ? { stateName: pick.stateName, stateCode: pick.stateCode, countryName: pick.countryName, countryCode: pick.countryCode }
+    : null;
+}
+
 export const CITY_CSV_HEADER = [
   "City ID",
   "City Name",

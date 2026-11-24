@@ -20,6 +20,7 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { instalmentStatus, type BookingRejectReason } from "@/lib/domain/booking";
 import { CommandError } from "@/lib/services/command";
 import {
+  addBookingCustomer,
   cancelBooking,
   changeOwnershipShares,
   decideBookingRequest,
@@ -91,6 +92,33 @@ async function holdForMd(
   revalidatePath("/customers");
   return { ok: true, message };
 }
+
+/**
+ * Owner, 24 Nov 2026 (CR-030) — MD's own request waits for nobody. It is raised
+ * and then decided at once as MD, so the approval record names MD as the
+ * approving authority. The raise has committed by then: a refused decision
+ * leaves it waiting on the Booking for MD, and says why. Null for every other
+ * role, whose request goes to its approver as before. Not exported.
+ */
+async function mdDecidesNow(
+  actor: { role: string },
+  what: string,
+  decide: () => Promise<unknown>
+): Promise<ActionResult | null> {
+  if (actor.role !== "MD") return null;
+  try {
+    await decide();
+    return null;
+  } catch (error) {
+    refresh();
+    return {
+      ok: false,
+      error: `${what} is saved but not confirmed: ${actionErrorText(error)} It is waiting on this Booking for your decision.`,
+    };
+  }
+}
+
+const MD_NOTE = "Confirmed directly by MD.";
 
 /** MD's decision on a payment step that waits for approval (Booking and Buyback pages). */
 export async function decidePaymentApprovalAction(
@@ -171,7 +199,7 @@ export async function submitBookingRequestAction(
 ): Promise<ActionResult> {
   const actor = await requireStaff("BOOKING_REQUEST_SUBMIT");
   try {
-    await submitBookingRequest({
+    const submitted = await submitBookingRequest({
       idempotencyKey: key,
       actorRef: actor.staffAccountId,
       actorRole: actor.role,
@@ -186,12 +214,24 @@ export async function submitBookingRequestAction(
       remark: input.remark || null,
       schedule: toSchedule(input.schedule),
     });
+    const refused = await mdDecidesNow(actor, "The Booking", () =>
+      decideBookingRequest({
+        idempotencyKey: `${key}:md`,
+        actorRef: actor.staffAccountId,
+        actorRole: actor.role,
+        bookingId: submitted.bookingId,
+        approve: true,
+        note: MD_NOTE,
+      })
+    );
+    if (refused) return refused;
     refresh();
     return {
       ok: true,
       message:
-        `Booking Request submitted. The reviewed values are locked and Accounts ` +
-        `has a verification task.`,
+        actor.role === "MD"
+          ? "Booked. The Booking Number is issued and the Plot is Booked."
+          : "Booking Request submitted. The reviewed values are locked and Accounts has a verification task.",
     };
   } catch (error) {
     return toResult(error);
@@ -228,10 +268,24 @@ export async function reviseBookingRequestAction(
       schedule: toSchedule(input.schedule),
       reason: input.reason,
     });
+    const refused = await mdDecidesNow(actor, "The corrected Booking", () =>
+      decideBookingRequest({
+        idempotencyKey: `${key}:md`,
+        actorRef: actor.staffAccountId,
+        actorRole: actor.role,
+        bookingId: input.bookingId,
+        approve: true,
+        note: MD_NOTE,
+      })
+    );
+    if (refused) return refused;
     refresh();
     return {
       ok: true,
-      message: "The corrected request is with Accounts. The earlier one stays in History.",
+      message:
+        actor.role === "MD"
+          ? "Booked. The earlier request stays in History."
+          : "The corrected request is with Accounts. The earlier one stays in History.",
     };
   } catch (error) {
     return toResult(error);
@@ -286,12 +340,34 @@ export async function cancelBookingAction(
       reason,
       remark: remark || null,
     });
+    // MD's cancellation needs nobody's approval. With nothing received it
+    // completes now; with a payment to refund, the refund's Payment Reference
+    // is the information still owed, and MD enters it on the same Booking.
+    const booking = result.refundPending && actor.role === "MD" ? await getBooking(bookingId) : null;
+    if (booking && booking.paymentReceivedPercent.eq(0)) {
+      const refused = await mdDecidesNow(actor, "The cancellation", () =>
+        decideCancellation({
+          idempotencyKey: `${key}:md`,
+          actorRef: actor.staffAccountId,
+          actorRole: actor.role,
+          bookingId,
+          approve: true,
+          note: MD_NOTE,
+          noPaymentReceived: true,
+        })
+      );
+      if (refused) return refused;
+      refresh();
+      return { ok: true, message: "Booking cancelled. The Plot has returned through the restriction-aware rule." };
+    }
     refresh();
     return {
       ok: true,
-      message: result.refundPending
-        ? "Formal cancellation started. The Booking is Refund Pending and Accounts has a verification task."
-        : "Booking Request cancelled. No Refund Pending, and the linked Enquiry stays Active.",
+      message: !result.refundPending
+        ? "Booking Request cancelled. No Refund Pending, and the linked Enquiry stays Active."
+        : actor.role === "MD"
+          ? "Refund Pending. Enter the refund's Payment Reference No. on this Booking to finish the cancellation."
+          : "Formal cancellation started. The Booking is Refund Pending and Accounts has a verification task.",
     };
   } catch (error) {
     return toResult(error);
@@ -394,8 +470,25 @@ export async function reviseScheduleAction(
       lines: toSchedule(input.schedule),
       reason: input.reason,
     });
+    const refused = await mdDecidesNow(actor, "The payment plan change", () =>
+      decideScheduleRevision({
+        idempotencyKey: `${key}:md`,
+        actorRef: actor.staffAccountId,
+        actorRole: actor.role,
+        bookingId: input.bookingId,
+        approve: true,
+        note: MD_NOTE,
+      })
+    );
+    if (refused) return refused;
     refresh();
-    return { ok: true, message: "Revision submitted. Accounts has a verification task." };
+    return {
+      ok: true,
+      message:
+        actor.role === "MD"
+          ? "Payment plan changed. The old schedule stays in History."
+          : "Revision submitted. Accounts has a verification task.",
+    };
   } catch (error) {
     return toResult(error);
   }
@@ -450,6 +543,32 @@ export async function changeOwnershipSharesAction(
   }
 }
 
+/**
+ * CR-029 — the Customer of a Plot booked before they were known, added to the
+ * same Booking. Whoever may send a Booking may complete it.
+ */
+export async function addBookingCustomerAction(
+  input: { bookingId: string; parties: PartyInput[] },
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("BOOKING_REQUEST_SUBMIT");
+  try {
+    await addBookingCustomer({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      bookingId: input.bookingId,
+      parties: await toParties(input.parties),
+    });
+    refresh();
+    revalidatePath("/members");
+    revalidatePath("/customers");
+    return { ok: true, message: "Customer added. Booking Number, date, payments and history are unchanged." };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
 export async function requestPrimaryCustomerChangeAction(
   input: { bookingId: string; toPersonId: string; reason: string },
   key: string
@@ -464,10 +583,24 @@ export async function requestPrimaryCustomerChangeAction(
       toPersonId: input.toPersonId,
       reason: input.reason,
     });
+    const refused = await mdDecidesNow(actor, "The main buyer change", () =>
+      decidePrimaryCustomerChange({
+        idempotencyKey: `${key}:md`,
+        actorRef: actor.staffAccountId,
+        actorRole: actor.role,
+        bookingId: input.bookingId,
+        approve: true,
+        note: MD_NOTE,
+      })
+    );
+    if (refused) return refused;
     refresh();
     return {
       ok: true,
-      message: "Change submitted. The old Customer stays official until Accounts approves.",
+      message:
+        actor.role === "MD"
+          ? "Main buyer changed. Booking Number, Plot and payment carry forward unchanged."
+          : "Change submitted. The old Customer stays official until Accounts approves.",
     };
   } catch (error) {
     return toResult(error);
@@ -1294,8 +1427,11 @@ export async function loadChangePlotOptions(bookingId: string) {
       id: { not: booking.plotId },
       OR: [
         { status: "AVAILABLE" },
-        // A Hold held by the same Customer may be moved onto (PRD §5.3).
-        { holds: { some: { status: "ACTIVE", personId: booking.primaryPersonId } } },
+        // A Hold held by the same Customer may be moved onto (PRD §5.3). A
+        // Booking with no Customer yet has no Hold of its own.
+        ...(booking.primaryPersonId
+          ? [{ holds: { some: { status: "ACTIVE" as const, personId: booking.primaryPersonId } } }]
+          : []),
       ],
     },
     include: { holds: { where: { status: "ACTIVE" }, include: { person: true } } },

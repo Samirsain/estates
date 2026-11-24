@@ -2,6 +2,7 @@
 // task. prd-corrections.md §10, §12, §20, §24; design.md §11.
 // Percentages only — no rupee value is stored or calculated anywhere here.
 
+import { selfReviewRefused } from "@/lib/security/permissions";
 import { Prisma } from "@prisma/client";
 import {
   allocatePayment,
@@ -430,7 +431,7 @@ export async function correctPaymentReceived(args: {
         include: { externalReference: true },
       });
       if (original.status !== "CONFIRMED") blocked("This entry has already been corrected.");
-      if (original.confirmedByRef === args.actorRef) {
+      if (selfReviewRefused(original.confirmedByRef, args.actorRef, args.actorRole)) {
         blocked("A payment correction must be verified by a different staff account.");
       }
 
@@ -726,7 +727,7 @@ export async function decideScheduleRevision(args: {
         include: { instalments: { orderBy: { seq: "asc" } } },
       });
       if (!pending) blocked("There is no schedule revision waiting for a decision.");
-      if (pending.createdByRef === args.actorRef) {
+      if (selfReviewRefused(pending.createdByRef, args.actorRef, args.actorRole)) {
         blocked("A schedule revision must be approved by a different staff account.");
       }
 

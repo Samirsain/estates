@@ -787,7 +787,7 @@ function CreateEnquiryDialog({
                 placeholder="Alternate Mobile (optional)"
                 aria-label="Alternate Mobile"
               />
-              <CityInput inputClassName="h-9 text-xs" name="city" placeholder="City" />
+              <CityInput addable inputClassName="h-9 text-xs" name="city" placeholder="City" />
             </div>
           )}
 

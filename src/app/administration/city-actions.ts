@@ -6,17 +6,113 @@
 // who is signed in.
 
 import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
+import { can, type Action } from "@/lib/security/permissions";
 import { actionErrorText } from "@/lib/action-error";
 import { blocked, runCommand, type Tx } from "@/lib/services/command";
 import { searchCities } from "@/lib/services/city-service";
-import { cityLabel, cleanCity, readCityCsv, suggestCityCode, type CityFields, type CityOption } from "@/lib/domain/city";
+import {
+  cityLabel,
+  cleanCity,
+  pickCityState,
+  readCityCsv,
+  suggestCityCode,
+  type CityFields,
+  type CityOption,
+  type CityState,
+} from "@/lib/domain/city";
 
 export type CityResult = { ok: true; message: string } | { ok: false; error: string };
 
 export async function searchCitiesAction(text: string): Promise<CityOption[]> {
   await requireStaff();
   return searchCities(String(text ?? ""));
+}
+
+/* ----------------------------------------------- + Add City on a form (CR-031) */
+
+const CITY_COLUMNS = { id: true, name: true, code: true, stateName: true, stateCode: true, countryName: true, countryCode: true } as const;
+
+/** The states already on the list, most cities first: the State choice of + Add City. */
+export async function cityStatesAction(): Promise<(CityState & { cities: number })[]> {
+  await requireStaff();
+  const rows = await db.city.groupBy({
+    by: ["stateName", "stateCode", "countryName", "countryCode"],
+    _count: { _all: true },
+  });
+  return rows
+    .map(({ _count, ...state }) => ({ ...state, cities: _count._all }))
+    .sort((a, b) => b.cities - a.cities || a.stateName.localeCompare(b.stateName));
+}
+
+/** Whoever fills in a form that asks for a city may add one from it. */
+const ADDS_CITIES: readonly Action[] = [
+  "BOOKING_REQUEST_SUBMIT",
+  "HOLD_CREATE",
+  "ENQUIRY_MANAGE",
+  "MEMBER_ACTIVATE",
+  "PERSON_DETAILS_EDIT",
+  "STAFF_MANAGE",
+];
+
+export type AddCityResult = { ok: true; city: CityOption; message: string } | { ok: false; error: string };
+
+/**
+ * Owner, 24 Nov 2026 (CR-031) — a city typed on the booking form (and the other
+ * Customer and Member forms) without leaving it, and without an approval. The
+ * spacing is tidied and the name checked as any city's is. A name already on
+ * the list, in any case, is never added twice: an active one is handed back to
+ * be picked, and the database's lower(name) index holds the line in a race.
+ */
+export async function addCityFromFormAction(input: { name: string; stateName?: string }, key: string): Promise<AddCityResult> {
+  const actor = await requireStaff();
+  if (!ADDS_CITIES.some((action) => can(actor.role, action, actor.extraPermissions))) {
+    return { ok: false, error: "Your account cannot add cities. Ask the MD." };
+  }
+  const name = String(input.name ?? "").trim().replace(/\s+/g, " ");
+  if (!name) return { ok: false, error: "Enter the city name." };
+  try {
+    const same = await db.city.findFirst({ where: { name: { equals: name, mode: "insensitive" } }, select: { ...CITY_COLUMNS, active: true } });
+    if (same && !same.active) {
+      return { ok: false, error: `${same.name} is on the list but Inactive. The MD can make it Active under Administration → Cities.` };
+    }
+    if (same) {
+      const { active: _active, ...city } = same;
+      return { ok: true, city, message: `${same.name} is already on the list, so it is selected.` };
+    }
+
+    const state = pickCityState(await cityStatesAction(), input.stateName);
+    if (!state) {
+      return {
+        ok: false,
+        error: input.stateName?.trim()
+          ? "Pick a State from the list. A new State is added by the MD under Administration → Cities."
+          : "The city list is empty. The MD adds the first city under Administration → Cities.",
+      };
+    }
+    const clean = cleanCity({ name, code: "", ...state });
+    if (!clean.ok) return { ok: false, error: clean.error };
+
+    const city = await runCommand(
+      { idempotencyKey: key, operation: "CITY_ADD", actorRef: actor.staffAccountId, actorRole: actor.role, payload: clean.city },
+      async (tx) => {
+        await refuseDuplicate(tx, clean.city);
+        const taken = new Set((await tx.city.findMany({ select: { code: true } })).map((c) => c.code));
+        const code = suggestCityCode(clean.city.name, taken);
+        if (!code) blocked("No free City Code could be made from this name. The MD can add it under Administration → Cities.");
+        const made = await tx.city.create({ data: { ...clean.city, code }, select: CITY_COLUMNS });
+        return {
+          result: made,
+          audit: { entity: "City", entityId: String(made.id), action: "CITY_ADD", after: made, reason: "Added from a form (+ Add City)" },
+        };
+      }
+    );
+    refresh();
+    return { ok: true, city, message: `${cityLabel(city)} added and selected.` };
+  } catch (error) {
+    return { ok: false, error: actionErrorText(error, "The city could not be added. Try again.") };
+  }
 }
 
 /** Refuses a name or code another city already has; `id` is the city being edited. */

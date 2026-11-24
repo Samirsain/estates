@@ -906,7 +906,7 @@ function ActivateMemberDialogForm({
               <Input name="altMobile" {...MOBILE_INPUT} placeholder="Optional" />
             </Field>
             <Field label="City">
-              <CityInput name="city" required inputClassName="uppercase" />
+              <CityInput name="city" required addable inputClassName="uppercase" />
             </Field>
             <Field label="Email (optional)">
               <Input name="email" type="email" placeholder="name@example.com" />

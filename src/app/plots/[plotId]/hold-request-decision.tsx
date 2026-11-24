@@ -42,7 +42,7 @@ export default function HoldRequestDecision({ requestId, buyer }: { requestId: s
         >
           <p className="text-xs text-muted-foreground">
             {approve
-              ? "Approval creates a 72-hour Hold for the named buyer and freezes the Plot's PLC snapshot. The buyer's three open Plot positions are re-checked now."
+              ? "Approval creates a 72-hour Hold for the named buyer and freezes the Plot's PLC snapshot."
               : "The remark is shown to the Member. The Plot stays as it is."}
           </p>
           <form

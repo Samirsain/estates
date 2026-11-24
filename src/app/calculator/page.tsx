@@ -228,7 +228,7 @@ export default async function CalculatorPage({
       soldBy: booking.soldByPerson?.fullName ?? "3% Club",
       soldByType: booking.soldByType,
       soldByPersonId: booking.soldByPersonId,
-      buyerPersonId: booking.primaryPersonId,
+      buyerPersonId: booking.primaryPersonId ?? "",
       paymentReceivedPercent: booking.paymentReceivedPercent.toString(),
     });
     dealByPlot.set(booking.plotId, list);

@@ -14,6 +14,11 @@ Migration impact, Acceptance-test impact, Release target.
 | [CR-005](./CR-005-plc-catalogue-and-derivation.md) | Location Charge components become a fixed catalogue, derived from Plot boundaries | Inventory | Raised, implemented on the owner's instruction — awaiting signature |
 | [CR-006](./CR-006-member-terms-acceptance.md) | Recorded acceptance of the Member Terms and Privacy Notice at portal sign-in | Identity, authentication | Raised, implemented on the owner's instruction — awaiting signature |
 | [CR-007](./CR-007-commission-calculator.md) | A Commission Calculator inside the CRM | Commission — **reopens an express owner exclusion** | Raised, awaiting signature — **not implemented; nothing is built until signed** |
+| [CR-028](./CR-028-to-CR-032-owner-rulings-24-nov-2026.md#cr-028--plc-version-is-optional) | PLC Version is optional | Inventory | Raised, implemented on the owner's instruction (24 Nov 2026) — awaiting signature |
+| [CR-029](./CR-028-to-CR-032-owner-rulings-24-nov-2026.md#cr-029--a-plot-may-be-booked-before-its-customer-is-known) | A Plot may be booked under a Member before its Customer is known; Add Customer later | Inventory, commission | Raised, implemented on the owner's instruction (24 Nov 2026) — awaiting signature |
+| [CR-030](./CR-028-to-CR-032-owner-rulings-24-nov-2026.md#cr-030--md-is-the-highest-authority) | MD needs no other account's approval; maker-checker lifted for MD only | Permissions | Raised, implemented on the owner's instruction (24 Nov 2026) — awaiting signature |
+| [CR-031](./CR-028-to-CR-032-owner-rulings-24-nov-2026.md#cr-031--add-city-on-the-booking-form) | + Add City on the booking and other Customer/Member forms | None — City Master | Raised, implemented on the owner's instruction (24 Nov 2026) — awaiting signature |
+| [CR-032](./CR-028-to-CR-032-owner-rulings-24-nov-2026.md#cr-032--no-limit-on-plots-per-customer) | No limit on Plots per Customer; the three-position rule and its MD exception are removed | Inventory | Raised, implemented on the owner's instruction (24 Nov 2026) — awaiting signature |
 
 **Status meanings**
 

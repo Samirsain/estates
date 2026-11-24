@@ -118,7 +118,10 @@ async function addMemberPerson(tx: Tx, input: NewMemberPerson) {
  *   and a Sold By Correction on the first purchase re-links it (CP §59; see
  *   `relinkAfterSoldByCorrection`).
  */
-export async function syncRoyaltyLink(tx: Tx, personId: string, actorRef: string) {
+export async function syncRoyaltyLink(tx: Tx, personId: string | null, actorRef: string) {
+  // A Booking with no Customer yet has no first purchase to link; Royalty waits
+  // until the Customer is added (owner, 24 Nov 2026).
+  if (!personId) return null;
   const linked = await syncLink(tx, personId, actorRef);
   await syncRoyaltyReward(tx, personId, actorRef);
   return linked;

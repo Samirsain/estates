@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { matchPeople, personLabel } from "./person-search.ts";
-import { cityLabel, citiesToCsv, cleanCity, readCityCsv, suggestCityCode } from "./city.ts";
+import { cityLabel, citiesToCsv, cleanCity, pickCityState, readCityCsv, suggestCityCode } from "./city.ts";
 import { projectSlug, projectSlugs, publicPlotStatus } from "./public-portal.ts";
 import { capPercent, capShare, percentRoom, percentSum, shareRoom, shareSum } from "./shares.ts";
 import {
@@ -51,16 +51,14 @@ import {
 import {
   DEFAULT_CALENDAR,
   HOLD_HOURS,
-  MAX_OPEN_POSITIONS,
-  checkOpenPositions,
   decideExtension,
   extensionRequiresMd,
   holdExpiry,
   holdRequestExpiry,
   isValidExtensionHours,
   isWorkingDay,
-  openPositionCount,
 } from "./holds.ts";
+import * as holdsRules from "./holds.ts";
 import { parseTerms } from "../terms.ts";
 import { isValidAadhaarFormat, isValidPanFormat } from "../security/identity.ts";
 import {
@@ -609,13 +607,8 @@ const start = new Date("2026-08-19T06:00:00Z");
 assert.equal(holdExpiry(start).toISOString(), "2026-08-22T06:00:00.000Z");
 assert.equal(HOLD_HOURS, 72);
 
-assert.equal(openPositionCount({ activeHolds: 1, waitingBookingApproval: 1, pendingHoldRequests: 1 }), 3);
-assert.equal(checkOpenPositions({ activeHolds: 1, waitingBookingApproval: 1, pendingHoldRequests: 0 }).ok, true);
-const blocked = checkOpenPositions({ activeHolds: 2, waitingBookingApproval: 0, pendingHoldRequests: 1 });
-assert.equal(blocked.ok, false);
-assert.match(blocked.ok === false ? blocked.reason : "", /three open Plot positions|3 open Plot positions/);
-assert.match(blocked.ok === false ? blocked.reason : "", /MD exception/);
-assert.equal(MAX_OPEN_POSITIONS, 3);
+// CR-032 (24 Nov 2026) — no per-Customer position limit: the rule is gone, not hidden.
+assert.ok(!["MAX_OPEN_POSITIONS", "checkOpenPositions", "openPositionCount"].some((name) => name in holdsRules));
 
 // First extension is CRM's; any further extension needs MD (PRD §8.5).
 assert.equal(extensionRequiresMd(0), false);
@@ -1074,6 +1067,18 @@ const comps = (o: CommissionOutcome) => {
       `${c.type}|${c.beneficiaryRole}|${c.beneficiaryPersonId}|${c.percent}|${c.milestonePercent}|${c.ruleVersion}`
   );
 };
+
+// CR-029 — booked under a Member before the Customer is known: the Member's
+// Direct stands; nothing customer-dependent is generated.
+assert.deepEqual(
+  comps(generateCommission({ ...base, buyerPersonId: null, soldByType: "MEMBER", soldByPersonId: "seller", terms: T("3", "1") })),
+  ["DIRECT|SELLING_MEMBER|seller|3|25|DIRECT/THIRD_PARTY/V2/3%@25"]
+);
+assert.deepEqual(
+  comps(generateCommission({ ...base, buyerPersonId: null, buyerHasPriorPurchase: true, soldByType: "THREE_PERCENT_CLUB", soldByPersonId: null, terms: T("3", "1") })),
+  [],
+  "no repeat-purchase Loyalty without a buyer"
+);
 
 // Third-party Member sale — Direct at 25%.
 assert.deepEqual(
@@ -3116,6 +3121,16 @@ assert.equal(addDays("", 1), "");
 
 // City Master (owner, 17 Nov 2026) — codes, validation, CSV round trip.
 {
+  // CR-031 — + Add City: the State chosen in any case, else the one most cities are in.
+  const states = [
+    { stateName: "Punjab", stateCode: "PB", countryName: "India", countryCode: "IN", cities: 2 },
+    { stateName: "Rajasthan", stateCode: "RJ", countryName: "India", countryCode: "IN", cities: 26 },
+  ];
+  assert.equal(pickCityState(states)?.stateCode, "RJ");
+  assert.equal(pickCityState(states, "  punjab ")?.stateCode, "PB");
+  assert.equal(pickCityState(states, "Goa"), null, "an unknown State is refused, never invented");
+  assert.equal(pickCityState([]), null);
+
   assert.equal(suggestCityCode("Jaipur", new Set()), "JAI");
   assert.equal(suggestCityCode("Jaisalmer", new Set(["JAI"])), "JAS");
   assert.equal(suggestCityCode("Sri Ganganagar", new Set()), "SRI");

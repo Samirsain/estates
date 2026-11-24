@@ -1044,8 +1044,7 @@ The portal (`/portal`) shows safe, Member-specific information:
 ### Plot Hold
 
 - **Duration:** 72 hours (system-calculated, constant `HOLD_HOURS = 72`)
-- **Maximum open positions:** 3 per actual Person across all Projects (`MAX_OPEN_POSITIONS = 3`)
-  - Counted: Active Holds + Waiting for Booking Approval + Pending Hold Requests
+- **Maximum open positions:** none — removed by CR-032 (owner, 24 Nov 2026). A Customer may hold or book any number of Plots; each Plot is still protected on its own.
 - **Extensions:** First extension is CRM's; any further extension needs Admin
 
 ### Hold Extension Logic

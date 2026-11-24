@@ -129,8 +129,9 @@ export const bookingRow = (b: Awaited<ReturnType<typeof listBookings>>[number]):
     plotWidthFt: b.plot.widthFt?.toString() ?? null,
     plotLengthFt: b.plot.lengthFt?.toString() ?? null,
     plotAreaSqFt: b.plot.areaSqFt.toDecimalPlaces(2).toString(),
-    primaryCustomer: b.primaryPerson.fullName,
-    primaryCustomerId: b.primaryPerson.customerProfile?.customerId ?? null,
+    // CR-029 — booked before the buyer is known: "Customer Pending", no link.
+    primaryCustomer: b.primaryPerson?.fullName ?? "Customer Pending",
+    primaryCustomerId: b.primaryPerson?.customerProfile?.customerId ?? null,
     primaryCustomerPersonId: b.primaryPersonId,
     // AC-01, v2.1 §20 — frozen with the Booking Request, permanent after approval.
     originalClassification: b.originalClassification,
@@ -153,7 +154,7 @@ export const bookingRow = (b: Awaited<ReturnType<typeof listBookings>>[number]):
     // The buyer's Member ID only where they hold an Active Member profile now.
     // Null keeps an ordinary Booking silent about a distinction it does not have.
     buyerMemberIdNow:
-      b.primaryPerson.memberProfile?.status === "ACTIVE"
+      b.primaryPerson?.memberProfile?.status === "ACTIVE"
         ? b.primaryPerson.memberProfile.memberId
         : null,
     soldByType: b.soldByType,

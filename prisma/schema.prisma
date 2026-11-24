@@ -949,7 +949,7 @@ model Hold {
 
 /// Owner, 11 Nov 2026 — a Hold takes its buyers as a Booking does: one Primary,
 /// Additional Customers, a share each. The Primary also stays on Hold.personId,
-/// which the three-position limit and the Booking's own-Hold check read. Rows
+/// which the Booking's own-Hold check reads. Rows
 /// exist only for two or more buyers; a Hold without rows (every one placed
 /// before this, too) has one buyer, Hold.personId, at 100%.
 model HoldParty {
@@ -1187,8 +1187,10 @@ model Booking {
   plot      Plot    @relation(fields: [plotId], references: [id])
 
   /// Commercial Booking Customer. Changing it runs through PrimaryCustomerChange.
-  primaryPersonId String
-  primaryPerson   Person @relation("BookingPrimaryCustomer", fields: [primaryPersonId], references: [id])
+  /// Null while a Plot is booked before its buyer is known (owner, 24 Nov 2026);
+  /// the customer is added later on the same Booking (addBookingCustomer).
+  primaryPersonId String?
+  primaryPerson   Person? @relation("BookingPrimaryCustomer", fields: [primaryPersonId], references: [id])
 
   soldByType     SoldByType
   /// Required for MEMBER and CUSTOMER; null for a 3% Club direct close.

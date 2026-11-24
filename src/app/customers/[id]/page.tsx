@@ -762,7 +762,7 @@ export default async function CustomerDetailPage({
                         {c.beneficiaryRole === "REPEAT_PURCHASE_CUSTOMER" ||
                         (c.booking && c.booking.primaryPersonId === personId) ? (
                           <span className="font-medium">Self</span>
-                        ) : !c.booking ? (
+                        ) : !c.booking?.primaryPerson ? (
                           "—"
                         ) : (
                           // The Customer ID on top, opening their profile; the name under it.

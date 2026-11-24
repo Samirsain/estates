@@ -61,6 +61,7 @@ import {
   type StaffRole,
 } from "@/lib/tasks";
 import {
+  addBookingCustomerAction,
   cancelBookingAction,
   changeOwnershipSharesAction,
   confirmPaymentReceivedAction,
@@ -118,7 +119,8 @@ export type BookingRowView = {
   primaryCustomer: string;
   /** CUS-3390 — absent only on a Person who has not reached one yet. */
   primaryCustomerId: string | null;
-  primaryCustomerPersonId: string;
+  /** Null until the Customer is added to a Booking made without one (CR-029). */
+  primaryCustomerPersonId: string | null;
   /** CUSTOMER or MEMBER, frozen with the Booking Request (v2.1 §20). */
   originalClassification: string | null;
   /** v2.1 §15, §16 — the Project commission version frozen on the request. Null = Disabled. */
@@ -366,6 +368,7 @@ type Dialog =
   | { kind: "SCHEDULE"; row: BookingRowView }
   | { kind: "SCHEDULE_DECIDE"; row: BookingRowView; approve: boolean }
   | { kind: "SHARES"; row: BookingRowView }
+  | { kind: "ADD_CUSTOMER"; row: BookingRowView }
   | { kind: "CUSTOMER_CHANGE"; row: BookingRowView }
   | { kind: "CUSTOMER_CHANGE_DECIDE"; row: BookingRowView; approve: boolean }
   | { kind: "COMMISSION_PAY"; row: BookingRowView; recordId: string; label: string; early: boolean }
@@ -455,6 +458,8 @@ export default function BookingsClient({
     ) {
       return { kind: "CHANGE_PLOT", row };
     }
+    // Add Customer, opened from a Plot or a Member's profile (CR-029).
+    if (initialOpen === "ADD_CUSTOMER" && canAddCustomer(row)) return { kind: "ADD_CUSTOMER", row };
     // Record Payment, opened from a Plot or a Member's Payout button.
     if (
       initialOpen === "PAY" &&
@@ -532,6 +537,16 @@ export default function BookingsClient({
   }
 
   const newKey = () => globalThis.crypto.randomUUID();
+
+  /** CR-029 — a live Booking made before its Customer was known takes them here. */
+  function canAddCustomer(row: BookingRowView) {
+    return (
+      !row.primaryCustomerPersonId &&
+      permissions.submit &&
+      ["REQUEST_PENDING", "BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
+      row.activeProcess === "NONE"
+    );
+  }
 
   /**
    * The one next step on this Booking, beside History — as on the Customer and
@@ -736,6 +751,11 @@ export default function BookingsClient({
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
               {detail?.id === focusRow.id && <HistoryButton rows={historyRows(detail)} />}
+              {canAddCustomer(focusRow) && (
+                <Button size="sm" variant="outline" onClick={() => openDialog({ kind: "ADD_CUSTOMER", row: focusRow })}>
+                  Add Customer
+                </Button>
+              )}
               {primaryAction(focusRow)}
               {moreMenu(focusRow)}
             </div>
@@ -930,11 +950,15 @@ export default function BookingsClient({
                   {/* The id leads and opens the profile; the name underneath
                       confirms it without competing for the eye. */}
                   <td>
-                    <PersonLink
-                      personId={row.primaryCustomerPersonId}
-                      name={row.primaryCustomerId ?? row.primaryCustomer}
-                      className={row.primaryCustomerId ? "font-semibold" : undefined}
-                    />
+                    {row.primaryCustomerPersonId ? (
+                      <PersonLink
+                        personId={row.primaryCustomerPersonId}
+                        name={row.primaryCustomerId ?? row.primaryCustomer}
+                        className={row.primaryCustomerId ? "font-semibold" : undefined}
+                      />
+                    ) : (
+                      <Badge variant="warning">Customer Pending</Badge>
+                    )}
                     {row.primaryCustomerId && (
                       <span className="block text-[11px] text-muted-foreground">
                         {row.primaryCustomer}
@@ -1069,6 +1093,7 @@ export default function BookingsClient({
           row={dialog.row}
           detail={detail}
           selfRef={staffRef}
+          selfIsMd={role === "MD"}
           busy={busy}
           onClose={() => setDialog(null)}
           onSubmit={(input) => run(() => decideBookingRequestAction({ ...input, bookingId: dialog.row.id }, newKey()))}
@@ -1270,6 +1295,16 @@ export default function BookingsClient({
             <RemarkSelect presets="decideSchedule" name="note" required kind={dialog.approve ? "Approved" : "Rejected"} />
           </Field>
         </ActionDialog>
+      )}
+
+      {dialog?.kind === "ADD_CUSTOMER" && (
+        <AddCustomerDialog
+          row={dialog.row}
+          people={people}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(parties) => run(() => addBookingCustomerAction({ bookingId: dialog.row.id, parties }, newKey()))}
+        />
       )}
 
       {dialog?.kind === "SHARES" && (
@@ -1860,9 +1895,17 @@ function BookingDetailPanel({
           (approve) => ({ kind: "SCHEDULE_DECIDE", row, approve })
         )}
 
-      {/* 3 Customers · 4 PLC · 5 Commission and Rewards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      {/* 3 Customers · 4 PLC · 5 Commission and Rewards. A Booking with no PLC
+          (CR-028: PLC is optional) shows no PLC card, and the row closes up. */}
+      <div className={`grid gap-4 ${detail.plc ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
         <Section title="Customers" icon={<Users className="h-3.5 w-3.5" />} fill>
+          {currentParties.length === 0 && (
+            // CR-029 — booked under the Member before the Customer is known.
+            <p className="text-xs text-muted-foreground">
+              <Badge variant="warning">Customer Pending</Badge>
+              <span className="mt-1.5 block">Add Customer, above, puts the buyer on this same Booking.</span>
+            </p>
+          )}
           <ul className="space-y-1.5 text-xs">
             {currentParties.map((p) => (
               <li key={`${p.personId}-${p.effectiveFrom}`} className="flex justify-between gap-3">
@@ -1891,14 +1934,13 @@ function BookingDetailPanel({
 
         {/* PLC spec §15.3 — the frozen Booking PLC. Percentage only: no rupee
             value is derived from it here or anywhere else. */}
+        {detail.plc && (
         <Section
-          title={detail.plc ? `PLC · ${Number(detail.plc.totalPercent).toFixed(2)}%` : "PLC"}
+          title={`PLC · ${Number(detail.plc.totalPercent).toFixed(2)}%`}
           icon={<Percent className="h-3.5 w-3.5" />}
           fill
         >
-          {!detail.plc ? (
-            <p className="text-xs text-muted-foreground">No PLC on this Booking.</p>
-          ) : (
+          {!detail.plc ? null : (
             <div className="space-y-2 text-xs">
               {detail.plc.components.length === 0 ? (
                 <p className="text-muted-foreground">No location charge on this Plot.</p>
@@ -1938,6 +1980,7 @@ function BookingDetailPanel({
             </div>
           )}
         </Section>
+        )}
 
         {/* v2.1 §15, §16 — the terms frozen with the request. */}
         <Section title="Commission and Rewards" icon={<Layers className="h-3.5 w-3.5" />} fill>
@@ -2605,6 +2648,7 @@ export function ReviewDialog({
   row,
   detail,
   selfRef,
+  selfIsMd,
   busy,
   onClose,
   onSubmit,
@@ -2612,6 +2656,8 @@ export function ReviewDialog({
   row: BookingRowView;
   detail: BookingDetail | null;
   selfRef: string;
+  /** MD decides its own request (CR-030), so the maker warning is not for MD. */
+  selfIsMd?: boolean;
   busy: boolean;
   onClose: () => void;
   onSubmit: (input: {
@@ -2625,7 +2671,7 @@ export function ReviewDialog({
   // Booking — the snapshot shown must be this one's or none.
   const ready = detail?.id === row.id;
   const pending = ready ? detail.reviewVersions.find((v) => v.status === "PENDING") : undefined;
-  const isMaker = row.submittedByRef === selfRef;
+  const isMaker = row.submittedByRef === selfRef && !selfIsMd;
 
   return (
     <Modal
@@ -2797,6 +2843,9 @@ export function BookingFormDialog({
   const [schedule, setSchedule] = React.useState<ScheduleRowInput[]>(
     start?.schedule.length ? start.schedule : [{ seq: 1, percent: "", dueDate: today }]
   );
+  // CR-029 — booked under a Member before the Customer is known. A revised
+  // request sent without buyers opens the same way.
+  const [noCustomer, setNoCustomer] = React.useState(Boolean(start && start.parties.length === 0));
 
   const projects = Array.from(
     new Map(bookable.map((p) => [p.projectId, p.projectName])).entries()
@@ -2823,7 +2872,7 @@ export function BookingFormDialog({
             // personId with a name and mobile beside it as a first-time buyer.
             // One buyer owns the whole Plot and the share field is hidden, so a
             // share left over from a removed second buyer is not sent.
-            parties: parties.map((p) => {
+            parties: noCustomer ? [] : parties.map((p) => {
               const sharePercent = parties.length > 1 ? p.sharePercent : "";
               return p.personId === "NEW"
                 ? { ...p, personId: "", sharePercent }
@@ -2929,7 +2978,37 @@ export function BookingFormDialog({
         )}
         </div>
 
-        <CustomerParties parties={parties} setParties={setParties} people={people} />
+        {noCustomer && !plot?.holdId ? (
+          <section className="space-y-2 border-t border-border/60 pt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Customer</h3>
+            <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <Badge variant="warning">Customer Pending</Badge>
+              Booked under the Member. Add the Customer later from the Booking or the Member&apos;s profile.
+            </p>
+            <Button type="button" size="xs" variant="outline" onClick={() => setNoCustomer(false)}>
+              Add the Customer now
+            </Button>
+          </section>
+        ) : (
+          <>
+            <CustomerParties parties={parties} setParties={setParties} people={people} />
+            {/* A held Plot is booked for the Customer on the Hold. */}
+            {!plot?.holdId && (
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                className="-mt-2"
+                onClick={() => {
+                  setNoCustomer(true);
+                  setSoldByType("MEMBER");
+                }}
+              >
+                Customer not known yet? Book under the Member
+              </Button>
+            )}
+          </>
+        )}
 
         {/* Who sold it sits beside how it was sold; the Booking Date flows
             after, and only a backdated one asks why, across the full width. */}
@@ -2940,9 +3019,10 @@ export function BookingFormDialog({
               value={soldByType}
               onChange={(e) => setSoldByType(e.target.value as FormOut["soldByType"])}
             >
-              <option value="THREE_PERCENT_CLUB">3% Club</option>
+              {/* Only a Member books without a Customer (CR-029). */}
+              <option value="THREE_PERCENT_CLUB" disabled={noCustomer && !plot?.holdId}>3% Club</option>
               <option value="MEMBER">Member</option>
-              <option value="CUSTOMER">Customer</option>
+              <option value="CUSTOMER" disabled={noCustomer && !plot?.holdId}>Customer</option>
             </select>
           </Field>
           {soldByType !== "THREE_PERCENT_CLUB" && (
@@ -3000,6 +3080,53 @@ export function BookingFormDialog({
             disabled={busy || (parties.length > 1 && shareTotal !== 100)}
           >
             {busy ? "Processing…" : "Confirm and submit"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * CR-029 — the Customer of a Plot booked before they were known: an existing
+ * Customer or a new one, with joint buyers and shares, on the same Booking.
+ */
+function AddCustomerDialog({
+  row,
+  people,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  row: BookingRowView;
+  people: PersonView[];
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (parties: PartyInput[]) => void;
+}) {
+  const [parties, setParties] = React.useState<PartyInput[]>([{ personId: "", role: "PRIMARY", sharePercent: "" }]);
+  const shareTotal = shareSum(parties);
+  return (
+    <Modal title={`Add Customer · ${row.bookingNumber ?? "Booking Request"} · ${row.project} ${row.plotNumber}`} onClose={onClose}>
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSubmit(
+            parties.map((p) => {
+              const sharePercent = parties.length > 1 ? p.sharePercent : "";
+              return p.personId === "NEW" ? { ...p, personId: "", sharePercent } : { personId: p.personId, role: p.role, sharePercent };
+            })
+          );
+        }}
+      >
+        <CustomerParties parties={parties} setParties={setParties} people={people} />
+        <div className="flex justify-end gap-2 border-t border-border/60 pt-3">
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+            Back
+          </Button>
+          <Button type="submit" size="sm" disabled={busy || (parties.length > 1 && shareTotal !== 100)}>
+            {busy ? "Processing…" : "Add Customer"}
           </Button>
         </div>
       </form>
@@ -3114,6 +3241,7 @@ export function CustomerParties({
                     onChange={(e) => patch(index, { mobile: e.target.value })}
                   />
                   <CityInput
+                    addable
                     inputClassName="h-9 text-xs"
                     placeholder="City"
                     value={party.city ?? ""}

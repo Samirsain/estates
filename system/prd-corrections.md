@@ -412,15 +412,9 @@ When Payment Received correction reduces progress below a commission milestone:
 - If the Member is personally buying, use the Member's linked Customer capability.
 - The three-open-position rule is checked before Hold/Request creation.
 
-### 8.2 Maximum open Plot positions
+### 8.2 Maximum open Plot positions — removed
 
-Maximum three per actual Person/Customer across all Projects, counting:
-
-- Active Holds
-- Waiting for Booking Approval
-- Pending Member Hold Requests
-
-Admin/MD exception requires reason and audit.
+> **Superseded by [CR-032](./change-requests/CR-028-to-CR-032-owner-rulings-24-nov-2026.md) (owner, 24 Nov 2026).** No per-Customer limit and no MD exception.
 
 ### 8.3 Duplicate Hold Requests
 
@@ -786,7 +780,7 @@ The combined **Make Available & Hold** action is removed because it was not sepa
 Use two authorised actions:
 
 1. Make Available, with compulsory reason and History.
-2. Hold, with Customer selection and three-position validation.
+2. Hold, with Customer selection (no position limit — [CR-032](./change-requests/CR-028-to-CR-032-owner-rulings-24-nov-2026.md)).
 
 ---
 
@@ -1039,7 +1033,7 @@ In addition to the Version 3.0 tests, the vendor must prove:
 5. Active Member cannot be selected as Customer closer.
 6. Sold By correction supersedes old commission and creates adjustment work when paid.
 7. Payment correction below milestone changes Paid/Paid Early to Accounts Adjustment Required.
-8. Member Hold requires actual Customer and cannot bypass three-position limit.
+8. Member Hold requires actual Customer. (The three-position limit is removed — [CR-032](./change-requests/CR-028-to-CR-032-owner-rulings-24-nov-2026.md).)
 9. Member Hold Request expires using the working-day cut-off.
 10. Hold extension approval after expiry cannot revive the old Hold.
 11. Change Plot freezes replacement PLC and applies manual Accounts percentage.

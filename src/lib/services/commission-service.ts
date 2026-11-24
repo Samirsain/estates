@@ -59,10 +59,12 @@ export function termsOf(v: {
 /** v2.1 §24 — the would-be Loyalty earner: the closer on a Customer close, else the buyer. */
 export async function loyaltySubjectDeactivated(
   tx: Tx,
-  args: { soldByType: SoldByType; soldByPersonId: string | null; buyerPersonId: string }
+  args: { soldByType: SoldByType; soldByPersonId: string | null; buyerPersonId: string | null }
 ): Promise<boolean> {
   const subject =
     args.soldByType === "CUSTOMER" ? (args.soldByPersonId ?? args.buyerPersonId) : args.buyerPersonId;
+  // No Customer yet: nobody to earn Loyalty, so nobody to be Deactivated.
+  if (!subject) return false;
   const member = await tx.memberProfile.findUnique({ where: { personId: subject }, select: { status: true } });
   return member?.status === "DEACTIVATED";
 }
@@ -74,7 +76,7 @@ export async function loyaltySubjectDeactivated(
  */
 export async function freezeAtSubmission(
   tx: Tx,
-  args: { projectId: string; soldByType: SoldByType; soldByPersonId: string | null; buyerPersonId: string }
+  args: { projectId: string; soldByType: SoldByType; soldByPersonId: string | null; buyerPersonId: string | null }
 ) {
   // CP §8 — an Approved version whose time has come is Active before anything
   // freezes, whether or not the scheduled job has run yet.
@@ -86,15 +88,18 @@ export async function freezeAtSubmission(
   // Owner 2 Nov — a version with no Royalty rate has Royalty switched off. The
   // request freezes null and the Royalty award skips it; nothing substitutes
   // a rate (docss/11 §1 still holds — no fallback, no zero award).
-  const buyer = await tx.memberProfile.findUnique({
-    where: { personId: args.buyerPersonId },
-    select: { status: true },
-  });
+  // No Customer yet (owner, 24 Nov 2026): the classification is frozen when the
+  // Customer is added, by addBookingCustomer.
+  const buyer = args.buyerPersonId
+    ? await tx.memberProfile.findUnique({ where: { personId: args.buyerPersonId }, select: { status: true } })
+    : null;
   return {
     commissionVersionId: version.id,
     /** docss/11 §1 — the token rate this request version saves; Accounts approves it with the version. */
     royaltyTokensPerAward: version.royaltyTokensPerAward,
-    originalClassification: (buyer?.status === "ACTIVE" ? "MEMBER" : "CUSTOMER") as "MEMBER" | "CUSTOMER",
+    originalClassification: args.buyerPersonId
+      ? ((buyer?.status === "ACTIVE" ? "MEMBER" : "CUSTOMER") as "MEMBER" | "CUSTOMER")
+      : null,
     loyaltySubjectDeactivated: await loyaltySubjectDeactivated(tx, args),
     terms: { versionId: version.id, ...termsOf(version) },
   };
@@ -227,7 +232,9 @@ export async function commissionInputFor(tx: Tx, bookingId: string): Promise<Com
    * so a repeat is any earlier-submitted Booking of this buyer that Accounts
    * approved and that was not cancelled. Rejected and cancelled requests never count.
    */
-  const priorPurchases = await tx.booking.count({
+  // No Customer yet: no buyer, so no repeat purchase — and counting on a null
+  // id would match every other Booking still waiting for its Customer.
+  const priorPurchases = !booking.primaryPersonId ? 0 : await tx.booking.count({
     where: {
       primaryPersonId: booking.primaryPersonId,
       id: { not: bookingId },
@@ -324,7 +331,7 @@ export async function classificationEvidence(tx: Tx, bookingId: string) {
     earliestDirectRuleVersion: direct?.ruleVersion ?? null,
     hasAnyCommission: anyCommission > 0,
     approvedAt: booking.approvedAt,
-    memberActivationDate: booking.primaryPerson.memberProfile?.activationDate ?? null,
+    memberActivationDate: booking.primaryPerson?.memberProfile?.activationDate ?? null,
   };
 }
 

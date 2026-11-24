@@ -225,7 +225,9 @@ A blocked action should state:
 
 Example:
 
-> Booking cannot proceed because the Customer already has three open Plot positions. Review existing Holds/Requests or request an Admin/MD exception.
+> Booking cannot proceed because this Plot is already Waiting for Booking Approval. Open the Plot to see who holds it.
+
+(The three-open-position message is gone: CR-032, 24 Nov 2026, removed the limit.)
 
 ---
 

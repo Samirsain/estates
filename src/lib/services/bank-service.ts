@@ -3,6 +3,7 @@
 // while the replacement is Pending. A pending replacement never puts every
 // Ready commission on hold by itself (PRD §14.3).
 
+import { selfReviewRefused } from "@/lib/security/permissions";
 import { db } from "@/lib/db";
 import { blindIndex, encryptSensitive } from "@/lib/security/identity";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
@@ -217,7 +218,7 @@ export async function decideBankDetails(args: {
       if (detail.status !== "PENDING") {
         blocked(`These bank details are already ${detail.status.toLowerCase()}.`);
       }
-      if (detail.enteredByRef === args.actorRef) {
+      if (selfReviewRefused(detail.enteredByRef, args.actorRef, args.actorRole)) {
         blocked("Bank details must be verified by a different staff account.");
       }
       // CP §57 — still one account = one Person unless the joint exception is on file.

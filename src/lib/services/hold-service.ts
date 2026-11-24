@@ -5,7 +5,6 @@ import type { SoldByType } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
   DEFAULT_CALENDAR,
-  checkOpenPositions,
   decideExtension,
   extensionRequiresMd,
   holdExpiry,
@@ -22,34 +21,6 @@ import { freezePlcSnapshot, loadPlotForPlc } from "./plc-service";
 import { closeTasksFor } from "./task-service";
 import { closeSellingTasksIfClear } from "./selling-task";
 import { validateSoldBy } from "./sold-by";
-
-/** PRD §8.2 — counts Active Holds, Waiting for Booking Approval and Pending requests. */
-export async function countOpenPositions(tx: Tx, personId: string) {
-  // Three counts, one round trip. They were three Prisma counts under a
-  // Promise.all, which reads better but is three trips: a transaction holds one
-  // connection, so nothing there runs in parallel. This sits on the Hold and
-  // Booking Request paths, where every trip is felt.
-  //
-  // The Booking side counts from the Booking itself, not through the Hold: a
-  // Booking Request freezes its Hold, and one raised from an Available Plot has
-  // no Hold at all.
-  const [row] = await tx.$queryRaw<
-    Array<{ activeHolds: number; pendingHoldRequests: number; waitingBookingApproval: number }>
-  >`
-    SELECT (SELECT COUNT(*) FROM "Hold"
-             WHERE "personId" = ${personId} AND status = 'ACTIVE')::int AS "activeHolds",
-           (SELECT COUNT(*) FROM "HoldRequest"
-             WHERE "personId" = ${personId} AND status = 'PENDING')::int AS "pendingHoldRequests",
-           (SELECT COUNT(*) FROM "Booking"
-             WHERE "primaryPersonId" = ${personId} AND status = 'REQUEST_PENDING')::int
-             AS "waitingBookingApproval"`;
-  return {
-    activeHolds: row.activeHolds,
-    waitingBookingApproval: row.waitingBookingApproval,
-    pendingHoldRequests: row.pendingHoldRequests,
-  };
-}
-
 
 /* ------------------------------------------------------------------ Hold */
 
@@ -87,7 +58,7 @@ export type CreateHoldInput = {
 /**
  * The one place a Hold is actually placed. Direct CRM Holds and approved
  * Member Hold Requests both route through it, so the Plot check, the
- * three-position check and the PLC freeze can never drift apart.
+ * state check and the PLC freeze can never drift apart.
  */
 async function placeHold(
   tx: Tx,
@@ -109,10 +80,6 @@ async function placeHold(
   const sourcedByType = input.sourcedByType ?? "THREE_PERCENT_CLUB";
   await validateSoldBy(tx, sourcedByType, input.sourcedByPersonId ?? null);
 
-  const positions = await countOpenPositions(tx, input.personId);
-  const room = checkOpenPositions(positions);
-  if (!room.ok) blocked(room.reason);
-
   const snapshot = await freezePlcSnapshot(tx, plot);
   const startsAt = new Date();
 
@@ -127,7 +94,7 @@ async function placeHold(
       responsibleStaffId: input.responsibleStaffId ?? null,
       startsAt,
       expiresAt: holdExpiry(startsAt),
-      plcSnapshotId: snapshot.id,
+      plcSnapshotId: snapshot?.id ?? null,
     },
   });
 
@@ -523,10 +490,6 @@ export async function submitHoldRequest(args: {
       const allocatable = canAllocate(plot.status, plot.restriction, plot.project.status);
       if (!allocatable.ok) blocked(allocatable.reason);
 
-      const positions = await countOpenPositions(tx, args.personId);
-      const room = checkOpenPositions(positions);
-      if (!room.ok) blocked(room.reason);
-
       const createdAt = new Date();
       const request = await tx.holdRequest.create({
         data: {
@@ -568,7 +531,7 @@ export async function decideHoldRequest(args: {
 
   // An expired request is marked in a write of its own: marked inside the
   // command, the refusal below rolled the mark back, and the request stayed
-  // Pending, still counting against the Member's three positions.
+  // Pending.
   const expired = await db.holdRequest.updateMany({
     where: { id: args.requestId, status: "PENDING", expiresAt: { lte: new Date() } },
     data: {

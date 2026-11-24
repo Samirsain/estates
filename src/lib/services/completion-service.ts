@@ -225,6 +225,8 @@ export async function recordFinalBuyers(args: {
       if (!["BOOKED", "PAYMENT_COMPLETED"].includes(booking.status)) {
         blocked("Final buyer details are recorded on an approved Booking.");
       }
+      // CR-029 — Allotment and Registry wait for the buyer.
+      if (!booking.primaryPersonId) blocked("Add the Customer to this Booking before the final buyer details.");
 
       for (const buyer of args.buyers) {
         await tx.person.update({
@@ -334,6 +336,8 @@ export async function recordCompletion(args: {
         where: { id: args.bookingId },
         include: { plot: true },
       });
+      // CR-029 — Allotment and Registry wait for the buyer.
+      if (!booking.primaryPersonId) blocked("Add the Customer to this Booking before Allotment or Registry.");
 
       const live = await tx.bookingCompletion.findFirst({
         where: { bookingId: args.bookingId, reopenedAt: null },

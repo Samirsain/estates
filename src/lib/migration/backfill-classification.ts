@@ -83,7 +83,7 @@ export async function backfillClassification(
 
   for (const booking of candidates) {
     const reference = booking.bookingNumber ?? booking.requestNo;
-    const buyer = booking.primaryPerson.fullName;
+    const buyer = booking.primaryPerson?.fullName ?? "Customer Pending";
 
     const decision = classifyApprovedBooking(await classificationEvidence(db, booking.id));
     if (!decision.resolved) {

@@ -163,7 +163,7 @@ export function PersonDetailsEditor({
                 />
               </Field>
               <Field label="City">
-                <CityInput name="city" defaultValue={person.city} inputClassName={caps} />
+                <CityInput name="city" defaultValue={person.city} addable inputClassName={caps} />
               </Field>
               <Field label="Address">
                 <Input name="addressLine" defaultValue={person.addressLine} className={caps} />
