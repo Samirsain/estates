@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-
+import { SafariDateClose } from "@/components/safari-date-close";
 
 export const metadata: Metadata = {
   title: "3% Club CRM",
@@ -33,6 +33,7 @@ export default function RootLayout({
         suppressHydrationWarning
         className="min-h-screen bg-background text-foreground overflow-x-hidden"
       >
+        <SafariDateClose />
         {children}
       </body>
     </html>
