@@ -197,6 +197,7 @@ assert.ok(!canViewField("CRM", "PAN_FULL", ["MOBILE_FULL_VIEW"]), "the mobile ti
 assert.ok(!canViewField("CRM", "AADHAAR_FULL", ["AADHAAR_FULL"]), "no tick opens Aadhaar");
 // Projects and Plots are ticks; releasing a Project and deleting a Plot are not.
 assert.ok(can("CRM", "PROJECT_SETUP", ["PROJECT_SETUP"]) && can("CRM", "PLOT_SETUP", ["PLOT_SETUP"]), "setup is tickable");
+assert.ok(!can("CRM", "PLOT_EDIT", ["PLOT_SETUP"]) && can("CRM", "PLOT_EDIT", ["PLOT_EDIT"]), "Prepare Inventory does not open Edit Plot");
 assert.ok(!can("CRM", "PROJECT_RELEASE", ["PROJECT_RELEASE"]) && !can("CRM", "PLOT_DELETE", ["PLOT_DELETE"]), "release and delete stay MD");
 assert.ok(can("MD", "PROJECT_RELEASE", []) && can("MD", "PLOT_DELETE", []), "MD releases and deletes");
 

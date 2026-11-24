@@ -492,7 +492,8 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
   // Restriction menu (Not for Sale, Pledge) and Edit Plot Details (owner,
   // 28 Oct 2026); Hold is done from Plot Inventory.
   const primary = actions.find((a) => !a.danger) ?? null;
-  const canSetup = can(actor.role, "PLOT_SETUP", actor.extraPermissions);
+  // Edit Plot Details — its own tick, not Prepare Inventory's (owner, 24 Nov 2026).
+  const canSetup = can(actor.role, "PLOT_EDIT", actor.extraPermissions);
   // Last under More (owner, 23 Nov 2026); #delete-plot opens PlotActions' dialog.
   const canDelete = can(actor.role, "PLOT_DELETE", actor.extraPermissions);
   if (canDelete) actions.push({ label: "Delete Plot", href: "#delete-plot", danger: true });

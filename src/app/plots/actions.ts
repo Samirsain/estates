@@ -225,7 +225,7 @@ export async function updatePlotDetailsAction(
   reason: string,
   key: string
 ): Promise<ActionResult> {
-  const actor = await requireStaff("PLOT_SETUP");
+  const actor = await requireStaff("PLOT_EDIT");
   try {
     const result = await updatePlotDetails({
       idempotencyKey: key,

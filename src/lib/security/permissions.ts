@@ -32,7 +32,10 @@ export type Action =
   // PLC spec §12.1 — a frozen snapshot is a critical correction, so it sits
   // with Admin/MD and not with the Project setup permission PC also holds.
   | "PLC_SNAPSHOT_CORRECT"
+  // Adding Plots (Prepare Inventory) and editing one are separate ticks
+  // (owner, 24 Nov 2026): preparing never touches a Plot that exists.
   | "PLOT_SETUP"
+  | "PLOT_EDIT"
   | "PLOT_DELETE"
   | "PLOT_RESTRICTION_MANAGE"
   | "PLOT_MAKE_AVAILABLE"
@@ -322,6 +325,7 @@ export const ACTION_GROUPS = [
       "PROJECT_SETUP",
       "PROJECT_RELEASE",
       "PLOT_SETUP",
+      "PLOT_EDIT",
       "PLOT_DELETE",
       "PLC_SNAPSHOT_CORRECT",
     ],
@@ -396,7 +400,8 @@ export const ACTION_LABELS: Record<Action, string> = {
   PROJECT_VIEW: "See Projects",
   PROJECT_SETUP: "Create and edit projects (a new one stays Unreleased until MD releases it)",
   PROJECT_RELEASE: "Release a project, change its status, or put it on the Public Portal",
-  PLOT_SETUP: "Create and edit plots, and Prepare Inventory",
+  PLOT_SETUP: "Add plots (Prepare Inventory)",
+  PLOT_EDIT: "Edit plot details",
   PLOT_DELETE: "Delete a plot",
   PLC_SNAPSHOT_CORRECT: "Correct a locked location charge",
   BOOKING_REQUEST_SUBMIT: "Send a booking for approval",
