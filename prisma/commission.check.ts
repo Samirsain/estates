@@ -574,7 +574,7 @@ async function main() {
     activateMember({ idempotencyKey: key(), actorRef: MD2, actorRole: "MD", personId: invitee.id })
   );
   const notForCrm = await db.person.create({ data: { fullName: `${TAG} NotForCrm`, primaryMobile: "9600000199" } });
-  await expectBlocked(/Only MD/, () =>
+  await expectBlocked(/tick for this/, () =>
     activateMember({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", personId: notForCrm.id })
   );
 

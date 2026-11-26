@@ -21,6 +21,7 @@ import { linkOrCreatePerson } from "./enquiry-service";
 import { recordAadhaar, recordPan } from "./completion-service";
 import { blindIndex, normaliseAadhaar, normalisePan } from "@/lib/security/identity";
 import { normaliseMobile } from "@/lib/domain/land-inquiry";
+import { ACTION_LABELS, can, type Action } from "@/lib/security/permissions";
 
 /** Add Member's Person, made inside the activation so a refused activation leaves nothing behind. */
 export type NewMemberPerson = {
@@ -288,7 +289,23 @@ export async function relinkAfterSoldByCorrection(tx: Tx, bookingId: string, act
 }
 
 /**
- * prd-complete §7.1 — only Admin or MD may activate a Member. The Member ID becomes
+ * Owner, 17 Nov 2026 — each staff account's ticks decide what it may do (MD
+ * holds everything). Read from the account itself, so a request that merely
+ * names a role is still refused here, not only by the hidden button.
+ */
+async function requireTick(tx: Tx, actorRef: string, actorRole: string, action: Action) {
+  if (actorRole === "MD") return;
+  const account = await tx.staffAccount.findUnique({
+    where: { staffAccountId: actorRef },
+    select: { role: true, status: true, extraPermissions: true },
+  });
+  if (!account || account.status !== "ACTIVE" || account.role !== actorRole || !can(account.role, action, account.extraPermissions)) {
+    blocked(`You need the "${ACTION_LABELS[action]}" tick for this. Ask MD to give it.`);
+  }
+}
+
+/**
+ * prd-complete §7.1 — MD, or staff MD has ticked to add Members, activates a Member. The Member ID becomes
  * active at activation, and activation cannot be backdated. The inviting Member
  * is recorded with it (v2.1 §26).
  */
@@ -307,9 +324,6 @@ export async function activateMember(args: {
   /** Add Member's "Photo Received" tick; left out, the profile keeps its own. */
   photoReceived?: boolean;
 }) {
-  if (args.actorRole !== "MD") {
-    blocked("Only MD may activate a Member.");
-  }
   if (!args.personId === !args.newPerson) blocked("Choose the Person to activate.");
 
   return runCommand(
@@ -325,6 +339,7 @@ export async function activateMember(args: {
       },
     },
     async (tx) => {
+      await requireTick(tx, args.actorRef, args.actorRole, "MEMBER_ACTIVATE");
       // Inside the command: any refusal below rolls the new Person and its
       // write-once Aadhaar back with it.
       const personId = args.newPerson ? await addMemberPerson(tx, args.newPerson) : args.personId!;
@@ -441,9 +456,6 @@ export async function setMemberStatus(args: {
   active: boolean;
   reason: string;
 }) {
-  if (args.actorRole !== "MD") {
-    blocked("Only MD may activate or deactivate a Member.");
-  }
   if (!args.reason.trim()) blocked("A compulsory reason is required to change a Member status.");
 
   return runCommand(
@@ -455,6 +467,7 @@ export async function setMemberStatus(args: {
       payload: { memberProfileId: args.memberProfileId, active: args.active },
     },
     async (tx) => {
+      await requireTick(tx, args.actorRef, args.actorRole, args.active ? "MEMBER_ACTIVATE" : "MEMBER_DEACTIVATE");
       const member = await tx.memberProfile.findUniqueOrThrow({
         where: { id: args.memberProfileId },
         include: { person: true },
