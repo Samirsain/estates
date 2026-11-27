@@ -1,6 +1,6 @@
 "use client";
 
-// MD worksheet for externally verified payment percentages.
+// MD worksheet. Private amounts are used only for the in-browser calculation.
 
 import React from "react";
 import { AppShell } from "@/components/app-shell";
@@ -9,18 +9,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/modal";
+import { PasswordInput } from "@/components/ui/password-input";
 import { PaymentProgress } from "@/app/bookings/payment-instalments-panel";
 import type { StaffRole } from "@/lib/security/permissions";
 import { formatIst, istDay } from "@/lib/tasks";
 import {
   allocateUnits,
+  convertPayment,
+  formatRupeeTyping,
   fromUnits,
   instalmentRows,
   openingBalance,
   paymentSummary,
   PAYMENT_DECISION_REASONS,
-  receiptTrackingId,
+  parseRupees,
   pct,
+  plotTokens,
+  receiptTrackingId,
   shareOfInstalment,
   toUnits,
   TOTAL_UNITS,
@@ -76,7 +81,11 @@ export default function PaymentCalculatorClient({
   const [notice, setNotice] = React.useState<{ ok: boolean; text: string } | null>(null);
   const [mode, setMode] = React.useState<"CALCULATE" | "RECORD">("RECORD");
 
-  // Private values — memory only.
+  const [plotValue, setPlotValue] = React.useState("");
+  const [factor, setFactor] = React.useState("");
+  const [receivedAmount, setReceivedAmount] = React.useState("");
+  const [cumulativeAmount, setCumulativeAmount] = React.useState("");
+  const [inputVersion, setInputVersion] = React.useState(0);
   const [percent, setPercent] = React.useState("");
   const [paidOn, setPaidOn] = React.useState(() => istDay(new Date()));
   const [reference, setReference] = React.useState("");
@@ -88,6 +97,11 @@ export default function PaymentCalculatorClient({
   const wanted = React.useRef<string | null>(null);
 
   const clearPayment = React.useCallback(() => {
+    setPlotValue("");
+    setFactor("");
+    setReceivedAmount("");
+    setCumulativeAmount("");
+    setInputVersion((version) => version + 1);
     setPercent("");
     setReference("");
     setClaimId("");
@@ -104,11 +118,17 @@ export default function PaymentCalculatorClient({
       }
     };
     const timeout = window.setTimeout(lockIfExpired, Math.max(0, expiresAt - Date.now()));
-    window.addEventListener("pageshow", lockIfExpired);
+    const restorePage = (event: PageTransitionEvent) => {
+      if (event.persisted) clearPayment();
+      lockIfExpired();
+    };
+    window.addEventListener("pagehide", clearPayment);
+    window.addEventListener("pageshow", restorePage);
     document.addEventListener("visibilitychange", lockIfExpired);
     return () => {
       window.clearTimeout(timeout);
-      window.removeEventListener("pageshow", lockIfExpired);
+      window.removeEventListener("pagehide", clearPayment);
+      window.removeEventListener("pageshow", restorePage);
       document.removeEventListener("visibilitychange", lockIfExpired);
     };
   }, [expiresAt, clearPayment]);
@@ -149,7 +169,7 @@ export default function PaymentCalculatorClient({
   React.useEffect(() => {
     key.current = null;
     setAttested(false);
-  }, [percent, paidOn, reference, claimId]);
+  }, [percent, plotValue, factor, receivedAmount, cumulativeAmount, paidOn, reference, claimId]);
 
   const q = query.trim().toLowerCase();
   const matches = q
@@ -165,8 +185,26 @@ export default function PaymentCalculatorClient({
       )
     : 0n;
 
+  const plot = parseRupees(plotValue);
+  const tokens = "paise" in plot ? plotTokens(plot.paise, factor.trim()) : null;
+  const byAmount = receivedAmount !== "";
   const conversion = (() => {
-    if (!percent || !summary) return null;
+    if (!summary) return null;
+    if (byAmount) {
+      if ("error" in plot) return { ok: false as const, reason: "Enter a valid plot value first." };
+      if (!tokens) return { ok: false as const, reason: "Enter a positive safety factor, such as 25, with up to 4 decimal places." };
+      const payment = parseRupees(receivedAmount);
+      if ("error" in payment) return { ok: false as const, reason: payment.error };
+      const total = summary.received === 0n ? payment : parseRupees(cumulativeAmount);
+      if ("error" in total) return { ok: false as const, reason: "Enter the total confirmed amount, including this receipt." };
+      return convertPayment({
+        dealPaise: plot.paise,
+        paymentPaise: payment.paise,
+        cumulativePaise: total.paise,
+        currentUnits: summary.received,
+      });
+    }
+    if (!percent) return null;
     if (!/^\d{1,3}(?:\.\d{1,8})?$/.test(percent)) return { ok: false as const, reason: "Enter a percentage with up to 8 decimal places." };
     const deltaUnits = toUnits(percent);
     if (deltaUnits <= 0n || deltaUnits > summary.outstanding) return { ok: false as const, reason: "Enter a percentage above zero and within the remaining balance." };
@@ -186,14 +224,14 @@ export default function PaymentCalculatorClient({
           : null;
 
   async function approve() {
-    if (busy || !view || !conversion?.ok || !attested) return;
+    if (!canApprove || !view || !validReceipt) return;
     setBusy(true);
     setNotice(null);
     key.current ??= globalThis.crypto.randomUUID();
     const result = await approveVerifiedPaymentAction({
       bookingId: view.id,
       plotId: view.plotId,
-      percent: fromUnits(conversion.deltaUnits),
+      percent: fromUnits(validReceipt.deltaUnits),
       paidOn,
       reference,
       expectedReceived: view.received,
@@ -240,7 +278,8 @@ export default function PaymentCalculatorClient({
   }
 
   const picker = React.useRef<HTMLDetailsElement>(null);
-  const locked = !view || busy || !!loading || (mode === "RECORD" && !!blockedWhy);
+  const noPlot = !view || busy || !!loading;
+  const locked = noPlot || (mode === "RECORD" && !!blockedWhy);
   const validReceipt = conversion?.ok ? conversion : null;
   const canApprove = !!validReceipt && !locked && attested && receiptTrackingId(reference.trim()) && !!paidOn && paidOn <= istDay(new Date());
   return (
@@ -295,6 +334,23 @@ export default function PaymentCalculatorClient({
             {view && <p className="mt-2 text-xs text-muted-foreground">{view.number} · {view.customer} · {human(view.status)}</p>}
           </SheetRow>
 
+          <SheetRow title="Plot value & safety factor">
+            <div key={inputVersion} className="grid gap-3 sm:grid-cols-2">
+              <Field label="Agreed plot value (₹)">
+                <PasswordInput visibilityLabel="plot value" inputMode="decimal" autoComplete="off" disabled={noPlot}
+                  value={plotValue} onChange={(e) => setPlotValue(formatRupeeTyping(e.target.value))} placeholder="5,00,000" />
+              </Field>
+              <Field label="Safety factor">
+                <PasswordInput visibilityLabel="safety factor" inputMode="decimal" autoComplete="off" disabled={noPlot}
+                  value={factor} onChange={(e) => setFactor(e.target.value)} maxLength={18} placeholder="25" />
+              </Field>
+              {tokens && <Field label="Plot tokens">
+                <PasswordInput visibilityLabel="plot tokens" autoComplete="off" disabled={noPlot} value={tokens} readOnly />
+              </Field>}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Plot value ÷ safety factor gives the token preview. These fields clear when you save a receipt, switch plots or leave the worksheet.</p>
+          </SheetRow>
+
           <SheetRow title="Payment received">
             {mode === "RECORD" && !!view?.claims.length && <Field label="Staff payment claim">
               <select className={SELECT} disabled={locked} value={claimId} onChange={(e) => {
@@ -307,12 +363,22 @@ export default function PaymentCalculatorClient({
                 {view.claims.map((c) => <option key={c.id} value={c.id}>{c.mode} · {c.reference} · {formatIst(c.claimedPaidOn)}</option>)}
               </select>
             </Field>}
-            <div className="mt-2 max-w-xs">
-              <Field label="Verified payment (%)">
-                <Input inputMode="decimal" autoComplete="off" disabled={locked} value={percent} onChange={(e) => setPercent(e.target.value)} placeholder="0" />
+            <div key={inputVersion} className="mt-2 grid gap-3 sm:grid-cols-2">
+              <Field label="Received amount (₹)">
+                <PasswordInput visibilityLabel="received amount" inputMode="decimal" autoComplete="off" disabled={locked}
+                  value={receivedAmount} onChange={(e) => setReceivedAmount(formatRupeeTyping(e.target.value))} placeholder="0" />
               </Field>
+              <Field label="Verified payment (%)">
+                <Input inputMode="decimal" autoComplete="off" disabled={locked} readOnly={byAmount}
+                  value={byAmount ? (validReceipt ? fromUnits(validReceipt.deltaUnits) : "") : percent}
+                  onChange={(e) => setPercent(e.target.value)} placeholder="0" />
+              </Field>
+              {byAmount && summary && summary.received > 0n && <Field label="Total confirmed receipts, including this one (₹)">
+                <PasswordInput visibilityLabel="total confirmed receipts" inputMode="decimal" autoComplete="off" disabled={locked}
+                  value={cumulativeAmount} onChange={(e) => setCumulativeAmount(formatRupeeTyping(e.target.value))} placeholder="0" />
+              </Field>}
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Enter the percentage verified in the private accounts workbook.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Enter a received amount to calculate the percentage, or type a percentage you already verified.</p>
             {mode === "RECORD" && blockedWhy && <p className="mt-2 text-xs">{blockedWhy}</p>}
             {conversion && !conversion.ok && <p role="status" className="mt-2 text-xs text-destructive">{conversion.reason}</p>}
           </SheetRow>
@@ -322,6 +388,10 @@ export default function PaymentCalculatorClient({
               <Field label="Payment date"><Input type="date" disabled={locked} value={view ? paidOn : ""} max={istDay(new Date())} onChange={(e) => setPaidOn(e.target.value)} /></Field>
               <Field label="Receipt tracking ID"><Input disabled={locked} value={reference} onChange={(e) => setReference(e.target.value)} autoComplete="off" maxLength={39} readOnly={!!claimId} placeholder="PV-…" /></Field>
             </div>
+            {!claimId && !reference && <Button type="button" size="sm" variant="outline" className="mt-2" disabled={locked || !validReceipt}
+              onClick={() => setReference(`PV-${globalThis.crypto.randomUUID()}`)}>
+              Generate tracking ID
+            </Button>}
           </SheetRow>}
 
           <SheetRow title="Next instalment">

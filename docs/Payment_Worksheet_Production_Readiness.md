@@ -1,8 +1,8 @@
 # Payment worksheet production readiness
 
-The MD's private accounts ledger holds agreed amounts, receipt amounts and the bank-reference matching record. Open `tools/private-payment-workbook.html` directly from a trusted local copy. The workbook clears amount inputs after calculation. Transfer the verified percentage and the randomly generated receipt tracking ID into CRM. Use the same ID whenever that receipt is retried.
+The MD's private accounts ledger holds agreed amounts, receipt amounts and the bank-reference matching record. In the unlocked worksheet, the MD can enter the plot value, safety factor and receipt amount to calculate the payment percentage in the browser. For an existing paid balance, enter the total confirmed receipts including the new one to reconcile the amount against the saved percentage. The inputs and token preview are masked and clear after saving, switching plots, or leaving the worksheet.
 
-The CRM worksheet accepts the tracking ID, percentage and date. The live schedule provides the next instalment and the current balance in percentages. The worksheet no longer collects a safety factor or uses historical price-derived tokens. Existing encrypted basis rows are retained under restricted database grants pending an owner retention decision.
+Alternatively, open `tools/private-payment-workbook.html` locally and transfer the result to the worksheet. Use the same tracking ID whenever a receipt is retried. The server receives the tracking ID, percentage and date with the booking identifiers. The live schedule provides the next instalment and the current balance in percentages. The plot amount, safety factor and calculated tokens are kept in memory only. Existing encrypted basis rows are retained under restricted database grants pending an owner retention decision.
 
 ## Access
 
