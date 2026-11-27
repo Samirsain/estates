@@ -11,7 +11,9 @@ import { db } from "@/lib/db";
 import { actionErrorText } from "@/lib/action-error";
 import { requireStaff } from "@/lib/security/current-actor";
 import { beginCalculatorPasskey, finishCalculatorPasskey, paymentCalculatorAccess } from "@/lib/security/payment-calculator-access";
-import { PAYMENT_DECISION_REASONS, readApproval, shownReceiptTrackingId } from "@/lib/domain/payment-percent";
+import { PAYMENT_DECISION_REASONS, readApproval, shownReceiptTrackingId, validPlotTokens } from "@/lib/domain/payment-percent";
+import { decryptSensitive, encryptSensitive } from "@/lib/security/identity";
+import { lockBooking } from "@/lib/services/command";
 import { activeSchedule, reversePaymentReceived } from "@/lib/services/payment-service";
 import { approveVerifiedPayment, rejectPaymentVerification } from "@/lib/services/payment-verification-service";
 
@@ -33,7 +35,30 @@ export async function finishCalculatorPasskeyAction(response: RegistrationRespon
   return finishCalculatorPasskey(await requireStaff("PAYMENT_CALCULATOR_APPROVE"), response);
 }
 
-/** One Booking as the calculator reads it: percentages, dates and references only. */
+export async function savePlotTokensAction(bookingId: string, plotId: string, tokens: string): Promise<CalculatorResult> {
+  await mdOnly();
+  if (typeof tokens !== "string" || !validPlotTokens(tokens) || typeof bookingId !== "string" || typeof plotId !== "string") {
+    return { ok: false, error: "Check the plot and token quantity." };
+  }
+  return db.$transaction(async (tx) => {
+    await lockBooking(tx, bookingId);
+    const booking = await tx.booking.findUnique({ where: { id: bookingId }, select: {
+      plotId: true, status: true, activeProcess: true, calculatorBasis: true,
+    } });
+    if (!booking || booking.plotId !== plotId || booking.status !== "BOOKED" || booking.activeProcess !== "NONE") {
+      return { ok: false, error: "Reopen the current booked plot to set its tokens." };
+    }
+    if (booking.calculatorBasis) {
+      if (decryptSensitive(booking.calculatorBasis.tokenCipher) !== tokens) {
+        return { ok: false, error: "This booking already has saved tokens. Its saved quantity has been loaded." };
+      }
+    } else {
+      await tx.calculatorPriceBasis.create({ data: { bookingId, tokenCipher: encryptSensitive(tokens) } });
+    }
+    return { ok: true, message: "Plot tokens saved." };
+  });
+}
+
 export async function loadCalculatorBookingAction(bookingId: string) {
   await mdOnly();
   const booking = await db.booking.findUnique({
@@ -41,6 +66,7 @@ export async function loadCalculatorBookingAction(bookingId: string) {
     select: {
       id: true,
       bookingNumber: true,
+      calculatorBasis: { select: { tokenCipher: true } },
       requestNo: true,
       status: true,
       activeProcess: true,
@@ -82,6 +108,7 @@ export async function loadCalculatorBookingAction(bookingId: string) {
 
   return {
     id: booking.id,
+    tokens: booking.calculatorBasis ? decryptSensitive(booking.calculatorBasis.tokenCipher) : null,
     plotId: booking.plotId,
     number: booking.bookingNumber ?? booking.requestNo,
     project: `${booking.project.projectCode} · ${booking.project.name}`,
@@ -140,6 +167,9 @@ export async function approveVerifiedPaymentAction(input: unknown): Promise<Calc
     const read = readApproval(input);
     if (!read.ok) return read;
     const { paidOn, ...rest } = read.value;
+    if (!await db.calculatorPriceBasis.count({ where: { bookingId: rest.bookingId } })) {
+      return { ok: false, error: "Save the plot tokens before recording a receipt." };
+    }
 
     const result = await approveVerifiedPayment({
       ...rest,

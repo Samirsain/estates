@@ -405,6 +405,7 @@ export async function decideChangePlot(args: {
       const nextStatus = completed ? "PAYMENT_COMPLETED" : "BOOKED";
 
       // Same Booking Number, same Primary Customer, same Sold By (PRD §5.3).
+      await tx.calculatorPriceBasis.deleteMany({ where: { bookingId: args.bookingId } });
       await tx.booking.update({
         where: { id: args.bookingId },
         data: {

@@ -1,8 +1,8 @@
 # Payment worksheet production readiness
 
-The MD's private accounts ledger holds agreed amounts, receipt amounts and the bank-reference matching record. In the unlocked worksheet, the MD can enter the plot value, safety factor and receipt amount to calculate the payment percentage in the browser. For an existing paid balance, enter the total confirmed receipts including the new one to reconcile the amount against the saved percentage. The inputs and token preview are masked and clear after saving, switching plots, or leaving the worksheet.
+The MD selects a booked plot and enters its agreed value and safety factor once. Save plot tokens stores the calculated quantity encrypted for that booking, independently of any receipt. The amount and factor stay in browser memory and clear after setup. Reopening a configured booking skips setup. A change of plot clears the previous plot’s basis in the same transaction.
 
-Alternatively, open `tools/private-payment-workbook.html` locally and transfer the result to the worksheet. Use the same tracking ID whenever a receipt is retried. The server receives the tracking ID, percentage and date with the booking identifiers. The live schedule provides the next instalment and the current balance in percentages. The plot amount, safety factor and calculated tokens are kept in memory only. Existing encrypted basis rows are retained under restricted database grants pending an owner retention decision.
+Enter each verified receipt percentage, date and tracking ID. The worksheet uses the saved quantity to show token shares for each receipt, instalment and balance. Use the same tracking ID when retrying a receipt. Anyone who obtains the decrypted token quantity and its factor can infer the price to the conversion precision.
 
 ## Access
 

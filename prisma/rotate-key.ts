@@ -38,7 +38,7 @@ const newBlindKey = rotateBlindIndex ? keyBuffer("BLIND_INDEX_KEY") : null;
 /** Re-encrypt one payload from the old key to the new one. */
 const move = (payload: string) => encryptSensitive(decryptSensitive(payload, oldKey), newKey);
 
-const counts = { aadhaar: 0, pan: 0, bank: 0, blindIndexes: 0 };
+const counts = { aadhaar: 0, pan: 0, bank: 0, blindIndexes: 0, plotTokens: 0 };
 
 await db.$transaction(
   async (tx) => {
@@ -74,6 +74,11 @@ await db.$transaction(
     }
 
     const banks = await tx.bankDetail.findMany({ select: { id: true, accountCipher: true, ifsc: true } });
+    for (const basis of await tx.calculatorPriceBasis.findMany()) {
+      const tokenCipher = move(basis.tokenCipher);
+      if (confirmed) await tx.calculatorPriceBasis.update({ where: { bookingId: basis.bookingId }, data: { tokenCipher } });
+      counts.plotTokens++;
+    }
     for (const bank of banks) {
       counts.bank++;
       const plain = decryptSensitive(bank.accountCipher, oldKey);
@@ -98,6 +103,7 @@ console.log(
     `  Aadhaar ciphers   ${counts.aadhaar}`,
     `  PAN ciphers       ${counts.pan}`,
     `  Bank accounts     ${counts.bank}`,
+    `  Plot token bases  ${counts.plotTokens}`,
     rotateBlindIndex ? `  Blind indexes     ${counts.blindIndexes}` : "  Blind indexes     unchanged",
     "",
     confirmed

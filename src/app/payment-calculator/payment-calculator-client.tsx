@@ -25,6 +25,7 @@ import {
   parseRupees,
   pct,
   plotTokens,
+  tokensForPercent,
   receiptTrackingId,
   shareOfInstalment,
   toUnits,
@@ -36,6 +37,7 @@ import {
   loadCalculatorBookingAction,
   rejectPaymentClaimAction,
   reversePaymentAction,
+  savePlotTokensAction,
   type CalculatorBookingView,
 } from "./actions";
 
@@ -55,6 +57,8 @@ const TD = "px-2 py-2 align-top tabular-nums";
 const SELECT = "h-10 w-full rounded-lg border border-input bg-card px-3 text-sm focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50";
 
 const human = (s: string) => s.charAt(0) + s.slice(1).toLowerCase().replaceAll("_", " ");
+const tokenShare = (basis: string | null, units: bigint) =>
+  basis ? `${pct(units)} · ${tokensForPercent(basis, units)} tokens` : pct(units);
 const day = (d: string) => formatIst(`${d}T00:00:00+05:30`);
 const PAYMENT_BADGE = { COMPLETE: "success", PARTIAL: "warning", UNPAID: "outline" } as const;
 const PAYMENT_LABEL = { COMPLETE: "Paid", PARTIAL: "Part paid", UNPAID: "Not paid" } as const;
@@ -186,8 +190,8 @@ export default function PaymentCalculatorClient({
     : 0n;
 
   const plot = parseRupees(plotValue);
-  const tokens = "paise" in plot ? plotTokens(plot.paise, factor.trim()) : null;
-  const byAmount = receivedAmount !== "";
+  const tokens = view?.tokens ?? ("paise" in plot ? plotTokens(plot.paise, factor.trim()) : null);
+  const byAmount = mode === "CALCULATE" && !view?.tokens && receivedAmount !== "";
   const conversion = (() => {
     if (!summary) return null;
     if (byAmount) {
@@ -222,6 +226,22 @@ export default function PaymentCalculatorClient({
         : rows.length === 0
           ? "Payment plan not configured: set one up on the Booking (Revise Payment Schedule) before recording a payment."
           : null;
+
+  async function saveTokens() {
+    if (busy || !view || view.tokens || !tokens) return;
+    setBusy(true);
+    try {
+      const result = await savePlotTokensAction(view.id, view.plotId, tokens);
+      clearPayment();
+      if (result.ok) setView({ ...view, tokens });
+      else await load(view.id);
+      setNotice(result.ok ? { ok: true, text: result.message } : { ok: false, text: result.error });
+    } catch {
+      setNotice({ ok: false, text: "Could not confirm the save. Reopen the booking to check its tokens." });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function approve() {
     if (!canApprove || !view || !validReceipt) return;
@@ -279,7 +299,7 @@ export default function PaymentCalculatorClient({
 
   const picker = React.useRef<HTMLDetailsElement>(null);
   const noPlot = !view || busy || !!loading;
-  const locked = noPlot || (mode === "RECORD" && !!blockedWhy);
+  const locked = noPlot || (mode === "RECORD" && (!!blockedWhy || !view?.tokens));
   const validReceipt = conversion?.ok ? conversion : null;
   const canApprove = !!validReceipt && !locked && attested && receiptTrackingId(reference.trim()) && !!paidOn && paidOn <= istDay(new Date());
   return (
@@ -332,9 +352,10 @@ export default function PaymentCalculatorClient({
               </div>
             </details>
             {view && <p className="mt-2 text-xs text-muted-foreground">{view.number} · {view.customer} · {human(view.status)}</p>}
+            {view?.tokens && <p className="mt-1 text-sm">Saved plot tokens: {view.tokens}</p>}
           </SheetRow>
 
-          <SheetRow title="Plot value & safety factor">
+          {view && !view.tokens && <SheetRow title="Plot value & safety factor">
             <div key={inputVersion} className="grid gap-3 sm:grid-cols-2">
               <Field label="Agreed plot value (₹)">
                 <PasswordInput visibilityLabel="plot value" inputMode="decimal" autoComplete="off" disabled={noPlot}
@@ -342,14 +363,16 @@ export default function PaymentCalculatorClient({
               </Field>
               <Field label="Safety factor">
                 <PasswordInput visibilityLabel="safety factor" inputMode="decimal" autoComplete="off" disabled={noPlot}
-                  value={factor} onChange={(e) => setFactor(e.target.value)} maxLength={18} placeholder="25" />
+                  value={factor} onChange={(e) => setFactor(e.target.value)} maxLength={18} />
               </Field>
               {tokens && <Field label="Plot tokens">
                 <PasswordInput visibilityLabel="plot tokens" autoComplete="off" disabled={noPlot} value={tokens} readOnly />
               </Field>}
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Plot value ÷ safety factor gives the token preview. These fields clear when you save a receipt, switch plots or leave the worksheet.</p>
-          </SheetRow>
+            {mode === "RECORD" && <Button type="button" className="mt-3" disabled={!tokens || noPlot || view.status !== "BOOKED" || view.activeProcess !== "NONE"} onClick={saveTokens}>
+              Save plot tokens
+            </Button>}
+          </SheetRow>}
 
           <SheetRow title="Payment received">
             {mode === "RECORD" && !!view?.claims.length && <Field label="Staff payment claim">
@@ -364,10 +387,10 @@ export default function PaymentCalculatorClient({
               </select>
             </Field>}
             <div key={inputVersion} className="mt-2 grid gap-3 sm:grid-cols-2">
-              <Field label="Received amount (₹)">
+              {!view?.tokens && mode === "CALCULATE" && <Field label="Received amount (₹)">
                 <PasswordInput visibilityLabel="received amount" inputMode="decimal" autoComplete="off" disabled={locked}
                   value={receivedAmount} onChange={(e) => setReceivedAmount(formatRupeeTyping(e.target.value))} placeholder="0" />
-              </Field>
+              </Field>}
               <Field label="Verified payment (%)">
                 <Input inputMode="decimal" autoComplete="off" disabled={locked} readOnly={byAmount}
                   value={byAmount ? (validReceipt ? fromUnits(validReceipt.deltaUnits) : "") : percent}
@@ -378,7 +401,7 @@ export default function PaymentCalculatorClient({
                   value={cumulativeAmount} onChange={(e) => setCumulativeAmount(formatRupeeTyping(e.target.value))} placeholder="0" />
               </Field>}
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Enter a received amount to calculate the percentage, or type a percentage you already verified.</p>
+            {tokens && validReceipt && <p className="mt-2 text-sm">Receipt: {tokensForPercent(tokens, validReceipt.deltaUnits)} tokens</p>}
             {mode === "RECORD" && blockedWhy && <p className="mt-2 text-xs">{blockedWhy}</p>}
             {conversion && !conversion.ok && <p role="status" className="mt-2 text-xs text-destructive">{conversion.reason}</p>}
           </SheetRow>
@@ -396,9 +419,9 @@ export default function PaymentCalculatorClient({
 
           <SheetRow title="Next instalment">
             {!summary ? <span className="text-sm text-muted-foreground">Select a plot to see its due date.</span> :
-              validReceipt && view ? <Preview rows={rows} received={summary.received} delta={validReceipt.deltaUnits} milestones={view.milestones} /> :
+              validReceipt && view ? <Preview basis={tokens} rows={rows} received={summary.received} delta={validReceipt.deltaUnits} milestones={view.milestones} /> :
               summary.current ? <p className="text-sm">Instalment {summary.current.seq} · <strong>{day(summary.current.dueDay)}</strong>
-                <span className="block text-xs text-muted-foreground">{pct(summary.current.pending)} due</span>
+                <span className="block text-xs text-muted-foreground">{tokenShare(tokens, summary.current.pending)} due</span>
               </p> : <p className="text-sm">{rows.length ? "All instalments paid." : "No payment schedule yet."}</p>}
           </SheetRow>
           {mode === "RECORD" && <footer className="flex flex-wrap items-center justify-between gap-3 rounded-b-2xl bg-secondary/50 px-4 py-3 sm:px-5">
@@ -412,10 +435,10 @@ export default function PaymentCalculatorClient({
         {view && summary && <>
           <section aria-label="Booking balance" className="space-y-3">
             <dl className="grid grid-cols-2 gap-y-3 sm:grid-cols-4">
-              <Stat label="Paid so far" value={pct(summary.received)} />
-              <Stat label="Balance left" value={pct(summary.outstanding)} />
-              <Stat label="Overdue" value={pct(summary.overdue)} />
-              <Stat label="Due today" value={pct(summary.dueToday)} />
+              <Stat label="Paid so far" value={tokenShare(tokens, summary.received)} />
+              <Stat label="Balance left" value={tokenShare(tokens, summary.outstanding)} />
+              <Stat label="Overdue" value={tokenShare(tokens, summary.overdue)} />
+              <Stat label="Due today" value={tokenShare(tokens, summary.dueToday)} />
             </dl>
             <PaymentProgress units={summary.received} />
             {view.scheduleRevisionWaiting && <p className="text-xs">A payment schedule revision is awaiting approval.</p>}
@@ -423,11 +446,11 @@ export default function PaymentCalculatorClient({
           <div key={view.id} className="min-w-0 divide-y rounded-xl border bg-card">
             <details className="min-w-0 p-4">
               <summary className="cursor-pointer text-sm font-semibold">Instalment schedule ({rows.length})</summary>
-              <div className="mt-3"><Schedule rows={rows} /></div>
+              <div className="mt-3"><Schedule basis={tokens} rows={rows} /></div>
             </details>
             <details className="min-w-0 p-4">
               <summary className="cursor-pointer text-sm font-semibold">Payment history ({view.entries.length + (opening !== 0n ? 1 : 0)})</summary>
-              <div className="mt-3"><History entries={view.entries} opening={opening} busy={busy}
+              <div className="mt-3"><History basis={tokens} entries={view.entries} opening={opening} busy={busy}
                 onReverse={["BOOKED", "PAYMENT_COMPLETED"].includes(view.status) && view.activeProcess === "NONE" ? reverse : null} /></div>
             </details>
           </div>
@@ -485,7 +508,7 @@ function ReasonSelect({ label, value, onChange }: { label: string; value: string
   );
 }
 
-function Schedule({ rows }: { rows: InstalmentRow[] }) {
+function Schedule({ rows, basis }: { rows: InstalmentRow[]; basis: string | null }) {
   if (rows.length === 0) {
     return <p className="text-xs text-muted-foreground">No payment plan yet. Set it up on the booking page.</p>;
   }
@@ -508,9 +531,9 @@ function Schedule({ rows }: { rows: InstalmentRow[] }) {
             <tr key={r.seq}>
               <td className={TD}>{r.seq}</td>
               <td className={TD}>{day(r.dueDay)}</td>
-              <td className={TD}>{pct(r.target)}</td>
-              <td className={TD}>{pct(r.received)}</td>
-              <td className={TD}>{pct(r.pending)}</td>
+              <td className={TD}>{tokenShare(basis, r.target)}</td>
+              <td className={TD}>{tokenShare(basis, r.received)}</td>
+              <td className={TD}>{tokenShare(basis, r.pending)}</td>
               <td className={TD}>{shareOfInstalment(r.received, r.target)}</td>
               <td className={TD}>
                 <Badge variant={PAYMENT_BADGE[r.payment]}>{PAYMENT_LABEL[r.payment]}</Badge>
@@ -528,11 +551,13 @@ function Schedule({ rows }: { rows: InstalmentRow[] }) {
 }
 
 function History({
+  basis,
   entries,
   opening,
   busy,
   onReverse,
 }: {
+  basis: string | null;
   entries: CalculatorBookingView["entries"];
   opening: bigint;
   busy: boolean;
@@ -561,7 +586,7 @@ function History({
               <td className={TD} colSpan={2}>
                 Paid earlier, carried over — no separate entries
               </td>
-              <td className={TD}>{pct(opening)}</td>
+              <td className={TD}>{tokenShare(basis, opening)}</td>
               <td className={TD}>—</td>
               <td className={TD}>Carried</td>
             </tr>
@@ -577,7 +602,7 @@ function History({
                   <td className={TD}>{formatIst(e.paidOn)}</td>
                   <td className={TD}>{e.reference}</td>
                   <td className={TD}>{e.mode ?? "—"}</td>
-                  <td className={TD}>{pct(units)}</td>
+                  <td className={TD}>{tokenShare(e.oldPlot ? null : basis, units)}</td>
                   <td className={TD}>{e.approvedBy}</td>
                   <td className={TD}>
                     {e.status === "REVERSED" ? "Reversed" : e.status === "SUPERSEDED" ? "Corrected" : old ? "Old plot — in the carried figure" : "Received"}
@@ -592,7 +617,7 @@ function History({
                   <tr>
                     <td className={TD} colSpan={6}>
                       <p className="mb-1 text-[11px] text-muted-foreground">
-                        Take back the whole {pct(units)} — for a bounced cheque or a returned transfer. The entry stays here, crossed out.
+                        Take back the whole {tokenShare(basis, units)} — for a bounced cheque or a returned transfer. The entry stays here, crossed out.
                       </p>
                       <div className="flex gap-2">
                         <ReasonSelect label="Reason for reversing" value={reversing.reason}
@@ -624,6 +649,7 @@ function History({
 }
 
 function Preview({
+  basis,
   rows,
   received,
   delta,
@@ -632,6 +658,7 @@ function Preview({
   rows: InstalmentRow[];
   received: bigint;
   delta: bigint;
+  basis: string | null;
   milestones: string[];
 }) {
   const after = received + delta;
@@ -644,7 +671,7 @@ function Preview({
         {nextDue ? <>Instalment {nextDue.seq} · <strong>{day(nextDue.dueDay)}</strong> after this receipt</>
           : rows.length ? <strong>This receipt completes the schedule.</strong> : "No payment schedule yet."}
       </p>
-      <p>Paid after this receipt <strong>{pct(after)}</strong> · Balance <strong>{pct(TOTAL_UNITS - after)}</strong></p>
+      <p>Paid after this receipt <strong>{tokenShare(basis, after)}</strong> · Balance <strong>{tokenShare(basis, TOTAL_UNITS - after)}</strong></p>
       {lands.length > 0 && (
         <p className="mt-1">
           Goes to{" "}
@@ -653,7 +680,7 @@ function Preview({
             const left = row.pending - l.units;
             return (
               <span key={l.seq}>
-                {i > 0 && ", "}instalment {l.seq} (+{pct(l.units)}, {left === 0n ? "complete" : `${pct(left)} still left`})
+                {i > 0 && ", "}instalment {l.seq} (+{tokenShare(basis, l.units)}, {left === 0n ? "complete" : `${tokenShare(basis, left)} still left`})
               </span>
             );
           })}
