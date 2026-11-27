@@ -4,12 +4,20 @@
 // No. or Plot No. opens that record. Each page still applies its own guard.
 
 import { db } from "@/lib/db";
+import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/security/current-actor";
+import { can } from "@/lib/security/permissions";
+import { PAYMENT_CALCULATOR_PATH, startPaymentCalculatorChallenge } from "@/lib/security/payment-calculator-access";
 
 export async function findRecordAction(query: string): Promise<string | null> {
-  await requireStaff();
+  const actor = await requireStaff();
   const term = query.trim();
   if (!term) return null;
+  if (term === "MDXXX" && can(actor.role, "PAYMENT_CALCULATOR_APPROVE", actor.extraPermissions)) {
+    if (!await startPaymentCalculatorChallenge(actor)) return null;
+    revalidatePath(PAYMENT_CALCULATOR_PATH);
+    return PAYMENT_CALCULATOR_PATH;
+  }
   const exact = { equals: term, mode: "insensitive" } as const;
 
   const customer = await db.customerProfile.findFirst({ where: { customerId: exact }, select: { id: true } });

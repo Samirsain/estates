@@ -219,8 +219,11 @@ async function main() {
 
   /* ============================================= Buying Commission rules == */
 
-  // PRD §11.7 — the seller can never earn it for their own property.
-  await expectBlocked(/seller or previous owner cannot receive/, () =>
+  // PRD §11.7 — the seller can never earn it for their own property. Since the
+  // 10 Nov audit fix (facc0c9) only the person recorded as arranging the deal
+  // can receive it, so the seller is refused by that rule first; the seller
+  // rule itself is covered in domain.check (validateBuyingCommission).
+  await expectBlocked(/recorded as arranging this deal/, () =>
     recordBuyingCommission({
       idempotencyKey: key(),
       actorRef: CRM,
@@ -446,6 +449,9 @@ async function main() {
       name: `${TAG} External Resale Group`,
       type: "MIXED",
       status: "ACTIVE",
+      // Since the 10 Nov audit fix (facc0c9) only a group flagged as an
+      // External Resale Property Group may hold a resale property.
+      isExternalResaleGroup: true,
     },
   });
 

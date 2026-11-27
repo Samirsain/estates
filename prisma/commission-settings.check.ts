@@ -208,8 +208,9 @@ async function main() {
   assert.equal(frozen.commissionVersionId, v4.versionId, "the due version is the one frozen");
   assert.equal(frozen.royaltyTokensPerAward, 10, "docss/11 — the points rate freezes with the request");
 
-  // docss/11 §1; Review Focus 5 — an Active version without a points rate (one
-  // created before points) is never frozen as "0 points": the request is refused.
+  // Owner, 2 Nov 2026 (90eaa33) — a version with no Royalty points rate has
+  // Royalty switched off: the request freezes null, never "0 points", and the
+  // Royalty award skips it. (Before that ruling the request was refused.)
   const legacy = await db.project.create({ data: { projectCode: `${TAG}L`, name: `${TAG} Legacy`, type: "RESIDENTIAL" } });
   await db.projectCommissionVersion.create({
     data: {
@@ -227,17 +228,15 @@ async function main() {
       effectiveFrom: new Date(),
     },
   });
-  await assert.rejects(
-    db.$transaction((tx) =>
-      freezeAtSubmission(tx, {
-        projectId: legacy.id,
-        soldByType: "THREE_PERCENT_CLUB",
-        soldByPersonId: null,
-        buyerPersonId: "00000000-0000-0000-0000-000000000000",
-      })
-    ),
-    /no Royalty points rate/
+  const royaltyOff = await db.$transaction((tx) =>
+    freezeAtSubmission(tx, {
+      projectId: legacy.id,
+      soldByType: "THREE_PERCENT_CLUB",
+      soldByPersonId: null,
+      buyerPersonId: "00000000-0000-0000-0000-000000000000",
+    })
   );
+  assert.equal(royaltyOff.royaltyTokensPerAward, null, "Royalty off freezes null, never 0 points");
 
   /* The create form may carry the settings too: saved as version 1, approved
      by the MD creating the Project exactly as above. */

@@ -951,3 +951,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS "one_pending_payment_approval"
 -- City Master (owner, 17 Nov 2026) — no two cities share a name, whatever the
 -- case: "Nohar" and "NOHAR" are one city.
 CREATE UNIQUE INDEX IF NOT EXISTS "City_name_lower_key" ON "City" (lower("name"));
+
+-- Confidential payment trial (revised brief §4.3, §7) — one pending payment claim per
+-- reference, and a claim names the Payment Received entry it verified exactly
+-- when it is approved.
+CREATE UNIQUE INDEX IF NOT EXISTS "one_pending_verification_reference"
+  ON "PaymentVerificationRequest" ("referenceKey") WHERE "status" = 'PENDING';
+ALTER TABLE "PaymentVerificationRequest" DROP CONSTRAINT IF EXISTS "verification_entry_matches_status";
+ALTER TABLE "PaymentVerificationRequest" ADD CONSTRAINT "verification_entry_matches_status"
+  CHECK (("status" = 'APPROVED') = ("paymentEntryId" IS NOT NULL));

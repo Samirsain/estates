@@ -13,6 +13,7 @@ import {
   type ReportFilters,
   type ReportName,
 } from "@/lib/services/report-service";
+import { shownReceiptEventReason } from "@/lib/domain/payment-percent";
 import { activityHistory } from "@/lib/services/report-service";
 
 export type ReportRow = Record<string, unknown>;
@@ -101,7 +102,7 @@ export async function activityHistoryAction(
         actorRef: event.actorRef,
         actorRole: event.actorRole,
         action: event.action,
-        reason: event.reason,
+        reason: shownReceiptEventReason(event.action, event.reason),
       })),
     };
   } catch (error) {

@@ -15,7 +15,7 @@
     "db:check": "node --env-file=.env prisma/db.check.ts && npm run booking:check && npm run commission-settings:check && npm run commission:check && npm run royalty:check && npm run trip:check && npm run controls:check && npm run phase5:check && npm run plc:check && npm run acquisition:check && npm run phase6:check && npm run phase7:check && npm run land:check",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "check": "node --import ./prisma/alias-loader.mjs src/lib/tasks.check.ts && node --import ./prisma/alias-loader.mjs src/lib/db-retry.check.ts && node --import ./prisma/alias-loader.mjs src/lib/security/security.check.ts && node --import ./prisma/alias-loader.mjs src/lib/domain/domain.check.ts && node --import ./prisma/alias-loader.mjs src/lib/services/plot-delete.check.ts && tsc --noEmit",
+    "check": "node --import ./prisma/alias-loader.mjs src/lib/tasks.check.ts && node --import ./prisma/alias-loader.mjs src/lib/db-retry.check.ts && node --import ./prisma/alias-loader.mjs src/lib/security/security.check.ts && node --import ./prisma/alias-loader.mjs src/lib/domain/domain.check.ts && node --import ./prisma/alias-loader.mjs src/lib/services/plot-delete.check.ts && node --import ./prisma/alias-loader.mjs src/lib/domain/payment-percent.check.ts && tsc --noEmit",
     "booking:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/booking.check.ts",
     "db:ping": "node --env-file=.env prisma/ping.ts",
     "land:check": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/land-inquiry.check.ts",
@@ -37,6 +37,9 @@
     "data:reset": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reset-data.ts",
     "rotate:key": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/rotate-key.ts",
     "reset:password": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/reset-password.ts",
+    "trial:dev": "node --env-file=.env.payment-trial tools/run-payment-mock.cjs",
+    "trial:seed": "node --env-file=.env.payment-trial --import ./prisma/alias-loader.mjs prisma/payment-trial-seed.ts",
+    "trial:check": "node --env-file=.env.payment-trial --import ./prisma/alias-loader.mjs prisma/payment-trial.check.ts",
     "jobs:run": "node --env-file=.env --import ./prisma/alias-loader.mjs prisma/run-jobs.ts"
   },
   "dependencies": {
@@ -50,18 +53,23 @@
     "@radix-ui/react-slot": "^1.1.0",
     "@radix-ui/react-tabs": "^1.1.1",
     "@radix-ui/react-tooltip": "^1.1.4",
+    "@simplewebauthn/browser": "14.0.0",
+    "@simplewebauthn/server": "14.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^11.11.17",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.460.0",
-    "next": "^15.5.25",
+    "next": "15.5.29",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.13.3",
     "tailwind-merge": "^2.5.4",
     "tailwindcss-animate": "^1.0.7"
+  },
+  "overrides": {
+    "next": { "postcss": "$postcss" }
   },
   "devDependencies": {
     "@types/node": "^20.17.6",

@@ -21,7 +21,9 @@ export type TaskView =
   | "UPCOMING"
   | "COMPLETED"
   | "ALL"
-  | "RANGE";
+  | "RANGE"
+  // Payment trial (revised brief §4.4): payments waiting for MD verification.
+  | "VERIFY";
 
 /**
  * The record a task hangs off, resolved into the columns the Dashboard prints.
@@ -81,6 +83,10 @@ export type Task = {
   decision?: boolean;
   recurrence?: Recurrence;
   revisions: number;
+  /** Payment trial — the day (YYYY-MM-DD) the customer promised to pay. */
+  promisedOn?: string;
+  /** Payment trial — a payment claim on this task's Booking is waiting for MD. */
+  waitingForMd?: boolean;
 };
 
 /**
@@ -435,6 +441,8 @@ export function filterTasks(
         return true;
       case "RANGE":
         return !!range && day >= range.from && day <= range.to;
+      case "VERIFY":
+        return t.status === "PENDING" && (t.purpose === "PAYMENT_VERIFICATION" || !!t.waitingForMd);
     }
   });
 }

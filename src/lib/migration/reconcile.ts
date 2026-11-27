@@ -208,15 +208,27 @@ async function paymentDatasets(): Promise<RuleResult> {
       requestNo: true,
       bookingNumber: true,
       paymentReceivedPercent: true,
-      paymentEntries: { where: { status: "CONFIRMED" }, select: { percent: true } },
+      paymentEntries: { where: { status: "CONFIRMED" }, select: { percent: true, recordedAt: true } },
+      // PRD §5.3 — an approved Change Plot sets progress to the % Accounts
+      // applied for the new Plot; only entries recorded after it add to that.
+      changePlotRequests: {
+        where: { status: "APPROVED" },
+        orderBy: { decidedAt: "desc" },
+        take: 1,
+        select: { appliedPercent: true, decidedAt: true },
+      },
     },
   });
   for (const booking of bookings) {
-    const summed = booking.paymentEntries.reduce((sum, e) => sum.add(e.percent), new D(0));
+    const moved = booking.changePlotRequests[0];
+    const counted = moved?.decidedAt ? booking.paymentEntries.filter((e) => e.recordedAt > moved.decidedAt!) : booking.paymentEntries;
+    const summed = counted.reduce((sum, e) => sum.add(e.percent), new D(moved?.appliedPercent ?? 0));
     if (!summed.equals(booking.paymentReceivedPercent)) {
       exceptions.push({
         record: booking.bookingNumber ?? booking.requestNo,
-        detail: `Payment Received is stored as ${booking.paymentReceivedPercent.toFixed(4)}% but its confirmed entries total ${summed.toFixed(4)}%`,
+        detail: moved
+          ? `Payment Received is stored as ${booking.paymentReceivedPercent.toFixed()}% but Change Plot applied ${moved.appliedPercent?.toFixed() ?? "0"}% and the confirmed entries since total ${summed.sub(moved.appliedPercent ?? 0).toFixed()}%`
+          : `Payment Received is stored as ${booking.paymentReceivedPercent.toFixed()}% but its confirmed entries total ${summed.toFixed()}%`,
       });
     }
   }

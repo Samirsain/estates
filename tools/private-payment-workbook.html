@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+<title>Private payment workbook</title>
+<style>
+  body { margin: 3rem auto; max-width: 36rem; padding: 0 1rem; font: 16px/1.5 system-ui, sans-serif; color: #24201e; }
+  form, label { display: grid; gap: .5rem; }
+  form { gap: 1rem; margin-block: 1.5rem; }
+  input, button { box-sizing: border-box; width: 100%; padding: .65rem; font: inherit; }
+  button { background: #8c2e10; color: white; border: 0; border-radius: .4rem; cursor: pointer; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f6f1ee; padding: 1rem; }
+</style>
+<h1>Private payment workbook</h1>
+<p>Open this file locally on the MD's device. Use the accounts ledger to confirm the agreed total and receipt. Enter only the result and tracking ID in CRM.</p>
+<form id="workbook" autocomplete="off">
+  <label>Agreed plot amount (₹)<input id="deal" inputmode="decimal" required></label>
+  <label>New receipt amount (₹)<input id="receipt" inputmode="decimal" required></label>
+  <label>Total confirmed receipts including this one (₹)<input id="cumulative" inputmode="decimal" required></label>
+  <label>Current paid percentage in CRM<input id="current" inputmode="decimal" required value="0"></label>
+  <label>Existing receipt tracking ID, if already issued<input id="tracking" placeholder="PV-…"></label>
+  <button type="submit">Calculate and clear amounts</button>
+</form>
+<pre id="result" role="status" hidden></pre>
+<p>Keep the tracking ID alongside its receipt in the private accounts ledger. Reuse the same ID if you retry.</p>
+<script>
+  const workbook = document.getElementById("workbook");
+  const result = document.getElementById("result");
+  const value = (id) => document.getElementById(id).value.trim();
+  const totalUnits = 10000000000n;
+  const legacyTolerance = 10000n;
+
+  function parse(text, places, maxWhole) {
+    const parts = text.split(".");
+    const whole = parts[0];
+    const fraction = parts[1] ?? "";
+    if (!/^\d+$/.test(whole) || whole.length > maxWhole || parts.length > 2 ||
+        !/^\d*$/.test(fraction) || fraction.length > places) {
+      throw new Error("Check the number format. Use digits and a decimal point.");
+    }
+    return BigInt(whole + fraction.padEnd(places, "0"));
+  }
+
+  const money = (id) => parse(value(id).replace(/,/g, ""), 2, 13);
+  workbook.addEventListener("submit", (event) => {
+    event.preventDefault();
+    result.hidden = false;
+    try {
+      const deal = money("deal");
+      const receipt = money("receipt");
+      const cumulative = money("cumulative");
+      const current = parse(value("current"), 8, 3);
+      if (!deal || !receipt || receipt > cumulative || cumulative > deal || current >= totalUnits) {
+        throw new Error("Check the agreed amount, receipt, cumulative amount, and CRM percentage.");
+      }
+      const delta = cumulative * totalUnits / deal - current;
+      const receiptUnits = receipt * totalUnits / deal;
+      const gap = delta - receiptUnits;
+      if (delta <= 0n || gap < -legacyTolerance || gap > legacyTolerance) {
+        throw new Error("The receipt and prior CRM percentage do not reconcile. Check the amounts before saving.");
+      }
+      const tracking = value("tracking") || "PV-" + crypto.randomUUID();
+      if (!/^PV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tracking)) {
+        throw new Error("Use the original tracking ID issued for this receipt.");
+      }
+      const scaled = delta.toString().padStart(9, "0");
+      const percentage = scaled.slice(0, -8) + "." + scaled.slice(-8);
+      result.textContent = "Verified payment " + percentage.replace(/\.?0+$/, "") + "%\nReceipt tracking ID " + tracking;
+      workbook.reset();
+    } catch (error) {
+      result.textContent = error.message;
+    }
+  });
+  window.addEventListener("pagehide", () => {
+    workbook.reset();
+    result.hidden = true;
+    result.textContent = "";
+  });
+</script>
+</html>

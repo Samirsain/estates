@@ -369,11 +369,27 @@ model StaffAccount {
   assignedEnquiries     Enquiry[]
   assignedTasks         Task[]        @relation("TaskAssignee")
   assignedLandInquiries LandInquiry[] @relation("LandInquiryAssignee")
+  paymentCalculatorGate PaymentCalculatorGate?
 
   @@index([role, status])
 }
 
 /// PRD §19 / ARCHITECTURE §8 — a repeated key returns the original result.
+model PaymentCalculatorGate {
+  staffAccountId String       @id
+  staffAccount   StaffAccount @relation(fields: [staffAccountId], references: [id], onDelete: Cascade)
+  sessionDigest  String
+  openedUntil    DateTime?
+  unlockedUntil  DateTime?
+  challenge      String?
+  challengeUntil DateTime?
+  attemptWindow  DateTime?
+  attempts       Int          @default(0)
+  credentialId   String?      @unique
+  publicKey      Bytes?
+  counter        Int          @default(0)
+}
+
 model IdempotencyRecord {
   id          String   @id @default(uuid())
   key         String   @unique
@@ -1040,6 +1056,9 @@ model Task {
   origin            String     @default("SYSTEM")
   /// PRD §17.2 — in the Unassigned Review queue after an emergency disable.
   needsReassignment Boolean    @default(false)
+  /// Payment trial — the date the customer promised to pay, on a Payment
+  /// Follow-Up. A promise never moves the instalment's own due date.
+  promisedOn        DateTime?  @db.Date
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -1157,6 +1176,9 @@ enum ScheduleStatus {
 enum EntryStatus {
   CONFIRMED
   SUPERSEDED
+  /// Payment trial — MD reversed the whole payment (a bounced cheque, a
+  /// returned transfer). The row and its audit stay; it no longer counts.
+  REVERSED
 }
 
 /// PRD §24 — one correction pattern for every approved external reference.
@@ -1234,7 +1256,8 @@ model Booking {
   activeProcess BookingProcess @default(NONE)
 
   /// Cumulative verified Payment Received. Never above 100% (PRD §10.4).
-  paymentReceivedPercent Decimal @default(0) @db.Decimal(7, 4)
+  /// Eight places since the payment trial: rupee payments rarely divide evenly.
+  paymentReceivedPercent Decimal @default(0) @db.Decimal(11, 8)
 
   submittedByRef String
   submittedAt    DateTime  @default(now())
@@ -1259,11 +1282,20 @@ model Booking {
   buybacks               Acquisition[]            @relation("BuybackSource")
   royaltyLinkedCustomers CustomerProfile[]        @relation("RoyaltyFirstPurchase")
   completions            BookingCompletion[]
+  verificationRequests   PaymentVerificationRequest[]
+  calculatorBasis        CalculatorPriceBasis?
 
   @@index([status])
   @@index([primaryPersonId, status])
   @@index([plotId, status])
   @@index([soldByPersonId])
+}
+
+/// MD calculator only. One encrypted token quantity for the current booking and plot.
+model CalculatorPriceBasis {
+  bookingId   String  @id
+  booking     Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  tokenCipher String
 }
 
 /// PRD §9.1 — the immutable submission snapshot. While Waiting for Booking
@@ -1358,7 +1390,7 @@ model PaymentInstalment {
   scheduledPercent Decimal  @db.Decimal(7, 4)
   dueDate          DateTime
   /// Carried forward unchanged when a revision creates the next version.
-  receivedPercent  Decimal  @default(0) @db.Decimal(7, 4)
+  receivedPercent  Decimal  @default(0) @db.Decimal(11, 8)
 
   @@unique([scheduleVersionId, seq])
 }
@@ -1370,7 +1402,7 @@ model PaymentReceivedEntry {
   bookingId String
   booking   Booking @relation(fields: [bookingId], references: [id])
 
-  percent    Decimal  @db.Decimal(7, 4)
+  percent    Decimal  @db.Decimal(11, 8)
   /// Operator-entered action date. Cannot be future-dated (PRD §10.5).
   paidOn     DateTime
   /// System entry timestamp, kept separate from the action date (PRD §24).
@@ -1396,6 +1428,52 @@ model PaymentReceivedEntry {
   /// who paid, and their reference. Optional; kept for Accounts review only.
   payerName      String?
   payerReference String?
+
+  /// Payment trial — the staff claim this entry verified, when it came from one.
+  verificationRequest PaymentVerificationRequest?
+
+  @@index([bookingId, status])
+}
+
+enum PaymentMode {
+  UPI
+  NEFT
+  RTGS
+  IMPS
+  CHEQUE
+  CASH
+  CARD
+  OTHER
+}
+
+/// Confidential payment trial (revised brief §4.3) — a payment the customer
+/// says they made, raised by staff with no rupee figure anywhere on it. It moves
+/// nothing: progress, commission and rewards change only when MD approves its
+/// percentage, and the approval links the PaymentReceivedEntry it created.
+model PaymentVerificationRequest {
+  id        String  @id @default(uuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  /// Operator-entered, never in the future.
+  claimedPaidOn DateTime
+  mode          PaymentMode
+  /// UTR, cheque or receipt number as given — an opaque reference, no amount.
+  reference     String
+  /// normaliseReference(reference): one pending claim per reference (constraints.sql).
+  referenceKey  String
+  note          String?
+
+  status         ReviewDecision @default(PENDING)
+  requestedByRef String
+  requestedAt    DateTime       @default(now())
+  decidedByRef   String?
+  decidedAt      DateTime?
+  /// The reason on a rejection; never a rupee amount.
+  decisionNote   String?
+
+  paymentEntryId String?               @unique
+  paymentEntry   PaymentReceivedEntry? @relation(fields: [paymentEntryId], references: [id])
 
   @@index([bookingId, status])
 }

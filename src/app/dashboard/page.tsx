@@ -7,6 +7,7 @@ import { requireStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
 import { taskSubjects } from "@/lib/services/task-service";
 import { shownRecordName, type RecordKind, type Recurrence, type Task } from "@/lib/tasks";
+import { paymentTrialEnabled } from "@/lib/domain/payment-percent";
 import DashboardClient from "./dashboard-client";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,15 @@ export default async function DashboardPage() {
   // What each task is actually about, in columns rather than in one line of
   // display text (DESIGN §6.2).
   const subjects = await taskSubjects(rows);
+  // Payment trial — Bookings with a payment claim waiting for MD.
+  const paymentTrial = paymentTrialEnabled();
+  const claimed = paymentTrial
+    ? new Set(
+        (await db.paymentVerificationRequest.findMany({ where: { status: "PENDING" }, select: { bookingId: true } })).map(
+          (c) => c.bookingId
+        )
+      )
+    : new Set<string>();
 
   const tasks: Task[] = rows.map((row) => ({
     id: row.id,
@@ -62,10 +72,14 @@ export default async function DashboardPage() {
     dueAt: row.dueAt.toISOString(),
     urgent: row.urgent,
     status: row.status,
-    latestResult: row.latestResult ?? undefined,
+    latestResult: paymentTrial && row.recordKind === "Booking" &&
+      ["PAYMENT_VERIFICATION", "PAYMENT_MD_APPROVAL"].includes(row.purpose ?? "")
+      ? undefined : row.latestResult ?? undefined,
     decision: row.decision,
     recurrence: row.recurrence as Recurrence,
     revisions: row.revisions,
+    promisedOn: row.promisedOn ? row.promisedOn.toISOString().slice(0, 10) : undefined,
+    waitingForMd: row.purpose === "PAYMENT_FOLLOW_UP" && claimed.has(row.recordId),
   }));
 
   return (
@@ -76,6 +90,7 @@ export default async function DashboardPage() {
       initialTasks={tasks}
       seesAllWork={seesAllWork}
       canAddTask={can(actor.role, "TASK_CREATE", actor.extraPermissions)}
+      paymentTrial={paymentTrial}
     />
   );
 }

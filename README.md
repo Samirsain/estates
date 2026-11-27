@@ -71,8 +71,9 @@ login control, since CR-003 removed multi-factor authentication.
 | `npm run db:check` | The full end-to-end suite: schema, bookings, commission, phase 5, acquisitions, phase 6, phase 7 |
 | `npm run reconcile` | The migration record-count and exception report. Non-zero exit while any exception is open |
 
-The database checks write and purge tagged data, so they refuse to run unless
-`ALLOW_CHECK_WRITES=true` is set. **A production environment must never set it.**
+The database checks and fixture seed require `ALLOW_CHECK_WRITES=true` and a
+dedicated localhost test database. The hosted production database and the
+retired real-data copy are blocked even if that flag is present.
 
 ---
 

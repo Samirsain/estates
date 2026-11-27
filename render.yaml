@@ -19,15 +19,15 @@ services:
     name: three-percent-club-crm
     runtime: node
     plan: free
+    autoDeployTrigger: checksPass
     # Render has no India region; Singapore is the closest to the Mumbai
     # database. Keep the two as close as the platform allows.
     region: singapore
     # migrate deploy applies only pending migrations and never resets data. It
     # runs before the build so a deploy can never serve code against a schema
     # that has not caught up. It uses DIRECT_URL, which bypasses the pooler.
-    # The node -e prints only the host, never the password. It is here because a
-    # stale DIRECT_URL is invisible otherwise: migrate deploy names the host it
-    # failed on, but not which variable the value came from.
+    # The database check requires both URLs to point at the same Supabase
+    # project and refuses the local mock database before any schema changes.
     #
     # constraints.sql then re-applies the controls Prisma cannot express
     # (partial unique indexes, CHECKs, triggers). Without it a deploy ships code
@@ -35,8 +35,8 @@ services:
     # safe to re-run. It goes through DIRECT_URL, as migrate deploy does, not the
     # transaction pooler. A row that breaks a control fails the build, and the
     # running version keeps serving.
-    buildCommand: npm ci && node -e "console.log('DIRECT_URL host ->', new URL(process.env.DIRECT_URL).host)" && npx prisma migrate deploy && npx prisma db execute --file prisma/constraints.sql --url "$DIRECT_URL" && npm run build
-    startCommand: npm start
+    buildCommand: node tools/check-render-database.cjs && npm ci && npx prisma migrate deploy && npx prisma db execute --file prisma/constraints.sql --url "$DIRECT_URL" && npm run build
+    startCommand: node tools/check-render-database.cjs && npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION

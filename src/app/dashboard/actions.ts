@@ -7,7 +7,8 @@ import { projectLabel } from "@/lib/utils";
 import { requireStaff } from "@/lib/security/current-actor";
 import { blocked, CommandError, runCommand } from "@/lib/services/command";
 import { completeTask, ensureTask, reviseTask } from "@/lib/services/task-service";
-import { FOLLOW_UP_PURPOSES, isRecurrence, reviseGroup, reviseProblem } from "@/lib/tasks";
+import { FOLLOW_UP_PURPOSES, istDay, isRecurrence, reviseGroup, reviseProblem } from "@/lib/tasks";
+import { MONETARY_TEXT_REFUSAL, monetaryText, paymentTrialEnabled } from "@/lib/domain/payment-percent";
 import type { StaffRole } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
 import { personLabel, type PickerOption } from "@/lib/domain/person-search";
@@ -66,7 +67,9 @@ export async function reviseTaskAction(
   dueAtIso: string,
   result: string,
   remark: string,
-  key: string
+  key: string,
+  /** Payment trial — "Promised to Pay" on a payment follow-up: the promised day, YYYY-MM-DD. */
+  promisedOn?: string
 ): Promise<ActionResult> {
   const actor = await requireStaff("TASK_COMPLETE");
   try {
@@ -76,7 +79,7 @@ export async function reviseTaskAction(
         operation: "TASK_REVISE",
         actorRef: actor.staffAccountId,
         actorRole: actor.role,
-        payload: { taskId, dueAtIso, result, remark },
+        payload: { taskId, dueAtIso, result, remark, promisedOn },
       },
       async (tx) => {
         // Owner, 2 Nov 2026 — the Result must be one of this task's group, and a
@@ -86,9 +89,23 @@ export async function reviseTaskAction(
           select: { purpose: true, decision: true, assigneeStaffId: true, assigneeRole: true },
         });
         refuseOthersTask(task, actor);
-        const problem = reviseProblem(reviseGroup(task), result, remark);
+        const group = reviseGroup(task);
+        const problem = reviseProblem(group, result, remark);
         if (problem) blocked(problem);
+        // Payment trial (revised brief §4.4, §8): a payment follow-up carries no rupee
+        // amount, and "Promised to Pay" records the day apart from the due date.
+        const trial = paymentTrialEnabled() && group === "PAYMENT";
+        const promising = trial && result === "Promised to Pay";
+        if (trial && monetaryText(remark)) blocked(MONETARY_TEXT_REFUSAL);
+        if (promising && !/^\d{4}-\d{2}-\d{2}$/.test(promisedOn ?? "")) blocked("Enter the date the customer promised to pay.");
+        if (promising && promisedOn! < istDay(new Date())) blocked("The promised date cannot be in the past.");
         await reviseTask(tx, taskId, actor.staffAccountId, new Date(dueAtIso), result, remark);
+        if (promising) {
+          await tx.task.update({ where: { id: taskId }, data: { promisedOn: new Date(`${promisedOn}T00:00:00Z`) } });
+          await tx.taskEvent.create({
+            data: { taskId, actorRef: actor.staffAccountId, action: "PAYMENT_PROMISED", detail: `Customer promised to pay by ${promisedOn}` },
+          });
+        }
         return {
           result: { taskId },
           audit: { entity: "Task", entityId: taskId, action: "TASK_REVISED", reason: remark },
@@ -100,6 +117,19 @@ export async function reviseTaskAction(
   } catch (error) {
     return toResult(error);
   }
+}
+
+/** Payment trial (revised brief §4.4) — a task's history, within the task's own Task List scope. */
+export async function taskHistoryAction(
+  taskId: string
+): Promise<{ at: string; actorRef: string; action: string; detail: string | null }[]> {
+  const actor = await requireStaff();
+  const task = await db.task.findUniqueOrThrow({
+    where: { id: taskId },
+    select: { assigneeStaffId: true, assigneeRole: true, events: { orderBy: { at: "desc" }, take: 50 } },
+  });
+  refuseOthersTask(task, actor);
+  return task.events.map((e) => ({ at: e.at.toISOString(), actorRef: e.actorRef, action: e.action, detail: e.detail }));
 }
 
 /** The people a manual task can be given to: active staff, by name and role. */

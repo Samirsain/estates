@@ -2,6 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { SafariDateClose } from "@/components/safari-date-close";
 
+// Production scripts use a per-request nonce supplied by middleware.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "3% Club CRM",
   description: "Enterprise Plotted Real Estate CRM with Role-Based Access, Holds, Bookings, & Financial Governance",

@@ -12,22 +12,28 @@ import { Eye, EyeOff } from "lucide-react";
 import { Input, type InputProps } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-export function PasswordInput({ className, ...props }: Omit<InputProps, "type">) {
+export function PasswordInput({
+  className,
+  disabled,
+  visibilityLabel = "password",
+  ...props
+}: Omit<InputProps, "type"> & { visibilityLabel?: string }) {
   const [shown, setShown] = React.useState(false);
 
   return (
     <div className="relative">
       <Input
         {...props}
+        disabled={disabled}
         type={shown ? "text" : "password"}
         // Room for the button, so a long password never runs under it.
         className={cn("pr-10", className)}
       />
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setShown((v) => !v)}
-        // A password is not read out; the button is what needs the name.
-        aria-label={shown ? "Hide password" : "Show password"}
+        aria-label={`${shown ? "Hide" : "Show"} ${visibilityLabel}`}
         aria-pressed={shown}
         className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       >

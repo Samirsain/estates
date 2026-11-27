@@ -33,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Section, Stat } from "@/components/record-section";
+import { PaymentInstalmentsPanel } from "./payment-instalments-panel";
 import HistoryButton from "@/app/members/[id]/history-button";
 import ShowMore from "@/app/members/[id]/show-more";
 import { Input } from "@/components/ui/input";
@@ -137,6 +138,8 @@ export type BookingRowView = {
   status: string;
   activeProcess: string;
   paymentReceivedPercent: string;
+  /** For reading only: "24.99%" paid, "75.01%" left in the payment trial. */
+  paymentShown: { paid: string; left: string };
   bookingDate: string;
   submittedAt: string;
   submittedByRef: string;
@@ -180,6 +183,9 @@ export type PersonView = {
 export type MemberView = { personId: string; memberId: string; fullName: string };
 
 type Permissions = {
+  /** Confidential payment trial (revised brief §4.1). */
+  paymentTrial: boolean;
+  requestVerification: boolean;
   submit: boolean;
   decide: boolean;
   cancel: boolean;
@@ -308,7 +314,7 @@ function statusTooltip(row: BookingRowView): string {
   if (row.bookingNumber) lines.push(row.bookingNumber);
   lines.push(`Booking Date: ${formatIstDate(row.bookingDate)}`);
   lines.push(`Submitted by ${row.submittedByRef} on ${formatIst(row.submittedAt)}`);
-  lines.push(`Payment Received: ${row.paymentReceivedPercent}%`);
+  lines.push(`Payment Received: ${row.paymentShown.paid}`);
   if (row.pendingReviewVersion !== null) lines.push("Waiting on the Accounts decision");
   return lines.join("\n");
 }
@@ -788,10 +794,10 @@ export default function BookingsClient({
               <dl className="flex flex-wrap gap-x-10 gap-y-3">
                 <Stat
                   label="Received"
-                  value={`${Number(focusRow.paymentReceivedPercent)}%`}
+                  value={focusRow.paymentShown.paid}
                   hint={
                     Number(remainingPercent(focusRow.paymentReceivedPercent)) > 0
-                      ? `${Number(remainingPercent(focusRow.paymentReceivedPercent))}% remaining`
+                      ? `${focusRow.paymentShown.left} remaining`
                       : "Paid in full"
                   }
                 />
@@ -825,6 +831,10 @@ export default function BookingsClient({
             people={people}
             permissions={permissions}
             onAction={setDialog}
+            onPaymentChange={async () => {
+              setDetail(await loadBookingDetail(focusRow.id));
+              router.refresh();
+            }}
           />
         </div>
       ) : (
@@ -996,7 +1006,7 @@ export default function BookingsClient({
                       </span>
                     )}
                   </td>
-                  <td className="text-center tabular-nums">{row.paymentReceivedPercent}%</td>
+                  <td className="text-center tabular-nums">{row.paymentShown.paid}</td>
                   {/* As on Acquisitions: Payment is the one action taken from
                       the list, gated exactly like Confirm Payment on the
                       Booking's page; once paid in full, Delivered takes its
@@ -1244,7 +1254,7 @@ export default function BookingsClient({
           })()}
           <Field label="Corrected percentage (%)">
             {/* Keyed on the payment, so picking another one refills its percentage. */}
-            <Input key={dialog.entryId} name="percent" type="number" step="0.0001" min="0.0001" max="100" defaultValue={dialog.percent} required />
+            <Input key={dialog.entryId} name="percent" type="number" step="0.00000001" min="0.00000001" max="100" defaultValue={dialog.percent} required />
           </Field>
           <Field label="Payment Date">
             <Input
@@ -1766,12 +1776,14 @@ function BookingDetailPanel({
   people,
   permissions,
   onAction,
+  onPaymentChange,
 }: {
   row: BookingRowView;
   detail: BookingDetail | null;
   people: PersonView[];
   permissions: Permissions;
   onAction: (d: Dialog) => void;
+  onPaymentChange?: () => Promise<void>;
 }) {
   if (!detail || detail.id !== row.id) {
     return (
@@ -2014,6 +2026,16 @@ function BookingDetailPanel({
       {/* 6 Payments — the schedule beside every confirmed entry, two boxes
           (owner, 3 Nov 2026). Part payment is allowed and there is no separate
           Partially Received status. */}
+      {permissions.paymentTrial ? (
+        <PaymentInstalmentsPanel
+          bookingId={row.id}
+          status={row.status}
+          received={row.paymentReceivedPercent}
+          detail={detail}
+          canRequest={permissions.requestVerification}
+          onChanged={onPaymentChange ?? (async () => {})}
+        />
+      ) : (
       <div className="grid gap-4 lg:grid-cols-2">
         <Section
           title="Payment Schedule"
@@ -2114,6 +2136,7 @@ function BookingDetailPanel({
           )}
         </Section>
       </div>
+      )}
 
       {/* 7 Commission — percentages only; the CRM stores no payout amount.
           Eligibility and payment are separate statuses. */}

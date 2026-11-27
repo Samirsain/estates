@@ -834,18 +834,21 @@ assert.equal(instalmentStatus(line(1, "30", "2026-08-19"), new Date("2026-08-19T
 
 // Oldest unpaid instalment first, spilling into the next (PRD §12.1).
 assert.deepEqual(allocatePayment(schedule, "50").allocations, [
-  { seq: 1, percent: "30.0000" },
-  { seq: 2, percent: "20.0000" },
+  { seq: 1, percent: "30.00000000" },
+  { seq: 2, percent: "20.00000000" },
 ]);
 // Part payment stops inside the instalment it lands in.
-assert.deepEqual(allocatePayment(schedule, "10").allocations, [{ seq: 1, percent: "10.0000" }]);
+assert.deepEqual(allocatePayment(schedule, "10").allocations, [{ seq: 1, percent: "10.00000000" }]);
 // A fully received instalment is skipped.
-assert.deepEqual(allocatePayment(partlyPaid, "10").allocations, [{ seq: 2, percent: "10.0000" }]);
+assert.deepEqual(allocatePayment(partlyPaid, "10").allocations, [{ seq: 2, percent: "10.00000000" }]);
 assert.throws(() => allocatePayment(schedule, "0"), /greater than 0%/);
-assert.throws(() => allocatePayment(schedule, "0.00004"), /at most 4 decimal places/, "stored as 0.0000 otherwise");
+// Payment Received keeps eight places since the payment trial's owner review.
+assert.ok(allocatePayment(schedule, "0.00000004").allocations.length === 1);
+assert.throws(() => allocatePayment(schedule, "0.000000004"), /at most 8 decimal places/, "stored as 0.00000000 otherwise");
 // PRD §10.4 — no Excess Receipt entry is ever created above 100%.
 assert.throws(() => allocatePayment(schedule, "101"), /cannot go above 100%/);
-assert.throws(() => allocatePayment(partlyPaid, "71"), /exceeds the outstanding schedule by 1.0000%/);
+assert.throws(() => allocatePayment(partlyPaid, "71"), /exceeds the outstanding schedule by 1%/);
+assert.throws(() => allocatePayment(partlyPaid, "70.00000001"), /exceeds the outstanding schedule by 0.00000001%/);
 
 assert.equal(progressAfter("25", "75").toFixed(4), "100.0000");
 // The refusal names what was allowed, not only what was exceeded — a fully

@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db, inWaves } from "@/lib/db";
 import { BUYING_CAP_PERCENT } from "@/lib/domain/acquisition";
+import { paymentTrialEnabled, shownReceiptTrackingId } from "@/lib/domain/payment-percent";
 import { maskExportRow } from "@/lib/domain/completion";
 import { blocked } from "./command";
 import { maskMobile } from "@/lib/security/identity";
@@ -100,7 +101,7 @@ export async function runReport(
         plotNumber: e.booking.plot.plotNumber,
         receivedPercent: e.percent.toFixed(2),
         paidOn: e.paidOn,
-        reference: e.externalReference?.rawValue ?? null,
+        reference: paymentTrialEnabled() ? shownReceiptTrackingId(e.externalReference?.rawValue, e.id) : e.externalReference?.rawValue ?? null,
       }));
     }
 

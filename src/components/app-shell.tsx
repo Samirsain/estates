@@ -231,7 +231,9 @@ export function AppShell({
         </div>
 
         <nav className={`flex min-w-0 flex-1 gap-1 overflow-x-auto py-2 pr-3 md:flex-col md:overflow-y-auto md:overflow-x-hidden md:px-3 md:pb-3 md:pt-0 md:[mask-image:none] ${SWIPE}`}>
-          {NAV.filter((item) => !("admin" in item && item.admin) || canAdminister).map(
+          {NAV.filter(
+            (item) => !("admin" in item && item.admin) || canAdminister
+          ).map(
             (item, i) => {
               const active = isOn(pathname, item.href);
               return (

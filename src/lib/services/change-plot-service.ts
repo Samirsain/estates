@@ -396,7 +396,7 @@ export async function decideChangePlot(args: {
         const take = instalment.scheduledPercent.lt(remaining) ? instalment.scheduledPercent : remaining;
         await tx.paymentInstalment.update({
           where: { id: instalment.id },
-          data: { receivedPercent: take.toFixed(4) },
+          data: { receivedPercent: take.toFixed(8) },
         });
         remaining = remaining.sub(take);
       }
