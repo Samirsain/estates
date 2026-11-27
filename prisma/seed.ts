@@ -15,8 +15,10 @@ import {
 } from "../src/lib/security/identity.ts";
 import { calculateAreas } from "../src/lib/domain/inventory.ts";
 import { INITIAL_PASSWORD } from "./seed-password.ts";
+import { assertCheckDatabase } from "./check-guard.ts";
 import { ensureActiveCommissionVersion } from "./seed-commission.ts";
 
+assertCheckDatabase();
 const db = new PrismaClient();
 
 

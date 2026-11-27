@@ -82,7 +82,10 @@ export function runHoldRequestExpiry(now: Date = new Date()): Promise<JobResult>
       data: { status: "EXPIRED", decidedAt: now, decisionNote: "Expired on the working-day cut-off." },
     });
     for (const { memberId } of members) {
-      await db.$transaction((tx) => closeDeactivatedReviewIfDone(tx, memberId, "SYSTEM"));
+      await db.$transaction(async (tx) => {
+        await closeDeactivatedReviewIfDone(tx, memberId, "SYSTEM");
+        await settleConstraints(tx);
+      });
     }
     return { processed: result.count, changed: result.count };
   });
@@ -293,6 +296,7 @@ export function runManagementActionClear(_now: Date = new Date()): Promise<JobRe
         const deal = await tx.acquisition.findUnique({ where: { id: task.recordId }, select: { plotId: true, sourceBookingId: true } });
         if (deal && (await hasBuyerProcess(tx, deal.plotId, deal.sourceBookingId))) return;
         await completeTask(tx, task.id, "SYSTEM", "The Hold or Booking on this Plot has ended.");
+        await settleConstraints(tx);
         changed += 1;
       });
     }

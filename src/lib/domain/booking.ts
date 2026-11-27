@@ -15,6 +15,20 @@ export const HUNDRED = new D(100);
 export const PERCENT_PLACES = 4;
 
 /**
+ * Payment Received progress — the entries, each instalment's received share and
+ * the Booking total — is Decimal(11,8) since the payment trial: a rupee payment
+ * rarely divides into four places, and rounding it there drifted.
+ */
+export const PAYMENT_PLACES = 8;
+
+/** A Payment Received percentage as entered: a plain number, at most eight places. */
+export function paymentPercentInputError(value: string, label = "The percentage"): string | null {
+  return /^\d+(\.\d{1,8})?$/.test(value.trim())
+    ? null
+    : `${label} must be a number with at most ${PAYMENT_PLACES} decimal places, such as 25 or 6.8.`;
+}
+
+/**
  * A percentage as typed: a plain number, at most four places. "abc" reached
  * Decimal and the person saw "[DecimalError] Invalid argument"; 33.33335 was
  * silently rounded on save. Null when it reads.
@@ -155,8 +169,8 @@ export function allocatePayment(
 ): { allocations: Allocation[] } {
   let left = new D(percent);
   if (left.lte(0)) throw new Error("Payment Received This Time must be greater than 0%.");
-  if (left.decimalPlaces() > PERCENT_PLACES) {
-    throw new Error(`Payment Received This Time has at most ${PERCENT_PLACES} decimal places.`);
+  if (left.decimalPlaces() > PAYMENT_PLACES) {
+    throw new Error(`Payment Received This Time has at most ${PAYMENT_PLACES} decimal places.`);
   }
 
   const allocations: Allocation[] = [];
@@ -166,13 +180,13 @@ export function allocatePayment(
     if (remaining.lte(0)) continue;
 
     const take = remaining.lt(left) ? remaining : left;
-    allocations.push({ seq: line.seq, percent: take.toFixed(4) });
+    allocations.push({ seq: line.seq, percent: take.toFixed(PAYMENT_PLACES) });
     left = left.sub(take);
   }
 
   if (left.gt(0)) {
     throw new Error(
-      `This payment exceeds the outstanding schedule by ${left.toFixed(4)}%. Payment Received ` +
+      `This payment exceeds the outstanding schedule by ${left.toFixed()}%. Payment Received ` +
         `progress cannot go above 100%, and the CRM records no Excess Receipt entry. ` +
         `Any surplus stays an external accounting matter.`
     );

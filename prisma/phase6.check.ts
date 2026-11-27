@@ -297,10 +297,13 @@ async function main() {
     (await db.bookingCompletion.findFirstOrThrow({ where: { bookingId: bookingA } })).reopenedAt,
     "the completion row records the reopen"
   );
-  assert.equal(
-    await db.task.count({ where: { recordId: bookingA, status: "PENDING" } }),
-    2,
-    "the completion tasks return to the queue"
+  // Since the 10 Nov audit fix (facc0c9) a reopen brings back only the work
+  // still open: the final buyers were recorded above, so "Complete Customer
+  // Details" does not return — only "Prepare Allotment / Registry" does.
+  assert.deepEqual(
+    (await db.task.findMany({ where: { recordId: bookingA, status: "PENDING" }, select: { purpose: true } })).map((t) => t.purpose),
+    ["ALLOTMENT_REGISTRY"],
+    "the open completion task returns to the queue"
   );
 
   // The corrected route may now be recorded on the freed Booking.

@@ -402,7 +402,7 @@ async function main() {
     paidOn: today,
     reference: `${TAG} UTR 0001`,
   });
-  assert.equal(first.progressPercent, "30.0000");
+  assert.equal(first.progressPercent, "30.00000000");
   assert.equal(first.paymentCompleted, false);
 
   // PRD §10.3 — one active reference globally, normalised for spaces and case.
@@ -440,7 +440,7 @@ async function main() {
     paidOn: today,
     reference: `${TAG} UTR 0002`,
   });
-  assert.equal(second.progressPercent, "100.0000");
+  assert.equal(second.progressPercent, "100.00000000");
   assert.equal(second.paymentCompleted, true);
   assert.equal((await db.plot.findUniqueOrThrow({ where: { id: plotA.id } })).status, "PAYMENT_COMPLETED");
   assert.equal(
@@ -460,7 +460,7 @@ async function main() {
     reference: `${TAG} UTR 0003`,
     reason: "Bank confirmed a lower credit.",
   });
-  assert.equal(corrected.progressPercent, "70.0000");
+  assert.equal(corrected.progressPercent, "70.00000000");
 
   const original = await db.paymentReceivedEntry.findUniqueOrThrow({
     where: { id: second.entryId },

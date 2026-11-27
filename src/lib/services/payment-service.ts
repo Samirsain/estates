@@ -11,13 +11,15 @@ import {
   isPaymentComplete,
   normaliseReference,
   notFutureDated,
-  percentInputError,
+  PAYMENT_PLACES,
+  paymentPercentInputError,
   progressAfter,
   validateSchedule,
   validateScheduleRevision,
   type ScheduleLine,
 } from "@/lib/domain/booking";
-import { istDay } from "@/lib/tasks";
+import { formatIstDate, istDay } from "@/lib/tasks";
+import { paymentTrialEnabled } from "@/lib/domain/payment-percent";
 import { blocked, lockBooking, lockKey, runCommand, type Tx } from "./command";
 import { reassessCommission } from "./commission-service";
 import { syncTripForBooking } from "./trip-service";
@@ -152,15 +154,37 @@ export async function syncPaymentFollowUp(tx: Tx, bookingId: string, actorRef: s
   // being read: how much is due, and which instalment it is. Trailing zeros go
   // — 30% reads as 30%, and a 30.5% split still keeps the half it needs.
   const due = totalDue.toFixed(2).replace(/\.?0+$/, "");
-  const result = `Due ${due}% · ${which}`;
+  let result = `Due ${due}% · ${which}`;
+  let followUpDue = next.dueDate;
+
+  if (paymentTrialEnabled()) {
+    // Payment trial (owner review, 25 Nov 2026): staff read two places — paid
+    // rounds down and due rounds up, so 24.99999999% never reads as 25%.
+    const paid = booking.paymentReceivedPercent.toDecimalPlaces(2, D.ROUND_DOWN).toString();
+    const owed = (v: Prisma.Decimal) => v.toDecimalPlaces(2, D.ROUND_UP).toString();
+    const late = unpaid.filter((i) => istDay(i.dueDate) < today);
+    if (late.length > 0) {
+      // An overdue instalment never drops out because a later one fell due:
+      // the follow-up stays on the oldest one and shows the whole overdue total.
+      const lateTotal = late.reduce((sum, i) => sum.add(i.scheduledPercent.sub(i.receivedPercent)), new D(0));
+      const lateWhich = late.length > 1 ? `Instalments ${late[0].seq}–${late[late.length - 1].seq}` : `Instalment ${late[0].seq}`;
+      result = `${owed(lateTotal)}% late · ${lateWhich} · late since ${formatIstDate(late[0].dueDate)} · ${paid}% paid so far`;
+      followUpDue = late[0].dueDate;
+    } else {
+      const target = owing.length === 1 ? ` (of ${upcoming.scheduledPercent.toString()}%)` : "";
+      result = `${owed(totalDue)}% left to pay · ${which}${target} · ${paid}% paid so far`;
+    }
+  }
 
   const existing = await tx.task.findFirst({
     where: { recordKind: "Booking", recordId: bookingId, purpose: "PAYMENT_FOLLOW_UP", status: "PENDING" },
   });
   if (existing) {
     // Reuse the same task; the business purpose has not changed (PRD §4.5).
-    if (existing.dueAt.getTime() !== next.dueDate.getTime() || existing.latestResult !== result) {
-      await reviseTask(tx, existing.id, actorRef, next.dueDate, result);
+    if (existing.dueAt.getTime() !== followUpDue.getTime() || existing.latestResult !== result) {
+      await reviseTask(tx, existing.id, actorRef, followUpDue, result);
+      // The balance moved, so the customer's last promise is spent.
+      if (existing.promisedOn) await tx.task.update({ where: { id: existing.id }, data: { promisedOn: null } });
     }
     return existing;
   }
@@ -172,7 +196,7 @@ export async function syncPaymentFollowUp(tx: Tx, bookingId: string, actorRef: s
     purpose: "PAYMENT_FOLLOW_UP",
     title: "Payment Follow-Up",
     assigneeRole: "CRM",
-    dueAt: next.dueDate,
+    dueAt: followUpDue,
     latestResult: result,
   });
 }
@@ -241,7 +265,7 @@ export async function applyAllocation(
         : instalment.receivedPercent.sub(new D(allocation.percent));
     await tx.paymentInstalment.update({
       where: { id: instalment.id },
-      data: { receivedPercent: next.toFixed(4) },
+      data: { receivedPercent: next.toFixed(PAYMENT_PLACES) },
     });
   }
 }
@@ -262,11 +286,24 @@ export async function confirmPaymentReceived(args: {
   /** SSOT §22; CP §15 — when someone other than the named buyer paid. Optional. */
   payerName?: string;
   payerReference?: string;
+  /**
+   * Payment trial — the verified percentage the MD's calculator worked from. Checked
+   * under the Booking lock, so a payment saved meanwhile refuses this one
+   * instead of both landing on the same starting point.
+   */
+  expectedProgress?: string;
+  verification?: {
+    plotId: string;
+    requestId: string | null;
+    completeClaim?: (tx: Tx, entryId: string) => Promise<void>;
+  };
 }) {
+  const verification = args.verification;
+  if (verification && (args.actorRole !== "MD" || !paymentTrialEnabled())) blocked("Invalid private payment approval.");
   const payerName = args.payerName?.trim() || null;
   const payerReference = args.payerReference?.trim() || null;
   if (payerReference && !payerName) blocked("Name the third-party payer whose reference this is.");
-  const badPercent = percentInputError(args.percent);
+  const badPercent = paymentPercentInputError(args.percent);
   if (badPercent) blocked(badPercent);
 
   return runCommand(
@@ -275,11 +312,21 @@ export async function confirmPaymentReceived(args: {
       operation: "PAYMENT_RECEIVED_CONFIRM",
       actorRef: args.actorRef,
       actorRole: args.actorRole,
-      payload: { bookingId: args.bookingId, percent: args.percent, reference: args.reference },
+      payload: {
+        bookingId: args.bookingId, percent: args.percent, reference: args.reference,
+        ...(verification && { plotId: verification.plotId, requestId: verification.requestId, paidOn: istDay(args.paidOn) }),
+      },
     },
     async (tx) => {
       await lockBooking(tx, args.bookingId);
       const booking = await tx.booking.findUniqueOrThrow({ where: { id: args.bookingId } });
+      if (verification && booking.plotId !== verification.plotId) blocked("The plot changed. Reopen the worksheet for the current plot.");
+      if (args.expectedProgress !== undefined && !booking.paymentReceivedPercent.eq(args.expectedProgress)) {
+        blocked(
+          `This Booking changed since you opened it: ${booking.paymentReceivedPercent.toString()}% is verified now, ` +
+            `not ${args.expectedProgress}%. Nothing was saved — reload it and check the figures again.`
+        );
+      }
 
       if (!["BOOKED", "PAYMENT_COMPLETED"].includes(booking.status)) {
         blocked(
@@ -319,7 +366,7 @@ export async function confirmPaymentReceived(args: {
       const entry = await tx.paymentReceivedEntry.create({
         data: {
           bookingId: args.bookingId,
-          percent: new D(args.percent).toFixed(4),
+          percent: new D(args.percent).toFixed(PAYMENT_PLACES),
           paidOn: args.paidOn,
           externalReferenceId: reference.id,
           allocations: allocations as never,
@@ -330,12 +377,13 @@ export async function confirmPaymentReceived(args: {
         },
       });
 
+      await verification?.completeClaim?.(tx, entry.id);
       await applyAllocation(tx, schedule.id, allocations, 1);
       const completed = isPaymentComplete(progress);
       await tx.booking.update({
         where: { id: args.bookingId },
         data: {
-          paymentReceivedPercent: progress.toFixed(4),
+          paymentReceivedPercent: progress.toFixed(PAYMENT_PLACES),
           status: completed ? "PAYMENT_COMPLETED" : "BOOKED",
         },
       });
@@ -362,7 +410,7 @@ export async function confirmPaymentReceived(args: {
           action: "PAYMENT_RECEIVED",
           fromStatus: booking.status,
           toStatus: completed ? "PAYMENT_COMPLETED" : "BOOKED",
-          detail: { percent: args.percent, progress: progress.toFixed(4), reference: reference.rawValue },
+          detail: { percent: args.percent, progress: progress.toFixed(PAYMENT_PLACES), reference: reference.rawValue },
         },
       });
       await syncPaymentFollowUp(tx, args.bookingId, args.actorRef);
@@ -375,15 +423,15 @@ export async function confirmPaymentReceived(args: {
       return {
         result: {
           entryId: entry.id,
-          progressPercent: progress.toFixed(4),
+          progressPercent: progress.toFixed(PAYMENT_PLACES),
           paymentCompleted: completed,
         },
         audit: {
           entity: "Booking",
           entityId: args.bookingId,
           action: "PAYMENT_RECEIVED_CONFIRMED",
-          before: { progress: booking.paymentReceivedPercent.toFixed(4) },
-          after: { progress: progress.toFixed(4), reference: reference.rawValue },
+          before: { progress: booking.paymentReceivedPercent.toFixed(PAYMENT_PLACES) },
+          after: { progress: progress.toFixed(PAYMENT_PLACES), reference: reference.rawValue },
           reason: args.remark,
         },
       };
@@ -407,7 +455,7 @@ export async function correctPaymentReceived(args: {
   reason: string;
 }) {
   if (!args.reason.trim()) blocked("A compulsory reason is required to correct a payment entry.");
-  const badPercent = percentInputError(args.percent);
+  const badPercent = paymentPercentInputError(args.percent);
   if (badPercent) blocked(badPercent);
 
   return runCommand(
@@ -514,7 +562,7 @@ export async function correctPaymentReceived(args: {
       const replacement = await tx.paymentReceivedEntry.create({
         data: {
           bookingId: original.bookingId,
-          percent: new D(args.percent).toFixed(4),
+          percent: new D(args.percent).toFixed(PAYMENT_PLACES),
           paidOn: args.paidOn,
           externalReferenceId: reference.id,
           allocations: allocations as never,
@@ -539,7 +587,7 @@ export async function correctPaymentReceived(args: {
       const nextStatus = completed ? "PAYMENT_COMPLETED" : "BOOKED";
       await tx.booking.update({
         where: { id: original.bookingId },
-        data: { paymentReceivedPercent: progress.toFixed(4), status: nextStatus },
+        data: { paymentReceivedPercent: progress.toFixed(PAYMENT_PLACES), status: nextStatus },
       });
       if (booking.status !== nextStatus) {
         if (completed) {
@@ -576,7 +624,7 @@ export async function correctPaymentReceived(args: {
             supersededEntryId: original.id,
             supersededReference: original.externalReference.rawValue,
             replacementReference: reference.rawValue,
-            progress: progress.toFixed(4),
+            progress: progress.toFixed(PAYMENT_PLACES),
           },
           reason: args.reason,
         },
@@ -590,14 +638,117 @@ export async function correctPaymentReceived(args: {
         result: {
           replacementEntryId: replacement.id,
           supersededEntryId: original.id,
-          progressPercent: progress.toFixed(4),
+          progressPercent: progress.toFixed(PAYMENT_PLACES),
         },
         audit: {
           entity: "Booking",
           entityId: original.bookingId,
           action: "PAYMENT_RECEIVED_CORRECTED",
-          before: { percent: original.percent.toFixed(4), reference: original.externalReference.rawValue },
-          after: { percent: new D(args.percent).toFixed(4), reference: reference.rawValue },
+          before: { percent: original.percent.toFixed(PAYMENT_PLACES), reference: original.externalReference.rawValue },
+          after: { percent: new D(args.percent).toFixed(PAYMENT_PLACES), reference: reference.rawValue },
+          reason: args.reason,
+        },
+      };
+    }
+  );
+}
+
+/**
+ * Payment trial (owner review, 25 Nov 2026) — MD reverses a whole payment: a
+ * cheque that bounced, a transfer the bank returned. Nothing is deleted: the
+ * entry stays, marked REVERSED, its reference is retired with the reason, and
+ * progress, instalments, follow-ups, commission, Royalty and Trip are worked
+ * out again exactly as a correction does. MD only, with a compulsory reason.
+ */
+export async function reversePaymentReceived(args: {
+  idempotencyKey: string;
+  actorRef: string;
+  actorRole: string;
+  entryId: string;
+  reason: string;
+}) {
+  if (args.actorRole !== "MD") blocked("Only MD can reverse a payment.");
+  if (!args.reason.trim()) blocked("A compulsory reason is required to reverse a payment.");
+
+  return runCommand(
+    {
+      idempotencyKey: args.idempotencyKey,
+      operation: "PAYMENT_RECEIVED_REVERSE",
+      actorRef: args.actorRef,
+      actorRole: args.actorRole,
+      payload: { entryId: args.entryId },
+    },
+    async (tx) => {
+      const { bookingId } = await tx.paymentReceivedEntry.findUniqueOrThrow({ where: { id: args.entryId }, select: { bookingId: true } });
+      await lockBooking(tx, bookingId);
+      const entry = await tx.paymentReceivedEntry.findUniqueOrThrow({ where: { id: args.entryId }, include: { externalReference: true } });
+      if (entry.status !== "CONFIRMED") blocked("This payment was already corrected or reversed.");
+
+      const booking = await tx.booking.findUniqueOrThrow({ where: { id: bookingId } });
+      if (booking.status !== "BOOKED" && booking.status !== "PAYMENT_COMPLETED") {
+        blocked(`A payment on a ${booking.status.replaceAll("_", " ").toLowerCase()} Booking cannot be reversed.`);
+      }
+      if (booking.activeProcess !== "NONE") {
+        blocked(`This Booking is under ${booking.activeProcess.replaceAll("_", " ").toLowerCase()}. Reverse the payment once that is decided.`);
+      }
+      const replanned = await tx.paymentScheduleVersion.findFirst({
+        where: { bookingId, reason: { startsWith: "Change Plot" }, createdAt: { gt: entry.recordedAt } },
+        select: { id: true },
+      });
+      if (replanned) blocked("This payment was recorded before a Change Plot, which reset Payment Received. Ask Accounts to adjust it instead.");
+
+      const schedule = await activeSchedule(tx, bookingId);
+      if (!schedule) blocked("This Booking has no live payment schedule.");
+      // Taken back from the latest received money, as a correction does.
+      let left = new D(entry.percent);
+      const takeBack: { seq: number; percent: string }[] = [];
+      for (const i of [...schedule.instalments].reverse()) {
+        if (left.lte(0)) break;
+        const take = i.receivedPercent.lt(left) ? i.receivedPercent : left;
+        if (take.gt(0)) takeBack.push({ seq: i.seq, percent: take.toString() });
+        left = left.sub(take);
+      }
+      if (left.gt(0)) blocked("The live schedule holds less received money than this payment. Ask Accounts to adjust it.");
+      const progress = booking.paymentReceivedPercent.sub(entry.percent);
+      if (progress.lt(0)) blocked("Reversing this payment would take Payment Received below 0%.");
+
+      await applyAllocation(tx, schedule.id, takeBack, -1);
+      await tx.paymentReceivedEntry.update({ where: { id: entry.id }, data: { status: "REVERSED", reason: args.reason.trim() } });
+      await tx.externalReference.update({ where: { id: entry.externalReferenceId }, data: { status: "SUPERSEDED", reason: `Reversed: ${args.reason.trim()}` } });
+
+      const nextStatus = isPaymentComplete(progress) ? "PAYMENT_COMPLETED" : "BOOKED";
+      await tx.booking.update({ where: { id: bookingId }, data: { paymentReceivedPercent: progress.toFixed(PAYMENT_PLACES), status: nextStatus } });
+      if (booking.status !== nextStatus) {
+        await closeCompletionTasks(tx, bookingId, args.actorRef, `Payment reversed — Payment Received is ${progress.toFixed(2)}%.`);
+        await tx.plot.update({ where: { id: booking.plotId }, data: { status: nextStatus } });
+        await tx.plotEvent.create({
+          data: { plotId: booking.plotId, actorRef: args.actorRef, action: "PAYMENT_PROGRESS_CORRECTED", fromStatus: "PAYMENT_COMPLETED", toStatus: nextStatus, reason: args.reason },
+        });
+      }
+      await tx.bookingEvent.create({
+        data: {
+          bookingId,
+          actorRef: args.actorRef,
+          action: "PAYMENT_REVERSED",
+          fromStatus: booking.status,
+          toStatus: nextStatus,
+          detail: { reversedEntryId: entry.id, reference: entry.externalReference.rawValue, percent: entry.percent.toString(), progress: progress.toFixed(PAYMENT_PLACES) },
+          reason: args.reason,
+        },
+      });
+      await syncPaymentFollowUp(tx, bookingId, args.actorRef);
+      await reassessCommission(tx, bookingId, args.actorRef);
+      await syncRoyaltyLink(tx, booking.primaryPersonId, args.actorRef);
+      await syncTripForBooking(tx, booking.id, args.actorRef);
+
+      return {
+        result: { reversedEntryId: entry.id, progressPercent: progress.toFixed(PAYMENT_PLACES) },
+        audit: {
+          entity: "Booking",
+          entityId: bookingId,
+          action: "PAYMENT_RECEIVED_REVERSED",
+          before: { percent: entry.percent.toString(), progress: booking.paymentReceivedPercent.toString(), reference: entry.externalReference.rawValue },
+          after: { progress: progress.toFixed(PAYMENT_PLACES) },
           reason: args.reason,
         },
       };
@@ -759,7 +910,7 @@ export async function decideScheduleRevision(args: {
               );
             }
             if (!got.eq(line.receivedPercent)) {
-              await tx.paymentInstalment.update({ where: { id: line.id }, data: { receivedPercent: got.toFixed(4) } });
+              await tx.paymentInstalment.update({ where: { id: line.id }, data: { receivedPercent: got.toFixed(PAYMENT_PLACES) } });
             }
             carried = carried.add(got);
           }

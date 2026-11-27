@@ -11,6 +11,7 @@
 // constraints.sql), so a second Payment Received on the same Booking waits for
 // the first to be decided.
 
+import { LEGACY_PAYMENT_REASON, paymentTrialEnabled } from "@/lib/domain/payment-percent";
 import { db } from "@/lib/db";
 import { formatIstDate } from "@/lib/tasks";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
@@ -164,6 +165,9 @@ async function taskRecord(tx: Tx, p: Place) {
  */
 export async function requestPaymentApproval(args: Ctx & { step: PaymentStep }): Promise<string> {
   if (args.actorRole === "MD") blocked("MD's own payment step runs at once.");
+  if (paymentTrialEnabled() && (args.step.kind === "PAYMENT_RECEIVED" || args.step.kind === "PAYMENT_CORRECT")) {
+    blocked("Send a payment claim for the MD worksheet instead.");
+  }
   return runCommand<string>(
     {
       idempotencyKey: args.idempotencyKey,
@@ -223,6 +227,11 @@ export async function decidePaymentApproval(args: Ctx & { approvalId: string; ap
   const approval = await db.paymentApproval.findUniqueOrThrow({ where: { id: args.approvalId } });
   if (approval.status !== "PENDING") blocked(`This was already ${approval.status === "APPROVED" ? "approved" : "rejected"}.`);
 
+  const legacyReceipt = paymentTrialEnabled() && (approval.kind === "PAYMENT_RECEIVED" || approval.kind === "PAYMENT_CORRECT");
+  if (args.approve && legacyReceipt) {
+    blocked("Reject this legacy approval and record the receipt in the MD worksheet.");
+  }
+  const note = legacyReceipt ? LEGACY_PAYMENT_REASON : args.note.trim();
   if (args.approve) {
     // A fixed key: approving twice, or again after the record below failed to
     // save, replays the step's first result instead of paying twice.
@@ -248,7 +257,7 @@ export async function decidePaymentApproval(args: Ctx & { approvalId: string; ap
           status: args.approve ? "APPROVED" : "REJECTED",
           decidedByRef: args.actorRef,
           decidedAt: new Date(),
-          decisionNote: args.note.trim() || null,
+          decisionNote: note || null,
         },
       });
       // The task goes once nothing else on the record waits for MD.
@@ -261,13 +270,14 @@ export async function decidePaymentApproval(args: Ctx & { approvalId: string; ap
         await closeTasksFor(tx, record.recordKind, record.recordId, args.actorRef, "Every payment step here is decided.", PAYMENT_APPROVAL_PURPOSE);
       }
       return {
-        result: args.approve ? `Approved: ${decided.label}` : `Rejected: ${decided.label}`,
+        result: legacyReceipt ? "Legacy receipt approval closed." :
+          args.approve ? `Approved: ${decided.label}` : `Rejected: ${decided.label}`,
         audit: {
           entity: "PaymentApproval",
           entityId: decided.id,
           action: args.approve ? "PAYMENT_APPROVAL_APPROVED" : "PAYMENT_APPROVAL_REJECTED",
-          reason: args.note.trim() || undefined,
-          after: { kind: decided.kind, label: decided.label },
+          reason: note || undefined,
+          after: { kind: decided.kind, label: legacyReceipt ? "Legacy receipt" : decided.label },
         },
       };
     }

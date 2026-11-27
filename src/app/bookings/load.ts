@@ -9,6 +9,7 @@ import { can } from "@/lib/security/permissions";
 import { maskMobile } from "@/lib/security/identity";
 import { listBookings } from "@/lib/services/booking-service";
 import { locationChargeLabel } from "@/lib/domain/inventory";
+import { paymentTrialEnabled, shownPaid } from "@/lib/domain/payment-percent";
 import type { BookableView, BookingRowView } from "./bookings-client";
 
 /**
@@ -171,6 +172,8 @@ export const bookingRow = (b: Awaited<ReturnType<typeof listBookings>>[number]):
     // As stored (four places): 99.996 rounded to 100.00 hid Record Payment, and
     // 0.004 rounded to 0.00 ticked No Payment Received.
     paymentReceivedPercent: b.paymentReceivedPercent.toString(),
+    // Payment trial: staff read two places (owner review, 25 Nov 2026).
+    paymentShown: shownPaid(b.paymentReceivedPercent.toString()),
     bookingDate: b.bookingDate.toISOString(),
     submittedAt: b.submittedAt.toISOString(),
     submittedByRef: b.submittedByRef,
@@ -215,6 +218,9 @@ export async function loadBookingsProps() {
       recordFinalBuyers: can(actor.role, "FINAL_BUYER_RECORD", actor.extraPermissions),
       recordCompletion: can(actor.role, "COMPLETION_RECORD", actor.extraPermissions),
       reopenDelivered: can(actor.role, "DELIVERY_REOPEN", actor.extraPermissions),
+      // Payment trial (revised brief §4.1, §5): Payment & Instalments and staff claims.
+      paymentTrial: paymentTrialEnabled(),
+      requestVerification: can(actor.role, "PAYMENT_VERIFICATION_REQUEST", actor.extraPermissions),
     },
   };
 }

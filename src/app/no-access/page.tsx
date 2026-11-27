@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentStaff } from "@/lib/security/current-actor";
-import { ACTION_LABELS, isAction } from "@/lib/security/permissions";
+import { ACTION_LABELS, MD_ONLY_ACTIONS, isAction } from "@/lib/security/permissions";
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
 
@@ -26,7 +26,9 @@ export default async function NoAccessPage({
         <Card className="space-y-2 p-4">
           <h1 className="text-sm font-semibold">You do not have permission to open this page</h1>
           <p className="text-xs text-muted-foreground">
-            {tick
+            {need && isAction(need) && MD_ONLY_ACTIONS.includes(need)
+              ? "Only MD can open this page. No permission tick gives it to another account."
+              : tick
               ? `Ask MD to tick "${tick}" for you under Administration, then open the page again.`
               : "Ask MD to give you this permission under Administration, then open the page again."}
           </p>

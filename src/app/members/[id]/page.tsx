@@ -50,6 +50,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import ShowMore from "./show-more";
+import { shownPaid } from "@/lib/domain/payment-percent";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -630,7 +631,7 @@ export default async function MemberDetailPage({
       personRole: null,
       plotSize: formatPlotSize(b.plot.widthFt?.toString() ?? null, b.plot.lengthFt?.toString() ?? null),
       status: statusWords(b.status),
-      payment: `${b.paymentReceivedPercent.toString()}% received`,
+      payment: `${shownPaid(b.paymentReceivedPercent.toString()).paid} received`,
       lines: linesOn(b.id),
     })),
     ...acquisitionLines.map((c) => {

@@ -1,5 +1,6 @@
 // Administration — prd-corrections.md §17.2, §21, §22; design.md §17.
 
+import { shownReceiptEventReason } from "@/lib/domain/payment-percent";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/security/current-actor";
 import {
@@ -126,7 +127,7 @@ export default async function AdministrationPage() {
         entity: event.entity,
         entityId: event.entityId,
         action: event.action,
-        reason: event.reason,
+        reason: shownReceiptEventReason(event.action, event.reason),
       }))}
     />
   );

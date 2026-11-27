@@ -34,6 +34,8 @@ import {
   type BookingPartyInput,
 } from "@/lib/services/booking-service";
 import { db } from "@/lib/db";
+import { PAYMENT_DECISION_REASONS, paymentTrialEnabled, privateReceiptEvent, receiptTrackingId, shownReceiptEventReason, shownReceiptTrackingId } from "@/lib/domain/payment-percent";
+import { requestPaymentVerification } from "@/lib/services/payment-verification-service";
 import { decideCancellation } from "@/lib/services/cancellation-service";
 import {
   decidePaymentApproval,
@@ -386,6 +388,7 @@ export async function confirmPaymentReceivedAction(
   },
   key: string
 ): Promise<ActionResult> {
+  if (paymentTrialEnabled()) return { ok: false, error: "Use the MD payment worksheet to record or reverse a receipt." };
   const actor = await requireStaff("PAYMENT_RECEIVED_CONFIRM");
   try {
     const args = {
@@ -417,6 +420,38 @@ export async function confirmPaymentReceivedAction(
   }
 }
 
+/**
+ * Payment trial (revised brief §4.3) — staff send a payment the customer says
+ * they made: the date, the mode and the reference, never an amount. Nothing
+ * counts as received until MD approves its percentage in the Private Payment
+ * Calculator.
+ */
+export async function requestPaymentVerificationAction(
+  input: { bookingId: string; claimedPaidOn: string; mode: string; reference: string },
+  key: string
+): Promise<ActionResult> {
+  const actor = await requireStaff("PAYMENT_VERIFICATION_REQUEST");
+  try {
+    if (!paymentTrialEnabled()) return { ok: false, error: "The payment trial is not switched on here." };
+    if (typeof input.reference !== "string" || !receiptTrackingId(input.reference.trim())) {
+      return { ok: false, error: "Enter the receipt tracking ID issued by Accounts." };
+    }
+    await requestPaymentVerification({
+      idempotencyKey: key,
+      actorRef: actor.staffAccountId,
+      actorRole: actor.role,
+      bookingId: input.bookingId,
+      claimedPaidOn: new Date(`${input.claimedPaidOn}T00:00:00+05:30`),
+      mode: input.mode,
+      reference: input.reference,
+    });
+    refresh();
+    return { ok: true, message: "Sent to MD. It counts as paid only after MD checks it." };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
 export async function correctPaymentReceivedAction(
   input: {
     entryId: string;
@@ -427,6 +462,7 @@ export async function correctPaymentReceivedAction(
   },
   key: string
 ): Promise<ActionResult> {
+  if (paymentTrialEnabled()) return { ok: false, error: "Use the MD payment worksheet to record or reverse a receipt." };
   const actor = await requireStaff("PAYMENT_CORRECT");
   try {
     const args = {
@@ -1073,6 +1109,9 @@ export async function loadBookingDetail(bookingId: string) {
   const booking = await getBooking(bookingId);
   if (!booking) return null;
   const commissions = await listCommissionForBooking(bookingId);
+  const movedAt = new Date(
+    Math.max(0, ...booking.scheduleVersions.filter((s) => s.reason?.startsWith("Change Plot")).map((s) => s.createdAt.getTime()))
+  );
   // CP §64 T21 — which records have an Accounts adjustment waiting.
   const waiting = await adjustmentsWaiting(commissions.map((c) => c.id));
 
@@ -1084,7 +1123,8 @@ export async function loadBookingDetail(bookingId: string) {
 
   const receivedOnBySeq = new Map<number, Date>();
   for (const e of booking.paymentEntries) {
-    if (e.status !== "CONFIRMED") continue;
+    // An entry from before a Change Plot names the old schedule's instalments.
+    if (e.status !== "CONFIRMED" || e.recordedAt < movedAt) continue;
     for (const a of e.allocations as { seq: number; percent: string }[]) {
       const last = receivedOnBySeq.get(a.seq);
       if (Number(a.percent) > 0 && (!last || e.paidOn > last)) receivedOnBySeq.set(a.seq, e.paidOn);
@@ -1092,12 +1132,37 @@ export async function loadBookingDetail(bookingId: string) {
   }
   // Owner, 10 Nov 2026 — payment steps Accounts entered, waiting for MD.
   const paymentApprovals = await pendingPaymentApprovals({ bookingId });
+  // Payment trial — staff payment claims: dates, modes and references only.
+  const claims = paymentTrialEnabled()
+    ? await db.paymentVerificationRequest.findMany({ where: { bookingId }, orderBy: { requestedAt: "desc" } })
+    : [];
+  const followUp = paymentTrialEnabled()
+    ? await db.task.findFirst({
+        where: { recordKind: "Booking", recordId: bookingId, purpose: "PAYMENT_FOLLOW_UP", status: "PENDING" },
+        select: { promisedOn: true },
+      })
+    : null;
 
   return {
     id: booking.id,
+    /** Payment trial — the customer's promised day on the open follow-up (YYYY-MM-DD). */
+    promisedOn: followUp?.promisedOn ? followUp.promisedOn.toISOString().slice(0, 10) : null,
+    verificationRequests: claims.map((c) => ({
+      id: c.id,
+      claimedPaidOn: c.claimedPaidOn.toISOString(),
+      mode: c.mode,
+      reference: shownReceiptTrackingId(c.reference, c.id),
+      note: null,
+      status: c.status,
+      requestedByRef: c.requestedByRef,
+      requestedAt: c.requestedAt.toISOString(),
+      decisionNote: PAYMENT_DECISION_REASONS.some((r) => r === c.decisionNote) ? c.decisionNote : null,
+      paymentEntryId: c.paymentEntryId,
+    })),
     paymentApprovals: paymentApprovals.map((a) => ({
       id: a.id,
-      label: a.label,
+      label: paymentTrialEnabled() && ["PAYMENT_RECEIVED", "PAYMENT_CORRECT"].includes(a.kind)
+        ? "Legacy receipt step — reconcile in the private accounts ledger" : a.label,
       requestedByRef: a.requestedByRef,
       requestedAt: a.requestedAt.toISOString(),
     })),
@@ -1198,14 +1263,17 @@ export async function loadBookingDetail(bookingId: string) {
       percent: e.percent.toString(),
       paidOn: e.paidOn.toISOString(),
       recordedAt: e.recordedAt.toISOString(),
+      // Recorded on the old Plot: Change Plot carried its verified % across, so
+      // the entry is history, not part of today's total (payment trial).
+      oldPlot: e.recordedAt < movedAt,
       status: e.status,
-      reference: e.externalReference.rawValue,
+      reference: paymentTrialEnabled() ? shownReceiptTrackingId(e.externalReference.rawValue, e.id) : e.externalReference.rawValue,
       referenceStatus: e.externalReference.status,
       confirmedByRef: e.confirmedByRef,
-      reason: e.reason,
-      remark: e.remark,
-      payerName: e.payerName,
-      payerReference: e.payerReference,
+      reason: paymentTrialEnabled() && !PAYMENT_DECISION_REASONS.some((r) => r === e.reason) ? null : e.reason,
+      remark: paymentTrialEnabled() ? null : e.remark,
+      payerName: paymentTrialEnabled() ? null : e.payerName,
+      payerReference: paymentTrialEnabled() ? null : e.payerReference,
       correctsEntryId: e.correctsEntryId,
     })),
     // DESIGN §14.1 — eligibility and payment are shown as two separate fields.
@@ -1290,8 +1358,8 @@ export async function loadBookingDetail(bookingId: string) {
       action: e.action,
       fromStatus: e.fromStatus,
       toStatus: e.toStatus,
-      reason: e.reason,
-      detail: e.detail,
+      reason: shownReceiptEventReason(e.action, e.reason),
+      detail: privateReceiptEvent(e.action) ? null : e.detail,
     })),
   };
 }

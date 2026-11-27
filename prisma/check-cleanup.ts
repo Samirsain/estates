@@ -185,6 +185,7 @@ export async function purgeScope(db: PrismaClient, scope: PurgeScope) {
   await db.soldByCorrection.deleteMany({ where: { bookingId: { in: bookingIds } } });
   await db.primaryCustomerChange.deleteMany({ where: { bookingId: { in: bookingIds } } });
   await db.paymentScheduleVersion.deleteMany({ where: { bookingId: { in: bookingIds } } });
+  await db.paymentVerificationRequest.deleteMany({ where: { bookingId: { in: bookingIds } } });
   await db.paymentReceivedEntry.updateMany({
     where: { bookingId: { in: bookingIds } },
     data: { correctsEntryId: null },

@@ -44,6 +44,7 @@ import HistoryButton from "@/app/members/[id]/history-button";
 import ShowMore from "@/app/members/[id]/show-more";
 import PlotActions from "./plot-actions";
 import HoldRequestDecision from "./hold-request-decision";
+import { paymentTrialEnabled, shownPaid } from "@/lib/domain/payment-percent";
 
 export const dynamic = "force-dynamic";
 
@@ -261,6 +262,12 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
 
   const now = Date.now();
   const current = bookings.find((b) => LIVE_BOOKING.has(b.status)) ?? null;
+  // Payment trial: two places, rounded down, so 24.99999999% never reads 25%.
+  const receivedShown = !current
+    ? ""
+    : paymentTrialEnabled()
+      ? shownPaid(current.paymentReceivedPercent.toString()).paid
+      : `${current.paymentReceivedPercent.toFixed(0)}%`;
   const earlier = bookings.filter((b) => b !== current);
   const liveAcquisition =
     acquisitions.find((a) => a.status === "PENDING_APPROVAL" || a.status === "APPROVED") ?? null;
@@ -514,7 +521,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
             <Link href={`/bookings/${current.id}`} className="text-primary hover:underline">
               {current.bookingNumber ?? "Booking Request"}
             </Link>
-            {` · ${current.paymentReceivedPercent.toFixed(0)}% received`}
+            {` · ${receivedShown} received`}
           </>
         ),
       }
@@ -564,7 +571,7 @@ export default async function PlotDetailPage({ params }: { params: Promise<{ plo
       outcome: (
         <>
           {OUTCOME_LABEL[current.status] ?? humanise(current.status)}
-          <span className={SUB}>{current.paymentReceivedPercent.toFixed(0)}% received</span>
+          <span className={SUB}>{receivedShown} received</span>
         </>
       ),
       at: current.submittedAt,

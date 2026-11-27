@@ -14,6 +14,7 @@ import {
   assignableStaffAction,
   completeTaskAction,
   reviseTaskAction,
+  taskHistoryAction,
   taskLinkOptionsAction,
   taskPlotOptionsAction,
   type ActionResult,
@@ -83,6 +84,8 @@ const VIEWS: { id: TaskView; label: string }[] = [
   { id: "TODAY", label: "Today" },
   { id: "OVERDUE", label: "Overdue" },
   { id: "UPCOMING", label: "Upcoming" },
+  // Payment trial only (revised brief §4.4).
+  { id: "VERIFY", label: "Waiting for MD" },
   { id: "COMPLETED", label: "Completed" },
   { id: "ALL", label: "All" },
   { id: "RANGE", label: "Date Range" },
@@ -119,8 +122,10 @@ export default function DashboardClient({
   initialTasks,
   seesAllWork,
   canAddTask,
+  paymentTrial = false,
 }: {
   canAddTask: boolean;
+  paymentTrial?: boolean;
   role: StaffRole;
   actorName: string;
   staffAccountId: string;
@@ -221,7 +226,7 @@ export default function DashboardClient({
               <option key={t}>{t}</option>
             ))}
           </select>
-          {VIEWS.map((v) => (
+          {VIEWS.filter((v) => paymentTrial || v.id !== "VERIFY").map((v) => (
             <button
               key={v.id}
               onClick={() => setView(v.id)}
@@ -426,6 +431,14 @@ export default function DashboardClient({
                             {task.latestResult}
                           </span>
                         )}
+                        {task.promisedOn && (
+                          <span className="block text-[11px] text-amber-800">
+                            Customer promised by {formatIstDate(`${task.promisedOn}T00:00:00+05:30`)}
+                          </span>
+                        )}
+                        {task.waitingForMd && (
+                          <span className="block text-[11px] text-amber-800">Customer says they paid — waiting for MD to check</span>
+                        )}
                       </td>
                       {/* The date alone — the clock time is not what anyone
                           scans this column for. An overdue or urgent date is
@@ -529,7 +542,7 @@ export default function DashboardClient({
         )}
       </div>
 
-      {detailing && <TaskDetailsDialog task={detailing} onClose={() => setDetailing(null)} />}
+      {detailing && <TaskDetailsDialog task={detailing} history={paymentTrial} onClose={() => setDetailing(null)} />}
 
       {confirmingDone && (
         <Modal
@@ -560,11 +573,12 @@ export default function DashboardClient({
       {revising && (
         <ReviseDialog
           task={revising}
+          askPromise={paymentTrial}
           onClose={() => setRevising(null)}
-          onSubmit={async (dueAt, result, remark) => {
+          onSubmit={async (dueAt, result, remark, promisedOn) => {
             const task = revising;
             setRevising(null);
-            await run(() => reviseTaskAction(task.id, dueAt, result, remark, newKey()));
+            await run(() => reviseTaskAction(task.id, dueAt, result, remark, newKey(), promisedOn));
           }}
         />
       )}
@@ -595,8 +609,13 @@ export default function DashboardClient({
  * recurs, how often it has been pushed, the clock time it is actually due —
  * lives here, one click off the reference.
  */
-function TaskDetailsDialog({ task, onClose }: { task: Task; onClose: () => void }) {
+function TaskDetailsDialog({ task, history, onClose }: { task: Task; history?: boolean; onClose: () => void }) {
   const s = task.subject;
+  // Payment trial (revised brief §4.4) — the task's own history: every revision, result and promise.
+  const [events, setEvents] = React.useState<Awaited<ReturnType<typeof taskHistoryAction>> | null>(null);
+  React.useEffect(() => {
+    if (history) taskHistoryAction(task.id).then(setEvents, () => setEvents([]));
+  }, [history, task.id]);
   const rows: [string, string][] = [
     ["Task", task.title],
     ["Purpose", task.purpose],
@@ -621,6 +640,9 @@ function TaskDetailsDialog({ task, onClose }: { task: Task; onClose: () => void 
     ["Recurrence", recurrenceLabel(task.recurrence)],
     ["Revised", String(task.revisions)],
     ["What happened", task.latestResult ?? "—"],
+    ...(task.promisedOn
+      ? ([["Customer promised by", formatIstDate(`${task.promisedOn}T00:00:00+05:30`)]] as [string, string][])
+      : []),
   ];
 
   return (
@@ -633,6 +655,26 @@ function TaskDetailsDialog({ task, onClose }: { task: Task; onClose: () => void 
           </div>
         ))}
       </dl>
+      {history && (
+        <div className="text-xs">
+          <p className="mb-1 font-semibold">History</p>
+          {events === null ? (
+            <p className="text-muted-foreground">Loading…</p>
+          ) : (
+            <ul className="max-h-48 space-y-1 overflow-y-auto">
+              {events.map((e, i) => (
+                <li key={i} className="grid grid-cols-[8.5rem_1fr] gap-2">
+                  <span className="tabular-nums text-muted-foreground">{formatIst(e.at)}</span>
+                  <span>
+                    {e.action.replaceAll("_", " ").toLowerCase()} · {e.actorRef}
+                    {e.detail ? ` — ${e.detail}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="flex justify-end">
         <Button size="sm" variant="outline" onClick={onClose}>
           Close
@@ -644,18 +686,22 @@ function TaskDetailsDialog({ task, onClose }: { task: Task; onClose: () => void 
 
 function ReviseDialog({
   task,
+  askPromise,
   onClose,
   onSubmit,
 }: {
   task: Task;
+  /** Payment trial: "Promised to Pay" on a payment follow-up asks for the promised date. */
+  askPromise?: boolean;
   onClose: () => void;
-  onSubmit: (dueAt: string, result: string, remark: string) => void;
+  onSubmit: (dueAt: string, result: string, remark: string, promisedOn?: string) => void;
 }) {
   // Owner, 2 Nov 2026 — the task's own group decides the Result and Remark lists.
   const group = reviseGroup(task);
   const results = REVISE_RESULTS[group];
   const [result, setResult] = React.useState(results[0]);
   const remarkRequired = reviseRemarkRequired(group, result);
+  const promise = !!askPromise && group === "PAYMENT" && result === "Promised to Pay";
   return (
     <Modal
       title="Revise task"
@@ -670,7 +716,8 @@ function ReviseDialog({
           onSubmit(
             istInstant(String(f.get("date")), String(f.get("time"))),
             String(f.get("result")),
-            String(f.get("remark") ?? "")
+            String(f.get("remark") ?? ""),
+            promise ? String(f.get("promisedOn")) : undefined
           );
         }}
       >
@@ -701,6 +748,11 @@ function ReviseDialog({
             ))}
           </select>
         </Field>
+        {promise && (
+          <Field label="Customer promised to pay on (the due date stays the same)">
+            <input required name="promisedOn" type="date" min={istDay(new Date())} className={inputClass} />
+          </Field>
+        )}
         <Field label={remarkRequired ? "Remark — compulsory" : "Remark"}>
           {/* key: a change of preset list starts the box fresh. */}
           <RemarkSelect key={group} presets={REVISE_REMARKS[group]} name="remark" required={remarkRequired} />

@@ -32,6 +32,7 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm audit --audit-level=high
       - run: npx prisma generate
 
       # Task rules, the permission matrix, every domain rule, and a full

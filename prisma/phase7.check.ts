@@ -229,7 +229,7 @@ async function main() {
   // A crafted request that names a role it does not hold is refused by the
   // service, not by the hidden button (DESIGN §1).
   const member = await db.memberProfile.findFirstOrThrow();
-  await expectBlocked(/Only MD/, () =>
+  await expectBlocked(/tick for this/, () =>
     setMemberStatus({
       idempotencyKey: key(),
       actorRef: CRM,
@@ -255,6 +255,20 @@ async function main() {
   assert.equal(await db.task.count({ where: { ...review, status: "PENDING" } }), 1, "raised while a request waits");
   await decideHoldRequest({ idempotencyKey: key(), actorRef: CRM, actorRole: "CRM", requestId: requested.holdRequestId, approve: false, note: "Member deactivated." });
   assert.equal(await db.task.count({ where: { ...review, status: "PENDING" } }), 0, "closed once none waits");
+
+  // Owner, 17 Nov 2026 — the ticks decide, not the role. A CRM account MD has
+  // ticked for Members switches one back on; switching off needs its own tick.
+  const tickedPerson = await db.person.create({ data: { fullName: `${TAG} Ticked CRM`, primaryMobile: "9800000078" } });
+  const ticked = await db.staffAccount.create({
+    data: { staffAccountId: `${TAG}-CRM-TICKED`, personId: tickedPerson.id, role: "CRM", passwordHash: "x", extraPermissions: ["MEMBER_ACTIVATE"] },
+  });
+  const asTicked = { actorRef: ticked.staffAccountId, actorRole: "CRM" };
+  await setMemberStatus({ idempotencyKey: key(), ...asTicked, memberProfileId: holderProfile.id, active: true, reason: "Cleared by CRM." });
+  assert.equal((await db.memberProfile.findUniqueOrThrow({ where: { id: holderProfile.id } })).status, "ACTIVE", "a ticked CRM account reactivates");
+  await expectBlocked(/Turn a Member off/, () =>
+    setMemberStatus({ idempotencyKey: key(), ...asTicked, memberProfileId: holderProfile.id, active: false, reason: "No tick." })
+  );
+  await db.staffAccount.delete({ where: { id: ticked.id } });
 
   // Maker-checker: the account that submitted a Booking Request may not decide it.
   const plotC = await makePlot(project.id, "C");

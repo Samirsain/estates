@@ -65,6 +65,12 @@ export type Action =
   | "CANCELLATION_DECIDE"
   | "BUYING_COMMISSION_RECORD"
   | "PAYMENT_CORRECT"
+  // Confidential payment trial (revised brief, 25 Nov 2026): staff send a
+  // payment the customer says they made — date, mode, reference, never an
+  // amount — and only MD approves its verified percentage, from the
+  // browser-only Private Payment Calculator.
+  | "PAYMENT_VERIFICATION_REQUEST"
+  | "PAYMENT_CALCULATOR_APPROVE"
   | "SCHEDULE_REVISE"
   | "SCHEDULE_DECIDE"
   | "OWNERSHIP_SHARE_CHANGE"
@@ -108,6 +114,7 @@ const STARTING_PERMISSIONS: Record<Role, readonly Action[]> = {
     "CANCELLATION_DECIDE",
     "ACQUISITION_CANCEL",
     "PAYMENT_CORRECT",
+    "PAYMENT_VERIFICATION_REQUEST",
     "SCHEDULE_DECIDE",
     "PRIMARY_CUSTOMER_CHANGE_APPROVE",
     "COMMISSION_PROCESS",
@@ -126,6 +133,7 @@ const STARTING_PERMISSIONS: Record<Role, readonly Action[]> = {
     "HOLD_REQUEST_REVIEW",
     "BOOKING_REQUEST_SUBMIT",
     "BOOKING_CANCEL_REQUEST",
+    "PAYMENT_VERIFICATION_REQUEST",
     "SCHEDULE_REVISE",
     "BANK_DETAILS_ENTER",
     "OWNERSHIP_SHARE_CHANGE",
@@ -187,6 +195,8 @@ export const MD_ONLY_ACTIONS: readonly Action[] = [
   "PERSON_MERGE",
   "HOLD_EXTEND_FURTHER",
   "PLC_SNAPSHOT_CORRECT",
+  // Payment trial: the deal value is typed only by MD, so only MD approves the percentage.
+  "PAYMENT_CALCULATOR_APPROVE",
 ];
 
 /**
@@ -356,6 +366,8 @@ export const ACTION_GROUPS = [
     actions: [
       "PAYMENT_RECEIVED_CONFIRM",
       "PAYMENT_CORRECT",
+      "PAYMENT_VERIFICATION_REQUEST",
+      "PAYMENT_CALCULATOR_APPROVE",
       "COMMISSION_PROCESS",
       "BANK_DETAILS_ENTER",
       "BANK_VERIFY",
@@ -422,6 +434,8 @@ export const ACTION_LABELS: Record<Action, string> = {
   DELIVERY_REOPEN: "Reopen a handed-over booking",
   PAYMENT_RECEIVED_CONFIRM: "Confirm money received from a buyer",
   PAYMENT_CORRECT: "Correct a wrong payment entry",
+  PAYMENT_VERIFICATION_REQUEST: "Ask MD to verify a payment the customer says they made (no amounts)",
+  PAYMENT_CALCULATOR_APPROVE: "Use the Private Payment Calculator and approve verified payment percentages",
   COMMISSION_PROCESS: "Pay out commission",
   BANK_DETAILS_ENTER: "Enter bank details",
   BANK_VERIFY: "Check and approve bank details",

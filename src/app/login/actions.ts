@@ -157,10 +157,9 @@ export async function forgotStaffPassword(form: FormData): Promise<void> {
 
   const account = await db.staffAccount.findUnique({ where: { staffAccountId: loginId } });
 
-  // The phrase is always checked, even for an account that does not exist, so
-  // the two failures cannot be told apart by how long the answer takes.
+  // MD uses the owner-controlled recovery procedure.
   const keyOk = verifyRecoveryKey(recoveryKey);
-  if (!keyOk || !account || account.status !== "ACTIVE") {
+  if (!keyOk || !account || account.role === "MD" || account.status !== "ACTIVE") {
     back("GENERIC");
   }
 
@@ -173,7 +172,7 @@ export async function forgotStaffPassword(form: FormData): Promise<void> {
       ...registerSuccess(),
     },
   });
-  // The phrase resets any account, so every use leaves a record.
+  // Every use of shared staff recovery leaves a record.
   await recordAudit({
     actorRef: account.staffAccountId,
     actorRole: account.role,

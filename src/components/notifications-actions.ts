@@ -5,6 +5,7 @@
 // extra to store. Only staff who may read Activity History (AUDIT_VIEW) are
 // served it, and only what other people did.
 
+import { shownReceiptEventReason } from "@/lib/domain/payment-percent";
 import { db } from "@/lib/db";
 import { currentStaff } from "@/lib/security/current-actor";
 import { can } from "@/lib/security/permissions";
@@ -50,7 +51,7 @@ export async function recentNotifications(): Promise<{ items: Notification[]; ca
       actorRef: { not: actor.staffAccountId },
       // Who looked at what, and who was refused, is security history rather
       // than news; it stays in Activity History.
-      NOT: [{ action: { contains: "REVEAL" } }, { action: { endsWith: "_DENIED" } }, { action: { contains: "PASSWORD" } }],
+      NOT: [{ action: { contains: "REVEAL" } }, { action: { endsWith: "_DENIED" } }, { action: { contains: "PASSWORD" } }, { action: { startsWith: "PAYMENT_WORKSHEET_" } }],
     },
     orderBy: { at: "desc" },
     take: 30,
@@ -87,7 +88,7 @@ export async function recentNotifications(): Promise<{ items: Notification[]; ca
     actorRef: r.actorRef,
     action: r.action,
     entity: r.entity,
-    reason: r.reason,
+    reason: shownReceiptEventReason(r.action, r.reason),
     href: hrefOf(r.entity, r.entityId),
   }));
   return { items, canOpenAdministration };

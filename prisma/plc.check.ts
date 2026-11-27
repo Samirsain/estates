@@ -61,9 +61,11 @@ async function main() {
   const created = await db.project.findUniqueOrThrow({ where: { id: projectId } });
   assert.equal(created.projectCode, "ZZPLC1", "the typed code is stored in capitals");
   assert.equal(created.city, "Jaipur");
-  assert.equal(created.amenities, "Clubhouse\n24x7 water", "amenities are one per line");
+  // Owner, 18 Nov 2026 (9b18d81): a Project's typed details are kept in capitals.
+  assert.equal(created.amenities, "CLUBHOUSE\n24X7 WATER", "amenities are one per line, in capitals");
 
-  for (const bad of ["ZZPLC1", "ZZPLC12345", "ZZ-PLC", ""]) {
+  // Owner, 18 Nov 2026 (016e28e): any characters, 4 to 20 long, never reused.
+  for (const bad of ["ZZPLC1", "ZZP", "Z".repeat(21), ""]) {
     await expectBlocked(/Project Code/, () =>
       createProject({
         idempotencyKey: key(),
@@ -91,7 +93,8 @@ async function main() {
   });
 
   const edited = await db.project.findUniqueOrThrow({ where: { id: projectId } });
-  assert.equal(edited.name, `${TAG} PLC Status Renamed`);
+  // Owner, 18 Nov 2026 (9b18d81): a Project's name is kept in capitals.
+  assert.equal(edited.name, `${TAG} PLC Status Renamed`.toUpperCase());
   assert.equal(edited.type, "COMMERCIAL", "type is a label over the inventory, so it may change");
   assert.equal(edited.city, "Udaipur");
   assert.equal(
