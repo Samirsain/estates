@@ -1,8 +1,8 @@
 # Payment worksheet production readiness
 
-The MD selects a booked plot and enters its agreed value and safety factor once. Save plot tokens stores the calculated quantity encrypted for that booking, independently of any receipt. The amount and factor stay in browser memory and clear after setup. Reopening a configured booking skips setup. A change of plot clears the previous plot’s basis in the same transaction.
+Select P.N and enter Total and S.F once. A number divides Total by that factor. A formula such as `=TOTAL*4%` computes Pts directly. Save Pts stores the encrypted quantity for the booking. The amount and formula clear after setup. Changing plots through an approved replacement clears the old basis.
 
-Enter each verified receipt percentage, date and tracking ID. The worksheet uses the saved quantity to show token shares for each receipt, instalment and balance. Use the same tracking ID when retrying a receipt. Anyone who obtains the decrypted token quantity and its factor can infer the price to the conversion precision.
+Each receipt can have its own optional S.F. PTS is the saved plot quantity and RECEIVED is the point share of the entered percentage. Check the resulting credit and date before recording the payment. The ledger stores the approved percentage. Use the same tracking ID when retrying a receipt. Workbook arithmetic supports parentheses, percentages, integer powers and the functions SUM, AVERAGE, MIN, MAX, ABS and ROUND.
 
 ## Access
 
