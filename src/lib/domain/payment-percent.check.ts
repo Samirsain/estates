@@ -1,6 +1,7 @@
 // Confidential payment trial — the revised brief's §3 and §9 cases, fictional figures.
 // Run: node --import ./prisma/alias-loader.mjs src/lib/domain/payment-percent.check.ts
 import assert from "node:assert/strict";
+import { worksheetPoints } from "./worksheet-formula.ts";
 import {
   allocateUnits,
   convertPayment,
@@ -31,6 +32,16 @@ const paise = (text: string) => {
   if ("error" in r) throw new Error(r.error);
   return r.paise;
 };
+
+const setupCells = { TOTAL: "500000" };
+assert.equal(worksheetPoints("25", setupCells, "TOTAL"), "20000");
+assert.equal(worksheetPoints("=ROUND((total + 100)*2%,2)", setupCells, "TOTAL"), "10002");
+assert.equal(worksheetPoints("=SUM(MAX(2,3),2^3,ABS(-4))", setupCells, "TOTAL"), "15");
+assert.equal(worksheetPoints("=TOTAL-1", { TOTAL: "9999999999999999.9999" }, "TOTAL"), "9999999999999998.9999");
+assert.equal(worksheetPoints("=RECEIVED*2", { RECEIVED: "10", PTS: "100" }, "RECEIVED"), "20");
+for (const expression of ["=TOTAL/0", "=UNKNOWN", "=SUM(1,)", "=2^999999", "=0", "=(-2)", "=1 2", "=1+"]) {
+  assert.equal(worksheetPoints(expression, setupCells, "TOTAL"), null);
+}
 const plan = (received: string[], dues = ["2026-09-01", "2026-10-01", "2026-12-01", "2027-01-01"]) =>
   received.map((r, i) => ({ seq: i + 1, scheduled: "25", received: r, dueDate: `${dues[i]}T00:00:00+05:30` }));
 const NOW = new Date("2026-11-25T06:00:00Z"); // 25 Nov 2026, 11:30 IST

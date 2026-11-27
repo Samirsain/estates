@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/modal";
+import { worksheetPoints } from "@/lib/domain/worksheet-formula";
 import { PasswordInput } from "@/components/ui/password-input";
 import { PaymentProgress } from "@/app/bookings/payment-instalments-panel";
 import type { StaffRole } from "@/lib/security/permissions";
@@ -24,7 +25,7 @@ import {
   PAYMENT_DECISION_REASONS,
   parseRupees,
   pct,
-  plotTokens,
+
   tokensForPercent,
   receiptTrackingId,
   shareOfInstalment,
@@ -58,7 +59,7 @@ const SELECT = "h-10 w-full rounded-lg border border-input bg-card px-3 text-sm 
 
 const human = (s: string) => s.charAt(0) + s.slice(1).toLowerCase().replaceAll("_", " ");
 const tokenShare = (basis: string | null, units: bigint) =>
-  basis ? `${pct(units)} · ${tokensForPercent(basis, units)} tokens` : pct(units);
+  basis ? `${pct(units)} · ${tokensForPercent(basis, units)} Pts` : pct(units);
 const day = (d: string) => formatIst(`${d}T00:00:00+05:30`);
 const PAYMENT_BADGE = { COMPLETE: "success", PARTIAL: "warning", UNPAID: "outline" } as const;
 const PAYMENT_LABEL = { COMPLETE: "Paid", PARTIAL: "Part paid", UNPAID: "Not paid" } as const;
@@ -87,6 +88,7 @@ export default function PaymentCalculatorClient({
 
   const [plotValue, setPlotValue] = React.useState("");
   const [factor, setFactor] = React.useState("");
+  const [receiptFormula, setReceiptFormula] = React.useState("");
   const [receivedAmount, setReceivedAmount] = React.useState("");
   const [cumulativeAmount, setCumulativeAmount] = React.useState("");
   const [inputVersion, setInputVersion] = React.useState(0);
@@ -103,11 +105,12 @@ export default function PaymentCalculatorClient({
   const clearPayment = React.useCallback(() => {
     setPlotValue("");
     setFactor("");
+    setReceiptFormula("");
     setReceivedAmount("");
     setCumulativeAmount("");
     setInputVersion((version) => version + 1);
     setPercent("");
-    setReference("");
+    setReference(`PV-${globalThis.crypto.randomUUID()}`);
     setClaimId("");
     setAttested(false);
     setPaidOn(istDay(new Date()));
@@ -173,7 +176,7 @@ export default function PaymentCalculatorClient({
   React.useEffect(() => {
     key.current = null;
     setAttested(false);
-  }, [percent, plotValue, factor, receivedAmount, cumulativeAmount, paidOn, reference, claimId]);
+  }, [percent, receiptFormula, plotValue, factor, receivedAmount, cumulativeAmount, paidOn, reference, claimId]);
 
   const q = query.trim().toLowerCase();
   const matches = q
@@ -190,13 +193,13 @@ export default function PaymentCalculatorClient({
     : 0n;
 
   const plot = parseRupees(plotValue);
-  const tokens = view?.tokens ?? ("paise" in plot ? plotTokens(plot.paise, factor.trim()) : null);
+  const tokens = view?.tokens ?? ("paise" in plot ? worksheetPoints(factor, { TOTAL: plotValue.replace(/,/g, "") }, "TOTAL") : null);
   const byAmount = mode === "CALCULATE" && !view?.tokens && receivedAmount !== "";
   const conversion = (() => {
     if (!summary) return null;
     if (byAmount) {
       if ("error" in plot) return { ok: false as const, reason: "Enter a valid plot value first." };
-      if (!tokens) return { ok: false as const, reason: "Enter a positive safety factor, such as 25, with up to 4 decimal places." };
+      if (!tokens) return { ok: false as const, reason: "Check the Total and S.F formula." };
       const payment = parseRupees(receivedAmount);
       if ("error" in payment) return { ok: false as const, reason: payment.error };
       const total = summary.received === 0n ? payment : parseRupees(cumulativeAmount);
@@ -207,6 +210,25 @@ export default function PaymentCalculatorClient({
         cumulativePaise: total.paise,
         currentUnits: summary.received,
       });
+    }
+    if (view?.tokens && receiptFormula.trim()) {
+      const cells: Record<string, string> = { PTS: view.tokens };
+      if (percent) {
+        if (!/^\d{1,3}(?:\.\d{1,8})?$/.test(percent) || toUnits(percent) > TOTAL_UNITS) {
+          return { ok: false as const, reason: "Check Received (%)." };
+        }
+        cells.RECEIVED = tokensForPercent(view.tokens, toUnits(percent));
+      }
+      const points = worksheetPoints(receiptFormula, cells, "RECEIVED");
+      if (!points) return { ok: false as const, reason: "Check S.F and its cell names." };
+      const scaled = (v: string) => BigInt(v.split(".")[0] + (v.split(".")[1] ?? "").padEnd(4, "0"));
+      const numerator = scaled(points) * TOTAL_UNITS;
+      const basis = scaled(view.tokens);
+      const deltaUnits = numerator / basis;
+      if (deltaUnits === 0n || numerator > summary.outstanding * basis) {
+        return { ok: false as const, reason: "Pts must fit the remaining balance." };
+      }
+      return { ok: true as const, deltaUnits };
     }
     if (!percent) return null;
     if (!/^\d{1,3}(?:\.\d{1,8})?$/.test(percent)) return { ok: false as const, reason: "Enter a percentage with up to 8 decimal places." };
@@ -311,7 +333,7 @@ export default function PaymentCalculatorClient({
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Payment worksheet</h1>
           </div>
           <div role="group" aria-label="Calculator mode" className="inline-flex rounded-xl border bg-secondary p-1">
-            {([["RECORD", "Record receipt"], ["CALCULATE", "Just calculate"]] as const).map(([value, label]) => (
+            {([["RECORD", "Entry"], ["CALCULATE", "Preview"]] as const).map(([value, label]) => (
               <button type="button" key={value} aria-pressed={mode === value} disabled={busy}
                 onClick={() => setMode(value)}
                 className={`rounded-lg px-3 py-2 text-xs font-medium focus-visible:ring-2 focus-visible:ring-primary ${mode === value ? "bg-card text-primary" : "text-muted-foreground hover:text-foreground"}`}>
@@ -323,8 +345,13 @@ export default function PaymentCalculatorClient({
 
         {notice && <p role="status" className={`rounded-lg border px-4 py-3 text-sm ${notice.ok ? "border-border bg-secondary" : "border-destructive/40 text-destructive"}`}>{notice.text}</p>}
 
-        <section aria-label="Payment entry sheet" className="min-w-0 divide-y divide-border rounded-2xl border bg-card">
-          <SheetRow title="Plot number">
+        <section aria-label="Payment entry sheet" className="grid min-w-0 gap-px overflow-hidden rounded-md border bg-border sm:grid-cols-2 lg:grid-cols-4 [&_input]:rounded-sm [&_input]:tabular-nums" onKeyDown={(event) => {
+          if (event.key !== "Enter" || event.nativeEvent.isComposing || !(event.target instanceof HTMLInputElement) || event.target.type === "checkbox") return;
+          const fields = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('input:not(:disabled):not([readonly]), button:not(:disabled):not([aria-pressed]), select:not(:disabled)')).filter((field) => field.offsetParent !== null);
+          const index = fields.indexOf(event.target);
+          if (index >= 0 && fields[index + 1]) { event.preventDefault(); fields[index + 1].focus(); }
+        }}>
+          <SheetRow title="P.N">
             <details ref={picker} className="group">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-input px-3 py-2.5 text-sm font-medium hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary">
                 <span>{loading ? "Loading plot…" : view ? `Plot ${view.plot} · ${view.project}` : "Select a plot"}</span>
@@ -352,34 +379,35 @@ export default function PaymentCalculatorClient({
               </div>
             </details>
             {view && <p className="mt-2 text-xs text-muted-foreground">{view.number} · {view.customer} · {human(view.status)}</p>}
-            {view?.tokens && <p className="mt-1 text-sm">Saved plot tokens: {view.tokens}</p>}
+            {view?.tokens && <p className="mt-1 text-sm">Pts · {view.tokens}</p>}
           </SheetRow>
 
-          {view && !view.tokens && <SheetRow title="Plot value & safety factor">
-            <div key={inputVersion} className="grid gap-3 sm:grid-cols-2">
-              <Field label="Agreed plot value (₹)">
+          {view && !view.tokens && <SheetRow title="Setup" wide>
+            <div key={inputVersion} className="grid gap-2 sm:grid-cols-3">
+              <Field label="Total">
                 <PasswordInput visibilityLabel="plot value" inputMode="decimal" autoComplete="off" disabled={noPlot}
                   value={plotValue} onChange={(e) => setPlotValue(formatRupeeTyping(e.target.value))} placeholder="5,00,000" />
               </Field>
-              <Field label="Safety factor">
-                <PasswordInput visibilityLabel="safety factor" inputMode="decimal" autoComplete="off" disabled={noPlot}
-                  value={factor} onChange={(e) => setFactor(e.target.value)} maxLength={18} />
+              <Field label="S.F">
+                <PasswordInput visibilityLabel="S.F" inputMode="text" placeholder="=TOTAL * 5%" autoComplete="off" disabled={noPlot}
+                  value={factor} onChange={(e) => setFactor(e.target.value)} maxLength={160} />
               </Field>
-              {tokens && <Field label="Plot tokens">
+              {tokens && <Field label="Pts">
                 <PasswordInput visibilityLabel="plot tokens" autoComplete="off" disabled={noPlot} value={tokens} readOnly />
               </Field>}
             </div>
-            {mode === "RECORD" && <Button type="button" className="mt-3" disabled={!tokens || noPlot || view.status !== "BOOKED" || view.activeProcess !== "NONE"} onClick={saveTokens}>
-              Save plot tokens
+            {factor && plotValue && !tokens && <p role="status" className="text-xs text-destructive">Check Total and S.F.</p>}
+            {mode === "RECORD" && <Button type="button" className="mt-2" disabled={!tokens || noPlot || view.status !== "BOOKED" || view.activeProcess !== "NONE"} onClick={saveTokens}>
+              Save Pts
             </Button>}
           </SheetRow>}
 
-          <SheetRow title="Payment received">
+          <SheetRow title="Payment">
             {mode === "RECORD" && !!view?.claims.length && <Field label="Staff payment claim">
               <select className={SELECT} disabled={locked} value={claimId} onChange={(e) => {
                 const claim = view.claims.find((c) => c.id === e.target.value);
                 setClaimId(e.target.value);
-                setReference(claim?.reference ?? "");
+                setReference(claim?.reference ?? `PV-${globalThis.crypto.randomUUID()}`);
                 setPaidOn(claim ? istDay(claim.claimedPaidOn) : istDay(new Date()));
               }}>
                 <option value="">Manual receipt</option>
@@ -391,30 +419,32 @@ export default function PaymentCalculatorClient({
                 <PasswordInput visibilityLabel="received amount" inputMode="decimal" autoComplete="off" disabled={locked}
                   value={receivedAmount} onChange={(e) => setReceivedAmount(formatRupeeTyping(e.target.value))} placeholder="0" />
               </Field>}
-              <Field label="Verified payment (%)">
+              <Field label="Received (%)">
                 <Input inputMode="decimal" autoComplete="off" disabled={locked} readOnly={byAmount}
                   value={byAmount ? (validReceipt ? fromUnits(validReceipt.deltaUnits) : "") : percent}
                   onChange={(e) => setPercent(e.target.value)} placeholder="0" />
               </Field>
+              {view?.tokens && <Field label="S.F (optional)">
+                <PasswordInput visibilityLabel="entry formula" autoComplete="off" disabled={locked} value={receiptFormula}
+                  maxLength={160} placeholder="=RECEIVED * 2" onChange={(e) => setReceiptFormula(e.target.value)} />
+              </Field>}
               {byAmount && summary && summary.received > 0n && <Field label="Total confirmed receipts, including this one (₹)">
                 <PasswordInput visibilityLabel="total confirmed receipts" inputMode="decimal" autoComplete="off" disabled={locked}
                   value={cumulativeAmount} onChange={(e) => setCumulativeAmount(formatRupeeTyping(e.target.value))} placeholder="0" />
               </Field>}
             </div>
-            {tokens && validReceipt && <p className="mt-2 text-sm">Receipt: {tokensForPercent(tokens, validReceipt.deltaUnits)} tokens</p>}
+            {tokens && validReceipt && <p aria-live="polite" className="mt-2 text-sm">Credit {tokensForPercent(tokens, validReceipt.deltaUnits)} Pts · {pct(validReceipt.deltaUnits)}</p>}
             {mode === "RECORD" && blockedWhy && <p className="mt-2 text-xs">{blockedWhy}</p>}
             {conversion && !conversion.ok && <p role="status" className="mt-2 text-xs text-destructive">{conversion.reason}</p>}
           </SheetRow>
 
-          {mode === "RECORD" && <SheetRow title="Receipt date & reference">
+          {mode === "RECORD" && <SheetRow title="Receipt">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Payment date"><Input type="date" disabled={locked} value={view ? paidOn : ""} max={istDay(new Date())} onChange={(e) => setPaidOn(e.target.value)} /></Field>
-              <Field label="Receipt tracking ID"><Input disabled={locked} value={reference} onChange={(e) => setReference(e.target.value)} autoComplete="off" maxLength={39} readOnly={!!claimId} placeholder="PV-…" /></Field>
+              <Field label="Date"><Input type="date" disabled={locked} value={view ? paidOn : ""} max={istDay(new Date())} onChange={(e) => setPaidOn(e.target.value)} /></Field>
+              <details className="self-end text-xs"><summary className="cursor-pointer py-2">Receipt ID</summary>
+                <Input aria-label="Receipt ID" disabled={locked} value={reference} onChange={(e) => setReference(e.target.value)} autoComplete="off" maxLength={39} readOnly={!!claimId} />
+              </details>
             </div>
-            {!claimId && !reference && <Button type="button" size="sm" variant="outline" className="mt-2" disabled={locked || !validReceipt}
-              onClick={() => setReference(`PV-${globalThis.crypto.randomUUID()}`)}>
-              Generate tracking ID
-            </Button>}
           </SheetRow>}
 
           <SheetRow title="Next instalment">
@@ -424,11 +454,11 @@ export default function PaymentCalculatorClient({
                 <span className="block text-xs text-muted-foreground">{tokenShare(tokens, summary.current.pending)} due</span>
               </p> : <p className="text-sm">{rows.length ? "All instalments paid." : "No payment schedule yet."}</p>}
           </SheetRow>
-          {mode === "RECORD" && <footer className="flex flex-wrap items-center justify-between gap-3 rounded-b-2xl bg-secondary/50 px-4 py-3 sm:px-5">
+          {mode === "RECORD" && <footer className="col-span-full flex flex-wrap items-center justify-between gap-3 bg-secondary/50 px-4 py-3 sm:px-5">
             <label className="flex items-start gap-2 text-xs"><input type="checkbox" className="mt-0.5" disabled={!validReceipt || locked} checked={attested} onChange={(e) => setAttested(e.target.checked)} />
-              <span>I verified this receipt{view ? ` for Plot ${view.plot} (${view.number})` : ""} against the bank record.</span>
+              <span>Receipt verified</span>
             </label>
-            <Button disabled={!canApprove} onClick={approve}>{busy ? "Saving…" : "Save receipt"}</Button>
+            <Button disabled={!canApprove} onClick={approve}>{busy ? "Saving…" : "Record Payment"}</Button>
           </footer>}
         </section>
 
@@ -490,11 +520,11 @@ export default function PaymentCalculatorClient({
   );
 }
 
-function SheetRow({ title, children }: { title: string; children: React.ReactNode }) {
+function SheetRow({ title, children, wide = false }: { title: string; children: React.ReactNode; wide?: boolean }) {
   return (
-    <section className="grid min-w-0 sm:grid-cols-[11rem_minmax(0,1fr)] lg:grid-cols-[13rem_minmax(0,1fr)]">
-      <h2 className="px-4 pt-3 text-sm font-semibold sm:border-r sm:bg-secondary/40 sm:px-5 sm:py-4">{title}</h2>
-      <div className="min-w-0 px-4 pb-3 pt-2 sm:px-5 sm:py-3">{children}</div>
+    <section className={`min-w-0 bg-card ${wide ? "sm:col-span-2 lg:col-span-3" : ""}`}>
+      <h2 className="border-b bg-secondary/60 px-3 py-1 text-xs font-semibold">{title}</h2>
+      <div className="min-w-0 px-3 py-2">{children}</div>
     </section>
   );
 }
