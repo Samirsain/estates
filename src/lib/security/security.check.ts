@@ -143,7 +143,7 @@ assert.ok(rateLimit("ip:5.6.7.8", now), "limit is per identifier");
 const start = (role: (typeof STAFF_ROLES)[number]) => startingPermissions(role);
 assert.ok(can("ACCOUNTS", "BOOKING_DECIDE", start("ACCOUNTS")));
 assert.ok(!can("CRM", "BOOKING_DECIDE", start("CRM")), "CRM cannot approve its own Booking Request");
-assert.ok(!can("PC", "PAYMENT_RECEIVED_CONFIRM", start("PC")), "PC has no financial approval");
+assert.ok(!can("PC", "PAYMENT_CALCULATOR_APPROVE", start("PC")), "PC has no financial approval");
 // Owner, 18 Nov 2026 — there is no MIS job any more.
 assert.ok(!(STAFF_ROLES as string[]).includes("MIS"), "MIS is gone");
 // MD holds everything, so a new Action is MD's the day it is added.

@@ -411,7 +411,6 @@ export default async function MemberDetailPage({
     const booking = c.booking ? `/bookings/${c.booking.id}` : null;
     const deal = c.acquisition ? `/acquisitions/${c.acquisition.id}` : null;
     if (c.eligibility === "MILESTONE_PENDING") {
-      if (booking) return may("PAYMENT_RECEIVED_CONFIRM") ? { label: "Record Payment", href: `${booking}?open=PAY` } : null;
       return deal && may("PAYMENT_GIVEN_CONFIRM") ? { label: "Payment Given", href: deal } : null;
     }
     if (c.eligibility !== "ON_HOLD") return null;

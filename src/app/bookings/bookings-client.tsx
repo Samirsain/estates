@@ -65,7 +65,6 @@ import {
   addBookingCustomerAction,
   cancelBookingAction,
   changeOwnershipSharesAction,
-  confirmPaymentReceivedAction,
   correctPaymentReceivedAction,
   decideBookingRequestAction,
   decidePrimaryCustomerChangeAction,
@@ -189,7 +188,6 @@ type Permissions = {
   submit: boolean;
   decide: boolean;
   cancel: boolean;
-  confirmPayment: boolean;
   correctPayment: boolean;
   reviseSchedule: boolean;
   decideSchedule: boolean;
@@ -369,7 +367,6 @@ type Dialog =
   | { kind: "REVISE"; row: BookingRowView }
   | { kind: "DECIDE"; row: BookingRowView; approve: boolean }
   | { kind: "CANCEL"; row: BookingRowView }
-  | { kind: "PAY"; row: BookingRowView }
   | { kind: "CORRECT"; row: BookingRowView; entryId: string; percent: string; reference: string }
   | { kind: "SCHEDULE"; row: BookingRowView }
   | { kind: "SCHEDULE_DECIDE"; row: BookingRowView; approve: boolean }
@@ -466,15 +463,6 @@ export default function BookingsClient({
     }
     // Add Customer, opened from a Plot or a Member's profile (CR-029).
     if (initialOpen === "ADD_CUSTOMER" && canAddCustomer(row)) return { kind: "ADD_CUSTOMER", row };
-    // Record Payment, opened from a Plot or a Member's Payout button.
-    if (
-      initialOpen === "PAY" &&
-      ["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
-      permissions.confirmPayment &&
-      Number(remainingPercent(row.paymentReceivedPercent)) > 0
-    ) {
-      return { kind: "PAY", row };
-    }
     return null;
   });
   const [openId, setOpenId] = React.useState<string | null>(focusId);
@@ -563,21 +551,6 @@ export default function BookingsClient({
       return (
         <Button size="sm" onClick={() => openDialog({ kind: "DECIDE", row, approve: true })}>
           Review
-        </Button>
-      );
-    }
-    // Fully paid is the end of this button, not a form that opens and then
-    // refuses. Payment Completed still qualifies while anything remains — a
-    // correction can step the total back below 100 — so the gate is what is
-    // left, not the status.
-    if (
-      ["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
-      permissions.confirmPayment &&
-      Number(remainingPercent(row.paymentReceivedPercent)) > 0
-    ) {
-      return (
-        <Button size="sm" onClick={() => openDialog({ kind: "PAY", row })}>
-          Record Payment
         </Button>
       );
     }
@@ -1007,23 +980,8 @@ export default function BookingsClient({
                     )}
                   </td>
                   <td className="text-center tabular-nums">{row.paymentShown.paid}</td>
-                  {/* As on Acquisitions: Payment is the one action taken from
-                      the list, gated exactly like Confirm Payment on the
-                      Booking's page; once paid in full, Delivered takes its
-                      place, gated like the page's Delivered (owner, 30 Oct
-                      2026). The rest need the record in front of you. */}
                   <td className="text-center">
-                    {["BOOKED", "PAYMENT_COMPLETED"].includes(row.status) &&
-                    permissions.confirmPayment &&
-                    Number(remainingPercent(row.paymentReceivedPercent)) > 0 ? (
-                      <Button
-                        className={rowButton}
-                        variant="outline"
-                        onClick={() => openDialog({ kind: "PAY", row })}
-                      >
-                        <Wallet className="mr-1 h-3 w-3" /> Payment
-                      </Button>
-                    ) : row.status === "PAYMENT_COMPLETED" &&
+                    {row.status === "PAYMENT_COMPLETED" &&
                       permissions.recordFinalBuyers &&
                       permissions.recordCompletion ? (
                       <Button className={rowButton} onClick={() => openDialog({ kind: "DELIVER", row })}>
@@ -1153,58 +1111,6 @@ export default function BookingsClient({
           <Field label="Remark — compulsory for Other">
             <RemarkSelect presets="cancelBooking" name="remark" required={cancelReason === "Other"} />
           </Field>
-        </ActionDialog>
-      )}
-
-      {dialog?.kind === "PAY" && (
-        <ActionDialog
-          title="Confirm Payment Received"
-          row={dialog.row}
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(f) =>
-            run(() =>
-              confirmPaymentReceivedAction(
-                {
-                  bookingId: dialog.row.id,
-                  percent: String(f.get("percent")),
-                  paidOn: String(f.get("paidOn")),
-                  reference: String(f.get("reference")),
-                  remark: String(f.get("remark") ?? ""),
-                  payerName: String(f.get("payerName") ?? ""),
-                  payerReference: String(f.get("payerReference") ?? ""),
-                },
-                newKey()
-              )
-            )
-          }
-        >
-          {/* Not max 100: 100 is the whole Booking, and this field is one
-              payment against what is left of it. */}
-          <Field label={`Payment Received This Time (%) — ${remainingPercent(dialog.row.paymentReceivedPercent)}% remaining`}>
-            <PaymentPercentInput max={remainingPercent(dialog.row.paymentReceivedPercent)} />
-          </Field>
-          <Field label="Payment Date">
-            <Input name="paidOn" type="date" defaultValue={istDay(new Date())} max={istDay(new Date())} required />
-          </Field>
-          <Field label="Payment Reference No.">
-            <Input name="reference" required />
-          </Field>
-          <Field label="Remark">
-            <RemarkSelect presets="paymentReceived" name="remark" />
-          </Field>
-          {/* SSOT §22; CP §15 — recorded for Accounts review when the money did not come from the buyer. */}
-          <details className="rounded-md border border-border/60 px-3 py-2 text-sm">
-            <summary className="cursor-pointer text-xs font-medium text-muted-foreground">Paid by someone other than the buyer?</summary>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <Field label="Third-party payer name">
-                <Input name="payerName" />
-              </Field>
-              <Field label="Payer reference (account / UTR)">
-                <Input name="payerReference" />
-              </Field>
-            </div>
-          </details>
         </ActionDialog>
       )}
 
@@ -1815,15 +1721,15 @@ function BookingDetailPanel({
   const supersededCommissions = commissions.filter((c) => !c.isCurrent).length;
 
   /** A decision waiting on this Booking, with its Approve and Reject. */
-  const waiting = (title: string, lines: React.ReactNode, canDecide: boolean, decide: (approve: boolean) => Dialog) => (
+  const waiting = (title: string, lines: React.ReactNode, canDecide: boolean, decide: (approve: boolean) => Dialog, allowApprove = true) => (
     <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800">
       <p className="font-semibold">{title}</p>
       {lines && <div className="mt-1">{lines}</div>}
       {canDecide && (
         <div className="mt-2 flex gap-2">
-          <Button size="sm" onClick={() => onAction(decide(true))}>
+          {allowApprove && <Button size="sm" onClick={() => onAction(decide(true))}>
             Approve
-          </Button>
+          </Button>}
           <Button size="sm" variant="outline" onClick={() => onAction(decide(false))}>
             Reject
           </Button>
@@ -1886,7 +1792,8 @@ function BookingDetailPanel({
               {a.label} · entered by {a.requestedByRef} on {formatIst(a.requestedAt)}
             </p>,
             permissions.approvePaidEarly,
-            (approve) => ({ kind: "PAYMENT_APPROVAL_DECIDE", row, approvalId: a.id, label: a.label, approve })
+            (approve) => ({ kind: "PAYMENT_APPROVAL_DECIDE", row, approvalId: a.id, label: a.label, approve }),
+            !a.worksheetOnly
           )}
         </React.Fragment>
       ))}

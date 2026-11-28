@@ -64,11 +64,6 @@ export default async function PlotsPage({
   // carry it and Accounts can decide without leaving the inventory.
   const pendingBookings = {};
 
-  // The same for a Booked Plot: exactly one live Booking, so Payment Received
-  // can be confirmed against the row rather than from the Bookings screen.
-  // Payment Completed is not here — there is nothing left to receive.
-  const bookedBookings = {};
-
   // Paid in full and not yet Delivered. Allotment or Registry is recorded
   // against this one, which is what turns the Plot Delivered (prd-complete §18.6).
   const completedBookings = Object.fromEntries(
@@ -247,7 +242,6 @@ export default async function PlotsPage({
       members={bookingForm.members}
       bookable={bookingForm.bookable}
       pendingBookings={pendingBookings}
-      bookedBookings={bookedBookings}
       completedBookings={completedBookings}
       staffRef={actor.staffAccountId}
       permissions={{
@@ -259,7 +253,6 @@ export default async function PlotsPage({
         reviewRequests: can(actor.role, "HOLD_REQUEST_REVIEW", actor.extraPermissions),
         book: can(actor.role, "BOOKING_REQUEST_SUBMIT", actor.extraPermissions),
         decideBooking: can(actor.role, "BOOKING_DECIDE", actor.extraPermissions),
-        confirmPayment: can(actor.role, "PAYMENT_RECEIVED_CONFIRM", actor.extraPermissions),
         recordFinalBuyers: can(actor.role, "FINAL_BUYER_RECORD", actor.extraPermissions),
         recordCompletion: can(actor.role, "COMPLETION_RECORD", actor.extraPermissions),
       }}

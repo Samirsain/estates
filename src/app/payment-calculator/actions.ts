@@ -65,36 +65,30 @@ export async function loadCalculatorBookingAction(bookingId: string) {
     where: { id: bookingId },
     select: {
       id: true,
-      bookingNumber: true,
       calculatorBasis: { select: { tokenCipher: true } },
-      requestNo: true,
       status: true,
       activeProcess: true,
       paymentReceivedPercent: true,
       plotId: true,
       project: { select: { name: true, projectCode: true } },
-      plot: { select: { plotNumber: true } },
       primaryPerson: { select: { fullName: true, customerProfile: { select: { customerId: true } } } },
       paymentEntries: {
-        orderBy: { paidOn: "asc" },
+        orderBy: [{ paidOn: "desc" }, { recordedAt: "desc" }],
         select: {
           id: true,
           percent: true,
           paidOn: true,
           recordedAt: true,
           status: true,
-          confirmedByRef: true,
           externalReference: { select: { rawValue: true } },
-          verificationRequest: { select: { mode: true } },
         },
       },
       verificationRequests: {
         where: { status: "PENDING" },
         orderBy: { requestedAt: "asc" },
-        select: { id: true, claimedPaidOn: true, mode: true, reference: true, requestedByRef: true },
+        select: { id: true, claimedPaidOn: true, mode: true, reference: true },
       },
       scheduleVersions: { where: { status: "PENDING" }, select: { id: true } },
-      commissions: { where: { isCurrent: true }, select: { milestonePercent: true, eligibility: true } },
     },
   });
   if (!booking) return null;
@@ -110,9 +104,7 @@ export async function loadCalculatorBookingAction(bookingId: string) {
     id: booking.id,
     tokens: booking.calculatorBasis ? decryptSensitive(booking.calculatorBasis.tokenCipher) : null,
     plotId: booking.plotId,
-    number: booking.bookingNumber ?? booking.requestNo,
     project: `${booking.project.projectCode} · ${booking.project.name}`,
-    plot: booking.plot.plotNumber,
     customer: booking.primaryPerson
       ? `${booking.primaryPerson.fullName}${booking.primaryPerson.customerProfile ? ` · ${booking.primaryPerson.customerProfile.customerId}` : ""}`
       : "Customer Pending",
@@ -131,8 +123,6 @@ export async function loadCalculatorBookingAction(bookingId: string) {
       percent: e.percent.toFixed(),
       paidOn: e.paidOn.toISOString(),
       reference: shownReceiptTrackingId(e.externalReference.rawValue, e.id),
-      mode: e.verificationRequest?.mode ?? null,
-      approvedBy: e.confirmedByRef,
       status: e.status,
       oldPlot: !!moved && e.recordedAt < moved.createdAt,
     })),
@@ -141,17 +131,7 @@ export async function loadCalculatorBookingAction(bookingId: string) {
       claimedPaidOn: r.claimedPaidOn.toISOString(),
       mode: r.mode,
       reference: shownReceiptTrackingId(r.reference, r.id),
-      requestedByRef: r.requestedByRef,
     })),
-    // Milestones still ahead, so the calculator can say a payment reaches one.
-    // Eligibility itself stays the commission engine's (gte, never rounded up).
-    milestones: [
-      ...new Set(
-        booking.commissions
-          .filter((c) => c.eligibility === "MILESTONE_PENDING" && c.milestonePercent.gt(booking.paymentReceivedPercent))
-          .map((c) => c.milestonePercent.toString())
-      ),
-    ].sort((a, b) => Number(a) - Number(b)),
   };
 }
 

@@ -38,10 +38,10 @@ export default async function PaymentCalculatorPage({
     select: {
       id: true,
       bookingNumber: true,
+      projectId: true,
       status: true,
-      paymentReceivedPercent: true,
       project: { select: { name: true, projectCode: true } },
-      plot: { select: { plotNumber: true } },
+      plot: { select: { plotNumber: true, plotType: true } },
       primaryPerson: { select: { fullName: true, customerProfile: { select: { customerId: true } } } },
     },
   });
@@ -55,13 +55,13 @@ export default async function PaymentCalculatorPage({
       expiresAt={access.expiresAt}
       bookings={bookings.map((b) => ({
         id: b.id,
-        number: b.bookingNumber!,
-        project: `${b.project.projectCode} · ${b.project.name}`,
+        projectId: b.projectId,
+        project: `${b.project.projectCode} ${b.project.name}`,
         plot: b.plot.plotNumber,
+        plotType: b.plot.plotType.toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()),
+        status: b.status.toLowerCase().replaceAll("_", " "),
         customer: b.primaryPerson?.fullName ?? "Customer Pending",
         customerId: b.primaryPerson?.customerProfile?.customerId ?? null,
-        status: b.status,
-        received: b.paymentReceivedPercent.toFixed(),
       }))}
     />
   );

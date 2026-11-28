@@ -25,7 +25,6 @@ import {
   BookingFormDialog,
   CustomerParties,
   DeliverDialog,
-  PaymentPercentInput,
   ReviewDialog,
   type BookableView,
   type BookingRowView,
@@ -33,7 +32,6 @@ import {
   type PersonView,
 } from "@/app/bookings/bookings-client";
 import {
-  confirmPaymentReceivedAction,
   decideBookingRequestAction,
   loadBookingDetail,
   recordCompletionAction,
@@ -58,7 +56,6 @@ import {
   formatQuantity,
   istDay,
   parseDimension,
-  remainingPercent,
   typeDimension,
   type StaffRole,
 } from "@/lib/tasks";
@@ -799,7 +796,6 @@ export default function PlotsClient({
   members,
   bookable,
   pendingBookings,
-  bookedBookings,
   completedBookings,
   staffRef,
   permissions,
@@ -830,8 +826,6 @@ export default function PlotsClient({
   bookable: BookableView[];
   /** The one pending request per Plot waiting for approval, keyed by Plot id. */
   pendingBookings: Record<string, BookingRowView>;
-  /** The one live Booking per Booked Plot, keyed by Plot id. */
-  bookedBookings: Record<string, BookingRowView>;
   /** Paid in full and waiting on Allotment or Registry, keyed by Plot id. */
   completedBookings: Record<string, BookingRowView>;
   staffRef: string;
@@ -844,7 +838,6 @@ export default function PlotsClient({
     reviewRequests: boolean;
     book: boolean;
     decideBooking: boolean;
-    confirmPayment: boolean;
     recordFinalBuyers: boolean;
     recordCompletion: boolean;
   };
@@ -880,7 +873,6 @@ export default function PlotsClient({
     | { kind: "DECIDE_EXTENSION"; plot: PlotRowView; approve: boolean }
     | { kind: "BOOK"; plot: PlotRowView }
     | { kind: "REVIEW"; row: BookingRowView }
-    | { kind: "PAY"; plot: PlotRowView; row: BookingRowView }
     | { kind: "DELIVER"; row: BookingRowView }
     | null
   >(() => {
@@ -1582,59 +1574,6 @@ export default function PlotsClient({
               if (!saved.ok) return saved;
               return recordCompletionAction(dialog.row.id, completion, newKey());
             })
-          }
-        />
-      )}
-
-      {/* DESIGN §11.1 — the Payment Received form is these four fields and no
-          others, and it is the same server action the Bookings screen calls.
-          Confirming it here saves finding the Booking for a Plot you are
-          already looking at. */}
-      {dialog?.kind === "PAY" && (
-        <ConfirmDialog
-          title="Confirm Payment Received"
-          plot={dialog.plot}
-          busy={busy}
-          onClose={() => setDialog(null)}
-          onSubmit={(f) =>
-            run(() =>
-              confirmPaymentReceivedAction(
-                {
-                  bookingId: dialog.row.id,
-                  percent: String(f.get("percent")),
-                  paidOn: String(f.get("paidOn")),
-                  reference: String(f.get("reference")),
-                  remark: String(f.get("remark") ?? ""),
-                },
-                newKey()
-              )
-            )
-          }
-          fields={
-            <>
-              {/* Not max 100: 100 is the whole Booking, and this field is one
-                  payment against what is left of it. A Booking already at 30%
-                  can only take 70 more, and the server refuses the rest — the
-                  field should say so before the form is sent. */}
-              <Field label={`Payment Received This Time (%) — ${remainingPercent(dialog.row.paymentReceivedPercent)}% remaining`}>
-                <PaymentPercentInput max={remainingPercent(dialog.row.paymentReceivedPercent)} />
-              </Field>
-              <Field label="Payment Date">
-                <Input
-                  name="paidOn"
-                  type="date"
-                  defaultValue={istDay(new Date())}
-                  max={istDay(new Date())}
-                  required
-                />
-              </Field>
-              <Field label="Payment Reference No.">
-                <Input name="reference" required />
-              </Field>
-              <Field label="Remark">
-                <RemarkSelect presets="paymentReceived" name="remark" />
-              </Field>
-            </>
           }
         />
       )}

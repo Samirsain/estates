@@ -16,13 +16,17 @@ import { db } from "@/lib/db";
 import { formatIstDate } from "@/lib/tasks";
 import { blocked, lockKey, runCommand, type Tx } from "./command";
 import { closeTasksFor, ensureTask } from "./task-service";
-import { confirmPaymentReceived, correctPaymentReceived } from "./payment-service";
+import { type confirmPaymentReceived, correctPaymentReceived } from "./payment-service";
 import { markCommissionPaid } from "./commission-service";
 import { confirmPaymentGiven, correctPaymentGiven } from "./acquisition-service";
 import { clearRecovery, setOffRecovery } from "./recovery-service";
 import { decideCancellation } from "./cancellation-service";
 
 export const PAYMENT_APPROVAL_PURPOSE = "PAYMENT_MD_APPROVAL";
+
+export function worksheetOnlyApproval(kind: string) {
+  return kind === "PAYMENT_RECEIVED" || (kind === "PAYMENT_CORRECT" && paymentTrialEnabled());
+}
 
 type Ctx = { idempotencyKey: string; actorRef: string; actorRole: string };
 type Args<F extends (a: never) => unknown> = Omit<Parameters<F>[0], keyof Ctx>;
@@ -61,7 +65,7 @@ function revive(kind: PaymentStep["kind"], payload: unknown): PaymentStep {
 /** Runs the step through its own service. */
 function runStep(step: PaymentStep, ctx: Ctx) {
   switch (step.kind) {
-    case "PAYMENT_RECEIVED": return confirmPaymentReceived({ ...step.args, ...ctx });
+    case "PAYMENT_RECEIVED": return blocked("Record the receipt in the MD worksheet.");
     case "PAYMENT_CORRECT": return correctPaymentReceived({ ...step.args, ...ctx });
     case "COMMISSION_PAID": return markCommissionPaid({ ...step.args, ...ctx });
     case "PAYMENT_GIVEN": return confirmPaymentGiven({ ...step.args, ...ctx });
@@ -165,7 +169,7 @@ async function taskRecord(tx: Tx, p: Place) {
  */
 export async function requestPaymentApproval(args: Ctx & { step: PaymentStep }): Promise<string> {
   if (args.actorRole === "MD") blocked("MD's own payment step runs at once.");
-  if (paymentTrialEnabled() && (args.step.kind === "PAYMENT_RECEIVED" || args.step.kind === "PAYMENT_CORRECT")) {
+  if (worksheetOnlyApproval(args.step.kind)) {
     blocked("Send a payment claim for the MD worksheet instead.");
   }
   return runCommand<string>(
@@ -227,7 +231,7 @@ export async function decidePaymentApproval(args: Ctx & { approvalId: string; ap
   const approval = await db.paymentApproval.findUniqueOrThrow({ where: { id: args.approvalId } });
   if (approval.status !== "PENDING") blocked(`This was already ${approval.status === "APPROVED" ? "approved" : "rejected"}.`);
 
-  const legacyReceipt = paymentTrialEnabled() && (approval.kind === "PAYMENT_RECEIVED" || approval.kind === "PAYMENT_CORRECT");
+  const legacyReceipt = worksheetOnlyApproval(approval.kind);
   if (args.approve && legacyReceipt) {
     blocked("Reject this legacy approval and record the receipt in the MD worksheet.");
   }

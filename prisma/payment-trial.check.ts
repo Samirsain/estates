@@ -9,6 +9,7 @@ import { can } from "@/lib/security/permissions";
 import { decideBookingRequest, submitBookingRequest } from "@/lib/services/booking-service";
 import { decideChangePlot, submitChangePlot } from "@/lib/services/change-plot-service";
 import { correctPaymentReceived, reversePaymentReceived } from "@/lib/services/payment-service";
+import { decidePaymentApproval, requestPaymentApproval } from "@/lib/services/payment-approval-service";
 import { fromUnits, openingBalance } from "@/lib/domain/payment-percent";
 import { formatIstDate } from "@/lib/tasks";
 import { reconcile } from "@/lib/migration/reconcile";
@@ -101,6 +102,27 @@ async function main() {
   const id = submitted.bookingId;
   await decideBookingRequest({ ...md, idempotencyKey: key(), bookingId: id, approve: true, note: "check" });
   assert.equal(await received(id), "0");
+
+  // Even with the trial disabled, a pending legacy approval cannot credit the booking.
+  const legacy = await db.paymentApproval.create({ data: {
+    kind: "PAYMENT_RECEIVED", targetKey: id, bookingId: id,
+    requestedByRef: CRM, requestedByRole: "CRM", label: TAG,
+    payload: { bookingId: id, percent: "5", paidOn: day(0).toISOString(), reference: ref() },
+  } });
+  const previousFlag = process.env.PERCENTAGE_PAYMENT_TRIAL_ENABLED;
+  try {
+    process.env.PERCENTAGE_PAYMENT_TRIAL_ENABLED = "false";
+    await assert.rejects(requestPaymentApproval({ actorRef: CRM, actorRole: "CRM", idempotencyKey: key(),
+      step: { kind: "PAYMENT_RECEIVED", args: { bookingId: id, percent: "5", paidOn: day(0), reference: ref() } },
+    }), /MD worksheet/);
+    await assert.rejects(decidePaymentApproval({ ...md, approvalId: legacy.id, approve: true, note: "", idempotencyKey: key() }), /MD worksheet/);
+    await decidePaymentApproval({ ...md, approvalId: legacy.id, approve: false, note: "Handled in worksheet", idempotencyKey: key() });
+    assert.equal(await received(id), "0");
+  } finally {
+    if (previousFlag === undefined) delete process.env.PERCENTAGE_PAYMENT_TRIAL_ENABLED;
+    else process.env.PERCENTAGE_PAYMENT_TRIAL_ENABLED = previousFlag;
+    await db.paymentApproval.delete({ where: { id: legacy.id } });
+  }
 
   // --- a claim is not a payment: nothing moves, MD gets one task
   await assert.rejects(claim(id, ref(), "paid 50,000 by UPI"), /don't write any rupee amount/);

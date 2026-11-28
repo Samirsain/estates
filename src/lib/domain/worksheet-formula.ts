@@ -7,8 +7,12 @@ const NumberCell = Decimal.clone({ precision: 64 });
 export function worksheetPoints(input: string, cells: Record<string, string>, base: string): string | null {
   const source = input.trim();
   if (!source || source.length > 160) return null;
-  // Preserve the original numeric divisor shortcut. An expression computes Pts directly.
-  const expression = /^\d+(?:\.\d+)?$/.test(source) ? `${base}/${source}` : source.replace(/^=/, "");
+  // A leading operator applies to this field's amount. Explicit formulas
+  // keep their original meaning, including a unary sign after "=".
+  let expression = source.replace(/^=/, "");
+  if (/^\d+(?:\.\d+)?$/.test(source)) expression = `${base}/${source}`;
+  else if (/^[*/+^-]/.test(source)) expression = base + source;
+  else if (/^(?:\d+(?:\.\d+)?|\.\d+)\s*%$/.test(source)) expression = `${base}*${source}`;
   const parts = expression.toUpperCase().match(/\d*\.\d+|\d+|[A-Z]+[0-9]*|[^\s]/g) ?? [];
   let pos = 0;
   function take(token: string) {

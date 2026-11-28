@@ -1,14 +1,18 @@
 # Payment worksheet production readiness
 
-Select P.N and enter Total and S.F once. A number divides Total by that factor. A formula such as `=TOTAL*4%` computes Pts directly. Save Pts stores the encrypted quantity for the booking. The amount and formula clear after setup. Changing plots through an approved replacement clears the old basis.
+Buyer receipts are recorded in the MD worksheet. Choose a project and select a plot. Each row shows the plot number and type above the project code and name. If a plot needs setup, enter its agreed total and save the plot points. The total is cleared after setup. An approved plot replacement clears the old points basis.
 
-Each receipt can have its own optional S.F. PTS is the saved plot quantity and RECEIVED is the point share of the entered percentage. Check the resulting credit and date before recording the payment. The ledger stores the approved percentage. Use the same tracking ID when retrying a receipt. Workbook arithmetic supports parentheses, percentages, integer powers and the functions SUM, AVERAGE, MIN, MAX, ABS and ROUND.
+Enter the amount and receipt date for each row. Tick S.F. and enter one formula in the field beside it to apply it to all draft amounts and any new plot total. For example, `/25` converts ₹25,000 to 1,000 Pts. A plain number acts as a divisor. With S.F. off, the amount itself is the points value. For a plot with saved points, use the same conversion that produced those points so the receipt credits the intended percentage.
+
+Check Pts and the receipt date before clicking Record. Use Add row for the next receipt and × to remove a row. Recorded payments stay in history. A batch stops at its first failed receipt and keeps successful rows marked Recorded. Receipt details contains the staff claim selector and tracking ID.
+
+Tab and Shift+Tab move through the controls. Enter advances from an input to the next editable cell. The worksheet sends the calculated percentage to the ledger. Amounts and the shared S.F. stay in the browser for the worksheet session. Use the same tracking ID when retrying a receipt. Formulas accept AMOUNT, parentheses, percentages, integer powers and the functions SUM, AVERAGE, MIN, MAX, ABS and ROUND.
 
 ## Access
 
 Use `MDXXX` in the header search from the MD account. The first registration requires an owner-held setup key and a user-verified passkey. Later unlocks require that passkey. Server challenges expire after two minutes and are consumed once. Retry counters and access expiry live in PostgreSQL, and audit events record outcomes. A 15-minute unlock applies to the current staff session. The worksheet closes at expiry. MD account recovery is restricted to the owner-controlled procedure.
 
-Mock development runs on `http://localhost:3001`. Its randomly generated setup key is in the gitignored local development environment. The real-data development service on port 3002 is retired.
+Run `npm run trial:dev` and open `http://localhost:3002` for the fictional Project A bookings. The launcher uses the local `threepct_payment_trial` database on port 5433 and sets the matching localhost origin for the passkey. The first-time setup key is in the gitignored `.env.development.local`.
 
 ## Production release
 

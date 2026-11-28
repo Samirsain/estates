@@ -8,8 +8,12 @@ for (const name of ["DATABASE_URL", "DIRECT_URL"]) {
   }
 }
 
+const port = "3002";
 const server = spawnSync(process.execPath, [
-  "node_modules/next/dist/bin/next", "dev", "--turbopack", "--hostname", "127.0.0.1", "--port", "3001",
-], { stdio: "inherit" });
+  "node_modules/next/dist/bin/next", "dev", "--turbopack", "--hostname", "127.0.0.1", "--port", port,
+], {
+  stdio: "inherit",
+  env: { ...process.env, PAYMENT_CALCULATOR_ORIGIN: `http://localhost:${port}` },
+});
 if (server.error) throw server.error;
 process.exitCode = server.status ?? 1;

@@ -55,7 +55,6 @@ export type Action =
   | "BOOKING_REQUEST_SUBMIT"
   | "BOOKING_DECIDE"
   | "BOOKING_CANCEL_REQUEST"
-  | "PAYMENT_RECEIVED_CONFIRM"
   | "PAYMENT_GIVEN_CONFIRM"
   | "ACQUISITION_CREATE"
   | "ACQUISITION_DECIDE"
@@ -107,7 +106,6 @@ const STARTING_PERMISSIONS: Record<Role, readonly Action[]> = {
   // processes commission. It does not administer users or set up inventory.
   ACCOUNTS: [
     "BOOKING_DECIDE",
-    "PAYMENT_RECEIVED_CONFIRM",
     "PAYMENT_GIVEN_CONFIRM",
     "ACQUISITION_DECIDE",
     "CHANGE_PLOT_DECIDE",
@@ -364,7 +362,6 @@ export const ACTION_GROUPS = [
   {
     group: "Money",
     actions: [
-      "PAYMENT_RECEIVED_CONFIRM",
       "PAYMENT_CORRECT",
       "PAYMENT_VERIFICATION_REQUEST",
       "PAYMENT_CALCULATOR_APPROVE",
@@ -432,7 +429,6 @@ export const ACTION_LABELS: Record<Action, string> = {
   FINAL_BUYER_RECORD: "Fill in the final buyer details",
   COMPLETION_RECORD: "Mark a plot as handed over",
   DELIVERY_REOPEN: "Reopen a handed-over booking",
-  PAYMENT_RECEIVED_CONFIRM: "Confirm money received from a buyer",
   PAYMENT_CORRECT: "Correct a wrong payment entry",
   PAYMENT_VERIFICATION_REQUEST: "Ask MD to verify a payment the customer says they made (no amounts)",
   PAYMENT_CALCULATOR_APPROVE: "Use the Private Payment Calculator and approve verified payment percentages",

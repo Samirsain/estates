@@ -35,6 +35,14 @@ const paise = (text: string) => {
 
 const setupCells = { TOTAL: "500000" };
 assert.equal(worksheetPoints("25", setupCells, "TOTAL"), "20000");
+assert.equal(worksheetPoints("/ 25", setupCells, "TOTAL"), "20000");
+assert.equal(worksheetPoints("* 5%", setupCells, "TOTAL"), "25000");
+assert.equal(worksheetPoints("5%", setupCells, "TOTAL"), "25000");
+assert.equal(worksheetPoints("* (2 + 1)", { RECEIVED: "10" }, "RECEIVED"), "30");
+assert.equal(worksheetPoints("- 2", { RECEIVED: "10" }, "RECEIVED"), "8");
+assert.equal(worksheetPoints("=+2", setupCells, "TOTAL"), "2");
+assert.equal(worksheetPoints("* 2", { PTS: "100" }, "RECEIVED"), null);
+assert.equal(worksheetPoints("/ 0", setupCells, "TOTAL"), null);
 assert.equal(worksheetPoints("=ROUND((total + 100)*2%,2)", setupCells, "TOTAL"), "10002");
 assert.equal(worksheetPoints("=SUM(MAX(2,3),2^3,ABS(-4))", setupCells, "TOTAL"), "15");
 assert.equal(worksheetPoints("=TOTAL-1", { TOTAL: "9999999999999999.9999" }, "TOTAL"), "9999999999999998.9999");

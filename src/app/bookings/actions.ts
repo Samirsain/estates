@@ -40,6 +40,7 @@ import { decideCancellation } from "@/lib/services/cancellation-service";
 import {
   decidePaymentApproval,
   pendingPaymentApprovals,
+  worksheetOnlyApproval,
   requestPaymentApproval,
   type PaymentStep,
 } from "@/lib/services/payment-approval-service";
@@ -58,7 +59,6 @@ import {
   reopenDelivered,
 } from "@/lib/services/completion-service";
 import {
-  confirmPaymentReceived,
   correctPaymentReceived,
   decideScheduleRevision,
   reviseSchedule,
@@ -370,50 +370,6 @@ export async function cancelBookingAction(
         : actor.role === "MD"
           ? "Refund Pending. Enter the refund's Payment Reference No. on this Booking to finish the cancellation."
           : "Formal cancellation started. The Booking is Refund Pending and Accounts has a verification task.",
-    };
-  } catch (error) {
-    return toResult(error);
-  }
-}
-
-export async function confirmPaymentReceivedAction(
-  input: {
-    bookingId: string;
-    percent: string;
-    paidOn: string;
-    reference: string;
-    remark: string;
-    payerName?: string;
-    payerReference?: string;
-  },
-  key: string
-): Promise<ActionResult> {
-  if (paymentTrialEnabled()) return { ok: false, error: "Use the MD payment worksheet to record or reverse a receipt." };
-  const actor = await requireStaff("PAYMENT_RECEIVED_CONFIRM");
-  try {
-    const args = {
-      bookingId: input.bookingId,
-      percent: input.percent,
-      paidOn: new Date(input.paidOn),
-      reference: input.reference,
-      remark: input.remark || undefined,
-      payerName: input.payerName,
-      payerReference: input.payerReference,
-    };
-    const held = await holdForMd(actor, key, { kind: "PAYMENT_RECEIVED", args });
-    if (held) return held;
-    const result = await confirmPaymentReceived({
-      idempotencyKey: key,
-      actorRef: actor.staffAccountId,
-      actorRole: actor.role,
-      ...args,
-    });
-    refresh();
-    return {
-      ok: true,
-      message: result.paymentCompleted
-        ? "Payment confirmed. Payment Received is 100% and the Booking is Payment Completed."
-        : `Payment confirmed. Payment Received is now ${result.progressPercent}%.`,
     };
   } catch (error) {
     return toResult(error);
@@ -1161,7 +1117,8 @@ export async function loadBookingDetail(bookingId: string) {
     })),
     paymentApprovals: paymentApprovals.map((a) => ({
       id: a.id,
-      label: paymentTrialEnabled() && ["PAYMENT_RECEIVED", "PAYMENT_CORRECT"].includes(a.kind)
+      worksheetOnly: worksheetOnlyApproval(a.kind),
+      label: worksheetOnlyApproval(a.kind)
         ? "Legacy receipt step — reconcile in the private accounts ledger" : a.label,
       requestedByRef: a.requestedByRef,
       requestedAt: a.requestedAt.toISOString(),
