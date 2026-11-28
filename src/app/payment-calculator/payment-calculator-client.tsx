@@ -316,12 +316,28 @@ export default function PaymentCalculatorClient({ role, actorName, staffAccountI
                     </button>
                   </td>
                 </tr>
-                {setup && <tr><td colSpan={COLUMNS.length} className="border-b bg-secondary/30 p-3">
-                  <div className="flex items-end gap-3">
-                    <label className="text-xs">Plot total · one-time setup<PasswordInput className="mt-1 w-36" visibilityLabel="plot total" disabled={busy} inputMode="decimal" autoComplete="off" value={draft.plotValue} onChange={(e) => change(draft.id, { plotValue: formatRupeeTyping(e.target.value) })} /></label>
-                    <Button size="sm" disabled={busy || !plotPoints} onClick={() => plotPoints && saveSetup(draft, booking, plotPoints)}>Save plot points</Button>
-                  </div>
-                  {draft.plotValue && !plotPoints && <p className="mt-1 text-xs text-destructive">Check the plot total and S.F.</p>}
+                {setup && <tr><td colSpan={COLUMNS.length} className="border-b bg-secondary/30 px-3 py-1.5">
+                  <form aria-label="One-time plot setup" className="flex items-end gap-2" onSubmit={(event) => {
+                    event.preventDefault();
+                    if (plotPoints) void saveSetup(draft, booking, plotPoints);
+                  }}>
+                    <div className="w-32">
+                      <label htmlFor={`plot-total-${draft.id}`} className="block text-xs">Plot total (one time)</label>
+                      <PasswordInput id={`plot-total-${draft.id}`} className="h-8" visibilityLabel="plot total" disabled={busy}
+                        inputMode="decimal" autoComplete="off" value={draft.plotValue}
+                        onChange={(e) => change(draft.id, { plotValue: formatRupeeTyping(e.target.value) })} />
+                    </div>
+                    <div className="w-28">
+                      <span className="block text-xs">Plot Pts</span>
+                      <output aria-label="Plot Pts" className="flex min-h-8 items-center break-all text-sm font-medium tabular-nums">
+                        {plotPoints ?? "—"}
+                      </output>
+                    </div>
+                    <Button type="submit" size="sm" aria-label="Save plot points" disabled={busy || !plotPoints}>Save</Button>
+                  </form>
+                  {draft.plotValue && !plotPoints && <p className="mt-1 text-xs text-destructive" role="status">
+                    {formula === "" ? "Enter the S.F. above." : "Check the plot total and S.F."}
+                  </p>}
                 </td></tr>}
                 {(row.error || draft.message || reloadErrors[draft.bookingId]) && !draft.saved && <tr><td colSpan={COLUMNS.length} className="border-b px-3 py-1.5 text-xs text-destructive" role="status">
                   Row {index + 1} · {draft.message || row.error || reloadErrors[draft.bookingId]}

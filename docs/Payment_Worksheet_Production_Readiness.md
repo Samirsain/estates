@@ -1,6 +1,6 @@
 # Payment worksheet production readiness
 
-Buyer receipts are recorded in the MD worksheet. Choose a project and select a plot. Each row shows the plot number and type above the project code and name. If a plot needs setup, enter its agreed total and save the plot points. The total is cleared after setup. An approved plot replacement clears the old points basis.
+Buyer receipts are recorded in the MD worksheet. Choose a project and select a plot. Each row shows the plot number and type above the project code and name. If a plot needs setup, enter its agreed total, check the calculated Plot Pts beside it, and click Save. The total is cleared after setup. An approved plot replacement clears the old points basis.
 
 Enter the amount and receipt date for each row. Tick S.F. and enter one formula in the field beside it to apply it to all draft amounts and any new plot total. For example, `/25` converts ₹25,000 to 1,000 Pts. A plain number acts as a divisor. With S.F. off, the amount itself is the points value. For a plot with saved points, use the same conversion that produced those points so the receipt credits the intended percentage.
 
